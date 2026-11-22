@@ -517,3 +517,35 @@ test('erogenous zoneStats backfill zero cards from lore, match natural prose, de
   cards = readCards();
   assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 75);
 });
+
+test('cross-sentence pronoun-bridged foreplay ("남성기 ... 그것을 감싸고 비비기 시작했다") engages foreplay and raises male gauge', async t => {
+  const f = await start(t);
+  const input = '푸딩은 허리춤을 풀고 바지를 내렸다. 아직 천에 갇힌 남성기는 존재감을 드러내고 있었다. 하연은 몸을 일으켜 포복해서 그의 하체에 다가가 그것을 감싼 천을 내렸다. "한 번 빼줄게." 그녀의 손가락이 그것을 감싸고 비비기 시작했다.';
+  const pkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '민태오',
+    personaName: '푸딩',
+    profileGenders: { 민태오: 'male' },
+    recent: {
+      latestUser: input,
+      visibleMessages: [
+        { role: 'assistant', content: '민태오와 하연이 방에 남아 있었다.' }
+      ]
+    }
+  });
+  assert.equal(pkt.scene.engaged, true, 'pronoun-bridged foreplay must engage intimacy');
+  assert.equal(pkt.scene.phase, 'foreplay', 'phase should be foreplay');
+  const maleGauge = pkt.gauges.find(g => g.gender === 'male');
+  assert.ok(maleGauge && maleGauge.ejaculationGauge > 0, 'male ejaculation gauge increases from bridged penis_shaft_scrotum stimulation');
+
+  const nonSexual = f.host.plugin.debugIntimacyPacket({
+    characterName: '민태오',
+    personaName: '푸딩',
+    profileGenders: { 민태오: 'male' },
+    recent: {
+      latestUser: '그녀의 손가락이 따뜻한 컵을 감싸고 비비기 시작했다.',
+      visibleMessages: [{ role: 'assistant', content: '카페 창가에 앉아 있었다.' }]
+    }
+  });
+  assert.equal(nonSexual.scene.engaged, false, 'non-sexual prose must not engage intimacy');
+  assert.equal(nonSexual.scene.phase, 'none');
+});

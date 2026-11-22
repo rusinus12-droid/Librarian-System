@@ -59,7 +59,7 @@ test('상태 rides in 인물 AIDE’s call and 억결 in 플롯 AIDE’s call, w
   await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_character', 'aide_world', 'aide_plot']);
   const character = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
   assert.match(character, /상태 AIDE runs inside this stage as a sub-step\. Body State AIDE: read the verification notes/);
   assert.match(JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character')), /"state_readings"/);
@@ -185,18 +185,18 @@ test('pregnancy is a fixed verdict behind its own toggle, only for NPCs in RP', 
 test('checkers return state_check and the host reads it; readings stay in memory', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', {
-    aide_plot: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
-    aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
+    aide_world: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
+    aide_plot: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
   });
-  // Plot runs before the host (인물 AIDE), so Plot leaves a note for it.
-  await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) });
+  // With 인물 AIDE off and 세계관+플롯 on, 세계관 checks first and 플롯 hosts & reads the note.
+  await configure(f, { enable_world_aide: true }, { body: true, bond: false }, ['aide_character']);
   const keysBefore = new Set(f.values.keys());
   await runTurn(f, '민아에게 다가간다.');
-  const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
-  assert.ok(JSON.stringify(plot).includes('"state_check"'), 'the patch schema asks for state_check');
-  const host = f.prompts.find(item => stageOf(item) === 'aide_character');
+  const world = f.prompts.find(body => stageOf(body) === 'aide_world');
+  assert.ok(JSON.stringify(world).includes('"state_check"'), 'the patch schema asks for state_check');
+  const host = f.prompts.find(item => stageOf(item) === 'aide_plot');
   assert.ok(!JSON.stringify(host).includes('"state_check"'), 'the host settles readings instead of checking');
-  assert.match(systemOf(host), /\[aide_plot\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
+  assert.match(systemOf(host), /\[aide_world\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });

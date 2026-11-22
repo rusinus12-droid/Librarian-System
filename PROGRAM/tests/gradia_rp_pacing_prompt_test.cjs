@@ -70,3 +70,29 @@ for (const shadowDraftMode of ['classic', 'input_inclusive']) test(`Novel ${shad
   assert.match(character, /Physical contact between characters goes only as close as their relationship and what the story has established between them allow; a closer touch needs the scene to earn it\./);
   assert.doesNotMatch(shadow, /SHADOW duty: [^\n]*user-agency frontier/, 'the RP stopping rule stays out of Novel');
 });
+
+test('Plot AIDE keeps FINAL WHOLE-DRAFT COHERENCE AUDIT and ignores reordered aide_stage_order', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [] };
+    if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
+    else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
+    else f.controls.output = '민아는 창가에 섰다.';
+  };
+  await f.host.plugin.saveRuntimeSettings({
+    ...await f.host.plugin.getRuntimeSettings(),
+    mode: 'normal', default_preset: 'writer', input_assist_mode: 'off', multi_pipeline_mode: 'lightweight', writing_mode: 'rp', rp_impersonation_scope: 'persona',
+    enable_shadow_act: true, enable_character_aide: true, enable_world_aide: true, enable_plot_aide: true, failure_mode: 'hard', lore_activation_mode: 'off',
+    aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world'])
+  });
+  f.chat.message.push({ role: 'user', chatId: 'u1', data: '문을 연다.' });
+  f.prompts.length = 0;
+  await f.host.hooks.beforeRequest(f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })), 'model');
+  const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
+  assert.deepEqual(aides, ['aide_character', 'aide_world', 'aide_plot']);
+  const plot = f.prompts.filter(body => stageOf(body) === 'aide_plot').map(systemOf).join('\n');
+  assert.match(plot, /FINAL WHOLE-DRAFT COHERENCE AUDIT/);
+  assert.match(plot, /PRESERVE UPSTREAM REPAIRS/);
+});

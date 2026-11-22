@@ -152,7 +152,7 @@ test('the stage table lists stages in run order and edits the same values as the
     const d = f.doc;
     const box = await until(() => d.querySelector('section[data-page="pipeline"] [data-stage-matrix] table'), 'stage table');
     const rows = [...box.querySelectorAll('[data-matrix-row]')].map(node => node.dataset.matrixRow);
-    assert.deepEqual(rows, ['shadow_act', 'aide_character', 'aide_body_state', 'aide_knowledge_boundary', 'aide_intimacy', 'aide_relationship_sim', 'aide_world', 'aide_world_dynamics', 'aide_plot', 'aide_forced_bond']);
+    assert.deepEqual(rows, ['shadow_act', 'aide_character', 'aide_body_state', 'aide_knowledge_boundary', 'aide_dialogue', 'aide_intimacy', 'aide_relationship_sim', 'aide_world', 'aide_world_dynamics', 'aide_plot', 'aide_forced_bond']);
     const cell = (id, field) => box.querySelector(`[data-matrix-row="${id}"] [data-matrix-field="${field}"]`);
     const turns = cell('aide_world', 'turnWindow');
     turns.value = '12'; change(f, turns);

@@ -12,6 +12,7 @@
     "context-degradation-gui.test.cjs",
     "context-degradation.test.cjs",
     "creative-direction-clear.test.cjs",
+    "dialogue-aide.test.cjs",
     "draft-archive-gui.test.cjs",
     "draft-live-scene.test.cjs",
     "draft-only.test.cjs",

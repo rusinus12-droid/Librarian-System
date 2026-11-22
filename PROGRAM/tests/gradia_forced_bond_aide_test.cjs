@@ -74,7 +74,7 @@ test('억결 rides in Plot AIDE’s call in every AIDE order and spends no call 
     await configure(f, { aide_stage_order: JSON.stringify(order) });
     await runTurn(f, '복도로 나간다.');
     const aideStages = callStages(f).filter(stage => stage.startsWith('aide_'));
-    assert.deepEqual(aideStages, order, JSON.stringify(order));
+    assert.deepEqual(aideStages, ['aide_character', 'aide_world', 'aide_plot'], JSON.stringify(order));
     const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
     assert.match(systemOf(plot), /억결 AIDE runs inside this stage as a sub-step. Forced Bond AIDE: read the verification notes/);
     assert.ok(JSON.stringify(plot).includes('"bond_readings"'), 'Plot settles the bond readings');
