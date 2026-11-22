@@ -626,7 +626,7 @@ b4eebceaa52ab45ad5ecd06a80131f1b48e87beccf667cdb6a89611e24c4d2a0  ./PROGRAM/docs
 8a1a9c98503ffe4aaa0c0273d5c35a0138f043078cbf40a3302cfc5a2e25bbd3  ./PROGRAM/docs/RELEASE_AUTOMATION.md
 ed79a3387ff7a1361fbfe7ba3a2d888a77e71e5ebf3658fa7a3b9907f1b49fbf  ./PROGRAM/docs/RELEASE_BUILDER_20260912.md
 2feb66d159aa82242c0f300a1878f66eb803c91ba125056f399c16f29fda00ae  ./PROGRAM/docs/RELEASE_BUILDER_GATE_FIX_20261107.md
-1a2c44c470c34dde10ef10d15bb7a2c7dbb3deacc24752d50fdf168bb5acb67e  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
+2b12e3a885957cf3470bc5503b97868ce020d4d028e789ed8e19e3840d6a9632  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
 719091b5a97cccafac6d30bd5a411cab64ad551acd376c119890c108cf4420da  ./PROGRAM/docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md
 f894890bd82256b3b91289c7640cb4fafa360808e71805096bda3ffe3acf3a68  ./PROGRAM/docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md
 94060ce3298312f997ebacffea393ce0d7236019ace9d5aa7ae40a9d662a1d30  ./PROGRAM/docs/REMAINING_WORK_20261031.md
@@ -730,12 +730,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 65020df2954ee81d63eb5c4b1a9f5d5dde18f358125b71d9c0ae2589b504d827  ./PROGRAM/PACKAGE_CONTENTS.txt
 b7a8cab4d879df4cb84a26696c329ee6bddd1cb39f6937315e18b7507fe473d8  ./PROGRAM/plugins/Flashback_Memory.js
-d8c3125e49dcc29299b1f09b4e58b783e51bbcfd97f40d73aeb289a1a9fc19b2  ./PROGRAM/plugins/GRADIA.js
+6198b96b6c89731ef258d2e4d2452cde889852aebaea5dddfc529136994da4f9  ./PROGRAM/plugins/GRADIA.js
 d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 9f8306df5c9498103e3a75988d544d6cd7219cda338ba74ea347ba76ccffd8f2  ./PROGRAM/plugins/LIA_Persona_Linker.js
 0e78bf77a6fdd94468413dacd5640df5b3821f07f9fd5f80b1d9dfac9e781854  ./PROGRAM/plugins/LIBRA.js
 69e927f9ffcc68bca435b946ea4468757fd53df93091f80b2d5c1228d1bc682c  ./PROGRAM/plugins/RETRACE.js
-0a34ca9d9cc44e252ec63e68cd8efa2167b75758e9407ec41797e965ca4fa0de  ./PROGRAM/program-manifest.json
+b1a3561ab12202b53248fe9e762ba051dcb7ddcbeb0a80c984a4106d54600245  ./PROGRAM/program-manifest.json
 26e70bb033c5526671c9d3156f24f74117e89720bbfab3f4aeffb61b52b86247  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -1414,6 +1414,7 @@ f86be499ad44304dceb355d4eb3868f7969ed6513ce3965c5f97091fd1af2af7  ./PROGRAM/test
 d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/tests/gradia/input-assist-reference-cap.test.cjs
 6e4a6949095291006f54f8f4e26954238d658a68c9a5f0228d887dda9063ced2  ./PROGRAM/tests/gradia/input-choice-envelope.test.cjs
 362bc1765e293c98b20dddde47b4175ce08d2f5dd0834e3f7ce3db20b3e014f5  ./PROGRAM/tests/gradia/intimacy-attribution.test.cjs
+9f8ef0734f45949b1e693b93f849f8db77e9250c050b36eb1df4ab32f206b444  ./PROGRAM/tests/gradia/intimacy-gender-source.test.cjs
 f1480b14117e0c351f0307ffa01a57a8547e2018101138bb9012be55b03eb8c6  ./PROGRAM/tests/gradia/ipc_connection_fixture.cjs
 0e7e80ea52f036dd3e039a94e5df8e6aa07ba23734b91fd902de54103d8ba523  ./PROGRAM/tests/gradia/knowledge-boundary-aide.test.cjs
 2228e6aacf91adcb81a5ff5c52152dc6dcdd293d43d9be0bc022ded930533174  ./PROGRAM/tests/gradia/ladder-stage-panel.test.cjs
@@ -1444,7 +1445,7 @@ a99d4dccf69ec4fce716ae453a0a01da58759b654825ea58c7fb414fa6d2b122  ./PROGRAM/test
 dd882dd1dbef4d4284b74e482365f0202c63a4d5c31a49e09ba9dbf8d08549f7  ./PROGRAM/tests/gradia/settings_status_feedback.test.cjs
 7dd6926cc06b1900403289cf1140dddfee96b535227bef3207541a093bf1398c  ./PROGRAM/tests/gradia/settings-backup.test.cjs
 e3111ebeacb19efecaff11dd80b993593a33664a723e6846049ef7475770821a  ./PROGRAM/tests/gradia/sleep-state-continuity.test.cjs
-0641443b82efde646d711e91b04d0686d762c6cca05be588257922074165e77b  ./PROGRAM/tests/gradia/suite-inventory.json
+de056a57613c237444e5df175ba7bfcf6bb52773ba53ca573a82d32d867d918a  ./PROGRAM/tests/gradia/suite-inventory.json
 3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0  ./PROGRAM/tests/gradia/turn-eligibility.test.cjs
 cdc967acad2c621f1586bc901df5cf9efad71235870046dac70526e32738bc50  ./PROGRAM/tests/gradia/wardrobe-continuity.test.cjs
 a04d5d12fd0ec7efaff27ca98e67caf46b3ee2aa9134c053d66f87d76159c8e8  ./PROGRAM/tests/gradia/work-scale-context-budget.test.cjs

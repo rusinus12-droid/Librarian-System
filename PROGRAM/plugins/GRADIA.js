@@ -28485,7 +28485,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!name) return false;
     const cards = intimacyCardsForScope(scopeKey || compact(Runtime.activeScopeKey || '', 512));
     const card = cards.find(c => c.name && (c.name === name || extensionSamePerson(c.name, name)));
-    const gender = card?.gender || card?.anatomyView || bodyStateProfileGender(name) || '';
+    const gender = intimacyCardGender(card, name);
     return gender === 'male';
   };
   const worldSimRestrictionPromptBlock = (settings = {}) => {
@@ -28811,7 +28811,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         let pregnancyOutcome = 'not_applicable';
         for (const actorName of actors) {
           const card = cards.find(c => c.name && (c.name === actorName || extensionSamePerson(c.name, actorName)));
-          const gender = card?.gender || card?.anatomyView || bodyStateProfileGender(actorName) || '';
+          const gender = intimacyCardGender(card, actorName);
           if (card && zones.length) {
             if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
             let touched = false;
@@ -29815,7 +29815,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
             const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSamePerson(c.name, k)));
             if (card && (!item.inputHash || card.lastZoneUpdateHash !== item.inputHash)) {
-              const cardGender = card.gender || card.anatomyView || bodyStateProfileGender(card.name) || '';
+              const cardGender = intimacyCardGender(card, card.name);
               if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
               for (const [zoneId, delta] of Object.entries(v.zoneDeltas)) {
                 if (!intimacyZoneAllowedForGender(zoneId, cardGender)) continue;
@@ -29952,10 +29952,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (raw === 'vulva' || raw === 'female_anatomy') return 'female';
     return '';
   };
+  // 성별은 한 곳에서만 정한다. 인물별 보기(신체 도식 패널)가 **anatomyView 를 먼저** 보여 주므로
+  // 게이지도 같은 순서를 써야 한다. 예전에는 게이지가 card.gender(AIDE 추정)를 먼저 봐서,
+  // 패널은 여성인데 게이지는 남성(사정 축)으로 표시되는 불일치가 생겼다.
+  const intimacyCardGender = (card = null, name = '') => (
+    intimacyNormalizeGender(card?.anatomyView)
+    || intimacyNormalizeGender(card?.gender)
+    || intimacyNormalizeGender(bodyStateProfileGender(name || card?.name || ''))
+    || intimacyNormalizeGender(inferGenderFromIntimacyText(name || card?.name || '', {}))
+    || ''
+  );
   const intimacyResolveGender = (name, card = null, recent = {}) => (
-    intimacyNormalizeGender(card?.gender)
-    || intimacyNormalizeGender(card?.anatomyView)
-    || intimacyNormalizeGender(bodyStateProfileGender(name))
+    intimacyCardGender(card, name)
     || intimacyNormalizeGender(inferGenderFromIntimacyText(name, recent))
     || ''
   );
@@ -30383,7 +30391,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let gaugeChanged = false;
       for (const g of telemetryGauges) {
         const card = cards.find(c => c.name && (c.name === g.name || extensionSamePerson(c.name, g.name)));
-        const resolvedGender = card?.gender || card?.anatomyView || g.gender || bodyStateProfileGender(g.name) || '';
+        const resolvedGender = intimacyCardGender(card, g.name) || intimacyNormalizeGender(g.gender);
         const showClimax = resolvedGender !== 'male';
         const showEjac = resolvedGender === 'male';
         const reading = readings.find(r => r.participant && (r.participant === g.name || extensionSamePerson(r.participant, g.name)));
@@ -54376,7 +54384,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const intimacyAnatomyPanel = card => {
     const zoneStats = card.zoneStats || normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
     const inferredGender = bodyStateProfileGender(card.name);
-    const view = card.anatomyView || card.gender || (inferredGender === 'male' ? 'male' : 'female');
+    const view = intimacyCardGender(card, card.name) || (inferredGender === 'male' ? 'male' : 'female');
     const statOf = id => zoneStats[id] || { sensitivity: 0, development: 0 };
     const dotNode = (id, cx, cy, r, labelText, lx, ly, anchor = 'start') => {
       const st = statOf(id);
@@ -54586,7 +54594,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const telemetryRows = intimacyTelemetryNotes(scopeKey);
       const gaugeLegend = guiEl('div', { class: 'note' }, [
         guiEl('b', { text: '게이지 축' }),
-        guiEl('p', { text: '절정 0–100: 여성·성별 미확인 인물에 표시 · 사정 0–100: 남성 전용 축입니다. 성별은 선호 카드 → 프로필 → 본문 순서로 판정합니다.' })
+        guiEl('p', { text: '절정 0–100: 여성·성별 미확인 인물에 표시 · 사정 0–100: 남성 전용 축입니다. 성별은 인물별 보기의 신체 도식 → 선호 카드 성별 → 프로필 → 본문 순서로 판정하며, 게이지와 인물별 보기는 같은 값을 씁니다.' })
       ]);
       const hasSettledGauge = !!(scopeKey && (Object.keys(Runtime.intimacyGauges?.[scopeKey]?.settled || {}).length || (Runtime.intimacyGauges?.[scopeKey]?.pending || []).length || Runtime.intimacyTelemetry?.[scopeKey]?.gauges?.length));
       const zoneLabel = zoneId => (INTIMACY_BODY_PARTS.find(([id]) => id === zoneId)?.[1] || zoneId || '').split(' (')[0];
@@ -58990,6 +58998,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const result = { draft: { rp_text: draftText } };
       const applied = dialogueApplyRepairsToStageDraft(result, repairs, {});
       return cloneJson({ ...applied, draftText: result.draft.rp_text });
+    },
+    debugIntimacyResolveGender({ name = '', card = null, recent = {} } = {}) {
+      return intimacyResolveGender(name, card, recent);
+    },
+    // 게이지가 실제로 쓰는 결정(성별 → 두 축). computeIntimacyParticipantGauges 와 같은 식이다.
+    debugIntimacyGaugeAxes({ name = '', card = null, recent = {} } = {}) {
+      const gender = intimacyResolveGender(name, card, recent);
+      return { gender, showClimax: gender !== 'male', showEjac: gender === 'male' };
+    },
+    async debugIntimacySetCard({ name = '', patch = {} } = {}) {
+      await loadIntimacyCards();
+      const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+      const cards = intimacyCardsForScope(scopeKey).map(card => (
+        card.name && extensionSamePerson(card.name, name) ? { ...card, ...patch } : card));
+      await writeIntimacyCardsForScope(scopeKey, cards);
+      return cloneJson(cards.find(card => card.name && extensionSamePerson(card.name, name)) || null);
     },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
