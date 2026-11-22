@@ -1194,7 +1194,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--upstream-dir') out.upstreamDir = path.resolve(argv[++i]);
     else if (arg === '--artifact-dir') out.artifactDir = path.resolve(argv[++i]);
     else if (arg === '--skip-build-artifacts') out.buildReleaseArtifacts = false;
-    else if (arg === '--skip-existing-storage-suites') out.runExistingStorageSuites = false;
+    else if (arg === '--skip-existing-storage-suites' || arg === '--skip-storage-suites') out.runExistingStorageSuites = false;
     else if (arg === '--report') out.reportPath = path.resolve(argv[++i]);
     else throw new Error(`unknown_argument:${arg}`);
   }

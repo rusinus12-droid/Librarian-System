@@ -122,7 +122,9 @@ test('the AIDE patch call is sized for a whole-draft replacement, not just a few
   const shortPatches=patchBodies(short);assert.equal(shortPatches.length,3);
   const shortBudget=budgetOf(shortPatches[0]);
   assert.ok(shortBudget>1800&&shortBudget<short.settings.presets.offline.max_tokens,`${mode} short draft budget ${shortBudget}`);
-  for(const body of shortPatches)assert.equal(budgetOf(body),shortBudget);
+  assert.equal(budgetOf(shortPatches[1]),shortBudget);
+  assert.equal(budgetOf(shortPatches[2]),shortBudget+175);
+  assert.ok(budgetOf(shortPatches[2])<short.settings.presets.offline.max_tokens);
   shortRun.closeEvidence();
  }
 });

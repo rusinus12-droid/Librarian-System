@@ -56734,6 +56734,7 @@ function createMemorySuiteSourceRuleSync(config) {
     const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
     return await new Promise(resolve=>{
       const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
+      record.timer?.unref?.();
       pending.set(id,record);
       Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
         .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
@@ -56742,9 +56743,10 @@ function createMemorySuiteSourceRuleSync(config) {
   // state per peer: same | different (by the rules each one actually runs, saved or shared
   // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
   // what was seen there, passed back as `expected` when applying.
-  const compare=async()=>{
+  const compare=async(only=peers)=>{
     await config.policy.ready();const mine=fingerprint(effective());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+    const targets=Array.isArray(only)?peers.filter(peer=>only.includes(peer)):peers;
+    const answers=await Promise.all(targets.map(async peer=>{const answer=await ask(peer,'describe');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const builtIn=!answer.result?.rules;
       // An older peer does not report what it runs without saved rules; it is not the shared standard.

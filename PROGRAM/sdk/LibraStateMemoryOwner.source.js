@@ -483,7 +483,7 @@
           if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
           const review = source.review;
           const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
-          const rows = facts.flatMap((fact, index) => memoryReviewDecision(review, 'canonical', memory, index) === 'rejected' ? [] : [{
+          const rows = facts.flatMap((fact, index) => (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected' || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') ? [] : [{
             domain: fact.domain, text: string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {})),
             evidenceKeys: ['canonical:' + memory.memoryId + ':' + memory.revision + ':' + fact.assertionId]
           }]);

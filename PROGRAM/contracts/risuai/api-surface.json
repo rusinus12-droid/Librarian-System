@@ -73,7 +73,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -166,7 +165,6 @@
       "implementedInV3": true,
       "owners": [
         "flashback",
-        "gradia",
         "hayaku",
         "libra"
       ]
@@ -227,7 +225,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -809,27 +806,6 @@
         "retrace"
       ]
     },
-    "readImage": {
-      "name": "readImage",
-      "kind": "method",
-      "requiredArgs": 0,
-      "optionalArgs": 1,
-      "parameters": [
-        {
-          "name": "path",
-          "optional": true,
-          "type": "string"
-        }
-      ],
-      "returnType": "Promise<any>",
-      "returnsPromise": true,
-      "deprecated": false,
-      "declaredInDts": true,
-      "implementedInV3": true,
-      "owners": [
-        "lia"
-      ]
-    },
     "registerBodyIntercepter": {
       "name": "registerBodyIntercepter",
       "kind": "method",
@@ -958,7 +934,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -1020,7 +995,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -1225,27 +1199,6 @@
         "retrace"
       ]
     },
-    "saveAsset": {
-      "name": "saveAsset",
-      "kind": "method",
-      "requiredArgs": 1,
-      "optionalArgs": 0,
-      "parameters": [
-        {
-          "name": "data",
-          "optional": false,
-          "type": "any"
-        }
-      ],
-      "returnType": "Promise<string>",
-      "returnsPromise": true,
-      "deprecated": false,
-      "declaredInDts": true,
-      "implementedInV3": true,
-      "owners": [
-        "lia"
-      ]
-    },
     "setArg": {
       "name": "setArg",
       "kind": "method",
@@ -1272,7 +1225,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -1303,7 +1255,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -1383,7 +1334,6 @@
       "declaredInDts": true,
       "implementedInV3": true,
       "owners": [
-        "gradia",
         "lia"
       ]
     },
@@ -3213,6 +3163,7 @@
     "removePluginChannelListener": {
       "owners": [
         "flashback",
+        "gradia",
         "libra"
       ],
       "guard": "typeof api?.removePluginChannelListener === \"function\"",

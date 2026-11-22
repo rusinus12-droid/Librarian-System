@@ -67,7 +67,8 @@
         "libra",
         "flashback_memory",
         "hayaku_locator_continuity",
-        "lia_persona_linker"
+        "lia_persona_linker",
+        "serial_gradation_agents_for_rp"
       ]
     },
     "serial_gradation_agents_for_rp": {
@@ -76,7 +77,8 @@
       "allowedIPC": [
         "libra",
         "hayaku_locator_continuity",
-        "flashback_memory"
+        "flashback_memory",
+        "flashback_hayaku_bridge"
       ]
     }
   }

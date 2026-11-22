@@ -78,7 +78,8 @@ test('lightweight default (previous_stage_mode auto) skips standalone previous a
   assert.ok(!f.prompts.some(body => stageOf(body) === 'previous'), 'standalone previous does not run by default in lightweight');
   const usr = userOf(shadowCalls[0]);
   assert.doesNotMatch(usr, /\[truncated\]/);
-  assert.doesNotMatch(usr, /\[PREVIOUS —/);
+  assert.doesNotMatch(usr, /\[PREVIOUS — CONFIRMED PAST RECORD & GUARDRAIL\]/);
+  assert.match(usr, /\[PREVIOUS — LIB \+ 최근 챗 종합 사건 기록/);
 });
 
 test('lightweight with previous_stage_mode=on runs standalone previous LLM call before shadow_act and feeds guardrail', async t => {

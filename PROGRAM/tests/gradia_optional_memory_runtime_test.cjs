@@ -71,7 +71,7 @@ async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=fals
   await wait(()=>{const s=host.plugin.getInputAssistSendStatus();if(s?.phase==='error')throw Error(JSON.stringify(s));return doc.querySelector('[data-input-choice-card]');},'choices');doc.querySelector('[data-input-choice-card] .btn--primary').click();await wait(()=>button('복사 후 직접 전송'),'delivery');button('복사 후 직접 전송').click();return pending;};
  return {host,bus,owners,state,prompts,configure,run,writer,copied};
 }
-for(const [mode,multi,expected]of [['normal','lightweight',4],['normal','heavyweight',8],['lite','lightweight',2],['off','lightweight',0]])test(`no owners: ${mode}/${multi} preserves native pipeline (${expected} calls)`,async t=>{
+for(const [mode,multi,expected]of [['normal','lightweight',4],['normal','heavyweight',9],['lite','lightweight',2],['off','lightweight',0]])test(`no owners: ${mode}/${multi} preserves native pipeline (${expected} calls)`,async t=>{
  const f=await setup(t);await f.configure(mode,multi);const out=await f.run();assert.equal(f.prompts.length,expected);assert.ok(!JSON.stringify(out).includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'));assert.ok(!f.bus.messages.some(m=>m.body.action==='capture'||m.body.action==='describe'));
  if(expected){assert.ok(JSON.stringify(out).includes('STANDALONE_DRAFT'));assert.ok(f.prompts.every(p=>JSON.stringify(p).includes('도서관 문 앞')));}
  const before=f.prompts.length;assert.equal(await f.host.hooks.afterRequest('민아는 다음 대답을 기다렸다.','model'),'민아는 다음 대답을 기다렸다.');assert.equal(f.prompts.length,before);

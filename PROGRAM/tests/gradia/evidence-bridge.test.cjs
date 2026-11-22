@@ -8,7 +8,10 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 const canonical=value=>JSON.stringify(value,function(k,v){return v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((o,k)=>(o[k]=v[k],o),{}):v});
 const messages=()=>[{role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},{role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},{role:'user',messageId:'turn-u-103',content:'Continue the scene.'}];
 function nativeView(recent){return {...Object.fromEntries(['latestUser','latestAssistantRaw','latestAssistant','terminalVisibleScene','previousTurnUser','previousTurnAssistant','previousTurnText','earlierTurnsText','completeTurnsText','sceneAnchor','previousResponseEvidence','text','visibleText'].map(key=>[key,recent[key]||''])),visibleMessages:recent.visibleMessages.map(m=>({role:m.role,content:m.content}))};}
+const instrumentCache=new Map();
 function instrument(source,options={}){
+ const key=`${Boolean(options.server)}:${source.length}:${source.slice(0,64)}:${source.slice(-64)}`;
+ if(instrumentCache.has(key))return instrumentCache.get(key);
  const ast=acorn.parse(source,{ecmaVersion:'latest'}), functions=[],calls=[];
  function walk(n,parent){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression')functions.push({node:n,parent});if(n.type==='CallExpression')calls.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(x=>walk(x,n));else if(v&&typeof v==='object')walk(v,n)}walk(ast);
  const find=marker=>functions.filter(f=>source.slice(f.node.start,f.node.end).includes(marker)).sort((a,b)=>(a.node.end-a.node.start)-(b.node.end-b.node.start))[0];
@@ -18,6 +21,7 @@ function instrument(source,options={}){
  if(options.server){}
  else for(const n of calls)if(n.callee.type==='Identifier'&&n.callee.name==='createLibServerReadConsumer')edits.push({start:n.start,end:n.end,value:'('+require('node:fs').readFileSync(require('node:path').join(__dirname,'fixtures/lib-read-consumer-double.source.js'),'utf8').split('\n').slice(1).join('\n').trim()+')(globalThis.__testDependencies)'});
  for(const e of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,e.start)+e.value+source.slice(e.end);
+ instrumentCache.set(key,source);
  return source;
 }
 async function fixture(opts={}){
@@ -52,10 +56,11 @@ async function fixture(opts={}){
 
  return {host,settings,prompts,content,deps,boundary,certifyInput,get recalls(){return recalls},get checks(){return checks},setBoundary:p=>Object.assign(boundary,p),run:(input=messages())=>host.pipeline(input,'model',settings)};
 }
+module.exports={fixture,messages,instrument};
+if(require.main===module){
 test('actual pipeline opens one evidence read and places bounded evidence into all four prompt payloads with lore off',async()=>{
  const f=await fixture();const r=await f.run();assert.equal(r.ok,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,4);for(const body of f.prompts){const s=JSON.stringify(body);assert.ok(s.includes('EVIDENCE_SENTINEL'));assert.ok(!s.includes('</GRADIA_EXTERNAL_EVIDENCE>'));}assert.match(r.injection,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/);assert.equal(f.host.getCalls(),0);r.closeEvidence();
 });
-module.exports={fixture,messages,instrument};
 
 for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true])test(`anatomical feasibility remains mandatory with evidence (${mode}, Bianca ${bianca})`,async()=>{
  const f=await fixture({mode});Object.assign(f.settings,{biancaInject:bianca,nsfwMode:'off',nsfwGuidanceEnabled:false});
@@ -683,11 +688,12 @@ test('a failed compact analysis falls back once with the provider cause rather t
  }finally{r.closeEvidence();}
 });
 
-test('owner invalidation during a compact mandatory analysis prevents patch and final handoff',async()=>{
- let valid=true;
- const f=await fixture({mode:'heavyweight',current:()=>valid,onModel:(_n,body)=>{if(compactAnalysisBody(body))valid=false;},
-  modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
- f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
- assert.equal(f.prompts.length,5);assert.equal(f.recalls,1);
- assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
-});
+ test('owner invalidation during a compact mandatory analysis prevents patch and final handoff',async()=>{
+  let valid=true;
+  const f=await fixture({mode:'heavyweight',current:()=>valid,onModel:(_n,body)=>{if(compactAnalysisBody(body))valid=false;},
+   modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
+  f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
+  assert.equal(f.prompts.length,5);assert.equal(f.recalls,1);
+  assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+ });
+}

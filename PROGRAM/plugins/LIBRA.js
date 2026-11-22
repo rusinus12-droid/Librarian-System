@@ -52767,6 +52767,7 @@ function createMemorySuiteSourceRuleSync(config) {
     const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
     return await new Promise(resolve=>{
       const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
+      record.timer?.unref?.();
       pending.set(id,record);
       Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
         .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
@@ -52775,9 +52776,10 @@ function createMemorySuiteSourceRuleSync(config) {
   // state per peer: same | different (by the rules each one actually runs, saved or shared
   // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
   // what was seen there, passed back as `expected` when applying.
-  const compare=async()=>{
+  const compare=async(only=peers)=>{
     await config.policy.ready();const mine=fingerprint(effective());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+    const targets=Array.isArray(only)?peers.filter(peer=>only.includes(peer)):peers;
+    const answers=await Promise.all(targets.map(async peer=>{const answer=await ask(peer,'describe');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const builtIn=!answer.result?.rules;
       // An older peer does not report what it runs without saved rules; it is not the shared standard.
@@ -53980,11 +53982,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const repairMicroEvidence = (microValue, receiptValue) => {
       if (!isPlainObject(microValue) || !Array.isArray(microValue.claims)) return microValue;
       const receipt = asObject(receiptValue), locate = (source, quote, near) => {
-        const hits = []; for (let at = source.indexOf(quote); at >= 0 && hits.length < 32; at = source.indexOf(quote, at + 1)) hits.push(at);
-        if (hits.length) return { start: hits.reduce((best, at) => Math.abs(at - near) < Math.abs(best - near) ? at : best, hits[0]), length: quote.length };
-        const words = quote.split(/\s+/).filter(Boolean).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-        const found = words.length > 1 ? new RegExp(words.join('\\s+')).exec(source) : null;
-        return found ? { start: found.index, length: found[0].length } : null;
+        const cleanQuote = String(quote ?? '').trim();
+        if (!cleanQuote || !source) return null;
+        const findExact = q => {
+          const hits = []; for (let at = source.indexOf(q); at >= 0 && hits.length < 32; at = source.indexOf(q, at + 1)) hits.push(at);
+          if (hits.length) return { start: hits.reduce((best, at) => Math.abs(at - near) < Math.abs(best - near) ? at : best, hits[0]), length: q.length };
+          const words = q.split(/\s+/).filter(Boolean).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+          const found = words.length > 1 ? new RegExp(words.join('\\s+')).exec(source) : null;
+          return found ? { start: found.index, length: found[0].length } : null;
+        };
+        const direct = findExact(cleanQuote);
+        if (direct) return direct;
+        const stripped = cleanQuote.replace(/^["“”'‘’「」『』\s]+|["“”'‘’「」『』\s]+$/g, '');
+        if (stripped && stripped !== cleanQuote) {
+          const trimmedHit = findExact(stripped);
+          if (trimmedHit) return trimmedHit;
+        }
+        return null;
       };
       const claims = microValue.claims.map(claimValue => {
         if (!isPlainObject(claimValue)) return claimValue;
@@ -54088,7 +54102,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'ENVELOPE SHAPE: {"schema":"libra.micro_producer_envelope.v1","personCandidates":{"spans":[],"relations":[]},"micro":{"schema":"libra.micro_memory.v1","scopeKey":"copy binding","worldlineId":"copy binding","sessionEpoch":0,"turn":1,"sourceRevisionId":"copy binding","sourceDigest":"copy binding","claims":[]},"timeAdvance":{"kind":"none"}}. Copy every binding value exactly; personCandidates is an object, never an array; timeAdvance belongs ONLY at the root envelope next to personCandidates and micro, never inside micro.',
         'micro has schema libra.micro_memory.v1, scopeKey, worldlineId, sessionEpoch, turn, sourceRevisionId, sourceDigest and claims.',
         'Each claim has changeKind (event, person, relation, world, thread or correction), text, actor, target, temporalRole (current, historical, hypothetical or uncertain), certainty (confirmed or uncertain), epistemicStatus (observed, reported or uncertain), stateChangeType (none, set or clear), and evidence with role, messageId, startOffset, endOffset and exactQuote.',
-        'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. Copy an evidenceCandidates object unchanged when it supports the claim. claims is an array; each claim.evidence is an object.',
+        'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. claims is an array; each claim.evidence is an object.',
         'For every observed current set/clear change, include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
         'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. Use appearance, background, personality, speech, habits or abilities only for a lasting trait the turn states as characteristic, and copy a complete phrase that names it (e.g. 흰 머리를 단발로 땋아 내린), never a bare predicate such as 차가워졌다; a momentary look, tone or single action is condition or emotion. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world sceneTime takes a value copied from the quote. world rule takes either a quoted rule string, or {"text":copied from the quote,"scopeName":cited place name or "","exceptions":[{"locationName":cited place,"condition":copied from the quote,"effect":copied from the quote}]}; use the object when the source states a scope or exception. Never omit a stated exception or invent permission from a rule. world description takes one lasting purpose or feature of the place copied from the quote (never a passing condition). For domain narrative (target {scope:"current_narrative"}) summary takes one quoted sentence describing the established current situation, never a recap invented from prior State; momentum takes one quoted sentence of the central pressure now established; locks take value {"title":"short title","summary":copied from the quote,"status":"active|released"} for a condition later scenes must keep while it holds (a threat in force, a captivity, a standing deal), released with the same title when the turn ends it. For narrative threads/arcs/resolvedArcs/turningPoints/motifs/closedThreads/events you may propose a source-bound candidate as stateIntent, with value {title,summary,status} or a quoted string. This proposal is retained as Micro data for the next Canonical synthesis; it NEVER authorizes directly writing those State fields. Use only what this turn supports: a possible turning point, recurrence, task fulfillment or closure is a candidate, not a confirmed cross-turn conclusion. Different candidates must remain separate claims. Canonical reads the original turns together with ALL verified Micro claims and decides what to confirm, revise or reject. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
         'LOCATION VALUE: copy only the destination or current place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
@@ -54100,7 +54114,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'CURRENT CONDITIONS: currentConditions lists what State now says about people named in this turn. Before finishing, check every row: does this turn show the person doing something that condition rules out? Someone listed as 잠들었다 who now walks into a room is awake. If so, add a claim quoting that sentence, with stateIntent {"domain":"character","target":{"entityName":"name"},"field":"condition","operation":"set","value":"new condition"} when the quote states one, otherwise operation clear without value and stateChangeType clear. Never clear one only because the turn does not mention it.',
         'CHANGE EXAMPLE (shape only, never copy these source facts): for source 아린이 기절했다. with messageId a1, a claim is {"changeKind":"person","text":"아린이 기절했다.","actor":"아린","target":"","temporalRole":"current","certainty":"confirmed","epistemicStatus":"observed","stateChangeType":"set","stateIntent":{"domain":"character","target":{"entityName":"아린"},"field":"condition","operation":"set","value":"기절했다"},"evidence":{"role":"assistant","messageId":"a1","startOffset":0,"endOffset":9,"exactQuote":"아린이 기절했다."}}. A question or an unperformed plan never proves that change.',
         'Offsets are UTF-16 indices in the exact U or A text. Quote only an exact contiguous source span. Do not invent an outcome from a request, intention or report.',
-        'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. CURRENT OBSERVATION VS BACKGROUND: direct current presence ("서재에 있다") or state transition ("서재로 들어갔다") in this turn is admitted with stateChangeType:set, temporalRole:current, certainty:confirmed, epistemicStatus:observed. Enduring facts directly stated in this turn (appearance, background, personality, hobbies, ability, affiliation, rules) use stateChangeType:set with stateIntent like any current fact. Only ungrounded rumors remain stateChangeType:none without stateIntent. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
+        'Evidence and person span role is exactly user or assistant, never subject, narrator or description. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. CURRENT OBSERVATION VS BACKGROUND: direct current presence ("서재에 있다") or state transition ("서재로 들어갔다") in this turn is admitted with stateChangeType:set, temporalRole:current, certainty:confirmed, epistemicStatus:observed. Enduring facts directly stated in this turn (appearance, background, personality, hobbies, ability, affiliation, rules) use stateChangeType:set with stateIntent like any current fact. Only ungrounded rumors remain stateChangeType:none without stateIntent. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
         'Write each claim text in the language of the source turn, keeping names, numbers and quantities exactly as written there; recall searches this text with the user\'s own words.',
         'Describe this turn\'s changes and precise evidence only; do not recap five turns or merge identities. Return JSON only.'
       ].join('\n');
@@ -54125,25 +54139,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
           exactQuote: span.exactQuote, alias: span.alias, uncertainty: span.uncertainty })),
         user: { messageId: receipt.user?.chatId, text: receipt.user?.text },
         assistant: { messageId: receipt.assistant?.chatId, text: receipt.assistant?.text }
-        ,evidenceCandidates: ['user', 'assistant'].flatMap(role => {
-          const row = asObject(receipt[role]), source = string(row.text || ''), spans = [];
-          for (const match of source.matchAll(/\S[\s\S]*?(?:[.!?](?=\s|$)|$)/gu)) {
-            let start = match.index, end = start + match[0].length;
-            while (start < end) {
-              while (start < end && /\s/u.test(source[start])) start += 1;
-              if (start >= end) break;
-              let stop = Math.min(end, start + 600);
-              if (stop < end && /[\uD800-\uDBFF]/u.test(source[stop - 1])
-                && /[\uDC00-\uDFFF]/u.test(source[stop])) stop -= 1;
-              while (stop > start && /\s/u.test(source[stop - 1])) stop -= 1;
-              if (stop <= start) break;
-              spans.push({ role, messageId: string(row.chatId || ''), startOffset: start,
-                endOffset: stop, exactQuote: source.slice(start, stop) });
-              start = stop;
-            }
-          }
-          return spans;
-        })
       });
       const parseMicroProducerEnvelope = rawContent => {
         const raw = string(rawContent || '').trim();
@@ -59663,10 +59658,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'ID FORMAT: use simple ASCII counters e1,e2,... for tempId and f1,f2,... for tempFactId. Copy those exact IDs into all references and stateBindings. Never transliterate a name into an ID or use visually similar non-ASCII letters. Keep the original language in names, text and quotations.',
       'LITERAL ENTITY NAMES: copy each name as one literal contiguous phrase from its own quotation. Do not invent descriptive titles by joining distant words. A rule about a place is a rule fact on that place, not a newly titled rule entity. A promise or question may use a short literal name such as 약속 or 공연 허가 when that exact phrase is cited; keep its full meaning in the thread value. Do not drop a supported rule or thread merely to avoid extracting it.',
       'Fact: {tempFactId,domain,subjectTempRef,claimKind,values,text,temporalRole:current_sequence|historical|flashback|reported|hypothetical|uncertain,certainty:confirmed|uncertain|conflict|unknown,evidenceSpans:[{ref,quote}],dependsOn:[]}. Keep text concise; use the shortest exact supporting quotation (2–320 normalized characters) from its row, not a whole passage or unrelated name.',
-      'claimKind→domain: event→event; location|character_state|character_emotion|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state|world_description→world; thread→narrative.',
+      'claimKind→domain: event→event; location|character_state|character_emotion|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state|world_description→world; thread|story_arc|turning_point|motif|continuity_lock|story_momentum→narrative.',
       'PROFILE COVERAGE: before finishing, check each person across all rows for directly stated appearance, background (name, age, occupation, family role, adoption), characteristic personality or speech, habits, abilities, lasting preferences/dislikes/fears and standing boundaries. Narration describing a person is evidence; write only what the cited rows say. Lore and character cards clarify identity only: never add, translate or embellish a trait from them (no extra adjectives, colors or details the rows do not state). One fact per item with its own quote; background may be historical.',
       'PLACE DESCRIPTION: world_description (domain world, subject a location/organization/object) values {description:["one lasting purpose, background or feature"]}. Emit one for each named place the rows describe: what it is for, who runs or lives in it, how it is laid out or looks. A passing scene condition is world_state, never a description.',
       'THREAD CLOSURE: when a listed V5 THREAD CANDIDATE is carried out, answered, broken or withdrawn here, emit it with link:"resolve", its exact alias, status resolved, the matching resolution and the outcome row as evidence. Reaffirm only an obligation restated and still unmet; a partly met one stays open.',
+      'STORY STRUCTURE (v5): when 3+ confirmed current_sequence events/threads occur, also emit supported narrative structure facts (domain:"narrative", subjectTempRef pointing to a {tempId,name:"short title",type:"world",kind:"thread",evidenceSpans} entity, temporalRole:"current_sequence", certainty:"confirmed"): story_arc values:{arc:{summary,status:"active|dormant|resolved"}}, turning_point values:{turningPoint:{summary}}, motif values:{motif:{summary}} (requires evidenceSpans across >=2 distinct turns), continuity_lock values:{lock:{summary,status:"active|released"}}, story_momentum values:{momentum:{summary}}. Do not bind structure facts in stateBindings.',
       'Character information: claimKind:"character_info", domain:"character", values:{category,content}; category=appearance|background|personality|speech|habits|abilities|goal|emotion|preference|dislike|fear|boundary; habits include hobbies and habitual behavior; boundary is a standing limit protecting the person or theirs (not a one-time protest, a request, or an order imposed on others); content is one concise string naming the topic. Emit a fact for every category the source directly states; leave only what the source does not state unset. Unknown categories remain memory without profile updates.',
       'v5 DURABLE PREFERENCES: character_preference, domain character, values:{preferences:[{content:"directly stated",topic:"exact topic",kind:"preference|dislike|fear"}]}; emit every directly stated preference, dislike or fear. Runtime binds resolved subject Registry identity plus topic; retain separate topics.',
       'v5 SCOPED BOUNDARIES: character_boundary, domain character, values:{boundaries:[{content,topic,kind:boundary|medical_or_food_boundary,scope:{subjectRef,targetRef,act,when}}]}. Use source-supported entity temp IDs only; Registry resolves them. Never invent persistent IDs or match targets by name alone. An explicit unresolved target is not empty. Empty axes mean unknown, not all targets/times; keep distinct subject/target/act/when combinations.',
@@ -60041,6 +60037,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!persons.length) return null;
       const windows = unifiedProfileCueWindows(batch);
       if (!windows.length) return null;
+      const existingFacts = asArray(artifact.facts);
+      const hasProfileCue = windows.some(w => UNIFIED_PROFILE_CUE.test(w.text));
+      if (!hasProfileCue) {
+        const windowsText = windows.map(w => w.text).join('\n');
+        const subCues = [
+          [/(머리카락|눈동자|붉은 눈|검은 머리|흰 머리|hair|eyes)/i, () => !/특징\d/.test(windowsText) && existingFacts.some(f => f?.claimKind === 'character_appearance')],
+          [/(평소처럼|매일|습관|취미|habit)/i, () => existingFacts.some(f => f?.claimKind === 'character_habit' || (f?.claimKind === 'character_info' && f.values?.category === 'habits'))],
+          [/(목표|지켜야|보호|goal)/i, () => existingFacts.some(f => (f?.claimKind === 'character_goal' && !goalValueIsObservedAction(f.values?.goal)) || (f?.claimKind === 'character_info' && f.values?.category === 'goal'))],
+          [/(운영|관리|manage)/i, () => existingFacts.some(f => f?.claimKind === 'management')],
+          [/(입양|전교|고등학생)/i, () => existingFacts.some(f => f?.claimKind === 'character_background' || (f?.claimKind === 'character_info' && f.values?.category === 'background'))],
+          [/(도착|혼자 왔)/i, () => existingFacts.some(f => f?.claimKind === 'location' || (f?.claimKind === 'thread' && ['resolved', 'closed'].includes(f.values?.thread?.status)))],
+          [/(이행|돌려주|반환|완료|fulfilled)/i, () => existingFacts.some(f => f?.claimKind === 'thread' && (['resolved', 'closed'].includes(f.values?.thread?.status) || f.values?.thread?.link === 'resolve'))]
+        ];
+        const matched = subCues.filter(([re]) => re.test(windowsText));
+        if (matched.length > 0 && matched.every(([, covered]) => covered())) return null;
+      }
       const known = asArray(basis?.head?.characters).flatMap(row => ['appearance','background','personality','speech','habits','abilities','goal','emotion','knowledge','preferences','boundaries'].flatMap(field =>
         (Array.isArray(row?.state?.[field]) ? row.state[field] : row?.state?.[field] ? [row.state[field]] : []).map(item => ({ person: string(row.name), field, content: compact(string(item?.content || item), 160) }))));
       const already = asArray(artifact.facts).filter(f => f?.domain === 'character')
@@ -72212,8 +72224,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
           const review = source.review;
           const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
-          const rows = facts.flatMap((fact, index) => (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected'
-            || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') ? [] : [{
+          const rows = facts.flatMap((fact, index) => (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected' || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') ? [] : [{
             domain: fact.domain, text: string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {})),
             evidenceKeys: ['canonical:' + memory.memoryId + ':' + memory.revision + ':' + fact.assertionId]
           }]);
@@ -80740,6 +80751,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-group-lens__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;padding:2px 0 8px;border-bottom:2px solid var(--border)}',
     '.lens-group-lens__head strong{font:750 15px/1.4 var(--font-sans);color:var(--text)}',
     '.lens-group-lens__head span{font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
+    '.lens-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}',
+    '.lens-card-grid>.lens-item{min-width:0;margin:0}',
+    '.lens-card-grid>.lens-item.is-editing{grid-column:1/-1}',
+    '@container app (max-width:640px){.lens-card-grid{grid-template-columns:minmax(0,1fr)}}',
     '.lens-group-person{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);contain:layout style}',
     '.lens-group-person__summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 14px;border-radius:var(--r-md);cursor:pointer;user-select:none;background:var(--surface)}',
     '.lens-group-person__summary:hover{background:var(--surface2)}',
@@ -80751,6 +80766,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-group-person__chev{display:inline-block;line-height:1;font-size:11px;color:var(--text3)}',
     '.lens-group-person[open]>.lens-group-person__summary .lens-group-person__chev{transform:rotate(180deg)}',
     '.lens-group-person__body{padding:4px 14px 12px;display:grid;gap:10px;background:var(--surface);border-top:1px solid var(--border);border-radius:0 0 var(--r-md) var(--r-md)}',
+    '.lens-group-person__body>.lens-card-grid{padding-top:8px}',
     '.lens-group-span{border:0;border-radius:0;background:transparent;content-visibility:auto;contain-intrinsic-size:auto 420px;contain:layout style}',
     '.lens-group-span__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:6px 0 5px;background:transparent;border-bottom:1px dashed var(--border);font:700 11.5px/1.4 var(--font-sans);color:var(--accent-ink);letter-spacing:.02em}',
     '.lens-group-span__list{display:grid;gap:0}',
@@ -85370,6 +85386,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.bookTurnEvidence = null; Gui.canonicalReaderMicroPublicationKey = '';
     Gui.microReader = null;
     Gui.lensReader = null;
+    Gui.lensEditing = null;
     Gui.evidenceDrawerOpen = false; Gui.evidenceDrawerChain = null; Gui.evidenceDrawerTitle = '';
     Gui.worldManagerCanonicalMemoryFocus = null;
   };
@@ -85520,7 +85537,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         filterEvidence: text(Gui.lensReader?.filterEvidence || 'all'),
         filterPerson: text(Gui.lensReader?.filterPerson || 'all'),
         query: text(Gui.lensReader?.query || ''),
-        groupMode: ['lens_person_span', 'lens_span', 'flat'].includes(Gui.lensReader?.groupMode) ? Gui.lensReader.groupMode : 'lens_person_span',
+        groupMode: ['flat', 'person', 'lens_person_span', 'lens_span'].includes(Gui.lensReader?.groupMode) ? Gui.lensReader.groupMode : 'flat',
         turnOrder: ['desc', 'asc'].includes(Gui.lensReader?.turnOrder) ? Gui.lensReader.turnOrder : 'desc',
         collapsedGroups: Gui.lensReader?.collapsedGroups instanceof Set ? Gui.lensReader.collapsedGroups : new Set(),
         category: 'current',
@@ -89107,10 +89124,101 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     });
   };
 
+  const groupLensMemoriesByPersonForReader = (items = [], { lenses = [], filterPerson = 'all', turnOrder = 'desc' } = {}) => {
+    const lensOrder = new Map(guiAsArray(lenses).map((lens, idx) => [text(lens?.lensId || ''), idx]));
+    const personMap = new Map();
+    for (const item of guiAsArray(items)) {
+      const person = primaryLensPerson(item, filterPerson);
+      if (!personMap.has(person.key)) {
+        personMap.set(person.key, { key: person.key, name: person.name, count: 0, lensIds: new Set(), minStart: Infinity, maxEnd: 0, items: [] });
+      }
+      const pg = personMap.get(person.key);
+      pg.count += 1;
+      const lid = text(item?.lensId || '');
+      if (lid) pg.lensIds.add(lid);
+      const start = Number(item?.turnRange?.start || 0);
+      const end = Number(item?.turnRange?.end || 0);
+      if (start > 0 && start < pg.minStart) pg.minStart = start;
+      if (end > pg.maxEnd) pg.maxEnd = end;
+      pg.items.push(item);
+    }
+    const sortItems = list => [...list].sort((a, b) => {
+      const aStart = Number(a?.turnRange?.start || 0), aEnd = Number(a?.turnRange?.end || 0);
+      const bStart = Number(b?.turnRange?.start || 0), bEnd = Number(b?.turnRange?.end || 0);
+      const turnCmp = turnOrder === 'asc'
+        ? aStart - bStart || aEnd - bEnd
+        : bEnd - aEnd || aStart - bStart;
+      if (turnCmp !== 0) return turnCmp;
+      const ia = lensOrder.has(text(a?.lensId || '')) ? lensOrder.get(text(a?.lensId || '')) : Number.MAX_SAFE_INTEGER;
+      const ib = lensOrder.has(text(b?.lensId || '')) ? lensOrder.get(text(b?.lensId || '')) : Number.MAX_SAFE_INTEGER;
+      return ia - ib || Number(a?.createdAt || 0) - Number(b?.createdAt || 0);
+    });
+    return [...personMap.values()].map(pg => ({
+      key: pg.key,
+      name: pg.name,
+      count: pg.count,
+      lensCount: pg.lensIds.size,
+      rangeLabel: pg.maxEnd > 0 && pg.minStart < Infinity ? (pg.minStart === pg.maxEnd ? `T${pg.minStart}` : `T${pg.minStart}–T${pg.maxEnd}`) : '',
+      items: sortItems(pg.items)
+    })).sort((a, b) => (
+      Number(['unknown', '__unassigned__'].includes(a.key)) - Number(['unknown', '__unassigned__'].includes(b.key))
+      || b.count - a.count
+      || a.name.localeCompare(b.name, 'ko')
+    ));
+  };
+
   const buildGroupedLensRecords = (items, { sectionPrefix, reader, filterLensId, filterPerson, lenses, makeCardOptions }) => {
+    const personGroupKeys = [];
+    if (reader.groupMode === 'person') {
+      const personGroups = groupLensMemoriesByPersonForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
+      const nodes = personGroups.map(personGroup => {
+        const groupKey = `${sectionPrefix}:person:${personGroup.key}`;
+        personGroupKeys.push(groupKey);
+        const isOpen = !reader.collapsedGroups?.has(groupKey);
+        const bodyNode = guiEl('div', { class: 'lens-group-person__body' });
+        let hydrated = false;
+        const ensureHydrated = () => {
+          if (hydrated) return;
+          hydrated = true;
+          appendGuiChildren(bodyNode, [
+            guiEl('div', { class: 'lens-card-grid', dataset: { lensCardGrid: 'true' } }, personGroup.items.map(item => lensItemCard(item, {
+              ...makeCardOptions(item),
+              showLens: filterLensId === 'all'
+            })))
+          ]);
+        };
+        if (isOpen) ensureHydrated();
+        const details = guiEl('details', {
+          class: 'lens-group-person',
+          open: isOpen,
+          dataset: { lensPersonGroup: personGroup.key, lensGroupKey: groupKey, guiManagedDisclosure: 'true' }
+        }, [
+          guiEl('summary', { class: 'lens-group-person__summary', onClick: () => ensureHydrated() }, [
+            guiEl('span', { class: 'lens-group-person__title' }, [
+              guiEl('span', { text: personGroup.name }),
+              guiEl('b', { text: `${personGroup.count}건` })
+            ]),
+            guiEl('span', { class: 'lens-group-person__meta' }, [
+              personGroup.rangeLabel ? guiEl('span', { text: personGroup.rangeLabel }) : null,
+              filterLensId === 'all' && personGroup.lensCount > 1 ? guiEl('span', { text: `렌즈 ${personGroup.lensCount}개` }) : null,
+              guiEl('span', { class: 'lens-group-person__chev', text: '▾', 'aria-hidden': 'true' })
+            ].filter(Boolean))
+          ]),
+          bodyNode
+        ]);
+        details._hydrateLensGroup = ensureHydrated;
+        details.addEventListener('toggle', () => {
+          if (details.open) ensureHydrated();
+          if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+          if (details.open) reader.collapsedGroups.delete(groupKey);
+          else reader.collapsedGroups.add(groupKey);
+        });
+        return details;
+      });
+      return { nodes, personGroupKeys };
+    }
     const groups = groupLensMemoriesForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
     const showLensHeader = filterLensId === 'all' || groups.length > 1;
-    const personGroupKeys = [];
     const renderSpanSection = (spanGroup, primaryPersonKey = '') => guiEl('section', {
       class: 'lens-group-span',
       dataset: { lensSpanGroup: spanGroup.label }
@@ -89134,7 +89242,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             guiEl('strong', { text: lensGroup.lensName }),
             guiEl('span', { text: `${lensGroup.count}건` })
           ]) : null,
-          ...lensGroup.flatItems.map(item => lensItemCard(item, makeCardOptions(item)))
+          guiEl('div', { class: 'lens-card-grid', dataset: { lensCardGrid: 'true' } }, lensGroup.flatItems.map(item => lensItemCard(item, makeCardOptions(item))))
         ].filter(Boolean));
       }
       if (reader.groupMode === 'lens_span') {
@@ -89312,6 +89420,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       lensSeg(reader.category, [['current', '렌즈 기억'], ['excluded', `제외 ${excluded.length}`]], value => {
         reader.category = value;
+        Gui.lensEditing = null;
         rerenderLensReaderInPlace();
       }, '렌즈 기록 범주'),
       ...filters
@@ -89371,9 +89480,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           ? buildGroupedLensRecords(inheritedItems, { sectionPrefix: 'inherited', reader, filterLensId, filterPerson, lenses, makeCardOptions: makeInheritedCardOptions })
           : { nodes: [], personGroupKeys: [] };
         const allPersonKeys = [...currentGrouped.personGroupKeys, ...inheritedGrouped.personGroupKeys];
+        const hasPersonGroups = (reader.groupMode === 'person' || reader.groupMode === 'lens_person_span') && allPersonKeys.length > 0;
         const toolbar = guiEl('div', { class: 'lens-toolbar', dataset: { lensToolbar: 'true' } }, [
-          lensSeg(reader.groupMode, [['lens_person_span', '종류 · 인물 · 구간'], ['lens_span', '종류 · 구간'], ['flat', '개별 카드']], value => {
+          lensSeg(reader.groupMode, [['flat', '개별 카드'], ['person', '인물별'], ['lens_person_span', '종류 · 인물 · 구간'], ['lens_span', '종류 · 구간']], value => {
             reader.groupMode = value;
+            Gui.lensEditing = null;
             rerenderLensReaderInPlace();
           }, '렌즈 보기 방식'),
           guiEl('div', { class: 'lens-toolbar__actions' }, [
@@ -89387,7 +89498,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 rerenderLensReaderInPlace();
               }
             }),
-            reader.groupMode === 'lens_person_span' && allPersonKeys.length ? guiEl('button', {
+            hasPersonGroups ? guiEl('button', {
               class: 'btn btn--sm',
               type: 'button',
               dataset: { lensExpandAll: 'true' },
@@ -89407,7 +89518,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 }
               }
             }) : null,
-            reader.groupMode === 'lens_person_span' && allPersonKeys.length ? guiEl('button', {
+            hasPersonGroups ? guiEl('button', {
               class: 'btn btn--sm',
               type: 'button',
               dataset: { lensCollapseAll: 'true' },

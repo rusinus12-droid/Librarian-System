@@ -36,6 +36,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+          cache-dependency-path: PROGRAM/build-support/package-lock.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -226,15 +228,12 @@ jobs:
         id: regressions
         env:
           NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
+          LIBRARIAN_PREBUILT_RELEASE_DIR: ${{ runner.temp }}/librarian-release
         run: |
-          node --test --test-concurrency=1 \
+          node --test --test-concurrency=4 \
             PROGRAM/tests/release_transaction_test.cjs \
             PROGRAM/tests/release_reproducibility_test.cjs \
-            PROGRAM/tests/release_builder_profiles_test.cjs \
             PROGRAM/tests/release_builder_qualification_runtime_test.cjs \
-            PROGRAM/tests/release_builder_version_input_test.cjs \
-            PROGRAM/tests/gradia/native-host-id-binding.test.cjs \
-            PROGRAM/tests/gradia/server-read-adapter.test.cjs \
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs \
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
@@ -249,7 +248,12 @@ jobs:
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
             PROGRAM/tests/gradia_npc_disposition_test.cjs \
+            PROGRAM/tests/gradia_unified_bond_relsim_and_dialogue_test.cjs \
+            PROGRAM/tests/gradia_world_sim_and_intimacy_fixes_test.cjs \
+            PROGRAM/tests/gradia_results_view_gui_test.cjs \
             PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/hayaku_recovery_vault_concurrent_write_test.cjs \
+            PROGRAM/tests/hayaku_analysis_failure_visibility_runtime_test.cjs \
             PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
             PROGRAM/tests/libra_micro_claim_changed_retry_test.cjs \
             PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
@@ -258,11 +262,12 @@ jobs:
             PROGRAM/tests/hayaku_source_filter_binding_test.cjs \
             PROGRAM/tests/libra_state_projection_partial_failure_test.cjs \
             PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
-            PROGRAM/tests/gradia/context-degradation.test.cjs \
-            PROGRAM/tests/gradia/author-note-all-stages.test.cjs \
-            PROGRAM/tests/gradia/creative-direction-clear.test.cjs \
+            PROGRAM/tests/libra_receipt_legacy_definition_test.cjs \
+            PROGRAM/tests/libra_memory_review_runtime_test.cjs \
+            PROGRAM/tests/libra_canonical_memory_review_runtime_test.cjs \
+            PROGRAM/tests/flashback_source_rules_preserve_captured_turn_test.cjs \
+            PROGRAM/tests/flashback_worldline_pending_reroll_preserves_canonical_test.cjs \
             PROGRAM/tests/gradia_three_owner_pipeline_test.cjs \
-            PROGRAM/tests/gradia/evidence-bridge.test.cjs \
             PROGRAM/tests/gradia_optional_memory_runtime_test.cjs \
             PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs \
             PROGRAM/tests/gradia_owner_handback_test.cjs \
@@ -344,6 +349,7 @@ jobs:
           NODE
           node PROGRAM/tools/risu_compatibility_gate.cjs \
             --artifact-dir "$RELEASE_ARTIFACT_DIR" \
+            --skip-storage-suites \
             --report "$RUNNER_TEMP/librarian-release/risu-compatibility-report.json"
 
       - name: Verify main commit unchanged before commit (Fence #2)

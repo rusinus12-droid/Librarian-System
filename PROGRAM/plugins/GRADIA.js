@@ -28446,7 +28446,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // Evidence lines carry where they came from and how sure their timing is.
   // LIBRA's story clock reaches GRADIA as a line in the LIB evidence, and lens notes carry the
   // story day of their turn ("이야기 12일째"). GRADIA reads both and stores neither.
-  const BODY_STATE_CLOCK_RE = /\[STORY CLOCK\]\s*현재\s*:\s*이야기\s*(\d+)일째(\(추정\))?([^\n]*)/;
+  const BODY_STATE_CLOCK_RE = /\[STORY CLOCK\]\s*현재\s*:\s*(?:이야기|기록)\s*(\d+)일째(\(추정\))?([^\n]*)/;
   const BODY_STATE_NOTE_DAY_RE = /이야기\s*(\d+)일째(\(추정\))?/;
   const bodyStateStoryClock = (settings = {}) => {
     const match = String(libEvidencePrompt(settings) || '').match(BODY_STATE_CLOCK_RE);
@@ -35250,6 +35250,7 @@ function createMemorySuiteSourceRuleSync(config) {
     const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
     return await new Promise(resolve=>{
       const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
+      record.timer?.unref?.();
       pending.set(id,record);
       Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
         .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
@@ -35258,9 +35259,10 @@ function createMemorySuiteSourceRuleSync(config) {
   // state per peer: same | different (by the rules each one actually runs, saved or shared
   // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
   // what was seen there, passed back as `expected` when applying.
-  const compare=async()=>{
+  const compare=async(only=peers)=>{
     await config.policy.ready();const mine=fingerprint(effective());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+    const targets=Array.isArray(only)?peers.filter(peer=>only.includes(peer)):peers;
+    const answers=await Promise.all(targets.map(async peer=>{const answer=await ask(peer,'describe');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const builtIn=!answer.result?.rules;
       // An older peer does not report what it runs without saved rules; it is not the shared standard.
@@ -35867,26 +35869,41 @@ function mountMemorySuiteReanalysisReview(container,config) {
       Runtime.libSourceInputRulesAt = Date.now();
       return saved;
     }
+    const conn = LibReadConnection.status();
+    const activeOwners = Array.isArray(conn?.activeOwners)
+      ? conn.activeOwners.filter(peer => ['libra', 'hayaku', 'flashback'].includes(peer))
+      : [];
+    if (conn?.state !== 'connected' || activeOwners.length === 0) {
+      Runtime.libSourceInputRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
+      return Runtime.libSourceInputRules;
+    }
     const now = Date.now();
     if (Runtime.libSourceInputRulesAt && now - Runtime.libSourceInputRulesAt < 15000 && Runtime.libSourceInputRules) {
       return Runtime.libSourceInputRules;
     }
     if (gradiaSourceRuleSyncInFlight) return gradiaSourceRuleSyncInFlight;
     gradiaSourceRuleSyncInFlight = (async () => {
+      let raceTimer = null;
       try {
         const states = await Promise.race([
-          getGradiaSourceRuleSync().compare(),
-          new Promise(resolve => setTimeout(() => resolve({}), 650))
+          getGradiaSourceRuleSync().compare(activeOwners),
+          new Promise(resolve => {
+            raceTimer = setTimeout(() => resolve({}), 650);
+            raceTimer?.unref?.();
+          })
         ]);
-        for (const peer of ['libra', 'hayaku', 'flashback']) {
+        for (const peer of activeOwners) {
           if (states[peer]?.rules) {
             Runtime.libSourceInputRules = memorySuiteNormalizeSourceRules(states[peer].rules);
             Runtime.libSourceInputRulesAt = Date.now();
             return Runtime.libSourceInputRules;
           }
         }
-      } catch (_) {}
+      } catch (_) {} finally {
+        if (raceTimer) clearTimeout(raceTimer);
+      }
       Runtime.libSourceInputRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
+      Runtime.libSourceInputRulesAt = Date.now();
       return Runtime.libSourceInputRules;
     })().finally(() => { gradiaSourceRuleSyncInFlight = null; });
     return gradiaSourceRuleSyncInFlight;
@@ -49107,6 +49124,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (disposed || !explicit || reconnectTimer || LIB_READ_RECONNECT_TERMINAL.includes(code) || readSource === 'off') return;
       const delay = Math.min(60000, 2000 * 2 ** Math.min(5, reconnectAttempts));
       reconnectTimer = setTimeout(() => { reconnectTimer = null; void reconnectNow(); }, delay);
+      reconnectTimer?.unref?.();
     };
     // Called before a memory read. Waits briefly for a saved connection to come back;
     // the read itself still applies every scope, receipt and currentness check.
@@ -49175,6 +49193,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try { await assertScope(scope); if (epoch === generation) watch(epoch); }
         catch (_) { if (epoch === generation) invalidate('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       }, 500);
+      timer?.unref?.();
     };
     const performConnect = async (startup = false, requestedOwners = null, requestedSource = null, config = {}) => {
       if (typeof startup === 'string') {
@@ -62751,6 +62770,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       finally { gradiaRetraceIpcRetryRunning = false; }
       if (!gradiaRetraceUnloaded && !registered.retraceIpc && gradiaRetraceIpcRetryAttempts < 40 && gradiaRetraceIpcRetryTimer === null) {
         gradiaRetraceIpcRetryTimer = setTimeout(() => { gradiaRetraceIpcRetryTimer = null; void ensureGradiaRetraceIpc(); }, 500);
+        gradiaRetraceIpcRetryTimer?.unref?.();
       }
     };
 

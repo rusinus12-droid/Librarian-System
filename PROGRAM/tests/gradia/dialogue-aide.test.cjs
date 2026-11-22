@@ -78,7 +78,7 @@ test('화술·대화 AIDE는 메아리 문답을 패킷에 탐지하고, 초안�
   assert.equal(readings[0].repairs.length, 1, 'only grounded quote survives');
   assert.equal(readings[0].repairs[0].draftQuote, ECHO_QUOTE);
   assert.equal(readings[0].repairs[0].issue, 'echo_loop');
-  assert.equal(readings[0].repairs[0].applied, false, 'no edits applied so applied is false');
+  assert.equal(readings[0].repairs[0].applied, true, 'dialogue repair is applied directly to the stage draft');
   assert.equal(readings[0].dropped.length, 1, 'hallucinated quote is dropped');
   assert.equal(readings[0].dropped[0].reason, 'draft_quote_not_in_draft');
 });

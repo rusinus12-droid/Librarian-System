@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+          cache-dependency-path: PROGRAM/build-support/package-lock.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -107,7 +109,7 @@ jobs:
         env:
           NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
         run: |
-          node --test --test-concurrency=2 \
+          node --test --test-concurrency=4 \
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
             PROGRAM/tests/gradia_world_dynamics_aide_test.cjs \
@@ -120,7 +122,12 @@ jobs:
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
             PROGRAM/tests/gradia_npc_disposition_test.cjs \
+            PROGRAM/tests/gradia_unified_bond_relsim_and_dialogue_test.cjs \
+            PROGRAM/tests/gradia_world_sim_and_intimacy_fixes_test.cjs \
+            PROGRAM/tests/gradia_results_view_gui_test.cjs \
             PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/hayaku_recovery_vault_concurrent_write_test.cjs \
+            PROGRAM/tests/hayaku_analysis_failure_visibility_runtime_test.cjs \
             PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
             PROGRAM/tests/libra_micro_claim_changed_retry_test.cjs \
             PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
@@ -129,11 +136,12 @@ jobs:
             PROGRAM/tests/hayaku_source_filter_binding_test.cjs \
             PROGRAM/tests/libra_state_projection_partial_failure_test.cjs \
             PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
-            PROGRAM/tests/gradia/context-degradation.test.cjs \
-            PROGRAM/tests/gradia/author-note-all-stages.test.cjs \
-            PROGRAM/tests/gradia/creative-direction-clear.test.cjs \
+            PROGRAM/tests/libra_receipt_legacy_definition_test.cjs \
+            PROGRAM/tests/libra_memory_review_runtime_test.cjs \
+            PROGRAM/tests/libra_canonical_memory_review_runtime_test.cjs \
+            PROGRAM/tests/flashback_source_rules_preserve_captured_turn_test.cjs \
+            PROGRAM/tests/flashback_worldline_pending_reroll_preserves_canonical_test.cjs \
             PROGRAM/tests/gradia_three_owner_pipeline_test.cjs \
-            PROGRAM/tests/gradia/evidence-bridge.test.cjs \
             PROGRAM/tests/gradia_optional_memory_runtime_test.cjs \
             PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs \
             PROGRAM/tests/gradia_owner_handback_test.cjs \

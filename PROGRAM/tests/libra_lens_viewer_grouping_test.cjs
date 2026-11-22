@@ -507,7 +507,64 @@ test('groupLensMemoriesForReader groups by lens -> primary person -> turn range 
   assert.equal(totalInGroups, items.length);
 });
 
-test('lens viewer refreshes stale CSS, skips managed disclosures on restore, expands/collapses in-place with lazy hydration, and preserves scroll/input', async t => {
+test('groupLensMemoriesByPersonForReader groups memories across lenses by primary person', async t => {
+  const seam = '  const groupLensMemoriesByPersonForReader = ';
+  const h = await createLibraVmHarness({}, {}, {
+    transformSource: raw => {
+      const source = raw.replace(/\r\n/g, '\n');
+      assert.ok(source.includes(seam));
+      return source.replace(seam, '  globalThis.__groupLensMemoriesByPersonForReader = (...args) => groupLensMemoriesByPersonForReader(...args);\n' + seam);
+    }
+  });
+  t.after(() => h.cleanup());
+
+  const groupByPerson = (...args) => JSON.parse(JSON.stringify(h.context.__groupLensMemoriesByPersonForReader(...args)));
+  const lenses = [
+    { lensId: 'lens_rel', name: '관계 변화' },
+    { lensId: 'lens_sec', name: '비밀' }
+  ];
+  const items = [
+    {
+      itemId: 'i1', lensId: 'lens_sec', lensName: '비밀', whoTracked: true,
+      turnRange: { start: 1, end: 5 },
+      people: [{ key: 'p_soyeon', name: '천소연', role: 'named' }]
+    },
+    {
+      itemId: 'i2', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: true,
+      turnRange: { start: 11, end: 15 },
+      people: [{ key: 'p_soyeon', name: '천소연', role: 'named' }]
+    },
+    {
+      itemId: 'i3', lensId: 'lens_sec', lensName: '비밀', whoTracked: true,
+      turnRange: { start: 6, end: 10 },
+      people: [{ key: 'p_hayeon', name: '천하연', role: 'named' }]
+    },
+    {
+      itemId: 'i4', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: true,
+      turnRange: { start: 6, end: 10 },
+      people: []
+    },
+    {
+      itemId: 'i5', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: false,
+      turnRange: { start: 6, end: 10 },
+      people: []
+    }
+  ];
+
+  const grouped = groupByPerson(items, { lenses, filterPerson: 'all', turnOrder: 'desc' });
+  assert.deepEqual(
+    grouped.map(pg => ({ key: pg.key, count: pg.count, lensCount: pg.lensCount, rangeLabel: pg.rangeLabel })),
+    [
+      { key: 'p_soyeon', count: 2, lensCount: 2, rangeLabel: 'T1–T15' },
+      { key: 'p_hayeon', count: 1, lensCount: 1, rangeLabel: 'T6–T10' },
+      { key: '__unassigned__', count: 1, lensCount: 1, rangeLabel: 'T6–T10' },
+      { key: 'unknown', count: 1, lensCount: 1, rangeLabel: 'T6–T10' }
+    ]
+  );
+  assert.deepEqual(grouped[0].items.map(i => i.itemId), ['i2', 'i1'], 'descending turn order inside person group');
+});
+
+test('lens viewer defaults to individual card grid, supports character grouping, skips managed disclosures on restore, expands/collapses in-place with lazy hydration, and preserves scroll/input', async t => {
   const dom = createMockDom();
   const seam = '  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
   const h = await createLibraVmHarness({}, {}, {
@@ -549,6 +606,7 @@ test('lens viewer refreshes stale CSS, skips managed disclosures on restore, exp
   assert.equal(writeCount, 1, 'stale style element is refreshed once');
   assert.ok(staleStyle.dataset.libraStyleSig, 'style signature is stored');
   assert.match(staleStyle.textContent, /\.lens-item__head-right\{/);
+  assert.match(staleStyle.textContent, /\.lens-card-grid\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(300px,1fr\)\)/);
   assert.match(staleStyle.textContent, /\.lens-item--compact \.lens-item__head-right \.btn--sm\{/);
   assert.match(staleStyle.textContent, /\.lens-group-span\{[^}]*content-visibility:auto/);
   assert.match(staleStyle.textContent, /\.lens-item:not\(\.lens-item--compact\)\{content-visibility:auto/);
@@ -624,6 +682,7 @@ test('lens viewer refreshes stale CSS, skips managed disclosures on restore, exp
   unmanagedFold.appendChild(unmanagedSummary);
   pageBody.appendChild(unmanagedFold);
 
+  assert.equal(reader.groupMode, 'flat', 'default groupMode is individual cards (flat)');
   const mountedReader = ui.buildBookLensReaderProjection();
   mountedReader.id = 'memory-root';
   mountedReader.dataset.productReadback = 'lens-memory-reader';
@@ -631,7 +690,34 @@ test('lens viewer refreshes stale CSS, skips managed disclosures on restore, exp
   mountedReader.setAttribute('aria-label', '렌즈 기억');
   pageBody.appendChild(mountedReader);
 
+  const defaultGrid = pageBody.querySelector('.lens-card-grid[data-lens-card-grid="true"]');
+  assert.ok(defaultGrid, 'default view renders cards inside .lens-card-grid');
+  const defaultCards = [...pageBody.querySelectorAll('.lens-card-grid > .lens-item')];
+  assert.equal(defaultCards.length, 2);
+  assert.ok(defaultCards.every(card => !String(card.className).includes('lens-item--compact')), 'default flat grid renders full individual cards');
+  assert.equal(pageBody.querySelectorAll('details.lens-group-person').length, 0, 'default view has no person group wrappers');
+
+  // Switch to character-grouped mode ('인물별') and verify .lens-card-grid inside person folders
+  const clickGroupMode = label => {
+    const btn = [...pageBody.querySelectorAll('[data-lens-toolbar="true"] button')].find(b => b.textContent.trim() === label);
+    assert.ok(btn, `missing groupMode button: ${label}`);
+    btn.click();
+  };
+  clickGroupMode('인물별');
+  assert.equal(reader.groupMode, 'person');
   const personDetails = () => [...pageBody.querySelectorAll('details.lens-group-person')];
+  assert.equal(personDetails().length, 2, 'character grouping creates one folder per person');
+  assert.ok(pageBody.querySelectorAll('.lens-group-person__body > .lens-card-grid[data-lens-card-grid="true"] > .lens-item').length === 2, 'character groups render full cards in a grid');
+  assert.ok(pageBody.querySelector('[data-lens-expand-all="true"]'), 'character grouping shows expand-all');
+  assert.ok(pageBody.querySelector('[data-lens-collapse-all="true"]'), 'character grouping shows collapse-all');
+  pageBody.querySelector('[data-lens-collapse-all="true"]').click();
+  assert.ok(personDetails().every(d => d.open === false), 'collapse-all works in character grouping mode');
+  pageBody.querySelector('[data-lens-expand-all="true"]').click();
+  assert.ok(personDetails().every(d => d.open === true), 'expand-all works in character grouping mode');
+
+  // Switch to '종류 · 인물 · 구간' to verify existing compact grouped mode as well
+  clickGroupMode('종류 · 인물 · 구간');
+  assert.equal(reader.groupMode, 'lens_person_span');
   assert.equal(personDetails().length, 2);
   assert.ok(personDetails().every(d => d.open === true), 'all person groups start open');
   assert.ok(personDetails().every(d => d.dataset.guiManagedDisclosure === 'true'));

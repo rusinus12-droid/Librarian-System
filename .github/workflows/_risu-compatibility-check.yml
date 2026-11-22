@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+          cache-dependency-path: PROGRAM/build-support/package-lock.json
 
       - name: Install pinned build dependencies
         run: npm ci --prefix PROGRAM/build-support

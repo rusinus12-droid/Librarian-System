@@ -7,6 +7,7 @@ const sourceVersion=fs.readFileSync(path.join(source,'VERSION.txt'),'utf8').trim
 // Install the source the way a release ships it: a release never carries node_modules
 // (build_distribution PROGRAM_DENY_SEGMENTS). On Linux CI, `npm ci` in build-support leaves
 // .bin symlinks there, which the updater checkpoint correctly refuses.
+const os=require('node:os');
 const copyAsRelease=(from,to)=>fs.cpSync(from,to,{recursive:true,filter:item=>!path.relative(from,item).split(path.sep).includes('node_modules')});
 const targetVersion=sourceVersion.replace(/(\d+)$/,n=>String(Number(n)+1));
 const freePort=()=>new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port));});});
@@ -14,9 +15,13 @@ async function api(data,route,body){const config=JSON.parse(fs.readFileSync(path
 const put=(data,marker)=>api(data,'/v1/kv/set',{namespace:'libra',space:'plugin',key:'phase3-proof',operationId:crypto.randomUUID(),value:{marker}});
 const get=data=>api(data,'/v1/kv/get?namespace=libra&space=plugin&key=phase3-proof');
 (async()=>{let failures=0;
+ const stagedRoot=fs.mkdtempSync(path.join(os.tmpdir(),'librarian-real-server-stage-'));
+ const stagedSource=path.join(stagedRoot,'PROGRAM');
+ copyAsRelease(source,stagedSource);
+ try{
  for(const mode of ['success','candidate_failure','committed_live_failure']){const f=await fixture();try{
-   fs.rmSync(f.p('PROGRAM'),{recursive:true});copyAsRelease(source,f.p('PROGRAM'));
-   fs.rmSync(f.p('.update/PROGRAM.next'),{recursive:true});copyAsRelease(source,f.p('.update/PROGRAM.next'));
+   fs.rmSync(f.p('PROGRAM'),{recursive:true});fs.cpSync(stagedSource,f.p('PROGRAM'),{recursive:true});
+   fs.rmSync(f.p('.update/PROGRAM.next'),{recursive:true});fs.cpSync(stagedSource,f.p('.update/PROGRAM.next'),{recursive:true});
    assert.equal(fs.existsSync(f.p('PROGRAM/build-support/node_modules')),false,'the installed program carries no dependency tree');
    fs.writeFileSync(f.p('.update/PROGRAM.next/VERSION.txt'),targetVersion+'\n');
    const serverPath=f.p('.update/PROGRAM.next/server/server.cjs');fs.writeFileSync(serverPath,fs.readFileSync(serverPath,'utf8').replace(/const SERVER_VERSION = '[^']+';/,`const SERVER_VERSION = '${targetVersion}';`));
@@ -38,5 +43,6 @@ const get=data=>api(data,'/v1/kv/get?namespace=libra&space=plugin&key=phase3-pro
    assert.equal(fs.readFileSync(f.p('DATA/value'),'utf8'),'BEFORE');core.runIntegrity(f.p('PROGRAM'),f.p('DATA'));
    console.log('PASS: real HTTP + SQLite + launcher '+mode);
  }catch(e){failures++;console.error('FAIL: real-server '+mode+' :: '+e.stack);}finally{try{await core.stopServerIfRunning(f.p('PROGRAM'),f.p('DATA'));}catch(_){}f.cleanup();}}
+ }finally{fs.rmSync(stagedRoot,{recursive:true,force:true});}
  assert.equal(failures,0);console.log('remote_update_real_server_runtime_test: PASS');
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

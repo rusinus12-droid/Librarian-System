@@ -135,18 +135,30 @@ async function main() {
   const beforeProgramVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-release-updater-contract-'));
   try {
-    const output = path.join(temp, 'release');
-    const {
-      value: result,
-      inProcessAccesses: buildInProcessAccesses,
-      childAccesses: buildStagingChildAccesses
-    } = await withStagingPackagingDataGuard(
-      dataRoot,
-      temp,
-      ({ buildDistribution }) => buildDistribution({ outputDir: output })
-    );
-    assert.deepEqual(buildInProcessAccesses, [], 'in-process buildDistribution staging/packaging must not access source/user DATA');
-    assert.deepEqual(buildStagingChildAccesses, [], 'staging/packaging child tools must not access source/user DATA');
+    const prebuiltDir = process.env.LIBRARIAN_PREBUILT_RELEASE_DIR ? path.resolve(process.env.LIBRARIAN_PREBUILT_RELEASE_DIR) : '';
+    const prebuiltArchive = prebuiltDir ? path.join(prebuiltDir, expectedAssetName(version)) : '';
+    const prebuiltReport = prebuiltDir ? path.join(prebuiltDir, `Librarian-System-${version}.build-report.json`) : '';
+    let result;
+    if (prebuiltDir && fs.existsSync(prebuiltArchive) && fs.existsSync(prebuiltReport)) {
+      const report = JSON.parse(fs.readFileSync(prebuiltReport, 'utf8'));
+      assert.equal(report.qualification, 'publication_gate', 'prebuilt release report must come from publication_gate');
+      assert.equal(report.packageVersion, version, 'prebuilt release version must match PROGRAM/VERSION.txt');
+      result = { archivePath: prebuiltArchive, report };
+    } else {
+      const output = path.join(temp, 'release');
+      const {
+        value: built,
+        inProcessAccesses: buildInProcessAccesses,
+        childAccesses: buildStagingChildAccesses
+      } = await withStagingPackagingDataGuard(
+        dataRoot,
+        temp,
+        ({ buildDistribution }) => buildDistribution({ outputDir: output })
+      );
+      assert.deepEqual(buildInProcessAccesses, [], 'in-process buildDistribution staging/packaging must not access source/user DATA');
+      assert.deepEqual(buildStagingChildAccesses, [], 'staging/packaging child tools must not access source/user DATA');
+      result = built;
+    }
     assert.equal(result.report.sourceDataReadOrCopied, false, 'distribution report must confirm source DATA was not read or copied');
     assert.equal(path.basename(result.archivePath), expectedAssetName(version));
     assert.equal(result.report.artifact, expectedAssetName(version));
