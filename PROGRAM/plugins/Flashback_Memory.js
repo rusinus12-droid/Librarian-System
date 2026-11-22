@@ -32098,7 +32098,7 @@ function memorySuiteCanonicalSource(value,owner) {
 
 function createMemorySuiteSourceInputPolicy(config) {
   const owner=config.owner||'libra';
-  if(!['libra','hayaku','flashback'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
+  if(!['libra','hayaku','flashback','gradia'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
   const clone=value=>JSON.parse(JSON.stringify(value));
   let preferences=null,loading=null,saving=null,disposed=false;
   async function ready() {
@@ -32507,9 +32507,8 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 // internal-rule checks included). Nothing else is exchanged.
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
-const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory'});
-const MEMORY_SUITE_SOURCE_RULE_READERS=Object.freeze({gradia:'serial_gradation_agents_for_rp'});
-const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback'});
+const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
   if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
@@ -32526,12 +32525,9 @@ function createMemorySuiteSourceRuleSync(config) {
   const handler=async(message,metadata={})=>{
     if(disposed||!message||typeof message!=='object'||message.schema!==MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA||typeof message.id!=='string'||message.id.length>160)return;
     const sender=String(metadata?.sender||'');
-    const isPeer=Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)&&sender!==self;
-    const isReader=Object.values(MEMORY_SUITE_SOURCE_RULE_READERS).includes(sender);
-    if(!isPeer&&!isReader)return;
+    if(!Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)||sender===self)return;
     if(message.kind==='response'){const record=pending.get(message.id);if(!record||record.target!==sender)return;pending.delete(message.id);clearTimeout(record.timer);record.resolve(message.error?{ok:false,error:String(message.error)}:{ok:true,result:message.result||{}});return;}
     if(message.kind!=='request')return;
-    if(isReader&&message.action!=='describe')return;
     try{
       await config.policy.ready();
       if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null,effective:fingerprint(effective())});
@@ -32585,7 +32581,7 @@ function createMemorySuiteSourceRuleSync(config) {
       const builtIn=!answer.result?.rules;
       // An older peer does not report what it runs without saved rules; it is not the shared standard.
       const theirs=typeof answer.result?.effective==='string'?answer.result.effective:builtIn?'':fingerprint(answer.result.rules);
-      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{})}];}));
+      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{}),...(answer.result?.rules?{rules:answer.result.rules}:{})}];}));
     return Object.fromEntries(answers);
   };
   // expected: {peer: fingerprint seen by compare}; a peer whose rules moved since then refuses.
@@ -32596,7 +32592,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const compareBudget=async()=>{
     await config.policy.ready();const mine=budgetFingerprint(myBudget());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe_budget');
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const theirs=String(answer.result?.budget||'');
       return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
@@ -32604,7 +32600,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeRecallBudget(budget);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
@@ -32682,7 +32678,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
     const dirty=!value||fingerprint(value)!==initial;
     apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
     for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
-    peerList.replaceChildren(...(config.sync?config.sync.peers:[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
       row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
   };
   const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
@@ -32700,7 +32696,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
       await config.policy.setRecallBudget(value);fill();
       if(config.sync){
         await check();
-        const targets=config.sync.peers.filter(peer=>peerStates[peer]?.state==='different');
+        const targets=config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)&&peerStates[peer]?.state==='different');
         if(targets.length){
           const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
           const results=await config.sync.applyBudgetToPeers(value,targets,expected);

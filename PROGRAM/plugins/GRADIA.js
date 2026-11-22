@@ -903,6 +903,7 @@
   const STORAGE_LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
   // 관계 시뮬레이터 relationship state, per chat: the one extension-AIDE store (user decision 2026-11-19).
   const STORAGE_RELATIONSHIP_STATE_KEY = 'serial_gradation_agents_for_rp:relationship_state:v1';
+  const STORAGE_SOURCE_INPUT_PREFS_KEY = 'serial_gradation_agents_for_rp:source_input_prefs:v1';
   const LOCAL_PROVIDER_SECRETS_KEY = 'serial_gradation_agents_for_rp:provider_secrets:v1';
   
   const LOCAL_BACKEND_HOSTING_TOKEN_KEY = 'serial_gradation_agents_for_rp:backend_hosting_token:v1';
@@ -28473,16 +28474,59 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return map;
   };
+  const intimacyClampSensitivity = value => Math.max(-100, Math.min(100, Math.round(Number(value) || 0)));
+  const intimacyClampDevelopment = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  const intimacyZoneMultiplier = stat => {
+    const s = intimacyClampSensitivity(stat?.sensitivity);
+    const d = intimacyClampDevelopment(stat?.development);
+    const base = s >= 0 ? 1 + (s / 100) * 1.0 : 1 + (s / 100) * 0.5;
+    return Math.max(0.45, Math.min(2.25, Number((base + (d / 100) * 0.25).toFixed(2))));
+  };
+  const normalizeIntimacyZoneStats = (rawStats, sensitiveZones = '', dullZones = '') => {
+    const legacy = parseErogenousMap(sensitiveZones, dullZones);
+    const sourceMap = {};
+    if (Array.isArray(rawStats)) {
+      for (const item of rawStats) {
+        const key = compact(item?.zone || item?.id || '', 40);
+        if (key) sourceMap[key] = item;
+      }
+    } else if (rawStats && typeof rawStats === 'object') {
+      for (const [k, v] of Object.entries(rawStats)) {
+        if (v && typeof v === 'object') sourceMap[k] = v;
+      }
+    }
+    const out = {};
+    for (const [id] of INTIMACY_BODY_PARTS) {
+      const entry = sourceMap[id];
+      if (entry && (entry.sensitivity !== undefined || entry.development !== undefined)) {
+        out[id] = {
+          sensitivity: intimacyClampSensitivity(entry.sensitivity),
+          development: intimacyClampDevelopment(entry.development)
+        };
+      } else {
+        const mult = legacy[id] || 1.0;
+        out[id] = {
+          sensitivity: mult > 1 ? 50 : mult < 1 ? -80 : 0,
+          development: 0
+        };
+      }
+    }
+    return out;
+  };
   const normalizeIntimacyCard = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const name = compact(value.name || '', 80);
+    const sensitiveZones = compact(value.sensitiveZones ?? value.sensitive_zones ?? '', 240);
+    const dullZones = compact(value.dullZones ?? value.dull_zones ?? '', 240);
     const card = {
       id: compact(value.id || '', 64),
       name,
       likedPositions: compact(value.likedPositions || '', 240),
       dislikedPositions: compact(value.dislikedPositions || '', 240),
-      sensitiveZones: compact(value.sensitiveZones ?? value.sensitive_zones ?? '', 240),
-      dullZones: compact(value.dullZones ?? value.dull_zones ?? '', 240),
+      sensitiveZones,
+      dullZones,
+      zoneStats: normalizeIntimacyZoneStats(value.zoneStats ?? value.zone_defaults, sensitiveZones, dullZones),
+      anatomyView: value.anatomyView === 'male' ? 'male' : value.anatomyView === 'female' ? 'female' : '',
       basis: compact(value.basis || '', 360),
       origin: value.origin === 'user' ? 'user' : 'lore',
       createdAt: compact(value.createdAt || '', 40)
@@ -28505,13 +28549,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return out;
   };
+  const normalizeIntimacyZoneDeltas = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const valid = new Set(INTIMACY_BODY_PARTS.map(p => p[0]));
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (!valid.has(k) || !v || typeof v !== 'object') continue;
+      const dev = Math.max(0, Math.min(10, Math.round(Number(v.dev) || 0)));
+      const sens = Math.max(-10, Math.min(10, Math.round(Number(v.sens) || 0)));
+      if (dev || sens) out[k] = { dev, sens };
+    }
+    return out;
+  };
   const normalizeIntimacyGaugeEntry = value => {
     const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const zoneDeltas = normalizeIntimacyZoneDeltas(raw.zoneDeltas);
     return {
       climax: Math.max(0, Math.min(100, Number(raw.climax) || 0)),
       ejaculation: Math.max(0, Math.min(100, Number(raw.ejaculation) || 0)),
       climaxTriggered: raw.climaxTriggered === true,
-      ejaculationTriggered: raw.ejaculationTriggered === true
+      ejaculationTriggered: raw.ejaculationTriggered === true,
+      ...(Object.keys(zoneDeltas).length ? { zoneDeltas } : {})
     };
   };
   const normalizeIntimacyGaugeScope = value => {
@@ -28591,6 +28649,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
             climaxTriggered: false,
             ejaculationTriggered: false
           };
+          if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
+            const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSamePerson(c.name, k)));
+            if (card) {
+              if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
+              for (const [zoneId, delta] of Object.entries(v.zoneDeltas)) {
+                const prev = card.zoneStats[zoneId] || { sensitivity: 0, development: 0 };
+                card.zoneStats[zoneId] = {
+                  sensitivity: intimacyClampSensitivity(prev.sensitivity + (Number(delta.sens) || 0)),
+                  development: intimacyClampDevelopment(prev.development + (Number(delta.dev) || 0))
+                };
+              }
+            }
+          }
         }
         changed = true;
       } else if (item.inputHash === inputHash && item.priorAssistantHash === priorAssistantHash) {
@@ -28604,12 +28675,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
     chat.pending = keep;
     return { chat, changed, inputHash, priorAssistantHash, inputKey: intimacyInputKey(input) };
   };
-  const intimacyCardLine = card => [
-    `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
-    `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
-    `erogenous sensitivity — sensitive (×1.5): ${card.sensitiveZones || 'none on record'}; dull/resistant (×0.6): ${card.dullZones || 'none on record'}.`,
-    ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
-  ].join(' ');
+  const intimacyCardLine = card => {
+    const zoneSummary = INTIMACY_BODY_PARTS
+      .map(([id, label]) => {
+        const st = card?.zoneStats?.[id];
+        if (!st || (!st.sensitivity && !st.development)) return '';
+        return `${label.split(' ')[0]} ${st.sensitivity > 0 ? `+${st.sensitivity}` : st.sensitivity}/dev ${st.development}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+    return [
+      `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
+      `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
+      `erogenous sensitivity — sensitive (×1.5): ${card.sensitiveZones || 'none on record'}; dull/resistant (×0.6): ${card.dullZones || 'none on record'}.`,
+      zoneSummary ? `zone stats (sensitivity -100..+100 / development 0..100): ${zoneSummary}.` : '',
+      ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
+    ].filter(Boolean).join(' ');
+  };
   const INTIMACY_PASSIVE_DECAY_CLIMAX = 16;
   const INTIMACY_PASSIVE_DECAY_EJACULATION = 18;
   const INTIMACY_IDLE_CLEAR_TURNS = 3;
@@ -28661,7 +28743,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const pendingValues = {};
     const gauges = names.map(name => {
       const card = cards.find(c => c.name && (c.name === name || extensionSamePerson(c.name, name))) || null;
-      const multMap = parseErogenousMap(card?.sensitiveZones || '', card?.dullZones || '');
+      const zoneStats = card?.zoneStats || normalizeIntimacyZoneStats(null, card?.sensitiveZones || '', card?.dullZones || '');
+      const multMap = Object.fromEntries(INTIMACY_BODY_PARTS.map(([id]) => [id, intimacyZoneMultiplier(zoneStats[id])]));
       const gender = bodyStateProfileGender(name);
       const showClimax = gender !== 'male';
       const showEjac = gender === 'male';
@@ -28672,6 +28755,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let lastTurnDeltaClimax = 0;
       let lastTurnDeltaEjac = 0;
       let lastTurnParts = [];
+      let currentMatchedIds = [];
       let climaxTriggeredThisTurn = false;
       let ejaculationTriggeredThisTurn = false;
       const steps = settled
@@ -28708,7 +28792,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
           addClimax += cPts;
           addEjac += ePts;
           if (isCurrentTurn) {
-            partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ' (민감×1.5)' : zoneMult < 1 ? ' (둔감×0.6)' : ''}`);
+            currentMatchedIds.push(id);
+            partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
           }
         });
         if (showClimax) climaxGauge = Math.min(100, climaxGauge + addClimax);
@@ -28724,12 +28809,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (showEjac && ejaculationGauge >= 100) ejaculationGauge = 10;
         }
       });
-      if (normKey && (climaxGauge > 0 || ejaculationGauge > 0 || settled)) {
+      const zoneDeltas = {};
+      if (currentMatchedIds.length) {
+        const stepAmt = (climaxTriggeredThisTurn || ejaculationTriggeredThisTurn) ? 3 : 2;
+        for (const id of currentMatchedIds) zoneDeltas[id] = { dev: stepAmt, sens: stepAmt };
+      }
+      if (normKey && (climaxGauge > 0 || ejaculationGauge > 0 || settled || Object.keys(zoneDeltas).length)) {
         pendingValues[normKey] = {
           climax: showClimax ? climaxGauge : 0,
           ejaculation: showEjac ? ejaculationGauge : 0,
           climaxTriggered: showClimax && climaxTriggeredThisTurn,
-          ejaculationTriggered: showEjac && ejaculationTriggeredThisTurn
+          ejaculationTriggered: showEjac && ejaculationTriggeredThisTurn,
+          ...(Object.keys(zoneDeltas).length ? { zoneDeltas } : {})
         };
       }
       const fmtDelta = d => (d > 0 ? `+${d}` : d < 0 ? `${d} [자극 부재 감쇠]` : '±0');
@@ -28917,7 +29008,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
-            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 목덜미, 귀, 가슴, 유두, 허벅지, 골반, 엉덩이, 음핵, 질내, 음경, 귀두, 후구 — sensitive_zones multiply stimulation by ×1.5, dull_zones by ×0.6); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 목덜미, 귀, 가슴, 유두, 허벅지, 골반, 엉덩이, 음핵, 질내, 음경, 귀두, 후구 — sensitive_zones multiply stimulation by ×1.5, dull_zones by ×0.6); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
@@ -28933,7 +29024,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const stance = { type: 'string', enum: [...INTIMACY_STANCES] };
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -28976,6 +29067,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         dislikedPositions: raw?.disliked_positions,
         sensitiveZones: raw?.sensitive_zones,
         dullZones: raw?.dull_zones,
+        zoneStats: raw?.zone_defaults,
         foreplayStance: raw?.foreplay_stance,
         foreplayStyle: raw?.foreplay_style,
         intercourseStance: raw?.intercourse_stance,
@@ -29220,7 +29312,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       events: side('events', RELSIM_EVENTS),
       loveStyles: relsimIdList(value.loveStyles ?? value.love_styles, RELSIM_LOVE_STYLES, 2),
       birthday: relsimDateText(relsimDate(value.birthday)) || '',
-      sulk: compact(value.sulk || '', 240),
+      sulk: compact(value.sulk ?? value.moodLow ?? value.mood_low ?? '', 240),
+      moodHigh: compact(value.moodHigh ?? value.mood_high ?? '', 240),
+      moodLow: compact(value.moodLow ?? value.mood_low ?? value.sulk ?? '', 240),
       basis: compact(value.basis || '', 360),
       origin: value.origin === 'user' ? 'user' : 'lore',
       createdAt: compact(value.createdAt || '', 40)
@@ -29230,7 +29324,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return card;
   };
   const relsimProfileHasContent = card => !!card && (['places', 'times', 'dates', 'events'].some(key => card[key].liked.length || card[key].disliked.length)
-    || card.loveStyles.length || card.birthday || card.sulk);
+    || card.loveStyles.length || card.birthday || card.sulk || card.moodHigh || card.moodLow);
   const normalizeRelsimProfileMap = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const out = {};
@@ -29248,9 +29342,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
     || (bodyStateIsPersona(name) && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName)))) || null;
 
   // ---- Relationship state (GRADIA's own store; the one exception to "extension AIDEs store nothing") ----
+  const relsimClampMood = value => Math.max(-100, Math.min(100, Math.round(Number(value) || 0)));
+  const relsimMoodBand = mood => {
+    const m = relsimClampMood(mood);
+    if (m >= 60) return { id: 'elated', label: '매우 좋음' };
+    if (m >= 20) return { id: 'good', label: '좋음' };
+    if (m <= -60) return { id: 'stormy', label: '매우 나쁨' };
+    if (m <= -20) return { id: 'low', label: '나쁨' };
+    return { id: 'neutral', label: '보통' };
+  };
   const emptyRelsimChat = () => ({ turn: 0, lastInputHash: '', pairs: {}, pending: [], notes: [] });
   const normalizeRelsimPair = value => {
     const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const hasMood = raw.mood !== undefined && raw.mood !== null && raw.mood !== '';
+    const mood = hasMood
+      ? relsimClampMood(raw.mood)
+      : relsimClampMood((Number(raw.joy) || 0) * 25 - (Number(raw.grievance) || 0) * 25 - (Number(raw.sadness) || 0) * 20 - (Number(raw.anger) || 0) * 35);
+    const moodCause = mood
+      ? compact(raw.moodCause || raw.grievanceCause || raw.angerCause || raw.sadnessCause || raw.joyCause || '', 160)
+      : '';
     return {
       status: relsimChoice(raw.status, RELSIM_STATUSES),
       statusSince: relsimDateText(relsimDate(raw.statusSince)),
@@ -29266,8 +29376,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         due: relsimDateText(relsimDate(item?.due)),
         state: ['upcoming', 'surfaced', 'kept', 'missed'].includes(item?.state) ? item.state : 'upcoming'
       })).filter(item => item.id && item.due).slice(-12),
-      grievance: Math.max(0, Math.min(3, Number(raw.grievance) || 0)),
-      grievanceCause: compact(raw.grievanceCause || '', 160),
+      mood,
+      moodCause,
       lastProposalTurn: Math.max(0, Number(raw.lastProposalTurn) || 0),
       rolls: (Array.isArray(raw.rolls) ? raw.rolls : []).map(item => ({
         turn: Math.max(0, Number(item?.turn) || 0),
@@ -29361,10 +29471,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       pair.status = change.status;
       if (change.date) pair.statusSince = change.date;
       if (change.status === 'lovers' && change.date && (!pair.datingSince || change.restart)) pair.datingSince = change.date;
-    } else if (change.type === 'grievance') {
-      pair.grievance = Math.max(0, Math.min(3, pair.grievance + Number(change.delta || 0)));
-      if (Number(change.delta) > 0 && change.cause) pair.grievanceCause = compact(change.cause, 160);
-      if (!pair.grievance) pair.grievanceCause = '';
+    } else if (change.type === 'mood' || change.type === 'grievance') {
+      const delta = change.type === 'mood' ? Number(change.delta || 0) : Number(change.delta || 0) * -25;
+      pair.mood = relsimClampMood((Number(pair.mood) || 0) + delta);
+      if (change.cause) pair.moodCause = compact(change.cause, 160);
+      if (!pair.mood) pair.moodCause = '';
     } else if (change.type === 'occasion') {
       const hit = pair.occasions.find(item => item.id === change.id);
       if (hit && ['surfaced', 'kept', 'missed'].includes(change.state)) hit.state = change.state;
@@ -29550,7 +29661,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const base = typeof RELSIM_BASE[act] === 'number' ? RELSIM_BASE[act] : (RELSIM_BASE[act]?.[status] ?? 40);
     let percent = base;
     const add = (delta, label) => { if (!delta) return; percent += delta; factors.push(`${label} ${delta > 0 ? '+' : ''}${delta}`); };
-    if (pair.grievance) add(-10 * pair.grievance * (profile?.loveStyles?.includes('mania') ? 1.5 : 1), `서운함 ${pair.grievance}`);
+    if (pair.mood) {
+      const moodDelta = pair.mood < 0
+        ? Math.round((pair.mood / 100) * 35 * (profile?.loveStyles?.includes('mania') ? 1.4 : 1))
+        : Math.round((pair.mood / 100) * 20);
+      add(moodDelta, `기분 ${pair.mood > 0 ? '+' : ''}${pair.mood}`);
+    }
     if (memorySignals?.relDelta) add(memorySignals.relDelta, `기억 관계신호(${memorySignals.relTags.join('·')})`);
     if (memorySignals?.emoDelta) add(memorySignals.emoDelta, `기억 감정신호(${memorySignals.emoTags.join('·')})`);
     if (scene.place && profile) {
@@ -29716,7 +29832,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       [part('places', RELSIM_PLACES, card.places), part('times', RELSIM_TIMES, card.times), part('dates', RELSIM_DATES, card.dates), part('events', RELSIM_EVENTS, card.events)].filter(Boolean).join('. '),
       card.loveStyles.length ? `love style: ${card.loveStyles.map(id => `${RELSIM_LOVE_STYLES[id].label} (${RELSIM_LOVE_STYLES[id].gist})`).join(', ')}.` : '',
       card.birthday ? `birthday: ${card.birthday}.` : '',
-      card.sulk ? `when hurt: ${card.sulk}.` : ''
+      card.moodHigh ? `when mood is high: ${card.moodHigh}.` : '',
+      (card.moodLow || card.sulk) ? `when mood is low: ${card.moodLow || card.sulk}.` : ''
     ].filter(Boolean).join(' ');
   };
   const relsimPairLine = (card, pair) => [
@@ -29727,7 +29844,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     pair.datingSince ? `dating since ${pair.datingSince}` : '',
     pair.disclosure ? `disclosure ${pair.disclosure} (${RELSIM_DISCLOSURES[pair.disclosure]})${pair.disclosure === 'partial' && pair.knownBy.length ? `, known to ${pair.knownBy.join(', ')}` : ''}` : '',
     pair.lead ? `lead: ${forcedBondDisplayName(pair.lead)}${pair.leadReasons.length ? ` (${relsimLabels(RELSIM_LEAD_REASONS, pair.leadReasons)})` : ''}` : '',
-    pair.grievance ? `grievance ${pair.grievance}/3${pair.grievanceCause ? ` — ${pair.grievanceCause}` : ''}` : ''
+    pair.mood ? `mood ${pair.mood > 0 ? '+' : ''}${pair.mood}/100 (${relsimMoodBand(pair.mood).label})${pair.moodCause ? ` — ${pair.moodCause}` : ''}` : ''
   ].filter(Boolean).join('; ').replace('; ', ': ');
   const relsimVerdictLine = verdict => `- [${verdict.pairId}] If ${forcedBondDisplayName(verdict.actor)} makes a ${verdict.act} (${RELSIM_ACT_LABELS[verdict.act]}) toward ${forcedBondDisplayName(verdict.responder)} this turn, ${forcedBondDisplayName(verdict.responder)} ${RELSIM_OUTCOME_TEXT[verdict.act][verdict.success ? 0 : 1]}.${verdict.expected ? ' The current input shows this act.' : ''}`;
   const relsimOccasionLine = item => `- [${item.pairId}:${item.id}] ${item.label} (${item.dueText}) — ${item.phase === 'soon' ? `in ${item.until} day(s)` : item.phase === 'today' ? 'today' : 'already passed without being marked'}.`;
@@ -29761,9 +29878,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (pair.disclosure === 'secret') out.push(`${names} keep it secret: careful distance in front of others, stolen moments, near-misses when someone almost notices.`);
     else if (pair.disclosure === 'partial') out.push(`${names} are known only to ${pair.knownBy.length ? pair.knownBy.join(', ') : 'a few'}: they act differently around those who know and those who do not.`);
     if (pair.lead && shown(pair.lead)) out.push(`${forcedBondDisplayName(pair.lead)} holds the lead${pair.leadReasons.length ? ` (${relsimLabels(RELSIM_LEAD_REASONS, pair.leadReasons)})` : ''}: it shows in who reaches first, who decides plans, who apologizes, and who waits.`);
-    if (pair.grievance) {
-      const hurt = [card.from, card.to].filter(shown).map(name => relsimProfileFor(scopeKey, name)).find(profile => profile?.sulk);
-      out.push(`Unresolved hurt (${pair.grievance}/3${pair.grievanceCause ? `: ${pair.grievanceCause}` : ''}) colors the scene${hurt ? ` — shown the way ${forcedBondDisplayName(hurt.name)} does it: ${hurt.sulk}` : ''}; it does not vanish without a scene that mends it.`);
+    if (pair.mood < 0) {
+      const low = [card.from, card.to].filter(shown).map(name => relsimProfileFor(scopeKey, name)).find(profile => profile?.moodLow || profile?.sulk);
+      out.push(`Low mood (${pair.mood}/100${pair.moodCause ? `: ${pair.moodCause}` : ''}) colors the scene${low ? ` — shown the way ${forcedBondDisplayName(low.name)} does it: ${low.moodLow || low.sulk}` : ' — curt replies, irritable edge, or quiet low-pressure distance'}; it does not vanish without a scene that mends it.`);
+    } else if (pair.mood > 0) {
+      const high = [card.from, card.to].filter(shown).map(name => relsimProfileFor(scopeKey, name)).find(profile => profile?.moodHigh);
+      out.push(`High mood (+${pair.mood}/100${pair.moodCause ? `: ${pair.moodCause}` : ''}) lifts the scene${high ? ` — shown the way ${forcedBondDisplayName(high.name)} does it: ${high.moodHigh}` : ' — warmer energy, brighter tension, and extra care'}.`);
     }
     for (const name of [card.from, card.to].filter(shown)) {
       const profile = relsimProfileFor(scopeKey, name);
@@ -29802,7 +29922,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- "relationship_events": one item per relationship act that actually happens in this draft. Fields: pair_id (from the brackets above), act (confession, reunion, proposal, date, or event), actor (name), outcome_shown (true when the draft shows the FIXED OUTCOME for that act), summary (one short line).',
       '- "relationship_occasions": one item per occasion this draft surfaces or keeps. Fields: pair_id, occasion_id (the part after the colon in the brackets), state (surfaced when it is brought up or hinted; kept when the couple actually marks it).',
       `- "relationship_pairs": one item per pair above with "status not set yet", and per romantic pair in this scene that has no card yet (lovers, exes, spouses, or friends with romantic potential stated in lore). Estimate from lore only. Fields: from, to (names${gate === 'novel' ? '' : '; the persona is "persona"'}), mutual (true or false), status (${Object.keys(RELSIM_STATUSES).join(', ')}), dating_since (story date or empty), disclosure (public, partial, secret, or empty), known_by (names, comma separated), lead (name or empty), lead_reasons (comma separated from ${Object.keys(RELSIM_LEAD_REASONS).join(', ')}), basis (the lore it rests on).`,
-      `- "relationship_profiles": one item per person listed under MISSING PREFERENCE CARDS. Estimate only from lore (personality, history, stated tastes); choose only places, dates, and events that fit this story’s world and setting (or have clear in-world equivalents), leave a field empty when lore is silent, and never fill it with generic guesses. Fields: name; places_liked, places_disliked (from: ${Object.values(RELSIM_PLACES).map(def => def.label).join(', ')}); times_liked, times_disliked (from: ${Object.values(RELSIM_TIMES).join(', ')}); dates_liked, dates_disliked (from: ${Object.values(RELSIM_DATES).map(def => def.label).join(', ')}); events_liked, events_disliked (from: ${Object.values(RELSIM_EVENTS).map(def => def.label).join(', ')}); love_styles (one or two of: ${Object.values(RELSIM_LOVE_STYLES).map(def => def.label).join(', ')}); birthday (month-day from lore, or empty); sulk (how they show hurt, from lore, or empty); basis.`,
+      `- "relationship_profiles": one item per person listed under MISSING PREFERENCE CARDS. Estimate only from lore (personality, history, stated tastes); choose only places, dates, and events that fit this story’s world and setting (or have clear in-world equivalents), leave a field empty when lore is silent, and never fill it with generic guesses. Fields: name; places_liked, places_disliked (from: ${Object.values(RELSIM_PLACES).map(def => def.label).join(', ')}); times_liked, times_disliked (from: ${Object.values(RELSIM_TIMES).join(', ')}); dates_liked, dates_disliked (from: ${Object.values(RELSIM_DATES).map(def => def.label).join(', ')}); events_liked, events_disliked (from: ${Object.values(RELSIM_EVENTS).map(def => def.label).join(', ')}); love_styles (one or two of: ${Object.values(RELSIM_LOVE_STYLES).map(def => def.label).join(', ')}); birthday (month-day from lore, or empty); mood_high (how they act when mood is high — warmer, livelier, affectionate, from lore, or empty); mood_low (how they act when mood is low — curt, angry, sulky, quiet, from lore, or empty); sulk (legacy alias for mood_low, or empty); basis.`,
       '- "relationship_lib_status": one item per pair whose stored status is contradicted by the GRADIA EXTERNAL EVIDENCE (LIBRA) block. Fields: pair_id, status, quote (copied exactly from that block). Leave it empty unless the evidence states the current status plainly.'
     ].join('\n') : kind === 'check'
       ? 'OUTPUT: add a top-level "relationship_check" array with one item per problem or confirmation about relationship acts, outcomes, occasions, or disclosure in this draft, judged only from your own duty. Item fields: aspect (outcome, preference, occasion, disclosure, or agency); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
@@ -29863,7 +29983,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       relationship_events: { type: 'array', items: closedJsonObject({ pair_id: str, act: { type: 'string', enum: [...RELATIONSHIP_SIM_ACTS] }, actor: str, outcome_shown: { type: 'boolean' }, summary: str }) },
       relationship_occasions: { type: 'array', items: closedJsonObject({ pair_id: str, occasion_id: str, state: { type: 'string', enum: ['surfaced', 'kept'] } }) },
       relationship_pairs: { type: 'array', items: closedJsonObject({ from: str, to: str, mutual: { type: 'boolean' }, status: { type: 'string', enum: Object.keys(RELSIM_STATUSES) }, dating_since: str, disclosure: str, known_by: str, lead: str, lead_reasons: str, basis: str }) },
-      relationship_profiles: { type: 'array', items: closedJsonObject({ name: str, places_liked: str, places_disliked: str, times_liked: str, times_disliked: str, dates_liked: str, dates_disliked: str, events_liked: str, events_disliked: str, love_styles: str, birthday: str, sulk: str, basis: str }) },
+      relationship_profiles: { type: 'array', items: closedJsonObject({ name: str, places_liked: str, places_disliked: str, times_liked: str, times_disliked: str, dates_liked: str, dates_disliked: str, events_liked: str, events_disliked: str, love_styles: str, birthday: str, mood_high: str, mood_low: str, sulk: str, basis: str }) },
       relationship_lib_status: { type: 'array', items: closedJsonObject({ pair_id: str, status: { type: 'string', enum: Object.keys(RELSIM_STATUSES) }, quote: str }) }
     };
   };
@@ -29916,7 +30036,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         times: { liked: raw?.times_liked, disliked: raw?.times_disliked },
         dates: { liked: raw?.dates_liked, disliked: raw?.dates_disliked },
         events: { liked: raw?.events_liked, disliked: raw?.events_disliked },
-        loveStyles: raw?.love_styles, birthday: raw?.birthday, sulk: raw?.sulk, basis: raw?.basis,
+        loveStyles: raw?.love_styles, birthday: raw?.birthday, moodHigh: raw?.mood_high, moodLow: raw?.mood_low || raw?.sulk, sulk: raw?.sulk || raw?.mood_low, basis: raw?.basis,
         origin: 'lore', createdAt: new Date().toISOString()
       });
       const key = normalizeContinuityAlias(card?.name || '');
@@ -29949,28 +30069,35 @@ Begin directly with the in-world response and finish the complete same-turn draf
         && (extensionSamePerson(item.actor, event.actor) || (relsimIsPersona(item.actor) && relsimIsPersona(event.actor)) || !event.actor));
       if (!verdict || !event.outcomeShown) continue;
       changes.push({ type: 'roll', pairId: verdict.pairId, roll: { act: verdict.act, actor: verdict.actor, responder: verdict.responder, percent: verdict.percent, roll: verdict.roll, success: verdict.success, factors: verdict.factors } });
-      if (verdict.success && verdict.act === 'confession') changes.push({ type: 'status', pairId: verdict.pairId, status: 'lovers', date, restart: true });
-      else if (verdict.success && verdict.act === 'reunion') changes.push({ type: 'status', pairId: verdict.pairId, status: RELSIM_REUNION_TO[verdict.status] || 'lovers', date });
-      else if (verdict.success && verdict.act === 'proposal') changes.push({ type: 'status', pairId: verdict.pairId, status: 'engaged', date });
-      else if (verdict.success && ['date', 'event'].includes(verdict.act)) {
+      if (verdict.success && ['confession', 'reunion', 'proposal'].includes(verdict.act)) {
+        if (verdict.act === 'confession') changes.push({ type: 'status', pairId: verdict.pairId, status: 'lovers', date, restart: true });
+        else if (verdict.act === 'reunion') changes.push({ type: 'status', pairId: verdict.pairId, status: RELSIM_REUNION_TO[verdict.status] || 'lovers', date });
+        else changes.push({ type: 'status', pairId: verdict.pairId, status: 'engaged', date });
+        changes.push({ type: 'mood', pairId: verdict.pairId, delta: 35, cause: `${RELSIM_ACT_LABELS[verdict.act]}이 통함` });
+      } else if (!verdict.success && ['confession', 'reunion', 'proposal'].includes(verdict.act)) {
+        changes.push({ type: 'mood', pairId: verdict.pairId, delta: -25, cause: `${RELSIM_ACT_LABELS[verdict.act]}이 받아들여지지 않음` });
+      } else if (verdict.success && ['date', 'event'].includes(verdict.act)) {
         if (verdict.status === 'none') changes.push({ type: 'status', pairId: verdict.pairId, status: 'more_than_friend', date });
-        changes.push({ type: 'grievance', pairId: verdict.pairId, delta: -1 });
+        changes.push({ type: 'mood', pairId: verdict.pairId, delta: 20, cause: `${RELSIM_ACT_LABELS[verdict.act]}이 마음에 닿음` });
+      } else if (!verdict.success && ['date', 'event'].includes(verdict.act)) {
+        changes.push({ type: 'mood', pairId: verdict.pairId, delta: -20, cause: `${RELSIM_ACT_LABELS[verdict.act]}이 마음에 닿지 않음` });
       }
-      else if (!verdict.success && ['date', 'event'].includes(verdict.act)) changes.push({ type: 'grievance', pairId: verdict.pairId, delta: 1, cause: `${RELSIM_ACT_LABELS[verdict.act]}이 마음에 닿지 않음` });
       if (['date', 'event'].includes(verdict.act) && !relsimIsPersona(verdict.actor)) changes.push({ type: 'proposal', pairId: verdict.pairId });
     }
     for (const row of occasionRows) {
       const due = prepared.occasions.find(item => item.pairId === row.pairId && item.id === row.occasionId);
       if (!due) continue;
       changes.push({ type: 'occasion', pairId: due.pairId, id: due.id, kind: due.kind, label: due.label, due: due.dueText, state: row.state });
-      if (row.state === 'kept' && due.phase === 'passed') changes.push({ type: 'grievance', pairId: due.pairId, delta: -1 });
+      if (row.state === 'kept') changes.push({ type: 'mood', pairId: due.pairId, delta: 25, cause: `${due.label}을 함께 챙김` });
     }
     // An occasion that passed without being kept this turn is missed: the partner is hurt.
     for (const due of prepared.occasions.filter(item => item.phase === 'passed')) {
       if (occasionRows.some(row => row.pairId === due.pairId && row.occasionId === due.id && row.state === 'kept')) continue;
       changes.push({ type: 'occasion', pairId: due.pairId, id: due.id, kind: due.kind, label: due.label, due: due.dueText, state: 'missed' });
       // One that passed before the simulator ever saw it (a dating date entered late) hurts no one.
-      if (due.stateStored) changes.push({ type: 'grievance', pairId: due.pairId, delta: due.weight, cause: `${due.label}을 챙기지 않음` });
+      if (due.stateStored) {
+        changes.push({ type: 'mood', pairId: due.pairId, delta: -25 * due.weight, cause: `${due.label}을 챙기지 않음` });
+      }
     }
     // The first sighting of an upcoming occasion is stored so a later miss can be told apart.
     for (const due of prepared.occasions.filter(item => item.phase !== 'passed' && !item.stateStored)) {
@@ -30346,21 +30473,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const fullDraftPromptVars = (stageName, recent, previous, settings) => {
     const previousJson = previous ? compactMiddle(JSON.stringify(previous, null, 2), settings.maxPreviousStageChars) : '';
-    const terminalScene = recent?.terminalVisibleScene || recent?.inputAssistTerminalVisibleScene || recent?.sceneAnchor || '';
+    const sourceRules = gradiaEffectiveSourceRules(settings);
+    const terminalScene = gradiaProjectSourceText(recent?.terminalVisibleScene || recent?.inputAssistTerminalVisibleScene || recent?.sceneAnchor || '', sourceRules);
     const referencePacketBlock = referencePacketBlockForPrompt(recent);
     return {
       stage: stageName,
       stage_label: STAGE_DEF_MAP[stageName]?.label || stageName,
       system_messages: compact(recent?.systemContext || '', 4000),
-      recent_chat: compactRecentTurnsTail(recent?.completeTurnsText || recent?.text || '', 5000),
-      visible_recent_chat: compactRecentTurnsTail(recent?.completeTurnsText || recent?.visibleText || recent?.text || '', 5000),
+      recent_chat: compactRecentTurnsTail(gradiaProjectSourceText(recent?.completeTurnsText || recent?.text || '', sourceRules), 5000),
+      visible_recent_chat: compactRecentTurnsTail(gradiaProjectSourceText(recent?.completeTurnsText || recent?.visibleText || recent?.text || '', sourceRules), 5000),
       previous_turn: compactMiddle(terminalScene, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
-      previous_turn_user: previousUserInputForPrompt(recent),
+      previous_turn_user: gradiaProjectSourceText(previousUserInputForPrompt(recent), sourceRules),
       previous_turn_assistant: compactMiddle(terminalScene, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
       others_info: compact(recent?.othersInfo || '', 3500),
       latest_user: submittedCurrentInput(recent),
       latest_assistant: compactMiddle(terminalScene, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
-      scene_anchor: compact(recent?.sceneAnchor || '', 800),
+      scene_anchor: compact(gradiaProjectSourceText(recent?.sceneAnchor || '', sourceRules), 800),
       risu_context: referencePacketBlock,
       shadow_risu_context: referencePacketBlock,
       previous_stage: previousJson,
@@ -30464,94 +30592,1360 @@ Begin directly with the in-world response and finish the complete same-turn draf
     );
   };
 
-  const GRADIA_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
-  const gradiaDefaultSourceRules = () => ({
-    version: 1,
-    ignoredTags: ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker', 'lb-xnai', 'thoughts'],
-    unwrapTags: [],
-    sourceTags: [],
-    controls: ['html-comment', 'lbdata']
-  });
-  const gradiaMergeSourceRules = (list = []) => {
-    const base = gradiaDefaultSourceRules();
-    const ignored = new Set(base.ignoredTags);
-    const unwrap = new Set();
-    const source = new Set();
-    const controls = new Set(base.controls);
-    for (const rules of list) {
-      if (!rules || typeof rules !== 'object') continue;
-      for (const t of Array.isArray(rules.ignoredTags) ? rules.ignoredTags : []) {
-        const clean = String(t || '').trim().toLowerCase();
-        if (clean) ignored.add(clean);
-      }
-      for (const t of Array.isArray(rules.unwrapTags) ? rules.unwrapTags : []) {
-        const clean = String(t || '').trim().toLowerCase();
-        if (clean) { unwrap.add(clean); ignored.delete(clean); }
-      }
-      for (const t of Array.isArray(rules.sourceTags) ? rules.sourceTags : []) {
-        const clean = String(t || '').trim().toLowerCase();
-        if (clean) { source.add(clean); ignored.delete(clean); }
-      }
-      for (const c of Array.isArray(rules.controls) ? rules.controls : []) {
-        const clean = String(c || '').trim().toLowerCase();
-        if (clean) controls.add(clean);
-      }
+/* LIBRA SOURCE INPUT POLICY v1 — optional normalization only; no edit tracking. */
+function memorySuiteSourceIgnoredTags(value) {
+  const input = value === undefined ? ['lb-xnai'] : typeof value === 'string' ? value.split(/\r?\n/) : value;
+  if (!Array.isArray(input) || input.length > 128) throw Error('SOURCE_IGNORE_TAGS_INVALID: 태그는 최대 128개입니다.');
+  const names = input.map(v => String(v).trim().toLowerCase()).filter(Boolean);
+  if (names.some(v => !/^[a-z][a-z0-9:_-]{0,63}$/.test(v))) throw Error('SOURCE_IGNORE_TAGS_INVALID: 꺾쇠 없이 태그 이름만 입력하세요.');
+  return [...new Set(names)].sort();
+}
+function memorySuiteSourceTagPolicy(owner, tags) {
+  const policies = memorySuiteSourceTagPolicy.policies || (memorySuiteSourceTagPolicy.policies = new Map());
+  if (tags !== undefined) policies.set(owner, memorySuiteSourceIgnoredTags(tags));
+  return policies.get(owner) || ['lb-xnai'];
+}
+// 공통 기준: presentation markup (images, LightBoard lazy/stage markers) that never carries narrative.
+// The same list is every plugin's default rules and is also removed by every plugin's built-in cleanup
+// (no saved rules), so LIBRA, HAYAKU and Flashback analyze the same text and a rule set copied
+// between them changes nothing beyond what its own rules say.
+const MEMORY_SUITE_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
+function memorySuiteSourceTagKey(owner) { return JSON.stringify([memorySuiteSourceTagPolicy(owner),memorySuiteSourceRules(owner)]); }
+function memorySuiteProjectSourceTags(value, owner) {
+  const explicit=memorySuiteCanonicalSource(value,owner);if(explicit!==null)return explicit;
+  let body = String(value ?? '');
+  const names = new Set(memorySuiteSourceTagPolicy(owner));
+  // Retain the established illustration rule: narrative inside lb-xnai is evidence.
+  if (names.delete('lb-xnai')) body = body
+    .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>([\s\S]*?)<\/lb-xnai\s*>/gi, (whole, inner) => inner.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '').trim() === '' ? '' : whole)
+    .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '');
+  // 공통 기준 (built-in side): the shared presentation tags, matched as the rules match them.
+  // Unclosed or mismatched blocks are retained, as with saved rules.
+  const presentation = memorySuiteSourceTagRanges(body, MEMORY_SUITE_PRESENTATION_TAGS);
+  if (!presentation.invalid && presentation.ranges.length) body = memorySuiteEraseSourceRanges(body, presentation.ranges);
+  for (const name of MEMORY_SUITE_PRESENTATION_TAGS) names.delete(name);
+  if (!names.size) return body;
+  const tokens = /<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;
+  const ranges = [], stack = []; let start = -1, match;
+  while ((match = tokens.exec(body))) {
+    const name = match[1].toLowerCase(); if (!names.has(name)) continue;
+    const closing = /^<\//.test(match[0]), selfClosing = /\/\s*>$/.test(match[0]);
+    if (closing) {
+      if (stack.at(-1) !== name) { stack.length = 0; start = -1; continue; }
+      stack.pop(); if (!stack.length) { ranges.push([start, tokens.lastIndex]); start = -1; }
+    } else if (selfClosing) { if (!stack.length) ranges.push([match.index, tokens.lastIndex]); }
+    else { if (!stack.length) start = match.index; stack.push(name); }
+  }
+  // Incomplete/mismatched blocks are retained. Never delete through end-of-message.
+  for (let i = ranges.length - 1; i >= 0; i--) body = body.slice(0, ranges[i][0]) + body.slice(ranges[i][1]);
+  return body;
+}
+// Rules are a projection, never an authorization to rewrite stored evidence.
+// Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
+// saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
+function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+function memorySuiteDefaultSourceRules(owner) {
+  // External defaults are shared; saved owner-specific policies remain authoritative.
+  // Do not broadly discard status, choices, or other potential narrative evidence.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+}
+// Shared presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules) {
+  if(!rules||typeof rules!=='object')return [];
+  const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
+  return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
+}
+// 기억 주입 공통 예산: one total for the recalled evidence the three memory plugins inject into a
+// request, split by fixed shares. It is stored with each plugin's source-input preferences and
+// kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
+// its own budget setting. Each plugin still shrinks below its share when the context is short.
+const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+function memorySuiteDefaultRecallBudget() {
+  return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
+}
+function memorySuiteNormalizeRecallBudget(input) {
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  const total=Number(input.totalChars);
+  if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
+  const shares={};
+  for(const owner of MEMORY_SUITE_RECALL_OWNERS){
+    const value=Number(input.shares?.[owner]);
+    if(!Number.isInteger(value)||value<0||value>100)throw Error('RECALL_BUDGET_INVALID: 비율은 0~100 사이의 정수입니다.');
+    shares[owner]=value;
+  }
+  if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
+  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+}
+function memorySuiteRecallBudget(owner, next) {
+  const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
+  if(next!==undefined)policies.set(owner,next);
+  return policies.get(owner)||null;
+}
+// This plugin's share in characters while the shared budget is on; null when it is off.
+function memorySuiteRecallShareChars(owner) {
+  const budget=memorySuiteRecallBudget(owner);
+  if(!budget||budget.enabled!==true||!MEMORY_SUITE_RECALL_OWNERS.includes(owner))return null;
+  return Math.floor(budget.totalChars*budget.shares[owner]/100);
+}
+// 중복 제거: what the other memory plugins already put into this request (the request hooks run one
+// after another, each receiving the previous result), so a later plugin can leave out text that is
+// already there. Only verbatim repeats count; different wording of the same turn is kept.
+const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
+  libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
+  // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
+  // up to the packet-writing instructions that follow them.
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+    /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
+    /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
+  flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
+    /\[VECTOR RAG MEMORY\]([\s\S]*?)\[\/VECTOR RAG MEMORY\]/gi])
+});
+const memorySuiteRecallNorm = value => String(value??'').normalize('NFKC').toLowerCase()
+  .replace(/[\s"'`“”‘’「」『』()\[\]{}<>.,!?;:~…·*_=+|\/\\—–-]/g,'');
+// Sentences of an item, without list marks, leading [labels] or a short "field:" label, so
+// "- [T3] 문장" and "- summary: 문장" both match "문장".
+const memorySuiteRecallPieces = value => String(value??'').split(/\n+|(?<=[.!?。！？…])\s+/)
+  .map(line=>memorySuiteRecallNorm(line.replace(/^\s*(?:[-*•]\s*)?(?:\[[^\]\n]{1,40}\]\s*)*(?:[A-Za-z가-힣][A-Za-z가-힣 _]{0,23}:\s+)?/,''))).filter(piece=>piece.length>=8);
+function memorySuitePeerRecallIndex(messages, owner) {
+  const parts=[],owners=new Set();
+  const bodyOf=message=>typeof message?.content==='string'?message.content
+    :Array.isArray(message?.content)?message.content.map(part=>typeof part==='string'?part:typeof part?.text==='string'?part.text:'').join('\n'):'';
+  for(const message of Array.isArray(messages)?messages:[]){
+    const body=bodyOf(message);if(!body)continue;
+    for(const [peer,patterns] of Object.entries(MEMORY_SUITE_RECALL_BLOCKS)){
+      if(peer===owner)continue;
+      for(const pattern of patterns){pattern.lastIndex=0;for(const hit of body.matchAll(pattern)){if(hit[1]&&hit[1].trim()){parts.push(hit[1]);owners.add(peer);}}}
     }
-    return {
-      version: 1,
-      ignoredTags: [...ignored].sort(),
-      unwrapTags: [...unwrap].sort(),
-      sourceTags: [...source].sort(),
-      controls: [...controls].sort()
-    };
+  }
+  const text=memorySuiteRecallNorm(parts.join('\n'));
+  // Share of an item's characters (sentence by sentence) already present in a peer block.
+  const ratio=value=>{
+    if(!text)return 0;
+    const pieces=memorySuiteRecallPieces(value);let total=0,covered=0;
+    for(const piece of pieces){total+=piece.length;if(text.includes(piece))covered+=piece.length;}
+    return total?covered/total:0;
   };
+  let digest=0;for(let i=0;i<text.length;i++)digest=(digest*31+text.charCodeAt(i))>>>0;
+  return Object.freeze({owners:[...owners].sort(),chars:text.length,digest:text?owners.size+':'+text.length+':'+digest.toString(36):'',
+    ratio,covered:(value,threshold=0.8)=>ratio(value)>=threshold});
+}
+function memorySuiteSourceRules(owner, next) {
+  const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
+  if(next!==undefined) policies.set(owner,next);
+  return policies.get(owner)||null;
+}
+function memorySuiteNormalizeSourceEntries(input, key) {
+  const items=typeof input==='string'?input.split(/\r?\n/):input??[];
+  if(!Array.isArray(items)||items.length>128)throw Error('SOURCE_RULES_INVALID: 규칙은 각 최대 128개입니다.');
+  const out=[];
+  for(const item of items){
+    if(typeof item==='string'){out.push(...memorySuiteSourceIgnoredTags([item]));continue;}
+    if(!item||typeof item.open!=='string'||typeof item.close!=='string')throw Error('SOURCE_DELIMITER_INVALID');
+    const {open,close}=item;
+    if(!open.trim()||close!==''&&!close.trim()||open.length>256||close.length>256||open===close||key==='sourceTags'&&!close.trim())throw Error('SOURCE_DELIMITER_INVALID: 여는 표식과 서로 다른 닫는 표식을 입력하세요. 단일 표식은 원문 선택에 사용할 수 없습니다.');
+    // Standard tag pairs retain attribute/case handling and existing illustration behavior.
+    const tag=/^<([a-z][a-z0-9:_-]*)>$/i.exec(open);
+    if(tag&&close.toLowerCase()==='</'+tag[1].toLowerCase()+'>')out.push(tag[1].toLowerCase());
+    else out.push({open,close});
+  }
+  return [...new Map(out.map(x=>[JSON.stringify(x),x])).values()];
+}
+function memorySuiteLiteralRanges(body, rules) {
+  const types=rules.filter(x=>x&&typeof x==='object'),stack=[],ranges=[],tokens=[];let pos=0,invalid=false;
+  const markers=types.flatMap((r,id)=>[{text:r.open,id,close:false},...(r.close?[{text:r.close,id,close:true}]:[])]);
+  while(pos<body.length){
+    let next=null;
+    for(const marker of markers){const start=body.indexOf(marker.text,pos);if(start<0)continue;if(!next||start<next.start||start===next.start&&marker.text.length>next.text.length)next={...marker,start,end:start+marker.text.length};}
+    if(!next)break;pos=next.end;tokens.push(next);
+    if(next.close){const opening=stack.pop();if(!opening||opening.id!==next.id){invalid=true;stack.length=0;continue;}if(!stack.length)ranges.push({start:opening.start,end:next.end,innerStart:opening.end,innerEnd:next.start});}
+    else if(!types[next.id].close){if(!stack.length)ranges.push({start:next.start,end:next.end,innerStart:next.end,innerEnd:next.end});}
+    else stack.push(next);
+  }
+  return {ranges,tokens,invalid:invalid||stack.length>0};
+}
+function memorySuiteSourceRanges(body, entries) {
+  const tags=memorySuiteSourceTagRanges(body,entries.filter(x=>typeof x==='string'));
+  const literal=memorySuiteLiteralRanges(body,entries);
+  return {ranges:[...tags.ranges,...literal.ranges].sort((a,b)=>a.start-b.start),tokens:[...tags.tokens,...literal.tokens],invalid:tags.invalid||literal.invalid};
+}
+function memorySuiteEraseSourceRanges(body,ranges){
+  const sorted=[...ranges].sort((a,b)=>a.start-b.start||b.end-a.end),parts=[];let pos=0;
+  for(const r of sorted){if(r.start>pos)parts.push(body.slice(pos,r.start));pos=Math.max(pos,r.end);}
+  parts.push(body.slice(pos));return parts.join('');
+}
+function memorySuiteSourceRuleForm(value){
+  if(typeof value==='object')return value;
+  if(value==='@html-comment')return {open:'<!--',close:'-->'};
+  if(value==='@lbdata')return {open:'[LBDATA START]',close:'[LBDATA END]'};
+  if(value==='@inlay')return {open:'{{inlay::',close:'}}'};
+  if(value==='@suite-blocks')return {open:'Suite 기억·패킷 표식',close:'기존 기본 묶음'};
+  return {open:'<'+value+'>',close:'</'+value+'>'};
+}
+
+function memorySuiteNormalizeSourceRules(input) {
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1)||input.controls!=null&&!Array.isArray(input.controls))throw Error('SOURCE_RULES_INVALID');
+  const result={version:1};
+  const rawIgnored=typeof input.ignoredTags==='string'?input.ignoredTags.split(/\r?\n/):input.ignoredTags??[];
+  if(!Array.isArray(rawIgnored))throw Error('SOURCE_RULES_INVALID');
+  const special=rawIgnored.map(String).map(x=>x.trim()).filter(x=>x.startsWith('@')).map(x=>x.slice(1));
+  result.ignoredTags=memorySuiteNormalizeSourceEntries(rawIgnored.filter(x=>typeof x!=='string'||!x.trim().startsWith('@')),'ignoredTags');
+  for(const key of ['unwrapTags','sourceTags'])result[key]=memorySuiteNormalizeSourceEntries(input[key]??[],key);
+  const all=[...result.ignoredTags,...result.unwrapTags,...result.sourceTags];
+  if(new Set(all.map(x=>JSON.stringify(x))).size!==all.length)throw Error('SOURCE_RULES_CONFLICT: 같은 태그를 여러 규칙에 지정할 수 없습니다.');
+  const markers=new Set();for(const entry of all){const f=typeof entry==='string'?{open:'<'+entry+'>',close:'</'+entry+'>'}:entry;for(const marker of [f.open,f.close].filter(Boolean)){if(markers.has(marker))throw Error('SOURCE_RULES_CONFLICT: 같은 여는/닫는 표식을 여러 규칙에 사용할 수 없습니다.');markers.add(marker);}}
+  result.controls=[...new Set([...(input.controls??[]),...special])].sort();
+  if(result.controls.some(x=>!['html-comment','lbdata','suite-blocks','inlay'].includes(x)))throw Error('SOURCE_RULES_CONTROL_INVALID');
+  for(const entry of all){if(typeof entry!=='object')continue;for(const control of result.controls){const form=memorySuiteSourceRuleForm('@'+control);if(entry.open===form.open&&entry.close===form.close)throw Error('SOURCE_RULES_CONFLICT: 같은 기본 규칙이 이미 등록되어 있습니다.');}}
+  return result;
+}
+function memorySuiteSourceTagRanges(body, names) {
+  const wanted=new Set(names),stack=[],ranges=[],tokens=[];let invalid=false,m;
+  const re=/<!--[\s\S]*?(?:-->|$)|<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;
+  while((m=re.exec(body))){
+    if(!m[1]||!wanted.has(m[1].toLowerCase()))continue;
+    const token={start:m.index,end:re.lastIndex,name:m[1].toLowerCase(),close:/^<\//.test(m[0]),self:/\/\s*>$/.test(m[0])};tokens.push(token);
+    if(token.close){const open=stack.pop();if(!open||open.name!==token.name){invalid=true;stack.length=0;continue;}if(!stack.length)ranges.push({start:open.start,end:token.end,innerStart:open.end,innerEnd:token.start});}
+    else if(token.self || token.name==='img'&&!/<\/img\s*>/i.test(body.slice(token.end))){if(!stack.length)ranges.push({start:token.start,end:token.end,innerStart:token.end,innerEnd:token.end});}
+    else stack.push(token);
+  }
+  return {ranges,tokens,invalid:invalid||stack.length>0};
+}
+function memorySuiteProjectSourceRules(value,rules) {
+  let body=String(value??'');const warnings=[];
+  if(rules.sourceTags.length){
+    const parsed=memorySuiteSourceRanges(body,rules.sourceTags);
+    if(parsed.tokens.length){
+      if(parsed.invalid||parsed.ranges.length!==1||parsed.tokens.length!==2||!body.slice(parsed.ranges[0]?.innerStart,parsed.ranges[0]?.innerEnd).trim())warnings.push('원문 영역이 비어 있거나 불완전·중복되어 전체 본문을 사용합니다.');
+      else {const r=parsed.ranges[0];body=body.slice(r.innerStart,r.innerEnd);}
+    }
+  }
+  // A malformed selection fails back to the full original, not a partial projection.
+  if(warnings.length)return {text:String(value??''),warnings};
+  let dropInvalid=false;const dropRanges=[];
+  for(const entry of rules.ignoredTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)dropInvalid=true;
+    else dropRanges.push(...part.ranges);
+  }
+  if(dropInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제외 태그는 보존합니다.');
+  if(dropRanges.length)body=memorySuiteEraseSourceRanges(body,dropRanges.filter(r=>{
+    const opening=body.slice(r.start,r.innerStart);
+    return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());
+  }));
+  let unwrapInvalid=false;const unwrapTokens=[];
+  for(const entry of rules.unwrapTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)unwrapInvalid=true;
+    else unwrapTokens.push(...part.tokens);
+  }
+  if(unwrapInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제거 표식은 보존합니다.');
+  if(unwrapTokens.length)body=memorySuiteEraseSourceRanges(body,unwrapTokens);
+  for(const control of rules.controls){
+    if(control==='html-comment')body=body.replace(/<!--[\s\S]*?-->/g,'');
+    if(control==='lbdata')body=body.replace(/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'');
+    if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
+    if(control==='suite-blocks')body=body
+      .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
+  }
+  return {text:body,warnings};
+}
+// Only Suite-owned protocol envelopes belong here. External module markup remains editable.
+function memorySuiteIsInternalSourceRule(entry) {
+  if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
+  if(!entry||typeof entry.open!=='string')return false;
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+    || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
+}
+function memorySuiteExternalSourceRules(rules, migrate=false) {
+  const out={...rules};
+  for(const key of ['ignoredTags','unwrapTags','sourceTags'])out[key]=rules[key].filter(x=>!memorySuiteIsInternalSourceRule(x)&&!(migrate&&x==='dag_runtime_contract'));
+  out.controls=rules.controls.filter(x=>x!=='suite-blocks');return out;
+}
+function memorySuiteStripInternalSource(value) {
+  const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+}
+
+function memorySuiteCanonicalSource(value,owner) {
+  const rules=memorySuiteSourceRules(owner);if(!rules)return null;
+  // No hidden content removal after applying the user's explicit rules.
+  return memorySuiteProjectSourceRules(memorySuiteStripInternalSource(value),rules).text.replace(/\r\n/g,'\n').trim();
+}
+
+function createMemorySuiteSourceInputPolicy(config) {
+  const owner=config.owner||'libra';
+  if(!['libra','hayaku','flashback','gradia'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
+  const clone=value=>JSON.parse(JSON.stringify(value));
+  let preferences=null,loading=null,saving=null,disposed=false;
+  async function ready() {
+    if(saving)await saving;
+    if(preferences)return preferences;
+    if(!loading)loading=(async()=>{
+      const raw=await config.read();
+      // A malformed stored preference (hand-edited or torn) must not take the whole
+      // plugin down at startup: fall back to defaults and say so. Nothing is
+      // written back until the user saves the rules again.
+      let value;
+      try{value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);}catch(error){value=null;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){
+        try{globalThis.__memorySuiteSourceInputPreferenceErrors={...(globalThis.__memorySuiteSourceInputPreferenceErrors||{}),[owner]:{at:Date.now(),reason:'SOURCE_INPUT_PREFERENCES_INVALID'}};}catch(_){}
+        try{console.warn('[memory-suite] '+owner+' source input preferences unreadable; using defaults');}catch(_){}
+        value={};
+      }
+      value.ignoredTags=memorySuiteSourceIgnoredTags(value.ignoredTags)
+        .filter(x=>!memorySuiteIsInternalSourceRule(x)&&!(value.externalRulesVersion!==1&&x==='dag_runtime_contract'));
+      if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
+      value.externalRulesVersion=1;
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      // A malformed stored budget is ignored (shared budget off) rather than blocking the plugin.
+      let budget=null;if(value.recallBudget){try{budget=memorySuiteNormalizeRecallBudget(value.recallBudget);}catch(_){budget=null;}}
+      if(budget)value.recallBudget=budget;else delete value.recallBudget;
+      preferences=value;
+      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);memorySuiteRecallBudget(owner,budget);
+      return value;
+    })().finally(()=>{loading=null;});
+    return loading;
+  }
+  const loadPreferences=ready;
+  const sourceRules=()=>clone(memorySuiteSourceRules(owner)||memorySuiteDefaultSourceRules(owner));
+  function save(input,ruleInput) {
+    if(saving||config.busy?.()===true)return Promise.reject(Error('SOURCE_IGNORE_TAGS_BUSY: 현재 요청·처리가 끝난 뒤 저장하세요.'));
+    const work=(async()=>{
+      await ready();
+      const proposed=ruleInput===undefined?null:memorySuiteNormalizeSourceRules(ruleInput);
+      if(proposed&&([...proposed.ignoredTags,...proposed.unwrapTags,...proposed.sourceTags].some(memorySuiteIsInternalSourceRule)||proposed.controls.includes('suite-blocks')))throw Error('SOURCE_RULES_INTERNAL: Suite 자체 운용 표식은 내부에서 처리합니다.');
+      const ignoredTags=(proposed?proposed.ignoredTags.filter(x=>typeof x==='string'):memorySuiteSourceIgnoredTags(input)).filter(x=>!memorySuiteIsInternalSourceRule(x));
+      const normalized=proposed||(preferences.sourceRules?memorySuiteNormalizeSourceRules({...preferences.sourceRules,ignoredTags}):null);
+      const rules=normalized?{...(preferences.sourceRules||{}),...normalized}:null;
+      const desired={...preferences,ignoredTags,...(rules?{sourceRules:rules}:{}),externalRulesVersion:1},body=JSON.stringify(desired);
+      if(disposed||config.busy?.()===true)throw Error('SOURCE_IGNORE_TAGS_BUSY');
+      if(await config.write(body)===false)throw Error('SOURCE_INPUT_WRITE_REJECTED');
+      const raw=await config.read();if((typeof raw==='string'?raw:JSON.stringify(raw))!==body)throw Error('SOURCE_INPUT_READBACK_FAILED');
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      preferences=desired;memorySuiteSourceTagPolicy(owner,ignoredTags);memorySuiteSourceRules(owner,rules);
+      return {sourceRules:sourceRules(),ignoredTags:[...ignoredTags]};
+    })();
+    saving=work;return work.finally(()=>{if(saving===work)saving=null;});
+  }
+  const setSourceRules=input=>save(null,input);
+  const recallBudget=()=>clone(memorySuiteRecallBudget(owner)||memorySuiteDefaultRecallBudget());
+  // The shared recall budget lives in the same stored preferences; saving it keeps every other field.
+  function setRecallBudget(input) {
+    if(saving||config.busy?.()===true)return Promise.reject(Error('RECALL_BUDGET_BUSY: 현재 요청·처리가 끝난 뒤 저장하세요.'));
+    const work=(async()=>{
+      await ready();
+      const budget=memorySuiteNormalizeRecallBudget(input);
+      const desired={...preferences,recallBudget:budget},body=JSON.stringify(desired);
+      if(disposed||config.busy?.()===true)throw Error('RECALL_BUDGET_BUSY');
+      if(await config.write(body)===false)throw Error('SOURCE_INPUT_WRITE_REJECTED');
+      const raw=await config.read();if((typeof raw==='string'?raw:JSON.stringify(raw))!==body)throw Error('SOURCE_INPUT_READBACK_FAILED');
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      preferences=desired;memorySuiteRecallBudget(owner,budget);
+      return recallBudget();
+    })();
+    saving=work;return work.finally(()=>{if(saving===work)saving=null;});
+  }
+  // readSample is an explicit local read: string or {text,label?,role?}; never stored.
+  // projectLegacySample preserves the owner's actual normalizer until rules are edited.
+  function mountControls(container) {
+    if(!container?.ownerDocument||container.querySelector('[data-source-input-controls]'))return;
+    const doc=container.ownerDocument,box=doc.createElement('section');
+    box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
+    const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+    const style=make('style');style.textContent=`
+.ms-source-settings{font:14px/1.6 system-ui,-apple-system,'Malgun Gothic',sans-serif;display:grid;gap:14px;width:100%;max-width:960px;margin:0 auto 24px;color:inherit}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:18px}.ms-source-settings label{display:grid;gap:5px;font-size:13px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;color:inherit;border:1px solid #8887;border-radius:9px;background:transparent;min-width:0;padding:8px 10px}.ms-source-settings textarea{width:100%;resize:vertical;min-height:42px}.ms-source-settings button{cursor:pointer;min-height:40px}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.ms-source-settings .ms-input-list{display:grid;gap:10px}.ms-source-settings .ms-input-row{border:1px solid #8885;border-radius:12px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,230px) auto;gap:10px;align-items:start}.ms-source-settings .ms-input-fields{display:grid;gap:8px}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:8px}.ms-source-settings .ms-custom-toggle input{margin:0}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ms-source-settings [hidden]{display:none!important}
+.ms-source-settings .ms-input-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ms-source-settings .ms-input-apply{background:#79522d;color:white;border-color:#79522d;font-weight:700}.ms-source-settings .ms-input-status{min-height:24px}.ms-source-settings .ms-input-preview{border-top:1px solid #8885;padding-top:14px;display:grid;gap:10px}.ms-source-settings pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #8885;border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid #b9802e;padding-left:10px}.ms-source-settings details{font-size:13px}.ms-source-settings summary{cursor:pointer}
+@media(max-width:600px){.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-actions button{flex:1}}
+`;
+    box.append(style,make('h3','분석할 내용'),make('p','설정 없이 바로 사용할 수 있습니다. 알 수 없는 외부 태그와 내용은 그대로 둡니다. 필요한 경우에만 아래 규칙을 바꾸세요.'));
+    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';box.append(list);
+    const actions=make('div'),apply=make('button','적용'),status=make('p');actions.className='ms-input-actions';apply.type='button';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';apply.disabled=true;
+    status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    actions.append(apply);box.append(actions,status,make('p','규칙은 적용을 눌러야 저장됩니다. 기존 기억은 그대로 유지되며, 바꾸려면 원하는 구간을 직접 재분석하세요.'));
+    const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
+    previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
+    previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
+    warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
+    output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
+    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
+    const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
+    let rows=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
+    const isEmpty=row=>row.custom.checked?!row.open.value.trim()&&!row.close.value.trim():!row.value.value.trim();
+    function inferTag(input) {
+      const value=input.trim();
+      if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
+      const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
+      if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
+    }
+    function readDraft() {
+      const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+      for(const row of rows){
+        if(isEmpty(row))continue;
+        const key=row.action.value;
+        if(row.custom.checked){
+          const entry={open:row.open.value,close:row.close.value};
+          const form=row.control&&memorySuiteSourceRuleForm('@'+row.control);
+          if(form&&key==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);
+          else draft[key].push(entry);
+        }else draft[key].push(inferTag(row.value.value));
+      }
+      return memorySuiteNormalizeSourceRules(draft);
+    }
+    const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
+    function setEnabled() {
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
+      apply.disabled=!loaded||applying||!dirty;
+      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+    }
+    async function showPreview() {
+      if(!sample)return;
+      const version=++previewVersion;
+      warning.hidden=true;warning.textContent='';output.textContent='';output.hidden=true;
+      try{
+        const rules=readDraft();let projected;
+        if(legacy&&fingerprint(rules)===initial){
+          if(typeof config.projectLegacySample!=='function'){previewStatus.textContent='기본 분석 입력을 미리 볼 수 없습니다.';return;}
+          projected={text:await config.projectLegacySample(sample),warnings:[]};
+        }else projected=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(sample.text),rules);
+        if(disposed||version!==previewVersion)return;
+        output.textContent=String(projected.text??'').replace(/\r\n/g,'\n').trim();output.hidden=false;
+        warning.textContent=projected.warnings.join(' ');warning.hidden=!projected.warnings.length;
+        previewStatus.textContent=(sample.label?sample.label+' · ':'')+(output.textContent?'불러온 메시지의 분석 입력':'분석할 내용이 없습니다.')+(fingerprint(rules)!==initial?' · 아직 적용하지 않은 규칙':'');
+      }catch(e){if(disposed||version!==previewVersion)return;warning.textContent=String(e.message||e);warning.hidden=false;previewStatus.textContent='규칙을 확인한 뒤 다시 미리 보세요.';}
+    }
+    function changed() {
+      if(!loaded||applying)return;
+      if(!rows.some(isEmpty))addRow();
+      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();
+    }
+    function addRow(value=null,key='ignoredTags',control=null) {
+      const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
+      element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
+      const openLabel=make('label','시작 표식'),closeLabel=make('label','끝 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
+      remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
+      if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
+      const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
+      const syncMode=()=>{tagLabel.hidden=custom.checked;customFields.hidden=!custom.checked;};syncMode();
+      custom.onchange=()=>{
+        if(custom.checked&&!open.value&&!close.value&&valueInput.value.trim()){
+          try{const name=inferTag(valueInput.value);open.value='<'+name+'>';close.value='</'+name+'>';}catch{open.value=valueInput.value;}
+        }
+        if(!custom.checked&&(open.value||close.value))valueInput.value=open.value||close.value;
+        syncMode();changed();
+      };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
+      remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;rows=rows.filter(item=>item!==row);element.remove();changed();};
+      fields.append(tagLabel,customLabel,customFields);if(control)fields.append(make('small',controlLabels[control]||'저장된 기본 규칙'));
+      element.append(fields,actionLabel,remove);list.append(element);return row;
+    }
+    function fill() {
+      rows=[];list.replaceChildren();const rules=sourceRules();
+      for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
+      for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
+      addRow();initial=fingerprint(rules);legacy=!preferences.sourceRules;setEnabled();
+    }
+    apply.onclick=async()=>{
+      if(!loaded||applying||disposed)return;
+      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
+      applying=true;status.textContent='적용 중…';setEnabled();
+      try{await setSourceRules(rules);if(disposed)return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();}
+      catch(e){if(!disposed)status.textContent='적용 실패: '+String(e.message||e);}
+      finally{applying=false;if(!disposed)setEnabled();}
+    };
+    previewButton.onclick=async()=>{
+      if(!loaded||readingSample||disposed||typeof config.readSample!=='function')return;
+      readingSample=true;sample=null;const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
+      try{
+        const result=await config.readSample();if(disposed||version!==previewVersion)return;
+        if(result==null){previewStatus.textContent='현재 채팅에 미리 볼 메시지가 없습니다.';return;}
+        if(typeof result!=='string'&&typeof result.text!=='string')throw Error('SOURCE_SAMPLE_INVALID');
+        sample=typeof result==='string'?{text:result}:result;await showPreview();
+      }catch{if(!disposed&&version===previewVersion)previewStatus.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 미리 보세요.';}
+      finally{readingSample=false;if(!disposed)setEnabled();}
+    };
+    status.textContent='저장된 규칙을 읽는 중…';
+    loadPreferences().then(()=>{if(disposed)return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed)status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+  }
+  return Object.freeze({ready,sourceRules,setSourceRules,recallBudget,setRecallBudget,setIgnoredTags:input=>save(input),
+    ignoredTags:()=>[...memorySuiteSourceTagPolicy(owner)],mountControls,dispose:()=>{disposed=true;}});
+}
+// Keep the established LIBRA factory name for existing consumers.
+function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceInputPolicy({...config,owner:'libra'}); }
+/* END LIBRA SOURCE INPUT POLICY */
+/* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
+// Owner input-rule controls and explicit review UI. Reanalysis stays in owner callbacks.
+// 채팅에서 태그 찾기: which tags and markers the recent messages use, and how the draft rules
+// treat each one, so a rule can be added without knowing tag names in advance. Local only:
+// no model call, nothing stored or logged.
+const MEMORY_SUITE_PRESENTATION_TAG_HINTS = Object.freeze({
+  'img':'이미지','lb-xnai':'LightBoard 삽화','lb-lazy':'LightBoard 지연 표식','lb-stage':'LightBoard 무대 표식',
+  'lb-stage-marker':'LightBoard 무대 표식','thoughts':'생각 블록'
+});
+function memorySuiteSourceTagInventory(texts, rules) {
+  const found=new Map(),note=(key,kind,example)=>{const row=found.get(key)||{name:key,kind,count:0,messages:0,example:''};row.count++;if(!row.example&&example)row.example=example;found.set(key,row);return row;};
+  const clip=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,80);
+  for(const raw of (Array.isArray(texts)?texts:[]).slice(0,40)){
+    const body=memorySuiteStripInternalSource(String(raw||'')),seen=new Set();
+    const re=/<([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;let m;
+    while((m=re.exec(body))){
+      const name=m[1].toLowerCase(),close=new RegExp('</'+name.replace(/[-:]/g,'\\$&')+'\\s*>','i').exec(body.slice(re.lastIndex));
+      const inner=/\/\s*>$/.test(m[0])||!close?'':body.slice(re.lastIndex,re.lastIndex+close.index);
+      note(name,'tag',clip(inner)||clip(m[0]));seen.add(name);
+    }
+    for(const [control,pattern] of [['html-comment',/<!--([\s\S]*?)-->/g],['lbdata',/\[LBDATA START\]([\s\S]*?)\[LBDATA END\]/gi],['inlay',/\{\{inlay::([^{}\r\n]+)\}\}/gi]]){
+      for(const hit of body.matchAll(pattern)){note('@'+control,'control',clip(hit[1])||clip(hit[0]));seen.add('@'+control);}
+    }
+    for(const key of seen)found.get(key).messages++;
+  }
+  const lists=rules&&typeof rules==='object'?rules:{ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+  // Whether an item reaches the analysis is read from the projection itself, so a tag inside an
+  // excluded block, or outside a 이 안만 분석 area, shows as left out even without its own rule.
+  const projected=rules&&typeof rules==='object'
+    ? (Array.isArray(texts)?texts:[]).slice(0,40).map(raw=>{try{return memorySuiteProjectSourceRules(memorySuiteStripInternalSource(String(raw||'')),rules).text;}catch{return String(raw||'');}}).join('\n')
+    : null;
+  const controlPatterns={'@html-comment':/<!--[\s\S]*?-->/,'@lbdata':/\[LBDATA START\][\s\S]*?\[LBDATA END\]/i,'@inlay':/\{\{inlay::[^{}\r\n]+\}\}/i};
+  const survives=row=>projected===null||(row.kind==='control'?controlPatterns[row.name].test(projected):new RegExp('<'+row.name.replace(/[-:]/g,'\\$&')+'(?=[\\s/>])','i').test(projected));
+  const treatment=row=>{
+    if(row.kind==='control'&&(lists.controls||[]).includes(row.name.slice(1)))return 'ignoredTags';
+    if(row.kind==='tag')for(const key of ['ignoredTags','unwrapTags','sourceTags'])if((lists[key]||[]).some(entry=>entry===row.name))return key;
+    return survives(row)?'analyzed':'covered';
+  };
+  return [...found.values()].map(row=>({...row,treatment:treatment(row),hint:MEMORY_SUITE_PRESENTATION_TAG_HINTS[row.name]||''}))
+    .sort((a,b)=>(a.treatment==='analyzed'?0:1)-(b.treatment==='analyzed'?0:1)||b.messages-a.messages||b.count-a.count||a.name.localeCompare(b.name))
+    .slice(0,40);
+}
+// Its styles travel with it, so it looks the same inside any editor's own stylesheet.
+function memorySuiteSourceFinderCss(){return `
+.ms-source-settings .ms-input-finder,.ms-source-settings .ms-input-defaults-notice{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-finder>button{justify-self:start}
+.ms-source-settings .ms-finder-list{display:grid;gap:6px}.ms-source-settings .ms-finder-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-finder-row[data-treatment]:not([data-treatment=analyzed]){opacity:.72}
+.ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
+.ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
+.ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
+/* The recent-messages list already shows the last message; the single output stays for tools. */
+.ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
+.ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
+.ms-source-settings .ms-preview-head{display:flex;gap:8px;align-items:baseline;justify-content:space-between;flex-wrap:wrap;font-size:12px}.ms-source-settings .ms-preview-item pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.ms-source-settings .ms-preview-item del{text-decoration:line-through;opacity:.55;background:color-mix(in srgb,var(--danger,#c0392b) 14%,transparent);border-radius:3px}
+@media(max-width:600px){.ms-source-settings .ms-finder-row{flex-direction:column;align-items:stretch}.ms-source-settings .ms-finder-actions{flex-wrap:wrap}.ms-source-settings .ms-finder-actions button{flex:1 1 auto;white-space:nowrap}.ms-source-settings .ms-input-row select{min-width:8.5em}}
+`;}
+// The finder section shared by every source-rule editor. config: readSamples() → raw texts,
+// draft() → current draft rules (throws while invalid), addRule(name, action), busy().
+function mountMemorySuiteSourceTagFinder(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('section'),button=make('button','최근 메시지에서 태그 찾기'),status=make('p'),list=make('div');
+  const style=make('style');style.textContent=memorySuiteSourceFinderCss();
+  area.className='ms-input-finder';area.dataset.sourceTagFinder='';button.type='button';button.dataset.sourceTagFind='';
+  status.dataset.sourceTagFinderStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');list.dataset.sourceTagFinderList='';list.className='ms-finder-list';
+  area.append(style,make('strong','채팅에서 태그 찾기'),make('small','최근 메시지에 쓰인 태그와 표식을 보여 줍니다. 분석에 들어가는 것 중 뺄 것을 골라 추가한 뒤 적용을 누르세요. AI를 호출하지 않습니다.'),button,status,list);
+  host.append(area);
+  const labels={analyzed:'분석에 포함',ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석',covered:'다른 규칙으로 빠짐'};
+  const controlNames={'@html-comment':'HTML 주석','@lbdata':'LBDATA 제어 블록','@inlay':'삽화 호출'};
+  let samples=null,reading=false;
+  const render=()=>{
+    if(!samples)return;
+    let draft=null;try{draft=config.draft();}catch{}
+    const rows=memorySuiteSourceTagInventory(samples,draft);
+    if(!rows.length){list.replaceChildren();status.textContent='최근 메시지 '+samples.length+'개에 태그나 표식이 없습니다.';return;}
+    status.textContent='최근 메시지 '+samples.length+'개에서 '+rows.length+'가지를 찾았습니다.'+(draft?'':' 규칙 초안에 오류가 있어 처리 상태는 표시하지 않습니다.');
+    list.replaceChildren(...rows.map(row=>{
+      const item=make('div'),title=make('code',row.kind==='control'?controlNames[row.name]||row.name:'<'+row.name+'>'),meta=make('small'),example=make('small',row.example?'예: '+row.example:'');
+      item.className='ms-finder-row';item.dataset.sourceTagFinderRow=row.name;item.dataset.treatment=draft?row.treatment:'unknown';
+      meta.textContent=[row.messages+'개 메시지 · '+row.count+'회',row.hint,draft?labels[row.treatment]:''].filter(Boolean).join(' · ');
+      const text=make('div');text.className='ms-finder-text';text.append(title,meta);if(row.example){example.className='ms-finder-example';text.append(example);}
+      if(row.name==='lb-xnai')text.append(make('small','안에 서술이 있으면 그 서술은 분석에 남고, 이미지 호출만 빠집니다.'));
+      const actions=make('div');actions.className='ms-finder-actions';
+      if(draft&&row.treatment==='analyzed'){
+        const actionsFor=row.kind==='control'?[['ignoredTags','원문 태그 필터에 등록']]:[['ignoredTags','원문 태그 필터에 등록'],['unwrapTags','태그만 지우기']];
+        for(const [key,label] of actionsFor){const add=make('button',label);add.type='button';add.dataset.sourceTagFinderAdd=key;add.disabled=config.busy?.()===true;
+          add.onclick=()=>{if(config.busy?.()===true)return;config.addRule(row.kind==='control'?row.name:row.name,key);render();};actions.append(add);}
+      }
+      item.append(text,actions);return item;
+    }));
+  };
+  button.onclick=async()=>{
+    if(reading||config.busy?.()===true)return;reading=true;button.disabled=true;status.textContent='최근 메시지를 읽는 중…';list.replaceChildren();
+    try{const texts=await config.readSamples();samples=memorySuiteSourceSampleItems(texts).map(item=>item.text);render();}
+    catch{samples=null;status.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 시도하세요.';}
+    finally{reading=false;button.disabled=false;}
+  };
+  return {refresh:render};
+}
+// Rows for default presentation tags a saved rule set leaves out (shown once, added as a draft).
+function mountMemorySuiteMissingDefaultsNotice(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const box=make('div'),text=make('p'),add=make('button','빠진 기본 규칙 추가');box.className='ms-input-defaults-notice';box.dataset.sourceMissingDefaults='';box.hidden=true;add.type='button';add.dataset.sourceMissingDefaultsAdd='';
+  box.append(text,add);host.append(box);
+  const update=rules=>{
+    const missing=memorySuiteMissingDefaultSourceTags(rules);box.hidden=!missing.length;
+    text.textContent=missing.length?'저장된 규칙에 기본 정리 대상이 빠져 있어, 다음 표시용 태그가 분석에 들어갑니다: '+missing.map(name=>'<'+name+'>').join(', ')+'. 추가한 뒤 적용을 누르면 규칙 저장 전과 같게 빠집니다.':'';
+    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules))config.addRule(name,'ignoredTags');box.hidden=true;};
+  };
+  return {update};
+}
+// Samples may be plain strings or {text, role}; every consumer reads them through this.
+const memorySuiteSourceSampleItems=samples=>(Array.isArray(samples)?samples:[]).map(item=>typeof item==='string'?{text:item,role:''}:item&&typeof item.text==='string'?{text:item.text,role:String(item.role||'')}:null).filter(Boolean);
+// 미리보기: the same steps as memorySuiteProjectSourceRules, tracking which characters of the
+// message each step removes. When the tracked result does not equal the real projection the
+// marks are not shown (exact:false), so the preview never displays a result the analysis lacks.
+function memorySuiteMarkSourceProjection(value, rules) {
+  const source=memorySuiteStripInternalSource(String(value??''));
+  let body=source,index=Array.from({length:source.length},(_,i)=>i);
+  const keep=new Uint8Array(source.length);
+  const erase=ranges=>{
+    if(!ranges.length)return;
+    const drop=new Uint8Array(body.length);
+    for(const r of ranges)for(let i=Math.max(0,r.start);i<Math.min(body.length,r.end);i++)drop[i]=1;
+    let next='';const nextIndex=[];
+    for(let i=0;i<body.length;i++)if(!drop[i]){next+=body[i];nextIndex.push(index[i]);}
+    body=next;index=nextIndex;
+  };
+  let failedBack=false;
+  if(rules.sourceTags.length){
+    const parsed=memorySuiteSourceRanges(body,rules.sourceTags);
+    if(parsed.tokens.length){
+      if(parsed.invalid||parsed.ranges.length!==1||parsed.tokens.length!==2||!body.slice(parsed.ranges[0]?.innerStart,parsed.ranges[0]?.innerEnd).trim())failedBack=true;
+      else{const r=parsed.ranges[0];erase([{start:0,end:r.innerStart},{start:r.innerEnd,end:body.length}]);}
+    }
+  }
+  if(!failedBack){
+    const dropRanges=[];
+    for(const entry of rules.ignoredTags){const part=memorySuiteSourceRanges(body,[entry]);if(!part.invalid)dropRanges.push(...part.ranges);}
+    if(dropRanges.length)erase(dropRanges.filter(r=>{const opening=body.slice(r.start,r.innerStart);return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());}));
+    const unwrapTokens=[];
+    for(const entry of rules.unwrapTags){const part=memorySuiteSourceRanges(body,[entry]);if(!part.invalid)unwrapTokens.push(...part.tokens);}
+    if(unwrapTokens.length)erase(unwrapTokens);
+    const patterns={'html-comment':/<!--[\s\S]*?-->/g,'lbdata':/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'inlay':/\{\{inlay::[^{}\r\n]+\}\}/gi,
+      'suite-blocks':/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]|<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi};
+    for(const control of rules.controls)if(patterns[control])erase([...body.matchAll(patterns[control])].map(m=>({start:m.index,end:m.index+m[0].length})));
+  }
+  if(failedBack){body=source;index=Array.from({length:source.length},(_,i)=>i);}
+  for(const i of index)keep[i]=1;
+  const segments=[];
+  for(let i=0;i<source.length;i++){const removed=!keep[i],last=segments.at(-1);if(last&&last.removed===removed)last.text+=source[i];else segments.push({text:source[i],removed});}
+  let expected='';try{expected=memorySuiteProjectSourceRules(source,rules).text;}catch{expected=null;}
+  return {segments,text:body,exact:expected!==null&&expected===body,fallback:failedBack};
+}
+// Recent messages under the draft rules, removed parts struck through. Read-only and local.
+function mountMemorySuiteSourcePreviewList(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('div'),legend=make('small'),list=make('div');area.className='ms-preview-list';area.dataset.sourcePreviewList='';area.hidden=true;list.className='ms-preview-items';
+  legend.textContent='최근 메시지 · 취소선은 분석에서 빠지는 부분입니다.';area.append(legend,list);host.append(area);
+  let samples=null,serial=0;
+  const render=async()=>{
+    if(!samples)return;const token=++serial;
+    let rules=null;try{rules=config.draft();}catch{}
+    const legacy=config.legacy?.()===true&&typeof config.projectLegacy==='function';
+    legend.textContent=legacy?'최근 메시지 · 아직 저장한 규칙이 없어 플러그인 자체 정리 결과를 보여 줍니다. 규칙을 바꾸면 빠지는 부분이 취소선으로 표시됩니다.':'최근 메시지 · 취소선은 분석에서 빠지는 부분입니다.';
+    const cards=[];
+    for(const [n,item] of samples.entries()){
+      const card=make('article'),head=make('div'),pre=make('pre');card.className='ms-preview-item';card.dataset.sourcePreviewItem=String(n);head.className='ms-preview-head';
+      head.append(make('strong',(samples.length-n===1?'마지막 메시지':'최근 '+(samples.length-n)+'번째 메시지')+(item.role?' · '+({user:'사용자',assistant:'응답',char:'응답',model:'응답'}[item.role]||item.role):'')));
+      if(legacy){
+        let text='';try{text=String(await config.projectLegacy(item)??'').replace(/\r\n/g,'\n').trim();}catch{text='';}
+        pre.textContent=text||'(분석할 내용 없음)';
+      }else if(rules){
+        const marked=memorySuiteMarkSourceProjection(item.text,rules);
+        if(marked.exact){
+          for(const segment of marked.segments){const node=segment.removed?make('del',segment.text):doc.createTextNode(segment.text);pre.append(node);}
+          const removed=marked.segments.filter(segment=>segment.removed).reduce((sum,segment)=>sum+segment.text.length,0);
+          head.append(make('small',removed?removed.toLocaleString('ko-KR')+'자 빠짐':'빠지는 부분 없음'));
+        }else{pre.textContent=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(item.text),rules).text.replace(/\r\n/g,'\n').trim();head.append(make('small','분석 입력 (빠진 부분 표시 불가)'));}
+        if(marked.fallback)card.dataset.sourcePreviewWarning='';
+      }else{pre.textContent=item.text;head.append(make('small','규칙 초안에 오류가 있어 원문 그대로 표시'));}
+      card.append(head,pre);cards.push(card);
+      if(token!==serial)return;
+    }
+    if(token!==serial)return;
+    list.replaceChildren(...cards);area.hidden=!cards.length;
+  };
+  const load=async()=>{
+    const token=++serial;
+    try{const items=memorySuiteSourceSampleItems(await config.readSamples());if(token!==serial)return;samples=items.slice(-5);}
+    catch{samples=null;area.hidden=true;return;}
+    await render();
+  };
+  return {load,refresh:()=>{void render();}};
+}
+// 세 플러그인 동시 적용: LIBRA, HAYAKU and Flashback keep their own copies of the source rules
+// and compare or copy them over plugin IPC. Only the three suite plugins may ask, the request
+// carries normalized rules only, and each receiver saves through its own policy (busy and
+// internal-rule checks included). Nothing else is exchanged.
+const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
+const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
+const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
+function createMemorySuiteSourceRuleSync(config) {
+  const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
+  if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
+  const peers=Object.keys(MEMORY_SUITE_SOURCE_RULE_PEERS).filter(key=>key!==owner);
+  const pending=new Map(),subscribers=new Set(),budgetSubscribers=new Set();let started=false,starting=null,disposed=false,serial=0;
+  const budgetFingerprint=budget=>budget?JSON.stringify(memorySuiteNormalizeRecallBudget(budget)):'';
+  const myBudget=()=>typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
+  const api=()=>{try{return config.api();}catch{return null;}};
+  const fingerprint=rules=>rules?JSON.stringify(memorySuiteNormalizeSourceRules(rules)):'';
+  // 공통 기준: a plugin without saved rules runs the shared defaults, so it is compared by them.
+  const effective=()=>memorySuiteSourceRules(owner)||memorySuiteDefaultSourceRules(owner);
+  const notify=rules=>{try{config.onRemoteApply?.(rules);}catch{}for(const fn of [...subscribers]){try{fn(rules);}catch{}}};
+  const reply=(target,message,result,error)=>Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'response',id:message.id,action:message.action,...(error?{error}:{result})})).catch(()=>{});
+  const handler=async(message,metadata={})=>{
+    if(disposed||!message||typeof message!=='object'||message.schema!==MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA||typeof message.id!=='string'||message.id.length>160)return;
+    const sender=String(metadata?.sender||'');
+    if(!Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)||sender===self)return;
+    if(message.kind==='response'){const record=pending.get(message.id);if(!record||record.target!==sender)return;pending.delete(message.id);clearTimeout(record.timer);record.resolve(message.error?{ok:false,error:String(message.error)}:{ok:true,result:message.result||{}});return;}
+    if(message.kind!=='request')return;
+    try{
+      await config.policy.ready();
+      if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null,effective:fingerprint(effective())});
+      if(message.action==='apply'){
+        if(config.isDisposed?.()===true)throw Error('SOURCE_RULE_SYNC_DISPOSED');
+        const rules=memorySuiteNormalizeSourceRules(message.rules);
+        // Compare-and-set: the sender saw these rules here; if they changed since (another editor
+        // applied first), refuse instead of overwriting rules the sender never saw.
+        if(typeof message.expected==='string'&&message.expected!==fingerprint(effective()))throw Error('SOURCE_RULE_SYNC_CONFLICT');
+        await config.policy.setSourceRules(rules);
+        notify(memorySuiteSourceRules(owner)||rules);
+        return void reply(sender,message,{owner,applied:true,rules:memorySuiteSourceRules(owner)||null});
+      }
+      // 기억 주입 공통 예산: the same compare-and-set exchange as the rules.
+      if(message.action==='describe_budget'){if(!myBudget())throw Error('RECALL_BUDGET_UNSUPPORTED');return void reply(sender,message,{owner,budget:budgetFingerprint(myBudget())});}
+      if(message.action==='apply_budget'){
+        if(config.isDisposed?.()===true)throw Error('SOURCE_RULE_SYNC_DISPOSED');
+        if(typeof config.policy.setRecallBudget!=='function')throw Error('RECALL_BUDGET_UNSUPPORTED');
+        const budget=memorySuiteNormalizeRecallBudget(message.budget);
+        if(typeof message.expected==='string'&&message.expected!==budgetFingerprint(myBudget()))throw Error('SOURCE_RULE_SYNC_CONFLICT');
+        const saved=await config.policy.setRecallBudget(budget);
+        for(const fn of [...budgetSubscribers]){try{fn(saved);}catch{}}
+        return void reply(sender,message,{owner,applied:true,budget:budgetFingerprint(saved)});
+      }
+      throw Error('SOURCE_RULE_SYNC_ACTION_INVALID');
+    }catch(error){reply(sender,message,null,String(error?.message||error).slice(0,300));}
+  };
+  const start=()=>{
+    if(started||disposed)return Promise.resolve(started);
+    if(!starting)starting=(async()=>{const host=api();if(typeof host?.addPluginChannelListener!=='function'||typeof host?.postPluginChannelMessage!=='function')return false;
+      if(await host.addPluginChannelListener(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler)===false)return false;started=true;return true;})().catch(()=>false).finally(()=>{starting=null;});
+    return starting;
+  };
+  const ask=async(peer,action,body={},timeoutMs=3000)=>{
+    if(!await start())return {ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'};
+    const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
+    return await new Promise(resolve=>{
+      const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
+      pending.set(id,record);
+      Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
+        .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
+    });
+  };
+  // state per peer: same | different (by the rules each one actually runs, saved or shared
+  // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
+  // what was seen there, passed back as `expected` when applying.
+  const compare=async()=>{
+    await config.policy.ready();const mine=fingerprint(effective());
+    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+      if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
+      const builtIn=!answer.result?.rules;
+      // An older peer does not report what it runs without saved rules; it is not the shared standard.
+      const theirs=typeof answer.result?.effective==='string'?answer.result.effective:builtIn?'':fingerprint(answer.result.rules);
+      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{}),...(answer.result?.rules?{rules:answer.result.rules}:{})}];}));
+    return Object.fromEntries(answers);
+  };
+  // expected: {peer: fingerprint seen by compare}; a peer whose rules moved since then refuses.
+  const applyToPeers=async(rules,only=peers,expected={})=>{
+    const normalized=memorySuiteNormalizeSourceRules(rules);
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply',{rules:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
+  };
+  const compareBudget=async()=>{
+    await config.policy.ready();const mine=budgetFingerprint(myBudget());
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
+      if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
+      const theirs=String(answer.result?.budget||'');
+      return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
+    return Object.fromEntries(answers);
+  };
+  const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
+    const normalized=memorySuiteNormalizeRecallBudget(budget);
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
+  };
+  const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
+  // Editors listen here so a rule applied from another plugin shows up in an open editor.
+  const subscribe=fn=>{if(typeof fn!=='function')return()=>{};subscribers.add(fn);return()=>{subscribers.delete(fn);};};
+  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+    if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
+  return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,compareBudget,applyBudgetToPeers,subscribeBudget,dispose});
+}
+// The editor's view of the other two plugins: whether their rules match, and one action to copy
+// this plugin's saved rules to them. Applying here with the box checked does the same.
+function mountMemorySuiteSourceRuleSyncPanel(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('section'),title=make('strong','다른 기억 플러그인'),list=make('div'),actions=make('div'),copy=make('button','이 규칙을 다른 플러그인에도 적용'),recheck=make('button','다시 확인'),status=make('p');
+  const together=make('label'),box=make('input');box.type='checkbox';box.checked=true;box.dataset.sourceRuleSyncTogether='';together.className='ms-sync-together';together.append(box,make('span','적용할 때 다른 기억 플러그인에도 같은 규칙 적용'));
+  area.className='ms-input-sync';area.dataset.sourceRuleSync='';list.className='ms-sync-list';list.dataset.sourceRuleSyncList='';actions.className='ms-sync-actions';
+  copy.type=recheck.type='button';copy.dataset.sourceRuleSyncCopy='';recheck.dataset.sourceRuleSyncRecheck='';status.dataset.sourceRuleSyncStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  actions.append(copy,recheck);area.append(title,together,list,actions,status);host.append(area);
+  const stateLabels={same:'같은 규칙',different:'규칙이 다름',absent:'응답 없음 (꺼져 있거나 설치되지 않음)',error:'확인 실패',checking:'확인 중…'};
+  const label=entry=>{const base=stateLabels[entry?.state||'checking'];return entry?.builtIn&&['same','different'].includes(entry.state)?base+' · 저장한 규칙 없음(공통 기본 규칙)':base;};
+  let states={},busy=false;
+  const draw=()=>{
+    list.replaceChildren(...config.sync.peers.map(peer=>{const row=make('div'),name=make('b',MEMORY_SUITE_SOURCE_RULE_LABELS[peer]),state=make('span',label(states[peer]));
+      row.className='ms-sync-row';row.dataset.sourceRuleSyncPeer=peer;row.dataset.state=states[peer]?.state||'checking';row.dataset.builtIn=states[peer]?.builtIn?'true':'false';row.append(name,state);return row;}));
+    const reachable=config.sync.peers.filter(peer=>states[peer]?.state==='different');
+    copy.disabled=busy||config.busy?.()===true||!config.savedRules()||config.dirty?.()===true||!reachable.length;
+    recheck.disabled=busy;
+  };
+  const check=async()=>{busy=true;states={};draw();try{states=await config.sync.compare();}catch{states={};}finally{busy=false;draw();}};
+  const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 규칙이 바뀌어 덮어쓰지 않음 · 다시 확인한 뒤 적용하세요':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':error;
+  // Only peers that run different rules receive them, each guarded by what was seen there.
+  const sendTo=async rules=>{
+    const peers=config.sync.peers.filter(peer=>states[peer]?.state==='different');
+    if(!peers.length){status.textContent='다른 기억 플러그인도 같은 규칙입니다.';return;}
+    busy=true;draw();status.textContent='다른 플러그인에 적용 중…';
+    try{
+      const expected=Object.fromEntries(peers.filter(peer=>typeof states[peer]?.fingerprint==='string').map(peer=>[peer,states[peer].fingerprint]));
+      const results=await config.sync.applyToPeers(rules,peers,expected);
+      const parts=Object.entries(results).map(([peer,result])=>MEMORY_SUITE_SOURCE_RULE_LABELS[peer]+(result.ok?' 적용됨':' 실패('+reason(result.error)+')'));
+      status.textContent=parts.length?parts.join(' · '):'적용할 플러그인이 없습니다.';
+    }finally{busy=false;await check();}
+  };
+  copy.onclick=()=>{const rules=config.savedRules();if(!rules||busy)return;void sendTo(rules);};
+  recheck.onclick=()=>{if(!busy)void check();};
+  // Called by the editor after its own 적용 succeeded: look again (this plugin's rules just
+  // changed), then send to the peers that now differ.
+  const afterApply=async rules=>{await check();if(box.checked)await sendTo(rules);};
+  return {check,afterApply,refresh:draw};
+}
+// 기억 주입 공통 예산 panel: one total split by fixed shares, saved here and in the other memory
+// plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
+function mountMemorySuiteRecallBudgetPanel(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
+  const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
+  const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
+  for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
+  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
+  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  const draftOrNull=()=>{try{return draft();}catch{return null;}};
+  const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
+  const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const draw=()=>{
+    const value=draftOrNull();
+    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
+    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const dirty=!value||fingerprint(value)!==initial;
+    apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
+    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+      row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
+  };
+  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
+  const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
+  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  const applyBudget=async()=>{
+    if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
+    let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
+    if(fingerprint(value)===initial)return {ok:true,skipped:true};
+    if(savedFingerprint()!==savedAtFill&&!overwriteConfirmed){overwriteConfirmed=true;status.textContent='그사이 다른 기억 플러그인에서 예산이 바뀌었습니다. 이 값으로 덮어쓰려면 예산 적용을 한 번 더 누르세요.';return {ok:false,error:status.textContent};}
+    busy=true;status.textContent='적용 중…';draw();
+    try{
+      await config.policy.setRecallBudget(value);fill();
+      if(config.sync){
+        await check();
+        const targets=config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)&&peerStates[peer]?.state==='different');
+        if(targets.length){
+          const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
+          const results=await config.sync.applyBudgetToPeers(value,targets,expected);
+          status.textContent='예산을 적용했습니다. '+Object.entries(results).map(([peer,result])=>labels[peer]+(result.ok?' 적용됨':' 실패('+reason(result.error)+')')).join(' · ');
+          await check();
+        }else status.textContent='예산을 적용했습니다.';
+      }else status.textContent='예산을 적용했습니다.';
+      config.onApplied?.(value);
+      return {ok:true,applied:true};
+    }catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
+    finally{busy=false;draw();}
+  };
+  apply.onclick=()=>applyBudget();
+  area.__msApplyPending=applyBudget;
+  // Another plugin applied a budget here: an untouched panel shows it, an edited one keeps the draft.
+  const unsubscribe=config.sync?.subscribeBudget?.(()=>{
+    if(!area.isConnected||config.isDisposed?.()===true){unsubscribe();return;}
+    if(!loaded||busy)return;
+    if(fingerprint(draftOrNull()||config.policy.recallBudget())===initial){fill();status.textContent='다른 기억 플러그인에서 바뀐 예산을 불러왔습니다.';void check();config.onApplied?.(config.policy.recallBudget());}
+    else{overwriteConfirmed=false;status.textContent='다른 기억 플러그인에서 예산을 바꿨습니다. 지금 값을 적용하면 그 예산을 덮어씁니다.';void check();}
+  })||(()=>{});
+  const load=()=>{loaded=true;fill();void check();};
+  draw();
+  return {load,refresh:draw};
+}
+function mountMemorySuiteSourceInputControls(container, config) {
+    const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
+    const disposed=()=>config.isDisposed?.()===true;
+    const preferences={get sourceRules(){return memorySuiteSourceRules(owner);}};
+    if(!container?.ownerDocument||container.querySelector('[data-source-input-controls]'))return;
+    const doc=container.ownerDocument,box=doc.createElement('section');
+    box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
+    const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+    const style=make('style');style.textContent=`
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:15px}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings textarea{width:100%;resize:vertical;line-height:1.5}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid var(--accent,currentColor);outline-offset:1px}
+.ms-source-settings [hidden]{display:none!important}.ms-source-settings .ms-sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+.ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 118px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
+.ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
+.ms-source-settings .ms-input-row.is-new{border-style:dashed;background:transparent}.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
+@media(max-width:600px){.ms-source-settings .ms-input-head{display:none}.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-toolbar{display:grid;grid-template-columns:1fr 1fr}.ms-source-settings .ms-input-toolbar button{white-space:nowrap;padding:7px 8px}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:0}}
+`;
+    const toolbar=make('div'),apply=make('button','적용'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원'),status=make('p');
+    toolbar.className='ms-input-toolbar';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';
+    for(const button of [apply,add,undo,defaults]){button.type='button';button.disabled=true;}
+    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
+    status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
+    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
+    const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div'),budgetHost=make('div');
+    // Rules saved meanwhile by another memory plugin (동시 적용) while this draft was being edited.
+    const remoteNotice=make('div'),remoteText=make('p'),remoteLoad=make('button','바뀐 규칙 불러오기');
+    remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
+    remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
+    box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
+    previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
+    previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
+    warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
+    output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
+    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
+    if(budgetPanel)box.append(budgetHost);const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
+    const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
+    let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
+    // savedAtFill: the saved rules this draft started from; overwriteConfirmed: the user pressed 적용
+    // once after being told those rules changed elsewhere.
+    let savedAtFill='',overwriteConfirmed=false;
+    const savedFingerprint=()=>{const saved=memorySuiteSourceRules(owner);return saved?JSON.stringify(memorySuiteNormalizeSourceRules(saved)):'';};
+    const isEmpty=row=>row.custom.checked?!row.open.value.trim()&&!row.close.value.trim():!row.value.value.trim();
+    function inferTag(input) {
+      const value=input.trim();
+      if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
+      const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
+      if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
+    }
+    function readDraft() {
+      const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+      for(const row of rows){
+        if(isEmpty(row))continue;
+        const key=row.action.value;
+        if(row.custom.checked){
+          const entry={open:row.open.value,close:row.close.value};
+          const form=row.control&&memorySuiteSourceRuleForm('@'+row.control);
+          if(form&&key==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);
+          else draft[key].push(entry);
+        }else draft[key].push(inferTag(row.value.value));
+      }
+      return memorySuiteNormalizeSourceRules(draft);
+    }
+    const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
+    function setEnabled() {
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
+      let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
+      apply.disabled=!loaded||applying||!dirty;
+      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
+      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+    }
+    async function showPreview() {
+      if(!sample)return;
+      const version=++previewVersion;
+      warning.hidden=true;warning.textContent='';output.textContent='';output.hidden=true;
+      try{
+        const rules=readDraft();let projected;
+        if(legacy&&fingerprint(rules)===initial){
+          if(typeof config.projectLegacySample!=='function'){previewStatus.textContent='기본 분석 입력을 미리 볼 수 없습니다.';return;}
+          projected={text:await config.projectLegacySample(sample),warnings:[]};
+        }else projected=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(sample.text),rules);
+        if(disposed()||version!==previewVersion)return;
+        output.textContent=String(projected.text??'').replace(/\r\n/g,'\n').trim();output.hidden=false;
+        warning.textContent=projected.warnings.join(' ');warning.hidden=!projected.warnings.length;
+        previewStatus.textContent=(sample.label?sample.label+' · ':'')+(output.textContent?'불러온 메시지의 분석 입력':'분석할 내용이 없습니다.')+(fingerprint(rules)!==initial?' · 아직 적용하지 않은 규칙':'');
+      }catch(e){if(disposed()||version!==previewVersion)return;warning.textContent=String(e.message||e);warning.hidden=false;previewStatus.textContent='규칙을 확인한 뒤 다시 미리 보세요.';}
+    }
+    function changed() {
+      if(!loaded||applying)return;
+      if(!rows.some(isEmpty))addRow();
+      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();finder?.refresh();previewList.refresh();syncPanel?.refresh();
+    }
+    // A rule chosen in the finder or the defaults notice lands in the draft; 적용 still saves it.
+    function addFoundRule(name,key) {
+      if(!loaded||applying)return;
+      for(const row of rows.filter(isEmpty))row.element.remove();rows=rows.filter(row=>!isEmpty(row));
+      if(name.startsWith('@'))addRow(memorySuiteSourceRuleForm(name),'ignoredTags',name.slice(1));else addRow(name,key);
+      changed();
+    }
+    const draftOrNull=()=>{try{return readDraft();}catch{return null;}};
+    const finder=mountMemorySuiteSourceTagFinder(finderHost,{draft:readDraft,addRule:addFoundRule,busy:()=>!loaded||applying,
+      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[(await config.readSample?.())?.text].filter(value=>typeof value==='string')});
+    const missingNotice=mountMemorySuiteMissingDefaultsNotice(noticeHost,{owner,draft:draftOrNull,addRule:addFoundRule,busy:()=>!loaded||applying});
+    const draftUnchanged=()=>{try{return fingerprint(readDraft())===initial;}catch{return false;}};
+    // Recent messages with removed parts struck through; before any saved rule, the plugin's own cleanup.
+    const previewList=mountMemorySuiteSourcePreviewList(previewListHost,{draft:readDraft,legacy:()=>legacy&&draftUnchanged(),projectLegacy:item=>config.projectLegacySample?.(item),
+      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[]});
+    const syncPanel=config.ruleSync?mountMemorySuiteSourceRuleSyncPanel(syncHost,{sync:config.ruleSync,savedRules:()=>memorySuiteSourceRules(owner),dirty:()=>!draftUnchanged(),busy:()=>!loaded||applying}):null;
+    function addRow(value=null,key='ignoredTags',control=null) {
+      const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
+      const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
+      element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='새 태그 이름 (예: decoration)';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='시작 표식 예: [START]';close.placeholder='끝 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('시작 표식'),open);closeLabel.append(hidden('끝 표식'),close);customFields.append(openLabel,closeLabel);
+      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
+      remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
+      if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
+      const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
+      const syncMode=()=>{tagLabel.hidden=custom.checked;customFields.hidden=!custom.checked;};syncMode();
+      custom.onchange=()=>{
+        if(custom.checked&&!open.value&&!close.value&&valueInput.value.trim()){
+          try{const name=inferTag(valueInput.value);open.value='<'+name+'>';close.value='</'+name+'>';}catch{open.value=valueInput.value;}
+        }
+        if(!custom.checked&&(open.value||close.value))valueInput.value=open.value||close.value;
+        syncMode();changed();
+      };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
+      remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;removed.push({row,index:rows.indexOf(row)});if(removed.length>128)removed.shift();rows=rows.filter(item=>item!==row);element.remove();changed();};
+      fields.append(tagLabel,customFields);if(control){const chip=make('small',controlLabels[control]||'저장된 기본 규칙');chip.className='ms-input-chip';fields.append(chip);}
+      element.append(fields,actionLabel,customLabel,remove);list.append(element);return row;
+    }
+    function fill(rules=sourceRules(),resetInitial=true) {
+      rows=[];removed=[];list.replaceChildren();
+      for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
+      for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
+      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;missingNotice.update(preferences.sourceRules);savedAtFill=savedFingerprint();overwriteConfirmed=false;remoteNotice.hidden=true;}setEnabled();finder?.refresh();
+    }
+    const remoteChanged=()=>loaded&&savedFingerprint()!==savedAtFill;
+    // Another plugin applied rules here. An untouched editor shows them at once; an edited draft is
+    // kept, with a notice, and 적용 asks once more before overwriting them.
+    const onRemoteApply=()=>{
+      if(disposed()||!box.isConnected){unsubscribe();return;}
+      if(!loaded||!remoteChanged())return;
+      if(applying){return;}
+      if(draftUnchanged()){fill();status.textContent='다른 기억 플러그인에서 바뀐 규칙을 불러왔습니다.';void showPreview();previewList.refresh();void syncPanel?.check();return;}
+      overwriteConfirmed=false;
+      remoteText.textContent='다른 기억 플러그인에서 이 플러그인의 규칙을 바꿨습니다. 지금 초안을 적용하면 그 규칙을 덮어씁니다.';
+      remoteNotice.hidden=false;void syncPanel?.check();
+    };
+    const unsubscribe=config.ruleSync?.subscribe?.(onRemoteApply)||(()=>{});
+    remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
+    add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
+    undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    const applyDraft=async()=>{
+      if(!loaded||applying||disposed())return {ok:false,skipped:true};
+      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
+      // The saved rules moved since this draft began (another plugin applied them): say so and
+      // overwrite only on a second 적용.
+      if(remoteChanged()&&!overwriteConfirmed){
+        overwriteConfirmed=true;remoteNotice.hidden=false;
+        remoteText.textContent='다른 기억 플러그인에서 이 플러그인의 규칙을 바꿨습니다. 지금 초안을 적용하면 그 규칙을 덮어씁니다.';
+        status.textContent='그사이 저장된 규칙이 바뀌었습니다. 초안으로 덮어쓰려면 적용을 한 번 더 누르세요.';return {ok:false,error:status.textContent};
+      }
+      applying=true;status.textContent='적용 중…';setEnabled();
+      try{await setSourceRules(rules);if(disposed())return {ok:false,skipped:true};fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));return {ok:true,applied:true};}
+      catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:String(e.message||e)};}
+      finally{applying=false;if(!disposed())setEnabled();}
+    };
+    apply.onclick=()=>applyDraft();
+    box.__msApplyPending=applyDraft;
+    previewButton.onclick=async()=>{
+      if(!loaded||readingSample||disposed()||typeof config.readSample!=='function')return;
+      readingSample=true;sample=null;void previewList.load();const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
+      try{
+        const result=await config.readSample();if(disposed()||version!==previewVersion)return;
+        if(result==null){previewStatus.textContent='현재 채팅에 미리 볼 메시지가 없습니다.';return;}
+        if(typeof result!=='string'&&typeof result.text!=='string')throw Error('SOURCE_SAMPLE_INVALID');
+        sample=typeof result==='string'?{text:result}:result;await showPreview();
+      }catch{if(!disposed()&&version===previewVersion)previewStatus.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 미리 보세요.';}
+      finally{readingSample=false;if(!disposed())setEnabled();}
+    };
+    status.textContent='저장된 규칙을 읽는 중…';
+    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';void syncPanel?.check();budgetPanel?.load();if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+  }
+
+function memorySuiteReanalysisGridCss(){return `
+.ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
+.ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
+.ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
+.ms-reanalysis-turn--compact>label{display:flex;align-items:flex-start;gap:8px;min-width:0;cursor:pointer}
+.ms-reanalysis-turn--compact>label input{flex:none;width:17px;height:17px;margin:1px 0 0;accent-color:var(--accent,#79522d)}
+.ms-reanalysis-turn--compact>label strong{min-width:0;font-size:14px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-meta{margin:0;font-size:11.5px;line-height:1.45;color:var(--text3,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-eyebrow{font-size:11px;font-weight:700;color:var(--text3,inherit);letter-spacing:.02em}
+.ms-reanalysis-turn--compact .ms-turn-summary{flex:0 1 auto;min-height:0;margin:0;font-size:12.5px;line-height:1.55;color:var(--text2,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5}
+.ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
+.ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
+.ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
+@media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
+`;}
+// One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
+function appendMemorySuiteReanalysisRange(list,range,config) {
+  const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
+  input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  if(config.compact){
+    // Square cards: many turns per screen; opening the source widens the card to a full row.
+    const host=list.getRootNode?.()?.head||list.getRootNode?.();
+    if(host?.querySelector&&!host.querySelector('style[data-ms-reanalysis-grid]')){const style=make('style');style.dataset.msReanalysisGrid='';style.textContent=memorySuiteReanalysisGridCss();host.append(style);}
+    row.className='ms-reanalysis-turn ms-reanalysis-turn--compact';
+    const title=make('strong',range.label);title.title=range.label;label.append(input,title);row.append(label);
+    if(range.description){const description=make('p',range.description);description.className='ms-turn-meta';description.title=range.description;row.append(description);}
+    if(range.summary){const eyebrow=make('small','저장된 내용'),excerpt=make('p',range.summary);eyebrow.className='ms-turn-eyebrow';excerpt.className='ms-turn-summary';excerpt.title=range.summary;row.append(eyebrow,excerpt);}
+    row.onclick=event=>{if(!event.target.closest?.('label,details,button,a')&&!input.disabled)input.click();};
+  }else{
+    row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+    label.style.cssText='display:flex;align-items:center;gap:10px';
+    label.append(input,make('strong',range.label));row.append(label);
+    if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
+    if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+    output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';
+  }
+  details.append(summary,output);row.append(details);list.append(row);
+  let serial=0;
+  details.ontoggle=async()=>{
+    if(config.compact)row.classList.toggle('is-open',details.open);
+    if(!details.open){serial++;return;}
+    const token=++serial;output.textContent='원문을 읽는 중…';
+    try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;
+      output.textContent='사용자 원문\n'+memorySuiteStripInternalSource(sample.user)+'\n\nAI 응답 원문\n'+memorySuiteStripInternalSource(sample.assistant);
+    }catch(error){if(row.isConnected&&config.current()&&token===serial)output.textContent='원문 조회 실패: '+String(error?.message||error);}
+  };
+}
+
+// Source text stays in the mounted view. Only user-confirmed tag rules are saved.
+function memorySuiteExtractSelectedSourceTags(body,start,end) {
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>body.length)return [];
+  const names=[...new Set([...body.matchAll(/<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])/gi)].map(m=>m[1].toLowerCase()))];
+  const candidates=[];
+  for(const name of names){
+    if(memorySuiteIsInternalSourceRule(name))continue;
+    const parsed=memorySuiteSourceTagRanges(body,[name]);
+    if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))
+      candidates.push({entry:name,start:range.start,end:range.end});
+  }
+  // Literal module delimiters are editable too; never infer a rule from ordinary prose.
+  const literals=[{open:'<!--',close:'-->'},...[...body.matchAll(/\[([^\]\r\n]{1,100}) START\]/g)].map(m=>({open:m[0],close:'['+m[1]+' END]'}))];
+  for(const entry of literals){const parsed=memorySuiteLiteralRanges(body,[entry]);if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))candidates.push({entry,start:range.start,end:range.end});}
+  const inside=candidates.filter(r=>r.start>=start&&r.end<=end);
+  const chosen=inside.length?inside:candidates.sort((a,b)=>(a.end-a.start)-(b.end-b.start)).slice(0,1);
+  return [...new Map(chosen.map(r=>[JSON.stringify(r.entry),r.entry])).values()].slice(0,128);
+}
+
+function mountMemorySuiteReanalysisReview(container,config) {
+  const doc=container.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const box=make('section');box.className='ms-source-settings';box.dataset.sourceReanalysisReview='';container.replaceChildren(box);
+  const style=make('style');style.textContent=`
+[data-source-reanalysis-review]{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;padding:12px;border:1px solid #8885;border-radius:12px}
+[data-source-reanalysis-review]>*{min-width:0;overflow-wrap:anywhere}
+[data-source-reanalysis-review] label{grid-template-columns:minmax(0,1fr)}
+[data-source-reanalysis-review] textarea{width:100%;min-height:180px;resize:vertical;font:13px/1.6 ui-monospace,monospace;white-space:pre}
+[data-source-reanalysis-review] pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+[data-source-reanalysis-review] [data-review-rule]{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px solid #8885;padding:10px;border-radius:10px}
+[data-source-reanalysis-review] input{min-width:0;max-width:100%}[data-source-reanalysis-review] button{cursor:pointer;min-height:40px}
+[data-source-reanalysis-review] [hidden]{display:none!important}
+`;
+  const status=make('p');status.dataset.reviewStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  box.append(style,make('h3',config.sample.label+' · 확인 후 재분석'),make('p','원문에서 제외할 부분을 드래그한 뒤 태그를 추출하세요. 추출한 태그를 확인·편집하고 적용 결과를 확인할 수 있습니다. 저장한 태그 규칙은 이 플러그인의 앞으로의 분석에도 적용됩니다. 채팅 원문은 바꾸지 않습니다.'));
+  const sources=[];let active=null,busy=false,applied=null,baseline=null;
+  const valid=()=>box.isConnected&&config.current();
+  const list=make('div'),preview=make('div'),extract=make('button','선택 영역에서 태그 추출'),add=make('button','태그 직접 추가'),apply=make('button','태그 적용'),run=make('button','태그 저장 후 재분석'),cancel=make('button','검토 닫기');
+  extract.type=add.type=apply.type=run.type=cancel.type='button';extract.dataset.reviewExtract='';apply.dataset.reviewApply='';run.dataset.reviewRun='';run.disabled=true;
+  const saved=make('details'),savedSummary=make('summary'),savedList=make('div');saved.append(savedSummary,savedList);list.dataset.reviewCandidates='';
+  const updateSavedCount=()=>{savedSummary.textContent='저장된 태그 규칙 '+savedList.children.length+'개 · 확인·편집';};
+  const rules=[];let applyVersion=0,expectedPolicy='';
+  const policyKey=()=>JSON.stringify(memorySuiteNormalizeSourceRules(config.policy.sourceRules()));
+  const assertPolicy=()=>{if(policyKey()!==expectedPolicy)throw Error('저장된 태그 규칙이 변경되었습니다. 검토를 다시 열어 주세요.');};
+  function dirty(){applyVersion++;applied=null;run.disabled=true;preview.replaceChildren();status.textContent='태그를 적용해 분석할 내용을 먼저 확인하세요.';}
+  function addRule(entry={open:'',close:''},key='ignoredTags',control=null,target=list){
+    const row=make('div'),open=make('input'),close=make('input'),action=make('select'),remove=make('button','삭제');row.dataset.reviewRule='';
+    const form=memorySuiteSourceRuleForm(entry);open.value=form.open;close.value=form.close;open.maxLength=close.maxLength=256;
+    open.setAttribute('aria-label','여는 태그');close.setAttribute('aria-label','닫는 태그');
+    for(const [value,label]of [['ignoredTags','내용 전체 제외'],['unwrapTags','태그만 제거'],['sourceTags','이 안만 분석']]){const option=make('option',label);option.value=value;action.append(option);}action.value=key;action.setAttribute('aria-label','태그 처리 방법');
+    remove.type='button';const value={row,open,close,action,control};rules.push(value);
+    open.oninput=close.oninput=action.onchange=dirty;remove.onclick=()=>{if(busy)return;rules.splice(rules.indexOf(value),1);row.remove();updateSavedCount();dirty();};row.append(open,close,action,remove);target.append(row);updateSavedCount();return value;
+  }
+  function read(){const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+    for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
+    return memorySuiteNormalizeSourceRules(draft);
+  }
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
+    const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
+    const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
+  }
+  const actions=make('div');actions.className='cluster';actions.append(extract,add);box.append(actions,make('h3','앞으로 적용할 태그 규칙'),saved,list,apply,preview,run,cancel,status);
+  extract.onclick=()=>{
+    if(busy)return;if(!active){status.textContent='원문에서 제외할 영역을 먼저 선택하세요.';return;}const entries=memorySuiteExtractSelectedSourceTags(active.value,active.selectionStart,active.selectionEnd);
+    if(!entries.length){status.textContent='선택 영역에서 짝이 맞는 태그를 찾지 못했습니다. 태그를 포함해 선택하거나 직접 추가하세요.';return;}
+    let first;
+    for(const entry of entries){const form=memorySuiteSourceRuleForm(entry),existing=rules.find(r=>r.open.value===form.open&&r.close.value===form.close);const row=existing||addRule(entry);if(existing&&savedList.contains(existing.row))saved.open=true;first||=row;}
+    dirty();status.textContent='추출한 태그를 확인·편집한 뒤 태그 적용을 누르세요.';
+    first?.row.scrollIntoView?.({block:'nearest'});
+  };
+  add.onclick=()=>{if(busy)return;addRule();dirty();rules.at(-1).open.focus();};
+  apply.onclick=async()=>{
+    if(busy||!baseline||!valid())return;const version=++applyVersion;
+    try{
+      assertPolicy();const draft=read();preview.replaceChildren();let warned=false;
+      const same=JSON.stringify(draft)===JSON.stringify(baseline.rules);
+      for(const {role,input}of sources){
+        const raw=config.sample[role]||'';
+        const result=baseline.legacy&&same?{text:await config.projectLegacySample({text:raw,role}),warnings:[]}:memorySuiteProjectSourceRules(input.value,draft);
+        if(!valid()||version!==applyVersion)return;
+        if(!String(result.text||'').trim())throw Error('분석할 '+(role==='user'?'사용자 내용':'AI 응답')+'이 비어 있습니다. 제외 규칙을 확인하세요.');
+        const output=make('pre',result.text);output.dataset.reviewOutput=role;preview.append(make('h3',role==='user'?'분석할 사용자 내용':'분석할 AI 응답'),output);
+        for(const warning of result.warnings){preview.append(make('p',warning));warned=true;}
+      }
+      applied=JSON.stringify(draft);run.disabled=false;status.textContent=warned?'경고와 실제 분석 입력을 확인하세요. 저장 후 재분석할 수 있습니다.':'적용 결과를 확인했습니다. 태그를 저장한 뒤 재분석할 수 있습니다.';
+    }catch(error){dirty();status.textContent='태그 적용 실패: '+String(error?.message||error);}
+  };
+  run.onclick=async()=>{
+    if(busy||!applied||!valid())return;lock(true);config.onBusy?.(true);
+    try{
+      // Validate before the settings write and again before dispatching. A review
+      // cannot silently apply to edited text or to a different chat/selection.
+      await config.validate();if(!valid())return;assertPolicy();
+      const draft=read();if(JSON.stringify(draft)!==applied)throw Error('태그 적용 결과가 만료되었습니다. 다시 적용하세요.');
+      if(JSON.stringify(draft)!==JSON.stringify(baseline.rules)){
+        await config.policy.setSourceRules(draft);expectedPolicy=JSON.stringify(draft);
+        baseline={rules:draft,legacy:false};
+      }
+      if(!valid())return;await config.validate();if(!valid())return;
+      status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
+      const guard=async()=>{await config.validate();if(policyKey()!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      await config.onRun(guard);
+    }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
+    finally{config.onBusy?.(false);if(valid())lock(false);}
+  };
+  cancel.onclick=()=>{if(!busy){container.replaceChildren();config.onClose?.();}};
+  lock(true);
+  config.policy.ready().then(prefs=>{
+    if(!valid())return;const draft=config.policy.sourceRules();baseline={rules:memorySuiteNormalizeSourceRules(draft),legacy:!prefs.sourceRules};expectedPolicy=policyKey();
+    for(const key of ['ignoredTags','unwrapTags','sourceTags'])for(const entry of draft[key])addRule(entry,key,null,savedList);
+    for(const control of draft.controls)addRule(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control,savedList);
+    lock(false);status.textContent='제외할 영역을 선택하거나 저장된 규칙을 적용해 원문을 확인하세요.';
+  }).catch(error=>{if(valid())status.textContent='규칙 조회 실패: '+String(error?.message||error);});
+  return box;
+}
+/* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */
+  const GRADIA_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
+  const gradiaDefaultSourceRules = () => memorySuiteDefaultSourceRules('gradia');
+  const gradiaReadChatSamples = async () => {
+    try {
+      const api = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
+      if (typeof api?.getCurrentCharacterIndex !== 'function' || typeof api?.getCurrentChatIndex !== 'function' || typeof api?.getChatFromIndex !== 'function') {
+        return [];
+      }
+      const [charIdx, chatIdx] = await Promise.all([api.getCurrentCharacterIndex(), api.getCurrentChatIndex()]);
+      const chat = await api.getChatFromIndex(charIdx, chatIdx);
+      const msgs = Array.isArray(chat?.message) ? chat.message : [];
+      return msgs
+        .filter(r => r && (r.role === 'user' || r.role === 'char' || r.role === 'assistant'))
+        .slice(-20)
+        .map(r => ({
+          text: String(r.data ?? r.content ?? ''),
+          role: r.role === 'user' ? 'user' : 'assistant'
+        }))
+        .filter(item => item.text);
+    } catch (_) {
+      return [];
+    }
+  };
+  let gradiaSourceInput = null;
+  let gradiaSourceRuleSync = null;
+  const gradiaSourceInputConfig = {
+    owner: 'gradia',
+    busy: () => Runtime.pipelineWorkStatus?.phase === 'running',
+    read: async () => await RisuCompat.getItem(STORAGE_SOURCE_INPUT_PREFS_KEY),
+    write: async body => { await RisuCompat.setItem(STORAGE_SOURCE_INPUT_PREFS_KEY, body); return true; },
+    readSample: async () => {
+      const samples = await gradiaReadChatSamples();
+      return samples.length ? samples[samples.length - 1] : null;
+    },
+    readSamples: gradiaReadChatSamples,
+    projectLegacySample: sample => gradiaProjectSourceText(sample?.text || '', gradiaEffectiveSourceRules())
+  };
+  const getGradiaSourceInput = () => gradiaSourceInput || (gradiaSourceInput = createMemorySuiteSourceInputPolicy(gradiaSourceInputConfig));
+  const getGradiaSourceRuleSync = () => gradiaSourceRuleSync || (gradiaSourceRuleSync = createMemorySuiteSourceRuleSync({
+    owner: 'gradia',
+    policy: getGradiaSourceInput(),
+    isDisposed: () => Runtime.unloaded === true,
+    api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage', 'removePluginChannelListener'])
+  }));
   const gradiaEffectiveSourceRules = (settings = null) => {
-    const base = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
+    const saved = memorySuiteSourceRules('gradia');
+    const base = saved || Runtime.libSourceInputRules || gradiaDefaultSourceRules();
     const custom = normalizeSourceIgnoredTags(settings?.sourceIgnoredTags ?? Runtime.settings?.sourceIgnoredTags ?? Gui.state?.runtime?.sourceIgnoredTags ?? []);
     if (!custom.length) return base;
-    return {
-      ...base,
-      ignoredTags: [...new Set([...(Array.isArray(base.ignoredTags) ? base.ignoredTags : []), ...custom])].sort()
-    };
+    const existing = Array.isArray(base.ignoredTags) ? base.ignoredTags : [];
+    const existingKeys = new Set(existing.map(entry => (typeof entry === 'string' ? entry : JSON.stringify(entry))));
+    const mergedIgnored = [...existing];
+    for (const tag of custom) {
+      if (!existingKeys.has(tag)) { existingKeys.add(tag); mergedIgnored.push(tag); }
+    }
+    return { ...base, ignoredTags: mergedIgnored };
   };
   const gradiaProjectSourceText = (value, rules = gradiaEffectiveSourceRules()) => {
     let body = String(value ?? '');
     if (!body) return '';
-    const effective = rules && typeof rules === 'object' ? rules : gradiaDefaultSourceRules();
-    const controls = new Set(Array.isArray(effective.controls) ? effective.controls : ['html-comment', 'lbdata']);
-    if (controls.has('html-comment')) body = body.replace(/<!--[\s\S]*?-->/g, '');
-    if (controls.has('lbdata')) body = body.replace(/\[lbdata\b[\s\S]*?\[\/lbdata\]/gi, '');
-    const ignored = new Set(Array.isArray(effective.ignoredTags) ? effective.ignoredTags : GRADIA_PRESENTATION_TAGS);
-    const unwrap = new Set(Array.isArray(effective.unwrapTags) ? effective.unwrapTags : []);
-    // Retain non-empty narrative inside lb-xnai; strip inlay-only blocks.
-    if (ignored.has('lb-xnai')) {
-      ignored.delete('lb-xnai');
-      body = body
-        .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>([\s\S]*?)<\/lb-xnai\s*>/gi, (whole, inner) => (
-          inner.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '').trim() === '' ? '' : inner
-        ))
-        .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '');
-    }
-    body = body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '');
-    const stripTag = name => {
-      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      body = body
-        .replace(new RegExp(`<${esc}\\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\\s\\S]*?<\\/${esc}\\s*>`, 'gi'), '')
-        .replace(new RegExp(`<${esc}\\b(?:"[^"]*"|'[^']*'|[^'">])*?\\/\\s*>`, 'gi'), '');
-      if (name === 'img') {
-        body = body.replace(/<img\b(?:"[^"]*"|'[^']*'|[^'">])*?>/gi, '');
-      }
+    const raw = rules && typeof rules === 'object' ? rules : gradiaDefaultSourceRules();
+    const safeRules = {
+      version: 1,
+      ignoredTags: (Array.isArray(raw.ignoredTags) ? raw.ignoredTags : GRADIA_PRESENTATION_TAGS)
+        .filter(entry => typeof entry !== 'string' || (entry !== 'turn' && entry !== 'initial_assistant_scene')),
+      unwrapTags: Array.isArray(raw.unwrapTags) ? raw.unwrapTags : [],
+      sourceTags: Array.isArray(raw.sourceTags) ? raw.sourceTags : [],
+      controls: Array.isArray(raw.controls) ? raw.controls : ['html-comment', 'lbdata']
     };
-    for (const tag of GRADIA_PRESENTATION_TAGS) {
-      if (ignored.has(tag)) { stripTag(tag); ignored.delete(tag); }
-    }
-    for (const tag of ignored) stripTag(tag);
-    for (const tag of unwrap) {
-      const esc = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      body = body.replace(new RegExp(`</?${esc}\\b(?:"[^"]*"|'[^']*'|[^'">])*?>`, 'gi'), '');
-    }
-    // Strip serial wrapper headers (# 응답, ## 볼륨, ### 챕터, #### Chatindex, ⏱️[...])
+    try {
+      body = memorySuiteProjectSourceRules(memorySuiteStripInternalSource(body), safeRules).text;
+    } catch (_) {}
     body = body
+      .replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '')
       .replace(/^[ \t]*#{1,6}[ \t]*(?:응답|볼륨|챕터|Chatindex|volume|chapter)(?=$|[\s:：0-9])[^\r\n]*$/gim, '')
       .replace(/^[ \t]*⏱️\[[^\]]+\][ \t]*$/gim, '')
       .replace(/\n{3,}/g, '\n\n')
@@ -30560,47 +31954,34 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   let gradiaSourceRuleSyncInFlight = null;
   const syncGradiaSourceInputRulesFromLib = async () => {
+    await getGradiaSourceInput().ready().catch(() => {});
+    await getGradiaSourceRuleSync().start().catch(() => {});
+    const saved = memorySuiteSourceRules('gradia');
+    if (saved) {
+      Runtime.libSourceInputRules = saved;
+      Runtime.libSourceInputRulesAt = Date.now();
+      return saved;
+    }
     const now = Date.now();
     if (Runtime.libSourceInputRulesAt && now - Runtime.libSourceInputRulesAt < 15000 && Runtime.libSourceInputRules) {
       return Runtime.libSourceInputRules;
     }
     if (gradiaSourceRuleSyncInFlight) return gradiaSourceRuleSyncInFlight;
-    const ipcApi = getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']);
-    if (typeof ipcApi?.addPluginChannelListener !== 'function' || typeof ipcApi?.postPluginChannelMessage !== 'function') {
-      Runtime.libSourceInputRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
-      return Runtime.libSourceInputRules;
-    }
     gradiaSourceRuleSyncInFlight = (async () => {
-      const channel = 'memory_suite_source_rules_v1';
-      const schema = 'memory-suite.source-rules-sync.v1';
-      const peers = ['libra', 'hayaku_locator_continuity', 'flashback_memory'];
-      const pending = new Map();
-      if (!Runtime._gradiaSourceRuleListenerRegistered) {
-        Runtime._gradiaSourceRulePending = pending;
-        await ipcApi.addPluginChannelListener(channel, message => {
-          if (!message || typeof message !== 'object' || message.schema !== schema || message.kind !== 'response') return;
-          const rec = Runtime._gradiaSourceRulePending?.get(message.id);
-          if (!rec) return;
-          Runtime._gradiaSourceRulePending.delete(message.id);
-          clearTimeout(rec.timer);
-          rec.resolve(message.error ? null : (message.result?.rules || null));
-        });
-        Runtime._gradiaSourceRuleListenerRegistered = true;
-      }
-      const ask = peer => new Promise(resolve => {
-        const id = `gradia:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-        const timer = setTimeout(() => { Runtime._gradiaSourceRulePending?.delete(id); resolve(null); }, 600);
-        Runtime._gradiaSourceRulePending.set(id, { resolve, timer });
-        Promise.resolve(ipcApi.postPluginChannelMessage(peer, channel, { schema, kind: 'request', id, action: 'describe' }))
-          .catch(() => { clearTimeout(timer); Runtime._gradiaSourceRulePending?.delete(id); resolve(null); });
-      });
       try {
-        const results = await Promise.all(peers.map(ask));
-        Runtime.libSourceInputRules = gradiaMergeSourceRules(results.filter(Boolean));
-        Runtime.libSourceInputRulesAt = Date.now();
-      } catch (_) {
-        Runtime.libSourceInputRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
-      }
+        const states = await Promise.race([
+          getGradiaSourceRuleSync().compare(),
+          new Promise(resolve => setTimeout(() => resolve({}), 650))
+        ]);
+        for (const peer of ['libra', 'hayaku', 'flashback']) {
+          if (states[peer]?.rules) {
+            Runtime.libSourceInputRules = memorySuiteNormalizeSourceRules(states[peer].rules);
+            Runtime.libSourceInputRulesAt = Date.now();
+            return Runtime.libSourceInputRules;
+          }
+        }
+      } catch (_) {}
+      Runtime.libSourceInputRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
       return Runtime.libSourceInputRules;
     })().finally(() => { gradiaSourceRuleSyncInFlight = null; });
     return gradiaSourceRuleSyncInFlight;
@@ -30691,11 +32072,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions) => {
     const previousRecord = buildShadowPreviousRecord(recent, settings);
+    const sourceRules = gradiaEffectiveSourceRules(settings);
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
-    const recentChat = compactRecentTurnsTail(recent.earlierTurnsText || '', 2200) || '(그보다 앞선 완료 RP 턴 없음)';
-    const previousUserInput = previousUserInputForPrompt(recent);
+    const recentChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.earlierTurnsText || '', sourceRules), 2200) || '(그보다 앞선 완료 RP 턴 없음)';
+    const previousUserInput = gradiaProjectSourceText(previousUserInputForPrompt(recent), sourceRules);
     const terminalScene = compactMiddle(
-      recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '',
+      gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', sourceRules),
       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
     ) || '(직전 AI 응답 종결부 없음)';
     const lorebookContext = referencePacketBlockForPrompt(recent) || '(활성 로어북/캐릭터/페르소나 참조 없음 또는 접근 불가)';
@@ -30753,9 +32135,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
 
   const buildAideDraftUserPrompt = (stageName, recent, previous, settings, creativeInstructions) => {
+    const sourceRules = gradiaEffectiveSourceRules(settings);
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
     const previousDraft = stageDraft(previous) || '(직전 에이전트 초안 없음)';
-    const previousChat = compactRecentTurnsTail(recent.completeTurnsText || recent.visibleText || recent.text || '', 4200) || '(이전 완료 챗 없음)';
+    const previousChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.completeTurnsText || recent.visibleText || recent.text || '', sourceRules), 4200) || '(이전 완료 챗 없음)';
     const runId = recent?.runLineage?.runId || '';
     const currentInputHash = recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent));
     const inputDraftHash = stableDraftHash(previousDraft);
@@ -31189,16 +32572,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? analysisSourceBlock('Others Info - auxiliary continuity and response context', compact(recent.othersInfo, 3500))
         : '',
       '',
-      previousUserInputForPrompt(recent)
-        ? analysisSourceBlock('Previous User Input - already happened; the terminal passage below answers it', previousUserInputForPrompt(recent))
+      gradiaProjectSourceText(previousUserInputForPrompt(recent), gradiaEffectiveSourceRules(settings))
+        ? analysisSourceBlock('Previous User Input - already happened; the terminal passage below answers it', gradiaProjectSourceText(previousUserInputForPrompt(recent), gradiaEffectiveSourceRules(settings)))
         : '',
       '',
       analysisSourceBlock(
         'Terminal Passage From Immediately Previous Assistant Response - strongest live-scene evidence, maximum 2,400 characters',
-        recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || ''
+        gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', gradiaEffectiveSourceRules(settings))
       ),
       '',
-      analysisSourceBlock(`Older Completed Conversation - read-only historical evidence, not the live scene or rewrite target`, recent.earlierTurnsText || ''),
+      analysisSourceBlock(`Older Completed Conversation - read-only historical evidence, not the live scene or rewrite target`, gradiaProjectSourceText(recent.earlierTurnsText || '', gradiaEffectiveSourceRules(settings))),
       '',
       analysisSourceBlock('Current User Input - submitted request for this run', submittedCurrentInput(recent)),
       ''
@@ -32599,14 +33982,14 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       '',
       buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent), previousDraft),
       '',
-      previousUserInputForPrompt(recent) ? `[PREVIOUS USER INPUT — ALREADY HAPPENED; THE TERMINAL SCENE ANSWERS IT]\n${previousUserInputForPrompt(recent)}\n` : '',
+      gradiaProjectSourceText(previousUserInputForPrompt(recent), gradiaEffectiveSourceRules(settings)) ? `[PREVIOUS USER INPUT — ALREADY HAPPENED; THE TERMINAL SCENE ANSWERS IT]\n${gradiaProjectSourceText(previousUserInputForPrompt(recent), gradiaEffectiveSourceRules(settings))}\n` : '',
       '[LATEST TERMINAL SCENE STATE]',
       compactMiddle(
-        recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '',
+        gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', gradiaEffectiveSourceRules(settings)),
         terminalSceneBudget
       ),
       '',
-      olderFacts.text ? `[OLDER COMPLETED TURNS — FILTERED DURABLE FACTS ONLY]\n${olderFacts.text}\n` : '',
+      olderFacts.text ? `[OLDER COMPLETED TURNS — FILTERED DURABLE FACTS ONLY]\n${gradiaProjectSourceText(olderFacts.text, gradiaEffectiveSourceRules(settings))}\n` : '',
       referencePacketBlockForPrompt(recent) ? `[CURRENT-INPUT RELEVANT CANON FOR THIS STAGE]\n${referencePacketBlockForPrompt(recent)}\n` : '',
       stageName === 'aide_character' && recent.relationshipCanonLockBlock ? `${recent.relationshipCanonLockBlock}\n` : '',
       recent.systemContext ? `[SYSTEM AND SETTING CONSTRAINTS]\n${compact(recent.systemContext, 2400)}\n` : '',
@@ -35850,6 +37233,7 @@ function createMemorySuiteHostLineage() {
   return Object.freeze({ schema, marker, prefix, inspect, normalize, render, countPairs, fingerprint, prefixRevision, same });
 }
 /* END LIBRARIAN HOST LINEAGE SDK */
+
 
 /* LIBRARIAN SYSTEM STORAGE SDK v1.8.24
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
@@ -50513,8 +51897,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       {const dispositionAction=target.closest('[data-npc-disposition-action]');if(dispositionAction){handleNpcDispositionAction(dispositionAction.dataset.npcDispositionAction,dispositionAction.dataset.itemId||'');return;}}
       {const stateAction=target.closest('[data-body-state-action]');if(stateAction){handleBodyStateAction(stateAction.dataset.bodyStateAction,stateAction.dataset.itemId||'');return;}}
       {const intimacyAction=target.closest('[data-intimacy-action]');if(intimacyAction){void handleIntimacyAction(intimacyAction.dataset.intimacyAction,intimacyAction.dataset.itemId||'');return;}}
-      {const tagRemove=target.closest('[data-source-tag-remove]');if(tagRemove){const runtime=mockupRuntime();const tag=String(tagRemove.dataset.sourceTagRemove||'').trim().toLowerCase();runtime.sourceIgnoredTags=normalizeSourceIgnoredTags(runtime.sourceIgnoredTags).filter(t=>t!==tag);markGuiDirty();mockupRenderSources();mockupRefreshStatus();return;}}
-      {const tagAction=target.closest('[data-source-tag-action]');if(tagAction){const action=tagAction.dataset.sourceTagAction;if(action==='sync'){void syncGradiaSourceInputRulesFromLib().then(()=>{mockupRenderSources();guiSetStatus('LIB 원문 태그 필터를 다시 불러왔습니다.');});return;}if(action==='add'){const input=app.querySelector('[data-source-tag-input]');const raw=String(input?.value||'').trim().toLowerCase();if(!raw)return;if(!/^[a-z][a-z0-9:_-]{0,63}$/.test(raw)){guiSetStatus('꺾쇠(< >) 없이 영문 소문자·숫자·:-_ 로 된 태그 이름만 입력하세요.',true);return;}const runtime=mockupRuntime();runtime.sourceIgnoredTags=normalizeSourceIgnoredTags([...normalizeSourceIgnoredTags(runtime.sourceIgnoredTags),raw]);if(input)input.value='';markGuiDirty();mockupRenderSources();mockupRefreshStatus();return;}}}
       {const relsimAction=target.closest('[data-relsim-action]');if(relsimAction){void handleRelationshipSimAction(relsimAction.dataset.relsimAction,relsimAction.dataset.itemId||'');return;}}
       if(target.closest('[data-open="dlg-reset"]')){mockupOpenResetConfirm(false);return;}
       if(target.closest('[data-open="dlg-reset-all"]')){mockupOpenResetConfirm(true);return;}
@@ -50656,6 +52038,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // Text fields commit on change so typing never re-renders the card mid-word.
       if (inputEvent && control.tagName !== 'SELECT') return;
       void updateIntimacyCardField(control.dataset.cardId, control.dataset.intimacyCardField, control.value);
+      return;
+    }
+    if (control.matches?.('[data-intimacy-zone-field]')) {
+      if (inputEvent) return;
+      void updateIntimacyZoneField(control.dataset.cardId, control.dataset.intimacyZoneField, control.value);
       return;
     }
     if (control.matches?.('[data-body-state-card-field]')) {
@@ -51120,6 +52507,141 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 세계 동역학 AIDE가 실행되면 이번 턴에 살핀 장면 밖 흐름과 판정이 여기에 표시됩니다. 저장되지 않습니다.' })])]));
   };
   // 정사 AIDE: preference cards (stored at once, outside the GUI save) and this turn's readings.
+  const intimacyZoneHeatColor = sensitivity => {
+    const s = intimacyClampSensitivity(sensitivity);
+    if (s > 60) return '#e11d48';
+    if (s > 20) return '#fb7185';
+    if (s < -20) return '#60a5fa';
+    return '#94a3b8';
+  };
+  const intimacySvgEl = (tag, attrs = {}, text = '') => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== undefined && v !== null) node.setAttribute(k, String(v));
+    }
+    if (text) node.textContent = text;
+    return node;
+  };
+  const intimacyAnatomyPanel = card => {
+    const zoneStats = card.zoneStats || normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
+    const inferredGender = bodyStateProfileGender(card.name);
+    const view = card.anatomyView || (inferredGender === 'male' ? 'male' : 'female');
+    const statOf = id => zoneStats[id] || { sensitivity: 0, development: 0 };
+    const dotNode = (id, cx, cy, r, labelText, lx, ly) => {
+      const st = statOf(id);
+      const col = intimacyZoneHeatColor(st.sensitivity);
+      const grp = intimacySvgEl('g', { 'data-intimacy-zone-hotspot': id });
+      grp.append(
+        intimacySvgEl('line', { x1: cx, y1: cy, x2: lx, y2: ly, stroke: col, 'stroke-width': '1', 'stroke-dasharray': '2 2', opacity: '0.75' }),
+        intimacySvgEl('circle', { cx, cy, r: r + 3, fill: col, opacity: '0.22' }),
+        intimacySvgEl('circle', { cx, cy, r, fill: col, stroke: '#ffffff', 'stroke-width': '1.2' }),
+        intimacySvgEl('text', { x: lx, y: ly, fill: 'currentColor', 'font-size': '9.5', 'font-weight': '600', 'dominant-baseline': 'middle' }, `${labelText} ${st.sensitivity > 0 ? `+${st.sensitivity}` : st.sensitivity}/D${st.development}`)
+      );
+      return grp;
+    };
+
+    // 1) Full-body schematic silhouette SVG
+    const bodySvg = intimacySvgEl('svg', { viewBox: '0 0 220 250', width: '210', height: '240', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-body-svg': view });
+    bodySvg.append(
+      // Head & neck
+      intimacySvgEl('ellipse', { cx: '72', cy: '28', rx: '16', ry: '19', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.65' }),
+      intimacySvgEl('path', { d: 'M64 46 L62 60 L82 60 L80 46', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.65' }),
+      // Torso, shoulders, waist, hips
+      intimacySvgEl('path', {
+        d: view === 'female'
+          ? 'M42 68 Q72 58 102 68 L108 118 L96 140 Q106 160 100 182 L44 182 Q38 160 48 140 L36 118 Z'
+          : 'M38 68 Q72 58 106 68 L104 122 L95 148 L98 182 L46 182 L49 148 L40 122 Z',
+        fill: 'rgba(148,163,184,0.08)', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.7'
+      }),
+      // Arms (schematic)
+      intimacySvgEl('path', { d: 'M40 70 L24 134 L31 137 L42 86 M104 70 L120 134 L113 137 L102 86', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4', opacity: '0.45' }),
+      // Thighs / legs
+      intimacySvgEl('path', { d: 'M46 182 L44 238 M72 178 L66 238 M72 178 L78 238 M98 182 L100 238', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.65' }),
+      // Dashed callout box around pelvic/genital region
+      intimacySvgEl('rect', { x: '54', y: '154', width: '36', height: '28', rx: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-dasharray': '3 2', opacity: '0.55' }),
+      dotNode('lips_neck', 72, 49, 5, '입술·목·귀', 112, 42),
+      dotNode('breasts_nipples', 72, 92, 5.5, '가슴·유두', 112, 92),
+      dotNode('thighs_hips', 92, 168, 5, '허벅지·골반', 112, 146),
+      dotNode('anal_perineum', 72, 182, 4.5, '후구·회음', 112, 198)
+    );
+
+    // 2) Schematic genital anatomy diagram SVG (female or male)
+    const genitalSvg = intimacySvgEl('svg', { viewBox: '0 0 210 185', width: '200', height: '176', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-genital-svg': view });
+    if (view === 'female') {
+      genitalSvg.append(
+        intimacySvgEl('text', { x: '10', y: '14', fill: 'currentColor', 'font-size': '10', 'font-weight': '700', opacity: '0.85' }, '여성 성기 도식'),
+        // Outer labia schematic
+        intimacySvgEl('path', { d: 'M62 32 C38 56 38 112 62 138 C72 146 78 146 88 138 C112 112 112 56 88 32 Z', fill: 'rgba(251,113,133,0.08)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.7' }),
+        // Inner labia & clitoral hood schematic
+        intimacySvgEl('path', { d: 'M75 40 C63 54 62 104 75 126 C88 104 87 54 75 40 Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.75' }),
+        // Clitoral glans/hood
+        intimacySvgEl('circle', { cx: '75', cy: '48', r: '4.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.85' }),
+        // Vaginal canal / introitus schematic
+        intimacySvgEl('ellipse', { cx: '75', cy: '94', rx: '9', ry: '22', fill: 'rgba(225,29,72,0.08)', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.8' }),
+        // Perineum + anal ring schematic
+        intimacySvgEl('circle', { cx: '75', cy: '154', r: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.7' }),
+        dotNode('clitoris_vulva', 75, 48, 5.5, '음핵·외음', 114, 48),
+        dotNode('vaginal_interior', 75, 94, 6, '질내·G스팟', 114, 94),
+        dotNode('anal_perineum', 75, 154, 5, '후구·회음', 114, 154)
+      );
+    } else {
+      genitalSvg.append(
+        intimacySvgEl('text', { x: '10', y: '14', fill: 'currentColor', 'font-size': '10', 'font-weight': '700', opacity: '0.85' }, '남성 성기 도식'),
+        // Shaft schematic
+        intimacySvgEl('path', { d: 'M62 120 L62 62 L88 62 L88 120', fill: 'rgba(148,163,184,0.08)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.75' }),
+        // Glans schematic
+        intimacySvgEl('path', { d: 'M59 62 C59 36 91 36 91 62 Z', fill: 'rgba(251,113,133,0.1)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.85' }),
+        // Scrotum / perineum schematic
+        intimacySvgEl('path', { d: 'M54 120 C48 144 68 152 75 140 C82 152 102 144 96 120', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4', opacity: '0.65' }),
+        intimacySvgEl('circle', { cx: '75', cy: '162', r: '5.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.7' }),
+        dotNode('penis_glans', 75, 52, 6, '음경·귀두', 114, 56),
+        dotNode('anal_perineum', 75, 162, 5, '후구·전립선', 114, 158)
+      );
+    }
+
+    const visibleZoneIds = view === 'female'
+      ? ['lips_neck', 'breasts_nipples', 'thighs_hips', 'clitoris_vulva', 'vaginal_interior', 'anal_perineum']
+      : ['lips_neck', 'breasts_nipples', 'thighs_hips', 'penis_glans', 'anal_perineum'];
+
+    const viewSelect = guiEl('select', { class: 'select', style: 'width:auto', dataset: { intimacyCardField: 'anatomyView', cardId: card.id } });
+    mockupOption(viewSelect, 'female', '여성 도식');
+    mockupOption(viewSelect, 'male', '남성 도식');
+    viewSelect.value = view;
+
+    const zoneRows = visibleZoneIds.map(id => {
+      const def = INTIMACY_BODY_PARTS.find(p => p[0] === id);
+      const label = def ? def[1].split(' ')[0] : id;
+      const st = statOf(id);
+      const mult = intimacyZoneMultiplier(st);
+      const col = intimacyZoneHeatColor(st.sensitivity);
+      return guiEl('div', { class: 'cluster', style: 'gap:8px;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(148,163,184,0.14)' }, [
+        guiEl('span', { style: 'display:inline-flex;align-items:center;gap:6px;min-width:110px;font-size:12.5px' }, [
+          guiEl('span', { style: `display:inline-block;width:9px;height:9px;border-radius:99px;background:${col}` }),
+          guiEl('b', { text: label })
+        ]),
+        guiEl('div', { class: 'cluster', style: 'gap:6px;align-items:center' }, [
+          guiEl('span', { class: 'hint', style: 'margin:0;font-size:11.5px', text: '민감' }),
+          guiEl('input', { class: 'input', type: 'number', min: '-100', max: '100', step: '5', value: String(st.sensitivity), style: 'width:68px;padding:3px 6px', dataset: { intimacyZoneField: `${id}.sensitivity`, cardId: card.id } }),
+          guiEl('span', { class: 'hint', style: 'margin:0;font-size:11.5px', text: '개발' }),
+          guiEl('input', { class: 'input', type: 'number', min: '0', max: '100', step: '5', value: String(st.development), style: 'width:64px;padding:3px 6px', dataset: { intimacyZoneField: `${id}.development`, cardId: card.id } }),
+          guiEl('span', { class: 'hint', style: 'margin:0;min-width:44px;text-align:right;font-size:11.5px', text: `×${mult.toFixed(2)}` })
+        ])
+      ]);
+    });
+
+    return guiEl('div', { class: 'field', style: 'margin:10px 0;padding:10px;border:1px solid rgba(148,163,184,0.22);border-radius:10px', dataset: { intimacyAnatomyPanel: card.id } }, [
+      guiEl('div', { class: 'cluster', style: 'justify-content:space-between;align-items:center;margin-bottom:8px' }, [
+        guiEl('b', { style: 'font-size:13px', text: '성감대 해부도 · 민감도(-100~+100) / 개발도(0~100)' }),
+        viewSelect
+      ]),
+      guiEl('div', { class: 'cluster', style: 'gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;padding:6px 0' }, [
+        bodySvg,
+        genitalSvg
+      ]),
+      guiEl('p', { class: 'hint', style: 'margin:4px 0 8px', text: '로어로 기본값이 자동 설정되며, 실제 정사가 진행됨에 따라 개발도와 민감도가 서서히 올라 영속 저장됩니다.' }),
+      guiEl('div', { class: 'stack stack--sm' }, zoneRows)
+    ]);
+  };
   const intimacyCardEditor = card => {
     const field = (label, control) => guiEl('div', { class: 'field' }, [guiEl('label', { text: label }), control]);
     const input = (key, value, placeholder = '') => guiEl('input', { class: 'input', type: 'text', value, placeholder, dataset: { intimacyCardField: key, cardId: card.id } });
@@ -51134,9 +52656,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       guiEl('div', { class: 'opt-grid' }, [
         field('좋아하는 체위', input('likedPositions', card.likedPositions, '예: 기승위, 대면좌위')),
         field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위')),
-        field('민감한 신체 부위 (×1.5)', input('sensitiveZones', card.sensitiveZones, '예: 귀, 목덜미, 유두, 음핵')),
-        field('둔감한 신체 부위 (×0.6)', input('dullZones', card.dullZones, '예: 후구, 허벅지'))
+        field('민감한 신체 부위 (로어 요약)', input('sensitiveZones', card.sensitiveZones, '예: 귀, 목덜미, 유두, 음핵')),
+        field('둔감한 신체 부위 (로어 요약)', input('dullZones', card.dullZones, '예: 후구, 허벅지'))
       ]),
+      intimacyAnatomyPanel(card),
       phase('foreplay', '전희'),
       phase('intercourse', '성교'),
       phase('afterplay', '후희'),
@@ -51216,6 +52739,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     catch (error) { guiSetStatus(`선호 카드 저장 실패: ${error?.message || error}`); }
     renderIntimacyPanel(Gui.app);
   };
+  const updateIntimacyZoneField = async (cardId, zoneField, value) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const [zoneId, metric] = String(zoneField || '').split('.');
+    if (!scopeKey || !cardId || !zoneId || !['sensitivity', 'development'].includes(metric)) return;
+    await loadIntimacyCards();
+    const cards = intimacyCardsForScope(scopeKey).map(card => {
+      if (card.id !== cardId) return card;
+      const zoneStats = { ...(card.zoneStats || normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '')) };
+      const cur = zoneStats[zoneId] || { sensitivity: 0, development: 0 };
+      zoneStats[zoneId] = {
+        ...cur,
+        [metric]: metric === 'sensitivity' ? intimacyClampSensitivity(value) : intimacyClampDevelopment(value)
+      };
+      return { ...card, zoneStats, origin: 'user' };
+    });
+    try { await writeIntimacyCardsForScope(scopeKey, cards); guiSetStatus('성감대 수치를 저장했습니다.'); }
+    catch (error) { guiSetStatus(`성감대 수치 저장 실패: ${error?.message || error}`); }
+    renderIntimacyPanel(Gui.app);
+  };
   // ===================== 관계 시뮬레이터 panel (이 채팅) =====================
   // Pair state and preference cards are saved at once, outside the GUI settings save, like the
   // 정사 cards: a run may change them while the settings window is open.
@@ -51254,10 +52796,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         relsimField('알고 있는 사람', input('knownBy', pair.knownBy.join(', '), '일부 공개일 때: 이름을 쉼표로')),
         relsimField('주도권', input('lead', pair.lead === FORCED_BOND_PERSONA ? '페르소나' : pair.lead, '이름 또는 페르소나')),
         relsimField('주도 이유', input('leadReasons', relsimLabels(RELSIM_LEAD_REASONS, pair.leadReasons), Object.values(RELSIM_LEAD_REASONS).join(', '))),
-        relsimField('서운함', relsimSelect(data('grievance'), String(pair.grievance), [['0', '없음'], ['1', '1'], ['2', '2'], ['3', '3']]))
+        relsimField(`기분 (${pair.mood > 0 ? '+' : ''}${pair.mood || 0} · ${relsimMoodBand(pair.mood).label})`, guiEl('div', { class: 'cluster', style: 'gap:8px;align-items:center' }, [
+          guiEl('input', { type: 'range', min: '-100', max: '100', step: '5', value: String(pair.mood || 0), style: 'flex:1;min-width:120px', dataset: data('mood') }),
+          guiEl('input', { class: 'input', type: 'number', min: '-100', max: '100', step: '1', value: String(pair.mood || 0), style: 'width:84px', dataset: data('mood') })
+        ]))
       ]),
       guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: [
-        pair.grievance && pair.grievanceCause ? `서운한 이유: ${pair.grievanceCause}` : '',
+        pair.mood && pair.moodCause ? `기분 사유: ${pair.moodCause}` : '',
         upcoming ? `다가오는 기념일: ${upcoming}` : '',
         lastRoll ? `최근 판정: ${RELSIM_ACT_LABELS[lastRoll.act] || lastRoll.act} ${lastRoll.success ? '성공' : '실패'} (${lastRoll.percent}%)` : '',
         pair.origin === 'lib' ? 'LIBRA 기록으로 정정됨' : pair.origin === 'lore' ? '로어로 추정됨' : ''
@@ -51289,7 +52834,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         relsimField('연애 방식', input('loveStyles', relsimLabels(RELSIM_LOVE_STYLES, card.loveStyles), '1–2개 (예: 유희적 사랑)', Object.values(RELSIM_LOVE_STYLES).map(def => def.label).join(', '))),
         relsimField('생일', input('birthday', card.birthday, '예: 05-14'))
       ]),
-      relsimField('서운할 때', input('sulk', card.sulk, '서운함을 드러내는 방식')),
+      guiEl('div', { class: 'opt-grid' }, [
+        relsimField('기분이 좋을 때', input('moodHigh', card.moodHigh || '', '기분이 높을 때의 반응 (텐션·다정함 등)')),
+        relsimField('기분이 낮을 때', input('moodLow', card.moodLow || card.sulk || '', '기분이 낮을 때의 반응 (퉁명·화남·저기압 등)'))
+      ]),
       relsimField('근거(로어)', input('basis', card.basis, '추정의 근거')),
       guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '카드 삭제', dataset: { relsimAction: 'remove-profile', itemId: card.id } })])
     ]);
@@ -51337,8 +52885,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     await loadRelationshipState();
     const chat = relsimChat(scopeKey, true);
     const pair = { ...(chat.pairs[pairId] || normalizeRelsimPair({})) };
-    if (key === 'grievance') { pair.grievance = Number(value) || 0; if (!pair.grievance) pair.grievanceCause = ''; }
-    else if (key === 'lead') pair.lead = value === '페르소나' ? FORCED_BOND_PERSONA : value;
+    if (key === 'mood') {
+      pair.mood = relsimClampMood(value);
+      if (!pair.mood) pair.moodCause = '';
+    } else if (key === 'lead') pair.lead = value === '페르소나' ? FORCED_BOND_PERSONA : value;
     else pair[key] = value;
     chat.pairs[pairId] = normalizeRelsimPair({ ...pair, origin: 'user' });
     Runtime.relsimRun = null;
@@ -51363,7 +52913,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (card.id !== cardId) return card;
       const next = { ...card, origin: 'user' };
       if (side) next[field] = { ...card[field], [side]: value };
-      else next[field] = field === 'name' && value === '페르소나' ? FORCED_BOND_PERSONA : value;
+      else {
+        next[field] = field === 'name' && value === '페르소나' ? FORCED_BOND_PERSONA : value;
+        if (field === 'moodLow') next.sulk = value;
+      }
       return next;
     });
     // Words outside the field's list are dropped; say which, so a typo is not lost silently.
@@ -52647,56 +54200,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const libCard = page.querySelector('#lib-read-owners-container')?.closest('.card');
     if (libCard) {
-      let tagPanel = libCard.querySelector('[data-source-tag-filter]');
-      if (!tagPanel) {
-        tagPanel = document.createElement('div');
-        tagPanel.className = 'field';
-        tagPanel.style.marginTop = '14px';
-        tagPanel.dataset.sourceTagFilter = 'true';
-        const titleRow = mockupNode('div', 'cluster');
-        titleRow.style.justifyContent = 'space-between';
-        titleRow.style.alignItems = 'center';
-        const label = mockupNode('span', 'label', '원문 태그 필터 (PREVIOUS · LIB 연동)');
-        label.style.fontWeight = '600';
-        const syncBtn = mockupNode('button', 'btn btn--sm', 'LIB 태그 다시 불러오기');
-        syncBtn.type = 'button';
-        syncBtn.dataset.sourceTagAction = 'sync';
-        titleRow.append(label, syncBtn);
-        const syncedLine = mockupNode('p', 'hint', '');
-        syncedLine.style.margin = '4px 0 6px';
-        syncedLine.dataset.sourceTagSynced = 'true';
-        const chipsBox = mockupNode('div', 'cluster');
-        chipsBox.style.gap = '6px';
-        chipsBox.style.flexWrap = 'wrap';
-        chipsBox.dataset.sourceTagCustomChips = 'true';
-        const addRow = mockupNode('div', 'cluster');
-        addRow.style.marginTop = '8px';
-        addRow.style.gap = '8px';
-        const tagInput = document.createElement('input');
-        tagInput.type = 'text';
-        tagInput.className = 'input';
-        tagInput.style.maxWidth = '260px';
-        tagInput.placeholder = '꺾쇠 없이 태그 이름 입력 (예: status)';
-        tagInput.dataset.sourceTagInput = 'true';
-        const addBtn = mockupNode('button', 'btn btn--sm', '태그 추가');
-        addBtn.type = 'button';
-        addBtn.dataset.sourceTagAction = 'add';
-        addRow.append(tagInput, addBtn);
-        tagPanel.append(titleRow, syncedLine, chipsBox, addRow);
-        libCard.append(tagPanel);
+      let sourceCard = page.querySelector('[data-gradia-source-input-card]');
+      if (!sourceCard) {
+        sourceCard = document.createElement('section');
+        sourceCard.className = 'card';
+        sourceCard.dataset.gradiaSourceInputCard = 'true';
+        const cardHead = mockupNode('div', 'card__head');
+        const headText = mockupNode('div');
+        const h3 = mockupNode('h3', '원문 태그 필터 (PREVIOUS · 최근 챗 · LIB 연동)');
+        const sub = mockupNode('p', 'hint', 'LIBRA·HAYAKU·Flashback과 동일한 공통 규칙 편집기입니다. 시작·끝 표식(예: ◆CG…◆), 태그 찾기, 미리보기 및 플러그인 간 동시 적용을 지원합니다.');
+        headText.append(h3, sub);
+        cardHead.append(headText);
+        const host = document.createElement('div');
+        host.dataset.gradiaSourceInputHost = 'true';
+        sourceCard.append(cardHead, host);
+        libCard.after(sourceCard);
       }
-      const syncedRules = Runtime.libSourceInputRules || gradiaDefaultSourceRules();
-      const syncedEl = tagPanel.querySelector('[data-source-tag-synced]');
-      if (syncedEl) {
-        const libList = Array.isArray(syncedRules.ignoredTags) ? syncedRules.ignoredTags : [];
-        syncedEl.textContent = `기본·LIB 연동 제외 태그(${libList.length}개): ${libList.join(', ') || '없음'}`;
-      }
-      const customTags = normalizeSourceIgnoredTags(mockupRuntime().sourceIgnoredTags);
-      const chipsBox = tagPanel.querySelector('[data-source-tag-custom-chips]');
-      if (chipsBox) {
-        chipsBox.replaceChildren(...(customTags.length
-          ? customTags.map(tag => guiEl('button', { class: 'btn btn--sm', type: 'button', text: `${tag} ×`, dataset: { sourceTagRemove: tag } }))
-          : [guiEl('span', { class: 'hint', style: 'margin:0', text: '직접 추가한 태그가 없습니다.' })]));
+      const host = sourceCard.querySelector('[data-gradia-source-input-host]');
+      if (host && !host.querySelector('[data-source-input-controls]')) {
+        void getGradiaSourceRuleSync().start().catch(() => {});
+        mountMemorySuiteSourceInputControls(host, {
+          ...gradiaSourceInputConfig,
+          policy: getGradiaSourceInput(),
+          ruleSync: getGradiaSourceRuleSync(),
+          includeRecallBudget: false,
+          isDisposed: () => Runtime.unloaded === true || !host.isConnected
+        });
       }
     }
 
@@ -56004,6 +57533,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } catch (_) {}
       GradiaContinuityRuntime.checkedByScope.clear();
       GradiaContinuityRuntime.inFlightByScope.clear();
+      try { await gradiaSourceRuleSync?.dispose?.(); } catch (_) {}
+      try { gradiaSourceInput?.dispose?.(); } catch (_) {}
     };
     try {
       if (typeof API.onUnload === 'function') { await API.onUnload(unload); Runtime.hookStatus.unload = true; }
@@ -56030,6 +57561,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     await registerPluginUi();
     await ensureGradiaRetraceIpc();
     await LibReadConnection.start();
+    await getGradiaSourceInput().ready().catch(() => {});
+    await getGradiaSourceRuleSync().start().catch(() => {});
     // Native branch & native chat-copy adoption is a local pluginStorage rebind, not an LLM call.
     // Probe once at startup so opening a branched or copied chat inherits per-chat GRADIA state immediately.
     try { await ensureGradiaNativeContinuity(); } catch (_) {}

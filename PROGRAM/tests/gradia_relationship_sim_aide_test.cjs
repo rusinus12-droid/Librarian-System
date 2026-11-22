@@ -166,9 +166,9 @@ test('an anniversary is surfaced before its date and a missed one leaves a griev
   const state = await f.host.plugin.debugRelationshipSimState();
   const pair = state.pairs['bond-junho'];
   assert.equal(pair.occasions.find(item => item.id === 'd100')?.state, 'missed');
-  assert.equal(pair.grievance, 1);
-  assert.match(pair.grievanceCause, /100일/);
-  assert.match(hostSystem(f), /Unresolved hurt \(1\/3: 100일을 챙기지 않음\)/);
+  assert.equal(pair.mood, -25);
+  assert.match(pair.moodCause, /100일/);
+  assert.match(hostSystem(f), /Low mood \(-25\/100: 100일을 챙기지 않음\)/);
 });
 
 test('without a story date it never invents anniversaries', async t => {
@@ -184,7 +184,7 @@ test('host estimates become a lore preference card and a pair status; the person
     extras: { [HOST]: {
       relationship_pairs: [{ from: 'persona', to: '준호', mutual: true, status: 'more_than_friend', dating_since: '', disclosure: 'secret', known_by: '', lead: '준호', lead_reasons: 'pride', basis: '서로 의식하는 사이(로어)' }],
       relationship_profiles: [
-        { name: '준호', places_liked: '카페, 서점', places_disliked: '놀이공원', times_liked: '늦저녁', times_disliked: '', dates_liked: '칵테일바', dates_disliked: '', events_liked: '', events_disliked: '관객 앞 프러포즈', love_styles: '유희적 사랑', birthday: '5월 14일', sulk: '말수가 줄어든다', basis: '도시적이고 장난스러운 성격(캐릭터 카드)' },
+        { name: '준호', places_liked: '카페, 서점', places_disliked: '놀이공원', times_liked: '늦저녁', times_disliked: '', dates_liked: '칵테일바', dates_disliked: '', events_liked: '', events_disliked: '관객 앞 프러포즈', love_styles: '유희적 사랑', birthday: '5월 14일', mood_high: '장난스럽게 농담을 건네며 먼저 손을 잡는다', mood_low: '말수가 줄어든다', sulk: '말수가 줄어든다', basis: '도시적이고 장난스러운 성격(캐릭터 카드)' },
         { name: 'persona', places_liked: '카페', places_disliked: '', times_liked: '', times_disliked: '', dates_liked: '', dates_disliked: '', events_liked: '', events_disliked: '', love_styles: '', birthday: '', sulk: '', basis: 'x' },
         { name: '민아', places_liked: '', places_disliked: '', times_liked: '', times_disliked: '', dates_liked: '', dates_disliked: '', events_liked: '', events_disliked: '', love_styles: '', birthday: '', sulk: '', basis: '' }
       ]
@@ -202,6 +202,8 @@ test('host estimates become a lore preference card and a pair status; the person
   assert.deepEqual(cards[0].events.disliked, ['public_proposal']);
   assert.deepEqual(cards[0].loveStyles, ['ludus']);
   assert.equal(cards[0].birthday, '05-14');
+  assert.equal(cards[0].moodHigh, '장난스럽게 농담을 건네며 먼저 손을 잡는다');
+  assert.equal(cards[0].moodLow, '말수가 줄어든다');
   assert.equal(cards[0].origin, 'lore');
 });
 
@@ -348,4 +350,64 @@ test('GUI relationship sim readings panel filters to detected events only', asyn
   assert.ok(box, 'relsim readings box exists');
   assert.match(box.textContent, /감지된 관계 이벤트 없음/);
   assert.doesNotMatch(box.textContent, /고백/);
+});
+
+test('relationship simulator unifies mood gauge (-100..+100) across occasions, probabilities, lore reactions, and GUI', async t => {
+  // 1) Kept occasion raises mood (+25), emits High mood with lore-based moodHigh reaction, and boosts roll %
+  const { f: keptSim } = await start(t, {
+    pair: { status: 'lovers', datingSince: '2027-01-01', mood: 0 },
+    profiles: [{ name: '준호', loveStyles: ['ludus'], moodHigh: '텐션이 올라 장난스럽게 웃으며 먼저 다가온다', moodLow: '말수가 줄고 퉁명스럽게 답한다', basis: '로어' }],
+    extras: { [HOST]: { relationship_occasions: [{ pair_id: 'bond-junho', occasion_id: 'd100', state: 'kept' }] } }
+  });
+  reply(keptSim, '[2027-04-10 · 저녁] 준호가 문자를 보냈다.');
+  await runTurn(keptSim, '100일 기념일을 챙기자고 말한다.');
+  reply(keptSim, '[2027-04-11 · 밤] 함께 케이크를 먹었다.');
+  wireModel(keptSim, '준호는 환하게 웃었다.');
+  await runTurn(keptSim, '준호의 손을 잡는다.');
+  let state = await keptSim.host.plugin.debugRelationshipSimState();
+  let pair = state.pairs['bond-junho'];
+  assert.equal(pair.mood, 25);
+  assert.match(pair.moodCause, /100일/);
+  assert.match(hostSystem(keptSim), /High mood \(\+25\/100: 100일을 함께 챙김\) lifts the scene — shown the way 준호 does it: 텐션이 올라 장난스럽게 웃으며 먼저 다가온다/);
+  const joyPrep = await keptSim.host.plugin.debugRelationshipSimPrepare({
+    recent: { latestUser: '준호와 데이트하러 가자고 말한다.', visibleMessages: [{ role: 'assistant', content: '준호가 웃었다.' }] }
+  });
+  const joyVerdict = joyPrep.verdicts.find(v => v.act === 'date');
+  assert.ok(joyVerdict && joyVerdict.factors.some(item => item.startsWith('기분 +25 +')));
+
+  // 2) Missed occasion lowers mood (-25), emits Low mood with lore-based moodLow reaction, and penalizes roll %
+  const { f: missedSim } = await start(t, {
+    pair: { status: 'lovers', datingSince: '2027-01-01', mood: 0 },
+    profiles: [{ name: '준호', loveStyles: ['ludus'], moodHigh: '텐션이 올라 장난스럽게 웃으며 먼저 다가온다', moodLow: '말수가 줄고 퉁명스럽게 답한다', basis: '로어' }]
+  });
+  reply(missedSim, '[2027-04-10 · 저녁] 준호가 문자를 보냈다.');
+  await runTurn(missedSim, '준호에게 답장한다.');
+  reply(missedSim, '[2027-04-13 · 오전] 준호는 아무 말 없이 돌아섰다.');
+  await runTurn(missedSim, '출근 준비를 한다.');
+  reply(missedSim, '[2027-04-13 · 오전] 준호는 대답을 피했다.');
+  await runTurn(missedSim, '현관을 나선다.');
+  state = await missedSim.host.plugin.debugRelationshipSimState();
+  pair = state.pairs['bond-junho'];
+  assert.equal(pair.mood, -25);
+  assert.match(pair.moodCause, /100일/);
+  assert.match(hostSystem(missedSim), /Low mood \(-25\/100: 100일을 챙기지 않음\) colors the scene — shown the way 준호 does it: 말수가 줄고 퉁명스럽게 답한다/);
+  const negPrep = await missedSim.host.plugin.debugRelationshipSimPrepare({
+    recent: { latestUser: '준호와 데이트하러 가자고 말한다.', visibleMessages: [{ role: 'assistant', content: '준호가 고개를 돌렸다.' }] }
+  });
+  const negVerdict = negPrep.verdicts.find(v => v.act === 'date');
+  assert.ok(negVerdict && negVerdict.factors.some(item => item.startsWith('기분 -25 -')));
+
+  // 3) GUI renders -100..+100 mood controls + moodHigh/moodLow profile fields and persists user adjustment
+  await missedSim.host.plugin.openSettingsGui();
+  await missedSim.host.plugin.debugNavigateGui('chat');
+  const moodInputs = [...missedSim.document.querySelectorAll('[data-relsim-field="mood"][data-pair-id="bond-junho"]')];
+  assert.equal(moodInputs.length, 2, 'range and number inputs for mood (-100..+100) exist');
+  assert.ok(missedSim.document.querySelector('[data-relsim-profile-field="moodHigh"]'), 'moodHigh field exists');
+  assert.ok(missedSim.document.querySelector('[data-relsim-profile-field="moodLow"]'), 'moodLow field exists');
+  const numInput = moodInputs.find(el => el.type === 'number');
+  numInput.value = '80';
+  numInput.dispatchEvent(new missedSim.document.defaultView.Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 30));
+  const updated = await missedSim.host.plugin.debugRelationshipSimState();
+  assert.equal(updated.pairs['bond-junho'].mood, 80);
 });

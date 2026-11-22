@@ -30,7 +30,7 @@ for (const [name, {variant,embedsCompute}] of Object.entries(STORAGE_VARIANTS)) 
   const lineageOk = norm(text).split(norm(hostLineageSdk)).length - 1 === 1;
   process.stdout.write(`${name}: hostLineage=${lineageOk ? 'OK' : 'MISMATCH'}\n`);
   let consentOk = true;
-  if (['LIBRA.js','Flashback_Memory.js','HAYAKU_Locator_Continuity.js'].includes(name)) {
+  if (['LIBRA.js','Flashback_Memory.js','HAYAKU_Locator_Continuity.js','GRADIA.js'].includes(name)) {
     const consentFile = 'MemorySuiteSourceInput.libra.source.js';
     const consentSource = fs.readFileSync(path.join(root,'sdk',consentFile),'utf8').trimEnd();
     consentOk = norm(text).split(norm(consentSource)).length - 1 === 1;

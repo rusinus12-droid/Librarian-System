@@ -236,3 +236,124 @@ test('debugShadowPrevious strips presentation/inlay/wrapper tags and emits memor
   assert.doesNotMatch(prevCustom.text, /HP:100|<status>/);
   assert.match(prevCustom.text, /소연이 미소 지었다\./);
 });
+
+test('beforeRequest strips presentation/wrapper/custom tags from recent chat and terminal scene in SHADOW prompt', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.controls.onModel = () => {
+    f.controls.output = '소연은 미소 지으며 대답했다.';
+  };
+  await f.host.plugin.saveRuntimeSettings({
+    ...await f.host.plugin.getRuntimeSettings(),
+    mode: 'normal',
+    default_preset: 'writer',
+    input_assist_mode: 'off',
+    writing_mode: 'rp',
+    multi_pipeline_mode: 'lightweight',
+    enable_shadow_act: true,
+    enable_character_aide: false,
+    enable_world_aide: false,
+    enable_plot_aide: false,
+    failure_mode: 'hard',
+    lore_activation_mode: 'off',
+    source_ignored_tags: ['status']
+  });
+  f.chat.message.push(
+    { role: 'user', chatId: 'u1', data: '소연아, 괜찮아?' },
+    {
+      role: 'char',
+      chatId: 'a1',
+      data: '## 볼륨 5: 이름 붙이기\n### 챕터 18: 셋이라는 수\n#### Chatindex: 100\n<img cmd="Soyeon_smile">\n<lb-xnai id="s1">{{inlay::xyz}}</lb-xnai>\n<status>HP:100</status>\n소연이 고개를 끄덕이며 창밖을 바라보았다.'
+    },
+    { role: 'user', chatId: 'u2', data: '같이 나가자.' }
+  );
+  f.prompts.length = 0;
+  await f.host.hooks.beforeRequest(
+    f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })),
+    'model'
+  );
+  const shadowPrompt = f.prompts.find(body => !stageOf(body).startsWith('aide_'));
+  assert.ok(shadowPrompt, 'shadow_act prompt recorded');
+  const usr = userOf(shadowPrompt);
+  assert.doesNotMatch(usr, /Soyeon_smile|inlay::xyz|Chatindex: 100|볼륨 5|챕터 18|HP:100|<status>/);
+  assert.match(usr, /소연이 고개를 끄덕이며 창밖을 바라보았다\./);
+});
+
+test('shared SDK source rules strip literal ◆CG…◆ delimiters and mount full shared controls in 자료 · Skill', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.controls.onModel = () => {
+    f.controls.output = '소연이 창밖을 바라보았다.';
+  };
+  await f.host.plugin.saveRuntimeSettings({
+    ...await f.host.plugin.getRuntimeSettings(),
+    mode: 'normal',
+    default_preset: 'writer',
+    input_assist_mode: 'off',
+    writing_mode: 'rp',
+    multi_pipeline_mode: 'lightweight',
+    enable_shadow_act: true,
+    enable_character_aide: false,
+    enable_world_aide: false,
+    enable_plot_aide: false,
+    failure_mode: 'hard',
+    lore_activation_mode: 'off'
+  });
+
+  // Open GUI on 자료 · Skill tab and verify shared SDK editor + peer sync panel mount
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('sources');
+  await new Promise(r => setTimeout(r, 40));
+
+  const controls = f.document.querySelector('[data-source-input-controls="gradia"]');
+  assert.ok(controls, 'shared SDK source controls mounted in 자료 · Skill');
+  assert.ok(controls.querySelector('[data-source-tag-finder]'), 'tag finder mounted');
+  assert.ok(controls.querySelector('[data-source-input-preview]'), 'preview mounted');
+  for (const peer of ['libra', 'hayaku', 'flashback']) {
+    assert.ok(controls.querySelector(`[data-source-rule-sync-peer="${peer}"]`), `peer sync row for ${peer} exists`);
+  }
+
+  // Add ◆CG…◆ literal delimiter rule via the shared SDK UI and click 적용
+  const rows = [...controls.querySelectorAll('[data-source-input-row]')];
+  const blankRow = rows.at(-1);
+  const customCb = blankRow.querySelector('[data-rule-custom]');
+  const WinEvent = f.document.defaultView.Event;
+  customCb.checked = true;
+  customCb.dispatchEvent(new WinEvent('change', { bubbles: true }));
+  const openInput = blankRow.querySelector('[data-rule-open]');
+  const closeInput = blankRow.querySelector('[data-rule-close]');
+  openInput.value = '◆CG';
+  closeInput.value = '◆';
+  openInput.dispatchEvent(new WinEvent('input', { bubbles: true }));
+  closeInput.dispatchEvent(new WinEvent('input', { bubbles: true }));
+  const together = controls.querySelector('[data-source-rule-sync-together]');
+  if (together) together.checked = false;
+  await controls.querySelector('[data-source-input-apply]').onclick();
+  await new Promise(r => setTimeout(r, 40));
+
+  // Verify ◆CG…◆ is stripped in both debugShadowPrevious and beforeRequest SHADOW prompt
+  const prev = f.host.plugin.debugShadowPrevious({
+    recent: {
+      latestUser: '대화를 이어간다.',
+      visibleMessages: [
+        { role: 'assistant', content: '◆CG scene_beach_01◆\n소연이 모래사장을 걸었다.' },
+        { role: 'user', content: '대화를 이어간다.' }
+      ]
+    }
+  });
+  assert.doesNotMatch(prev.text, /◆CG|scene_beach_01/);
+  assert.match(prev.text, /소연이 모래사장을 걸었다\./);
+
+  f.chat.message.push(
+    { role: 'user', chatId: 'u1', data: '해변으로 가자.' },
+    { role: 'char', chatId: 'a1', data: '◆CG scene_beach_01◆\n소연이 모래사장을 걸었다.' },
+    { role: 'user', chatId: 'u2', data: '파도가 잔잔하네.' }
+  );
+  f.prompts.length = 0;
+  await f.host.hooks.beforeRequest(
+    f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })),
+    'model'
+  );
+  const shadowPrompt = f.prompts.find(body => !stageOf(body).startsWith('aide_'));
+  assert.ok(shadowPrompt, 'shadow_act prompt recorded');
+  assert.doesNotMatch(userOf(shadowPrompt), /◆CG|scene_beach_01/);
+  assert.match(userOf(shadowPrompt), /소연이 모래사장을 걸었다\./);
+});

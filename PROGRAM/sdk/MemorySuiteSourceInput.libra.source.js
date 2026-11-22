@@ -283,7 +283,7 @@ function memorySuiteCanonicalSource(value,owner) {
 
 function createMemorySuiteSourceInputPolicy(config) {
   const owner=config.owner||'libra';
-  if(!['libra','hayaku','flashback'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
+  if(!['libra','hayaku','flashback','gradia'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
   const clone=value=>JSON.parse(JSON.stringify(value));
   let preferences=null,loading=null,saving=null,disposed=false;
   async function ready() {

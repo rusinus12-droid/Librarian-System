@@ -402,3 +402,85 @@ test('GUI intimacy panel shows external reaction and climax/ejaculation gauges a
   assert.match(readingsEl.textContent, /외부반응 · 도서관·서고·열람실/);
   assert.match(readingsEl.textContent, /게이지 ·/);
 });
+
+test('erogenous zoneStats initialize from lore zone_defaults, develop persistently over kept turns, and render anatomy SVGs in GUI', async t => {
+  const f = await start(t, {}, true, {
+    [HOST]: {
+      intimacy_readings: [{ participant: '세라', phase: 'intercourse', position: '후배위', summary: '흥분이 오르는 중' }],
+      intimacy_profiles: [{
+        name: '세라',
+        liked_positions: '정상위',
+        disliked_positions: '',
+        sensitive_zones: '유두',
+        dull_zones: '허벅지',
+        zone_defaults: [
+          { zone: 'breasts_nipples', sensitivity: 40, development: 10 },
+          { zone: 'clitoris_vulva', sensitivity: 20, development: 5 },
+          { zone: 'thighs_hips', sensitivity: -60, development: 0 }
+        ],
+        foreplay_stance: 'likes',
+        foreplay_style: '부드러운 애무',
+        intercourse_stance: 'likes',
+        intercourse_style: '천천히 깊게',
+        afterplay_stance: 'likes',
+        afterplay_style: '포옹',
+        basis: '로어 기반 초기 민감도 및 개발도'
+      }]
+    }
+  });
+
+  const readCards = () => Object.values(storedCards(f)).flat();
+  const reply = body => f.chat.message.push({ role: 'char', chatId: 'a' + (f.chat.message.length + 1), data: body });
+  let rerollSeq = 0;
+  const rerun = async () => {
+    const last = f.chat.message.pop();
+    rerollSeq += 1;
+    f.chat.message.push({ ...last, chatId: `${last.chatId}-r${rerollSeq}` });
+    f.prompts.length = 0;
+    await f.host.hooks.beforeRequest(f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })), 'model');
+  };
+
+  // Turn 1: host estimates profile with lore zone_defaults
+  await runTurn(f, SEX_INPUT.replace(/민아/g, '세라'));
+  let cards = readCards();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].zoneStats.breasts_nipples.sensitivity, 40);
+  assert.equal(cards[0].zoneStats.breasts_nipples.development, 10);
+  assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 20);
+  assert.equal(cards[0].zoneStats.clitoris_vulva.development, 5);
+  assert.equal(cards[0].zoneStats.thighs_hips.sensitivity, -60);
+
+  // Turn 2: stimulate clitoris_vulva (pending zoneDelta)
+  reply('세라가 작게 숨을 삼켰다.');
+  await runTurn(f, '세라의 음핵을 손가락으로 부드럽게 문지른다.');
+
+  // Reroll of Turn 2 must NOT double-count development
+  await rerun();
+  cards = readCards();
+  assert.equal(cards[0].zoneStats.clitoris_vulva.development, 5, 'pending zone development waits for kept turn');
+
+  // Turn 3: previous turn settled -> clitoris_vulva development & sensitivity increase persistently
+  reply('세라의 허리가 살짝 들렸다.');
+  await runTurn(f, '세라의 목덜미에 입을 맞추고 가슴을 만진다.');
+  cards = readCards();
+  assert.ok(cards[0].zoneStats.clitoris_vulva.development > 5, 'development increased after kept turn');
+  assert.ok(cards[0].zoneStats.clitoris_vulva.sensitivity > 20, 'sensitivity increased after kept turn');
+  const devAfterTurn2 = cards[0].zoneStats.clitoris_vulva.development;
+
+  // GUI renders full-body SVG, schematic genital anatomy SVG, and editable zone inputs
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const bodySvg = f.document.querySelector('[data-intimacy-body-svg]');
+  const genitalSvg = f.document.querySelector('[data-intimacy-genital-svg]');
+  assert.ok(bodySvg, 'full-body SVG diagram rendered');
+  assert.ok(genitalSvg, 'schematic genital anatomy SVG rendered');
+
+  const sensInput = f.document.querySelector('[data-intimacy-zone-field="clitoris_vulva.sensitivity"]');
+  assert.ok(sensInput, 'editable sensitivity input exists');
+  sensInput.value = '75';
+  sensInput.dispatchEvent(new f.document.defaultView.Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 30));
+  cards = readCards();
+  assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 75);
+  assert.equal(cards[0].zoneStats.clitoris_vulva.development, devAfterTurn2);
+});
