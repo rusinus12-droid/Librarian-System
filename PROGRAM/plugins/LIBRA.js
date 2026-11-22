@@ -41286,6 +41286,19 @@ function createLibraReadonlySourceContext(owner) {
         rawPayloadDigests: asArray(pair?.assistant?.rawPayloadDigests), sanitizedTextDigests: asArray(pair?.assistant?.sanitizedTextDigests)
       }
     }).replace(/[^a-z0-9]/gi, '');
+    // 같은 턴의 리비전 id 를 필드 집합이 다르던 시절(sanitizedTextDigests 이전) 정의로 계산한다.
+    // 예전에 저장된 영수증은 이 정의로 만들어졌으므로, 지금 정의로 다시 계산하면 값이 달라진다.
+    const completedTurnRevisionIdLegacy = pair => digest({
+      turn: Number(pair?.turn || 0),
+      user: {
+        chatIds: asArray(pair?.user?.chatIds), text: string(pair?.user?.text || ''),
+        rawPayloadDigests: asArray(pair?.user?.rawPayloadDigests)
+      },
+      assistant: {
+        chatIds: asArray(pair?.assistant?.chatIds), text: string(pair?.assistant?.text || ''),
+        rawPayloadDigests: asArray(pair?.assistant?.rawPayloadDigests)
+      }
+    }).replace(/[^a-z0-9]/gi, '');
     const completedTurnSourceRow = (role, row) => ({
       role, chatId: string(row?.chatId || ''), chatIds: asArray(row?.chatIds).map(string),
       identitySource: string(row?.identitySource || ''), identityStable: row?.identityStable === true,
@@ -54381,18 +54394,47 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // An earlier receipt of a turn that is still the same turn (sameCompletedTurnRaw, or the same
     // analyzed text): its Micro analysis stays bound to it. One rule replaces the former fixed
     // LightBoard list, so a new tag set to be ignored in 원문 재분석의 태그 관리 needs no code.
-    const readTextEquivalentReceipt = async (scope, worldlineId, sessionEpoch, turn, revisionId, current) => {
-      const receiptKey = key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, revisionId);
-      let receipt;
-      try { receipt = await storage.getVerifiedJson(receiptKey, scope, null); } catch (_) { return null; }
+    // 영수증 채택 조건. 저장 당시 정의(레거시)와 현재 정의 중 **한쪽으로 계산해도** 서명된 id 와
+    // 일치하면 통과시킨다. 필드가 늘어난 뒤 예전 영수증이 "원문 변경"으로 오인되던 경로를 없앤다.
+    const textEquivalentReceiptGate = (receipt, current, ctx = {}) => {
+      if (!receipt || !current) return { ok: false, reason: 'missing' };
+      if (receipt.schema !== 'libra.completed_turn_receipt.v1' || receipt.scopeKey !== current.scopeKey
+        || receipt.worldlineId !== ctx.worldlineId || Number(receipt.sessionEpoch) !== Number(ctx.sessionEpoch)
+        || Number(receipt.turn) !== Number(ctx.turn)) return { ok: false, reason: 'identity' };
+      const legacyId = completedTurnRevisionIdLegacy(current);
+      const idOk = receipt.revisionId === ctx.revisionId || (!!legacyId && receipt.revisionId === legacyId);
+      if (!idOk) return { ok: false, reason: 'revision_mismatch' };
+      const selfOk = completedTurnRevisionId(receipt) === receipt.revisionId
+        || completedTurnRevisionIdLegacy(receipt) === receipt.revisionId;
+      if (!selfOk) return { ok: false, reason: 'receipt_hash_mismatch' };
       const sameMessages = role => digest(asArray(receipt?.[role]?.chatIds)) === digest(asArray(current?.[role]?.chatIds));
-      if (receipt?.schema !== 'libra.completed_turn_receipt.v1' || receipt.scopeKey !== current?.scopeKey
-        || receipt.worldlineId !== worldlineId || Number(receipt.sessionEpoch) !== Number(sessionEpoch)
-        || Number(receipt.turn) !== Number(turn) || receipt.revisionId !== revisionId
-        || completedTurnRevisionId(receipt) !== revisionId
-        || !sameMessages('user') || !sameMessages('assistant')
-        || (receipt.sourceDigest !== current.sourceDigest && !isTextEquivalentCompletedTurn(receipt, current))) return null;
-      return { status: 'verified', reason: '', receipt, receiptKey };
+      if (!sameMessages('user') || !sameMessages('assistant')) return { ok: false, reason: 'messages_differ' };
+      if (receipt.sourceDigest !== current.sourceDigest && !isTextEquivalentCompletedTurn(receipt, current)) {
+        return { ok: false, reason: 'source_changed' };
+      }
+      const usedLegacy = !!legacyId && receipt.revisionId === legacyId && ctx.revisionId !== legacyId;
+      return { ok: true, reason: usedLegacy ? 'legacy_definition' : '', legacyRevisionId: usedLegacy ? legacyId : '' };
+    };
+    const readTextEquivalentReceipt = async (scope, worldlineId, sessionEpoch, turn, revisionId, current) => {
+      // 예전 영수증은 레거시 id 로 저장됐다. 현재 id 키로만 찾으면 존재 자체를 못 보므로 두 키를 모두 본다.
+      const legacyRevisionId = completedTurnRevisionIdLegacy(current);
+      const candidateIds = [revisionId, legacyRevisionId].filter((id, index, list) => !!id && list.indexOf(id) === index);
+      for (const candidateId of candidateIds) {
+        const receiptKey = key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, candidateId);
+        let receipt;
+        try { receipt = await storage.getVerifiedJson(receiptKey, scope, null); } catch (_) { continue; }
+        const gate = textEquivalentReceiptGate(receipt, current, { worldlineId, sessionEpoch, turn, revisionId: candidateId });
+        if (!gate.ok) continue;
+        if (gate.reason === 'legacy_definition') {
+          // 계측: 어느 턴이 레거시 정의로 채택됐는지 남긴다(디버그 덤프에서 확인).
+          Runtime.libraReceiptLenient = {
+            at: Date.now(), turn: Number(turn), candidateId, legacyRevisionId,
+            receiptRevisionId: receipt?.revisionId || ''
+          };
+        }
+        return { status: 'verified', reason: '', receipt, receiptKey };
+      }
+      return null;
     };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
       const empty = (status, reason = '') => ({ status, reason, record: null, head: null });
@@ -78754,6 +78796,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       debugIsAcceptedAidePatchApplication: (patchValue, appliedValue) => isAcceptedAidePatchApplication(patchValue, appliedValue),
       debugMicroFrontier: (deliveryValue = {}, publicationValue = null, indexValue = null) =>
         clone(microFrontierFromDelivery(deliveryValue, publicationValue, indexValue)),
+      // 영수증 채택 관문(레거시 정의 포함)과 두 정의의 revision id 계산을 시험에서 직접 본다.
+      debugTextEquivalentReceiptGate: (receiptValue, currentValue, ctxValue = {}) =>
+        clone(textEquivalentReceiptGate(receiptValue, currentValue, ctxValue)),
+      debugCompletedTurnRevisionId: (pairValue, options = {}) => (options.legacy === true
+        ? completedTurnRevisionIdLegacy(pairValue) : completedTurnRevisionId(pairValue)),
       assertConsumerEvidenceCurrent,
       debugConsumerEntityProjection:consumerEntityProjection,
 
@@ -95471,6 +95518,8 @@ advanced
     getLastNarrativeRecall() { return safeClone(LibraMemoryCore.getLastNarrativeRecall()); },
     getLastProtectedProductTransfer() { return safeClone(Runtime.lastProtectedProductTransfer || null); },
     debugMicroFrontier(delivery = {}, publication = null, index = null) { return safeClone(LibraMemoryCore.debugMicroFrontier(delivery, publication, index)); },
+    debugTextEquivalentReceiptGate(receipt = null, current = null, ctx = {}) { return safeClone(LibraMemoryCore.debugTextEquivalentReceiptGate(receipt, current, ctx)); },
+    debugCompletedTurnRevisionId(pair = null, options = {}) { return LibraMemoryCore.debugCompletedTurnRevisionId(pair, options); },
     getResponseConsumerOperations() {return safeClone(Runtime.lastConsumerOperations || {});},
     cancelResponseConsumer(group='input_writer') {return cancelConsumerOperation(group);},
     getRetraceCapabilities() { return LibraMemoryCore.retraceCapabilities(); },
