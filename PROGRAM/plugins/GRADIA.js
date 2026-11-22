@@ -28356,6 +28356,35 @@ Begin directly with the in-world response and finish the complete same-turn draf
     logs: normalizeWorldSimLogMap(Runtime.worldSimLogs || {})
   });
   const worldSimLogForScope = (scopeKey = '') => (scopeKey ? (Runtime.worldSimLogs?.[scopeKey] || []) : []);
+  // 장면 밖 인물의 **현재 위치·행동**. 사건 로그(appendWorldSimEvent)는 이력이고, 이 함수는
+  // 그 이력에서 인물별 최신 상태만 뽑아 "지금 어디에 있는가"로 만든다. 로그가 이미 플러그인
+  // 저장소에 영속되므로 별도 저장소를 만들지 않는다.
+  const worldOffstageRoster = (scopeKey = '') => {
+    const roster = new Map();
+    for (const ev of worldSimLogForScope(scopeKey)) {
+      // 한 사건에 함께 등장한 인물은 같은 장소로 본다(사건에 장소가 없으면 그중 한 명의
+      // 기존 위치를 사건 장소로 승계한다).
+      const actors = (ev.actors || []).map(name => compact(name, 60)).filter(Boolean);
+      const priorPlace = actors.map(name => roster.get(normalizeContinuityAlias(name) || name)?.place || '').find(Boolean) || '';
+      const eventPlace = compact(ev.place || '', 80) || priorPlace;
+      for (const name of actors) {
+        const key = normalizeContinuityAlias(name) || name;
+        const prev = roster.get(key) || {};
+        roster.set(key, {
+          name: prev.name || name,
+          place: eventPlace || prev.place || '',
+          activity: compact(ev.summary || '', 200) || prev.activity || '',
+          storyDay: ev.storyDay ?? prev.storyDay ?? null,
+          storyDate: compact(ev.storyDate || '', 32) || prev.storyDate || '',
+          at: Number(ev.at) || prev.at || 0,
+          movedAt: ev.place ? (Number(ev.at) || 0) : (prev.movedAt || 0),
+          kind: compact(ev.kind || '', 40) || prev.kind || ''
+        });
+      }
+    }
+    return [...roster.values()].sort((a, b) => (b.movedAt || 0) - (a.movedAt || 0));
+  };
+
   const appendWorldSimEvent = (scopeKey, rawEvent) => {
     if (!scopeKey) return null;
     if (!Runtime.worldSimLogs) Runtime.worldSimLogs = {};
@@ -28526,6 +28555,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ...sim
       };
     }
+    const offstageRoster = worldOffstageRoster(scopeKey);
+    const rosterLines = offstageRoster.length ? [
+      '[OFF-SCENE WHEREABOUTS — current state, not history]',
+      ...offstageRoster.slice(0, 10).map(item => `- ${item.name}${item.place ? ` @ ${item.place}` : ' @ (장소 미기록)'}${item.activity ? ` — 지난 행동: ${compact(item.activity, 120)}` : ''}${item.storyDate ? ` [${item.storyDate}]` : item.storyDay !== null && item.storyDay !== undefined ? ` [day ${item.storyDay}]` : ''}`),
+      'Rules: every person below stays where they are until an event moves them. If one of them appears in this scene, the journey from that place must be possible by the stated time and distance, and it must be shown or explained — never have them arrive without it, and never place one person in two places at once. When someone moves, state the new place in world_readings so this state carries to the next turn.'
+    ] : [];
     const persistentLogs = worldSimLogForScope(scopeKey).slice(-6);
     const persistentLines = persistentLogs.length ? [
       '[PERSISTENT OFF-SCENE RECORDS]',
@@ -28547,7 +28582,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : sim.suppressed === 'due_movement_active'
           ? 'Simulator status: deferred because an established movement above is already due this turn.'
           : sim.triggered
-            ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). REQUIRED THIS TURN: one visible trace of it early or mid-scene, consistent with their lore/personality — at most one, subtle, without hijacking the scene or ending the turn. If the turn cannot carry it, say why in world_readings instead of dropping it.`
+            ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${(() => { const from = offstageRoster.find(item => extensionSamePerson(item.name, sim.actor))?.place || ''; return from ? ` (from ${from})` : ''; })()}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). REQUIRED THIS TURN: one visible trace of it early or mid-scene, consistent with their lore/personality — at most one, subtle, without hijacking the scene or ending the turn. If the turn cannot carry it, say why in world_readings instead of dropping it.`
             : `Dice roll: ${sim.roll}/100 >= ${sim.chance}% → QUIET TURN (surface no random off-scene ripple this turn).`
     ] : [];
     return compact([
@@ -28561,6 +28596,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? `Candidate this turn: #${candidate + 1}. Surface it only if it can reach this scene and no recorded ending covers it; when the current input touches another listed movement, prefer that one.`
           : 'No listed movement has come due. Surface nothing unless the current input itself reaches one of them.')
         : '',
+      ...rosterLines,
       ...persistentLines,
       ...simLines
     ].filter(Boolean).join('\n'), 3600);
@@ -30071,8 +30107,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (g.carriedFromSettled) gaugeParts.push('이전 턴 승계');
       if (g.stimulatedParts?.length) gaugeParts.push(`자극: ${g.stimulatedParts.join(', ')}`);
       if (!gaugeParts.length) continue;
+      // 사정 축은 남성 전용이다. 어느 축이 표시되는지 이름 옆에 성별로 밝혀 둔다.
+      const gaugeGender = g.gender === 'male' ? '남성' : g.gender === 'female' ? '여성' : '성별 미확인';
       notes.push({
-        title: `게이지 · ${forcedBondPersonLabel(g.name)}`,
+        title: `게이지 · ${forcedBondPersonLabel(g.name)} (${gaugeGender})`,
         body: gaugeParts.join(' · ')
       });
     }
@@ -54233,7 +54271,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         guiEl('p', { text: `${ev.cause ? `인과: ${ev.cause} — ` : ''}${ev.summary}${intBadge}` })
       ]);
     });
-    const all = [...simNotes, ...readingNodes, ...persistentNodes];
+    // 장면 밖 인물의 현재 위치(로그에서 뽑은 상태). 이력 목록과 별개로 "지금 어디"를 보여 준다.
+    const rosterNow = worldOffstageRoster(scopeKey);
+    const rosterNodes = rosterNow.length ? [
+      guiEl('div', { class: 'note' }, [
+        guiEl('b', { text: '장면 밖 현재 위치' }),
+        guiEl('p', { text: rosterNow.slice(0, 10).map(item => `${forcedBondPersonLabel(item.name)} — ${item.place || '장소 미기록'}${item.activity ? ` (${compact(item.activity, 60)})` : ''}`).join(' · ') })
+      ])
+    ] : [];
+    const all = [...simNotes, ...readingNodes, ...rosterNodes, ...persistentNodes];
     readingBox.replaceChildren(...(all.length
       ? all
       : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 세계 동역학 AIDE가 실행되면 이번 턴에 살핀 장면 밖 흐름과 판정이 여기에 표시됩니다.' })])]));
@@ -54465,9 +54511,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const readings = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [];
       const bodyResponses = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.bodyResponses || []) : [];
       const telemetryRows = intimacyTelemetryNotes(scopeKey);
+      const gaugeLegend = guiEl('div', { class: 'note' }, [
+        guiEl('b', { text: '게이지 축' }),
+        guiEl('p', { text: '절정 0–100: 여성·성별 미확인 인물에 표시 · 사정 0–100: 남성 전용 축입니다. 성별은 선호 카드 → 프로필 → 본문 순서로 판정합니다.' })
+      ]);
       const hasSettledGauge = !!(scopeKey && (Object.keys(Runtime.intimacyGauges?.[scopeKey]?.settled || {}).length || (Runtime.intimacyGauges?.[scopeKey]?.pending || []).length || Runtime.intimacyTelemetry?.[scopeKey]?.gauges?.length));
       const zoneLabel = zoneId => (INTIMACY_BODY_PARTS.find(([id]) => id === zoneId)?.[1] || zoneId || '').split(' (')[0];
       const allIntimacyRows = [
+        gaugeLegend,
         ...telemetryRows.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: item.title }), guiEl('p', { text: item.body })])),
         ...readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}` }), guiEl('p', { text: item.summary })])),
         ...bodyResponses.map(item => guiEl('div', { class: 'note' }, [
@@ -58874,6 +58925,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     async debugLoreLoadCards() {
       Runtime.loreCards = null;
       return cloneJson(await loadLoreCards());
+    },
+    debugWorldSimSeed({ scopeKey = 'debug-scope', events = [] } = {}) {
+      if (!Runtime.worldSimLogs) Runtime.worldSimLogs = {};
+      Runtime.worldSimLogs[scopeKey] = [];
+      for (const ev of events) {
+        Runtime.worldSimLogs[scopeKey].push(normalizeWorldSimEvent({ at: Date.now(), ...ev }));
+      }
+      Runtime.worldSimLogs[scopeKey] = Runtime.worldSimLogs[scopeKey].filter(Boolean);
+      return cloneJson(worldOffstageRoster(scopeKey));
+    },
+    debugWorldOffstageRoster({ scopeKey = 'debug-scope' } = {}) {
+      return cloneJson(worldOffstageRoster(scopeKey));
     },
     debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
       return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-22T14:09:58.427Z",
+  "generatedAt": "2026-11-22T14:16:08.091Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "35364703915864c11b9ad474be681b9b62a4aef8ea14f0b73a6886a51beaef8c",
+      "sha256": "7eb5cb335751bf64df30fcf595d6aa99422e0da24bbd0df49d76d5d65666c85e",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,8 +4340,8 @@
       "bytes": 3982697
     },
     "plugins/GRADIA.js": {
-      "sha256": "72022a1bcc54aa1f005c50302434d10b25c39fe4f31c145446159361535eefba",
-      "bytes": 4154041
+      "sha256": "d5b9b892c6426e09f981e4068f1e732a1ed7c664231ea0d3e8164fade9b54c26",
+      "bytes": 4158598
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919",
@@ -7202,6 +7202,10 @@
     "tests/gradia/work-scale-context-budget.test.cjs": {
       "sha256": "a04d5d12fd0ec7efaff27ca98e67caf46b3ee2aa9134c053d66f87d76159c8e8",
       "bytes": 2634
+    },
+    "tests/gradia/world-offstage-roster.test.cjs": {
+      "sha256": "43d2d3b06f8426642995a670f8970b74695cef52f29edcb44923abee698373ce",
+      "bytes": 2498
     },
     "tests/gradia/writing-mode-separation.test.cjs": {
       "sha256": "dcb63a8c2371403946f00f363110b2463949f1f86a7270afb4f715b1e9668208",
