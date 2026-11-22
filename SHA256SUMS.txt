@@ -626,7 +626,7 @@ b4eebceaa52ab45ad5ecd06a80131f1b48e87beccf667cdb6a89611e24c4d2a0  ./PROGRAM/docs
 8a1a9c98503ffe4aaa0c0273d5c35a0138f043078cbf40a3302cfc5a2e25bbd3  ./PROGRAM/docs/RELEASE_AUTOMATION.md
 ed79a3387ff7a1361fbfe7ba3a2d888a77e71e5ebf3658fa7a3b9907f1b49fbf  ./PROGRAM/docs/RELEASE_BUILDER_20260912.md
 2feb66d159aa82242c0f300a1878f66eb803c91ba125056f399c16f29fda00ae  ./PROGRAM/docs/RELEASE_BUILDER_GATE_FIX_20261107.md
-fa6e7e32c73d247651e73299322d669d7514289486224065a802891ac684171d  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
+35364703915864c11b9ad474be681b9b62a4aef8ea14f0b73a6886a51beaef8c  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
 719091b5a97cccafac6d30bd5a411cab64ad551acd376c119890c108cf4420da  ./PROGRAM/docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md
 f894890bd82256b3b91289c7640cb4fafa360808e71805096bda3ffe3acf3a68  ./PROGRAM/docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md
 94060ce3298312f997ebacffea393ce0d7236019ace9d5aa7ae40a9d662a1d30  ./PROGRAM/docs/REMAINING_WORK_20261031.md
@@ -730,12 +730,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 65020df2954ee81d63eb5c4b1a9f5d5dde18f358125b71d9c0ae2589b504d827  ./PROGRAM/PACKAGE_CONTENTS.txt
 b7a8cab4d879df4cb84a26696c329ee6bddd1cb39f6937315e18b7507fe473d8  ./PROGRAM/plugins/Flashback_Memory.js
-53541ad14f74f4578d54b03ca6e5700591a1c03bace7dfa108249e0225dc8a4d  ./PROGRAM/plugins/GRADIA.js
+72022a1bcc54aa1f005c50302434d10b25c39fe4f31c145446159361535eefba  ./PROGRAM/plugins/GRADIA.js
 d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 9f8306df5c9498103e3a75988d544d6cd7219cda338ba74ea347ba76ccffd8f2  ./PROGRAM/plugins/LIA_Persona_Linker.js
 cdd4ee79003ab1d60c89e3daf3adac67563110c0eecd709f40fb9c8fc461d130  ./PROGRAM/plugins/LIBRA.js
 69e927f9ffcc68bca435b946ea4468757fd53df93091f80b2d5c1228d1bc682c  ./PROGRAM/plugins/RETRACE.js
-bed82be6548c8398ad3d7cab054fa5935b285fb119a5cd971462f581127b5138  ./PROGRAM/program-manifest.json
+eb492631cc46da3a5341fe6259065557436790f2ca9c86fc96ab807b4e24de69  ./PROGRAM/program-manifest.json
 26e70bb033c5526671c9d3156f24f74117e89720bbfab3f4aeffb61b52b86247  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -1390,6 +1390,7 @@ f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/test
 03b7300896dca281d0b2be53c549af6b3dd382d6d5bc81807ea73268112803f4  ./PROGRAM/tests/gradia/context-degradation.test.cjs
 e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc  ./PROGRAM/tests/gradia/creative-direction-clear.test.cjs
 ede617aa303b38dc99ec0084c2db543d0fdef6102f7f4f3d2c5b382ac763b26f  ./PROGRAM/tests/gradia/dialogue-aide.test.cjs
+fb9260201a066496b09b6b986ab3bdea4db4942e96a50da8e1ec8c0a6c13be40  ./PROGRAM/tests/gradia/dialogue-repair-apply.test.cjs
 632d81d0aab3229445d3f1e0a31839c4f7a75007a5e53a92db5b111ab6fc45e4  ./PROGRAM/tests/gradia/draft-archive-gui.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
@@ -1415,6 +1416,7 @@ d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/test
 362bc1765e293c98b20dddde47b4175ce08d2f5dd0834e3f7ce3db20b3e014f5  ./PROGRAM/tests/gradia/intimacy-attribution.test.cjs
 f1480b14117e0c351f0307ffa01a57a8547e2018101138bb9012be55b03eb8c6  ./PROGRAM/tests/gradia/ipc_connection_fixture.cjs
 0e7e80ea52f036dd3e039a94e5df8e6aa07ba23734b91fd902de54103d8ba523  ./PROGRAM/tests/gradia/knowledge-boundary-aide.test.cjs
+2228e6aacf91adcb81a5ff5c52152dc6dcdd293d43d9be0bc022ded930533174  ./PROGRAM/tests/gradia/ladder-stage-panel.test.cjs
 890b443b6eb663cc43c06246f945f7fa044b086269762206c3d577c11b2ec02c  ./PROGRAM/tests/gradia/legacy-removal.test.cjs
 4893916de251c1f5b3316ea00b53d99907485299c6b8ceaf14883a980cccb416  ./PROGRAM/tests/gradia/lib-read-consumer.test.cjs
 999ac8faf30fbae97f84004d98af5f3808bf12019de7e3b9ddbf4301094ca29c  ./PROGRAM/tests/gradia/load-dev-dependency.test.cjs

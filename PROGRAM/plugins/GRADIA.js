@@ -6786,7 +6786,9 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_intimacy: stageBase('aide_intimacy', flat.enable_intimacy_aide ?? flat.enableIntimacyAide ?? false, flat.intimacy_aide_preset ?? flat.intimacyAidePreset),
         aide_relationship_sim: stageBase('aide_relationship_sim', flat.enable_relationship_sim_aide ?? flat.enableRelationshipSimAide ?? false, flat.relationship_sim_aide_preset ?? flat.relationshipSimAidePreset),
         aide_knowledge_boundary: stageBase('aide_knowledge_boundary', flat.enable_knowledge_boundary_aide ?? flat.enableKnowledgeBoundaryAide ?? false, flat.knowledge_boundary_aide_preset ?? flat.knowledgeBoundaryAidePreset),
-        aide_dialogue: stageBase('aide_dialogue', flat.enable_dialogue_aide ?? flat.enableDialogueAide ?? false, flat.dialogue_aide_preset ?? flat.dialogueAidePreset)
+        // 화술·대화는 인물 AIDE 와 같은 호출에서 실행되므로(별도 호출 없음) 기본으로 켠다.
+        // 꺼 두면 SHADOW 초안에도 화술 규칙이 주입되지 않아 대사가 평면적으로 남는다.
+        aide_dialogue: stageBase('aide_dialogue', flat.enable_dialogue_aide ?? flat.enableDialogueAide ?? true, flat.dialogue_aide_preset ?? flat.dialogueAidePreset)
       },
       prompts: {
         before: {
@@ -29146,6 +29148,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
       }
     };
   };
+  // 화술 판독이 지목한 대사를 초안에 실제로 반영한다. 모델이 DRAFT_BLOCK 패치를 빠뜨려도
+  // 지목된 인용이 본문에 그대로 남아 있으면 교체 문장으로 바꿔, 판독이 보고서로 끝나지 않게 한다.
+  const dialogueApplyRepairsToStageDraft = (result, rawRepairs, settings = {}) => {
+    const repairs = (Array.isArray(rawRepairs) ? rawRepairs : [])
+      .map(item => ({
+        quote: compact(item?.draft_quote || item?.draftQuote || '', 240),
+        replacement: compact(item?.replacement || '', 240)
+      }))
+      .filter(item => item.quote && item.replacement && item.quote !== item.replacement)
+      .slice(0, DIALOGUE_MAX_ITEMS);
+    if (!repairs.length) return { changed: false, count: 0 };
+    const target = result?.draft;
+    if (!target) return { changed: false, count: 0 };
+    let body = text(target.rp_text || '') || text(result?.final_overlay?.final_rp_draft || '');
+    if (!body) return { changed: false, count: 0 };
+    let count = 0;
+    for (const item of repairs) {
+      if (!body.includes(item.quote)) continue;
+      body = body.split(item.quote).join(item.replacement);
+      count += 1;
+    }
+    if (!count) return { changed: false, count: 0 };
+    if (target.rp_text) target.rp_text = body;
+    if (result?.final_overlay?.final_rp_draft) result.final_overlay.final_rp_draft = body;
+    return { changed: true, count };
+  };
   const recordDialogueOutput = (ledger, stageName, parsed = {}, settings = {}, recent = {}) => {
     if (!ledger || !dialogueStageActive(settings)) return;
     const checks = normalizeDialogueChecks(parsed?.dialogueCheck);
@@ -36091,6 +36119,16 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         ledger.dialogueDraftAfter = ledger.knowledgeDraftAfter;
       }
       recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings);
+      // Host stage of 화술·대화: apply the repairs it named straight into the draft when the patch
+      // did not carry them, then re-read the after-text so `applied` reflects the page.
+      if (stageName === extensionAideHostStage('aide_dialogue', settings)) {
+        const repaired = dialogueApplyRepairsToStageDraft(result, result?.twoCallAnalysis?.dialogueRepairs, settings);
+        if (repaired.changed && ledger && typeof ledger === 'object') {
+          ledger.dialogueDraftAfter = stageDraft(result?.draft) || text(result?.draft?.rp_text || '');
+          ledger.knowledgeDraftAfter = ledger.dialogueDraftAfter;
+          ledger.dialogueRepairsAppliedDirectly = repaired.count;
+        }
+      }
       rememberScenePurpose(recent, result?.twoCallAnalysis?.scenePurpose, stageName, result?.twoCallAnalysis?.storyArc);
       rememberSceneFixations(recent, result?.twoCallAnalysis?.fixation, stageName);
     }
@@ -52991,6 +53029,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (share <= 0) return `var(--stage${segment + 2})`;
     return share >= 100 ? `var(--stage${segment + 1})` : `color-mix(in oklab,var(--stage${segment + 1}) ${share}%,var(--stage${segment + 2}))`;
   };
+  // Ladder row id -> stage-detail panel key. One table: the inline copy in the click handler had
+  // no 'dialogue' entry, so clicking 화술·대화 fell back to the SHADOW ACT panel.
+  const LADDER_DETAIL_KEY = Object.freeze({ shadow: 'shadow', inp: 'inp', char: 'char', world: 'world', plot: 'plot', body_state: 'body_state', world_dynamics: 'world_dynamics', intimacy: 'intimacy', relationship_sim: 'relationship_sim', knowledge_boundary: 'knowledge_boundary', dialogue: 'dialogue', forced_bond: 'forced_bond', main: 'main' });
   const FLOW_STAGE_ALIASES = Object.freeze({ shadow_act: 'shadow', aide_character: 'char', aide_world: 'world', aide_plot: 'plot', aide_forced_bond: 'forced_bond', aide_body_state: 'body_state', aide_world_dynamics: 'world_dynamics', aide_intimacy: 'intimacy', aide_relationship_sim: 'relationship_sim', aide_knowledge_boundary: 'knowledge_boundary', aide_dialogue: 'dialogue', main: 'main' });
   const FLOW_STAGE_CHIPS = Object.freeze({ shadow_act: '#mini-s1', aide_character: '#mini-s2', aide_world: '#mini-s3', aide_plot: '#mini-s4', aide_forced_bond: '#mini-s4b', aide_body_state: '#mini-s4a', aide_world_dynamics: '#mini-s4w', aide_intimacy: '#mini-s4x', aide_relationship_sim: '#mini-s4r', aide_knowledge_boundary: '#mini-s4k', aide_dialogue: '#mini-s4v', main: '#mini-s5' });
   const subAidesOfParent = parent => EXTENSION_AIDE_STAGE_IDS.filter(id => EXTENSION_AIDE_PARENT[id] === parent);
@@ -53457,7 +53498,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const node = target.closest('.node[data-select-row]');
       if (node) {
         const id = node.dataset.selectRow;
-        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', body_state:'body_state', world_dynamics:'world_dynamics', intimacy:'intimacy', relationship_sim:'relationship_sim', knowledge_boundary:'knowledge_boundary', forced_bond:'forced_bond', main:'main' })[id] || 'shadow';
+        const detail = LADDER_DETAIL_KEY[id] || 'shadow';
         app.querySelectorAll('.node[data-select-row]').forEach(item => item.classList.toggle('is-on', item === node));
         app.querySelectorAll('.stage-detail[data-detail]').forEach(item => item.classList.toggle('is-on', item.dataset.detail === detail));
         const selectedAide=({char:'aide_character',world:'aide_world',plot:'aide_plot'})[id];
@@ -58820,6 +58861,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
       return cloneJson({ ledger, readings: Runtime.intimacyReadings?.[scopeKey] || null, cards: intimacyCardsForScope(scopeKey) });
     },
+    debugLadderStageKeys() { return cloneJson(Object.keys(LADDER_DETAIL_KEY)); },
+    debugDialogueApplyRepairs({ draftText = '', repairs = [] } = {}) {
+      const result = { draft: { rp_text: draftText } };
+      const applied = dialogueApplyRepairsToStageDraft(result, repairs, {});
+      return cloneJson({ ...applied, draftText: result.draft.rp_text });
+    },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
       return cloneJson(await loadIntimacyCards());
@@ -58865,6 +58912,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         readings: Runtime.forcedBondReadings?.[scopeKey] || null,
         bondHistory: chat?.bondHistory || []
       });
+    },
+    debugDialogueStageBlock({ stageName = 'aide_character', recent = {}, settings = {}, ledger = {}, phase = 'writing' } = {}) {
+      return dialogueStageBlock(stageName, recent, settings, ledger, phase);
     },
     debugDialogueRecord({ stageName = 'aide_character', parsed = {}, settings = {}, recent = {}, draftBefore = '', draftAfter = '' } = {}) {
       const ledger = { dialogueDraftBefore: draftBefore, dialogueDraftAfter: draftAfter };
