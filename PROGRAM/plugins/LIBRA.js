@@ -60157,6 +60157,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
         result=await callCanonical('retry');
         if(result&&typeof result==='object')result.malformedRetry={firstReason};
       }
+      if(result?.ok!==true&&providerOutputWasTruncated(result)&&providerLengthLimitInfo(result?.finishReason)&&!options.signal?.aborted){
+        const firstReason=string(result.reason||'');
+        const retryMaxTokens=Math.min(32768,Math.max(outputReserve+8192,Math.round(outputReserve*1.5)));
+        const compactRetryUser='[TRUNCATION RECOVERY — STRICT COMPACTNESS] Previous attempt hit the output token limit ('+outputReserve+'). Emit strictly minimal valid JSON: merge minor details, keep exact quotes concise (<=120 chars), omit redundant restatements, and close all JSON brackets cleanly.\n\n'+user;
+        budget.perStageMax=Number(budget.perStageMax||1)+1;
+        budget.maxPhysicalCalls=Number(budget.maxPhysicalCalls||1)+1;
+        budget.maxCorrectiveAttemptsPerStage=Number(budget.maxCorrectiveAttemptsPerStage??0)+1;
+        const inputAllowance=Math.ceil(estimateContextTokensFromText(`${system}\n${compactRetryUser}`))+256;
+        budget.maxInputTokens=Number(budget.maxInputTokens||0)+inputAllowance;
+        budget.maxOutputTokens=Number(budget.maxOutputTokens||0)+retryMaxTokens;
+        budget.maxTotalTokens=Number(budget.maxTotalTokens||0)+inputAllowance+retryMaxTokens;
+        result=await callMemoryProvider(LIBRARIAN_STAGE_ID,system,compactRetryUser,{temp:0.1,maxTokens:retryMaxTokens,validateOriginalRaw,
+          validateRecoverySource:options.validateRecoverySource,forceNonStreaming:!generationPolicy.streaming,jsonMode:true,structuredTask:true,cacheBatch:batch,signal:options.signal,providerBudget:budget,taskSettingsSnapshot:runtimeSettings,disableCanonicalRecovery:true,attemptType:'retry'});
+        if(result&&typeof result==='object')result.truncationRetry={firstReason,previousMaxTokens:outputReserve,retryMaxTokens};
+      }
       await validateOriginalRaw();
       if(typeof options.validateRecoverySource==='function')unifiedAssert(await options.validateRecoverySource()===true,'UNIFIED_THREAD_SOURCE_AUTHORITY_CHANGED');
       else await assertUnifiedBasis(await resolveContext(),options.unifiedBasis,'thread_resolution');
@@ -65565,7 +65580,16 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       });
       const unifiedEngineMode = memoryEngineDecision.mode; // LIBRA_MEMORY_ENGINE_MODE_POLICY: single source of truth
       const scopeKeyStr = string(context?.scope?.scopeKey || '');
-      const unifiedExec = await runRecallStep(guard, 'state_memory_query', () => executeStateMemoryQuery({
+      const executeStateMemoryQueryWithDependencyRetry = async (queryOptions, queryGuard = null, authority = null) => {
+        try {
+          return await executeStateMemoryQuery(queryOptions, queryGuard, authority);
+        } catch (error) {
+          const msg = `${string(error?.code || '')} ${string(error?.message || error || '')}`;
+          if (!msg.includes('CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED') || queryGuard?.signal?.aborted) throw error;
+          return await executeStateMemoryQuery(queryOptions, queryGuard, authority);
+        }
+      };
+      const unifiedExec = await runRecallStep(guard, 'state_memory_query', () => executeStateMemoryQueryWithDependencyRetry({
         expectedScopeKey: scopeKeyStr,
         mode: 'state_first',
         // The request hook always runs the delivery proof before injecting, so the
@@ -72713,11 +72737,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const maxUnits = isInputWriter ? 12 : settings.stateMaxItems;
       let selection, result;
       try {
-        selection = await executeStateMemoryQuery({expectedScopeKey:request.scope.scopeKey,mode:'unified',
+        const gradiaQueryOptions = {expectedScopeKey:request.scope.scopeKey,mode:'unified',
           requestId:request.operationId||request.id,queryInput:{queryText:sanitizeRecallCurrentInput(request.queryText||'')||'현재 기억',viewerId:'gradia_reader',...(worldlineView.cutoffTurn != null ? { asOfTurn: Number(worldlineView.cutoffTurn) } : {})},
           resourceBudget:{maxReads:GRADIA_OWNER_SESSION_MAX_READS,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
           consumerPolicy:{maxCharacters:Math.max(32,maxChars),maxUnits},
-          ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})},null,authority);
+          ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})};
+        try {
+          selection = await executeStateMemoryQuery(gradiaQueryOptions,null,authority);
+        } catch (queryError) {
+          const msg = `${string(queryError?.code || '')} ${string(queryError?.message || queryError || '')}`;
+          if (!msg.includes('CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED') || request.signal?.aborted) throw queryError;
+          selection = await executeStateMemoryQuery(gradiaQueryOptions,null,authority);
+        }
         if (!memoryEvidenceAuthority.has(selection) || selection.modelDispatchEligible!==true) {
           const error = Error('LIB_READ_UNIFIED_UNAVAILABLE');
           error.readDiagnostic = { stage: 'memory_delivery_admission',

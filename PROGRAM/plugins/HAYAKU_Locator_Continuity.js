@@ -61482,7 +61482,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const recentExcludedItems = ensureArray(recentDedup?.items);
     const recentExcludedCount = Number(recentDedup?.droppedUnits || recentExcludedItems.length || 0);
     const recentExcludedHtml = recentExcludedCount > 0
-      ? `<details class="rec-all"><summary>최근 원문으로 제외된 기록 - ${recentExcludedCount.toLocaleString()}건(열람)</summary><div class="rec-all__list">${
+      ? `<details class="rec-all rec-all--dedup"><summary>최근 원문으로 제외된 기록 - ${recentExcludedCount.toLocaleString()}건(열람)</summary><div class="rec-all__list">${
           recentExcludedItems.length
             ? recentExcludedItems.map(item => {
                 const turns = ensureArray(item.turns).map(t => `T${Number(t)}`).join(', ');
@@ -61490,7 +61490,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 return `<div class="rec"><span class="score">${viewerEscapeHtml(turns || '-')}</span><div><b>${viewerEscapeHtml(label)}</b><p>${viewerEscapeHtml(text(item.preview || '(미리보기 없음)'))}</p></div><span class="badge">원문 중복 제외</span></div>`;
               }).join('')
             : '<div class="empty"><span>상세 미리보기 데이터가 없습니다.</span></div>'
-        }</div></details>`
+        }</div><div class="rec-all__end">▲ 원문 중복 제외 목록 끝 (${recentExcludedCount.toLocaleString()}건) · 아래부터 실제 주입·후보 기억</div></details>`
       : '';
     if(recallBody) recallBody.innerHTML = recentExcludedHtml + (recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
@@ -63259,6 +63259,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
 #${LEDGER_VIEWER_ROOT_ID} .rec-all{margin-top:6px}
 #${LEDGER_VIEWER_ROOT_ID} .rec-all>summary{cursor:pointer;padding:10px 4px;font-weight:650;font-size:13.5px;color:var(--accent,#1f6f78)}
 #${LEDGER_VIEWER_ROOT_ID} .rec-all__list{max-height:62vh;overflow:auto;padding-right:4px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup{margin:6px 0 14px;border:1.5px solid var(--border-strong,rgba(31,111,120,.34));border-radius:10px;background:var(--surface-2,rgba(31,111,120,.04));overflow:hidden}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup>summary{padding:10px 12px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup[open]>summary{border-bottom:1px solid var(--border,rgba(31,111,120,.18))}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup .rec-all__list{padding:0 10px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all__end{padding:7px 12px;font-size:12px;font-weight:600;color:var(--accent,#1f6f78);background:var(--surface-3,rgba(31,111,120,.09));border-top:1.5px solid var(--border-strong,rgba(31,111,120,.28));text-align:center}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more>summary{cursor:pointer;list-style:none;color:inherit;overflow-wrap:anywhere}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more>summary::-webkit-details-marker{display:none}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more[open]>summary{display:none}
