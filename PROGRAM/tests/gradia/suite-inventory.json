@@ -9,6 +9,7 @@
     "author-note-all-stages.test.cjs",
     "bianca-injection-gui.test.cjs",
     "bianca-injection.test.cjs",
+    "bond-beat-intent.test.cjs",
     "context-degradation-gui.test.cjs",
     "context-degradation.test.cjs",
     "creative-direction-clear.test.cjs",

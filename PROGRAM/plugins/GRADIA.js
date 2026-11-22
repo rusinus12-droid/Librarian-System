@@ -26848,21 +26848,94 @@ Begin directly with the in-world response and finish the complete same-turn draf
     stage_push: '관계 단계 전이 시도',
     absent_contact: '부재 인물 접촉·등장 계기'
   });
+  // 비트 이름("능동적 유대 행동")을 그대로 문장에 넣으면 "구체적인 행동을 한다"가 된다.
+  // 카드가 이미 들고 있는 근거(감정 톤·단계·분위기)로 **실제 행동**을 만들어 낸다.
+  const FORCED_BOND_TONE_ACTION_EN = Object.freeze({
+    trust: (a, b) => `${a} hands ${b} something that matters and lets them carry it`,
+    camaraderie: (a, b) => `${a} pulls ${b} into the task with a private joke`,
+    curiosity: (a, b) => `${a} asks ${b} about the one thing that does not add up`,
+    wariness: (a, b) => `${a} tests ${b} with a probing question and keeps one step of distance`,
+    protectiveness: (a, b) => `${a} steps in front of ${b} before the danger reaches them`,
+    dependence: (a, b) => `${a} asks ${b} for the help they cannot do without`,
+    respect: (a, b) => `${a} says out loud that ${b} was right`,
+    estrangement: (a, b) => `${a} leaves the obvious thing unsaid in front of ${b}`,
+    affection: (a, b) => `${a} steps closer to ${b} and reaches for their hand`,
+    hatred: (a, b) => `${a} turns open hostility on ${b}`,
+    longing: (a, b) => `${a} brings up the old day with ${b} first`,
+    obsession: (a, b) => `${a} keeps tracking where ${b} goes`,
+    jealousy: (a, b) => `${a} asks ${b} who they were looking at`,
+    rivalry: (a, b) => `${a} challenges ${b} to settle it directly`,
+    guilt: (a, b) => `${a} says the apology to ${b} before being asked`,
+    admiration: (a, b) => `${a} asks ${b} to show them how, and admits it`,
+    contempt: (a, b) => `${a} gives ${b} an order in a dismissive tone`,
+    gratitude: (a, b) => `${a} promises ${b} to repay what they were given`,
+    grudge: (a, b) => `${a} names the old debt to ${b}`
+  });
+  const FORCED_BOND_TONE_ACTION_KO = Object.freeze({
+    trust: (a, b) => `${a}가 ${b}에게 중요한 일을 맡긴다`,
+    camaraderie: (a, b) => `${a}가 ${b}를 함께할 일로 끌어들인다`,
+    curiosity: (a, b) => `${a}가 ${b}에 대해 앞뒤가 맞지 않는 점을 묻는다`,
+    wariness: (a, b) => `${a}가 ${b}를 떠보는 질문을 던지고 한 걸음 거리를 둔다`,
+    protectiveness: (a, b) => `${a}가 ${b} 앞을 가로막아 위험에서 빼낸다`,
+    dependence: (a, b) => `${a}가 ${b}에게 도움을 청한다`,
+    respect: (a, b) => `${a}가 ${b}의 판단이 맞았다고 말한다`,
+    estrangement: (a, b) => `${a}가 ${b} 앞에서 뻔한 말을 삼킨다`,
+    affection: (a, b) => `${a}가 ${b}에게 한 걸음 다가가 손을 뻗는다`,
+    hatred: (a, b) => `${a}가 ${b}에게 대놓고 적의를 드러낸다`,
+    longing: (a, b) => `${a}가 ${b}와의 지난 일을 먼저 꺼낸다`,
+    obsession: (a, b) => `${a}가 ${b}의 동선을 계속 확인한다`,
+    jealousy: (a, b) => `${a}가 ${b}에게 누구를 보고 있었는지 묻는다`,
+    rivalry: (a, b) => `${a}가 ${b}에게 직접 붙어 보자고 말한다`,
+    guilt: (a, b) => `${a}가 ${b}에게 먼저 미안했다고 말한다`,
+    admiration: (a, b) => `${a}가 ${b}에게 어떻게 하는지 보여 달라고 청한다`,
+    contempt: (a, b) => `${a}가 ${b}에게 무시하는 말투로 지시한다`,
+    gratitude: (a, b) => `${a}가 ${b}에게 받은 것을 갚겠다고 말한다`,
+    grudge: (a, b) => `${a}가 ${b}에게 오래된 원한을 꺼낸다`
+  });
+  // 단계 전이는 "무엇을 해서 넘어가는지"가 있어야 한다.
+  const FORCED_BOND_STAGE_ACTION_EN = Object.freeze({
+    aware: (a, b) => `${a} speaks to ${b} first`,
+    tension: (a, b) => `${a} closes the distance to ${b}`,
+    expressed: (a, b) => `${a} stops hiding it and says it to ${b} out loud`,
+    settled: (a, b) => `${a} asks ${b} what they are to each other now`
+  });
+  const FORCED_BOND_STAGE_ACTION_KO = Object.freeze({
+    aware: (a, b) => `${a}가 ${b}에게 먼저 말을 건다`,
+    tension: (a, b) => `${a}가 ${b}와의 거리를 좁힌다`,
+    expressed: (a, b) => `${a}가 더는 숨기지 않고 ${b}에게 마음을 말로 꺼낸다`,
+    settled: (a, b) => `${a}가 ${b}에게 이제 둘이 어떤 사이인지 묻는다`
+  });
+  const forcedBondEvidenceTone = extra => (Array.isArray(extra.tones) ? extra.tones.find(tone => FORCED_BOND_TONE_ACTION_EN[tone]) : '');
   const forcedBondBeatIntent = (beatType, from, to, extra = {}) => {
+    if (beatType === 'stage_push' && extra.stagePush && FORCED_BOND_STAGE_ACTION_EN[extra.stagePush.to]) {
+      return `show ${FORCED_BOND_STAGE_ACTION_EN[extra.stagePush.to](from, to)}`;
+    }
+    const tone = forcedBondEvidenceTone(extra);
+    if (tone) return `show ${FORCED_BOND_TONE_ACTION_EN[tone](from, to)}`;
     switch (beatType) {
-      case 'emotional_shift': return `show ${to}'s feeling toward ${from} shifting in one concrete gesture (a pause, a softened answer, a flinch)`;
-      case 'relational_action': return `show ${from} doing one concrete thing for ${to} (a hand, a small service, an intervention)`;
-      case 'stage_push': return extra.stagePush
-        ? `show a concrete step that moves the bond ${extra.stagePush.from}→${extra.stagePush.to}`
-        : 'show one concrete step that changes the bond stage';
-      case 'absent_contact': return 'show a concrete contact from someone who is not in the scene (a message, a trace, a stated arrival cause)';
-      default: return `show one concrete act of the ${beatType} beat`;
+      case 'emotional_shift': return `show ${to}'s answer to ${from} arriving late — a pause before speaking, then a different tone`;
+      case 'relational_action': return `show ${from} walking over to ${to} and speaking first`;
+      case 'absent_contact': return `show a message or trace from ${from} reaching ${to}`;
+      default: return `show ${from} and ${to} acting on the beat in one visible exchange`;
+    }
+  };
+  const forcedBondBeatIntentKo = (beatType, from, to, extra = {}) => {
+    if (beatType === 'stage_push' && extra.stagePush && FORCED_BOND_STAGE_ACTION_KO[extra.stagePush.to]) {
+      return FORCED_BOND_STAGE_ACTION_KO[extra.stagePush.to](from, to);
+    }
+    const tone = forcedBondEvidenceTone(extra);
+    if (tone) return FORCED_BOND_TONE_ACTION_KO[tone](from, to);
+    switch (beatType) {
+      case 'emotional_shift': return `${to}가 ${from}의 말에 곧바로 답하지 않고 말투를 바꾼다`;
+      case 'relational_action': return `${from}가 ${to}에게 직접 다가가 먼저 말을 건다`;
+      case 'absent_contact': return `${from}의 연락이나 흔적이 ${to}에게 닿는다`;
+      default: return `${from}와 ${to}가 한 번의 주고받음으로 비트를 드러낸다`;
     }
   };
   const forcedBondRollLine = (sim, label, offScene = false) => {
     const from = forcedBondDisplayName(sim.from), to = forcedBondDisplayName(sim.to);
     const beat = FORCED_BOND_BEAT_LABELS[sim.beatType] || sim.beatType;
-    const intent = forcedBondBeatIntent(sim.beatType, from, to, { stagePush: sim.stagePush });
+    const intent = forcedBondBeatIntent(sim.beatType, from, to, { stagePush: sim.stagePush, tones: sim.tones });
     const push = sim.stagePush
       ? ` · stage push ${sim.stagePush.from}→${sim.stagePush.to}: ${sim.stagePush.success ? 'ALLOWED' : 'HOLD'} (${sim.stagePush.roll}/100 vs ${sim.stagePush.chance}%)`
       : '';
@@ -26963,6 +27036,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         to: card.to,
         offScene,
         pressure: card.pressure || 'situational',
+        // 판정 문장이 "무엇을 하는지"를 말할 수 있도록 근거를 함께 넘긴다.
+        tones: Array.isArray(card.tones) ? card.tones.slice(0, 4) : [],
+        stage: card.stage || '',
+        mood: card.stage && chat ? (relsimPairState(chat, card)?.mood ?? null) : null,
         chance,
         roll,
         triggered,
@@ -54691,17 +54768,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     conflict_reconcile: (a, b) => `${a}가 ${b}에게 먼저 화해를 청한다`,
     confide_secret: (a, b) => `${a}가 ${b}에게 숨긴 것을 털어놓는다`
   });
-  const forcedBondBeatIntentKo = (beatType, from, to, extra = {}) => {
-    switch (beatType) {
-      case 'emotional_shift': return `${to}의 ${from}에 대한 감정이 몸짓으로 드러난다`;
-      case 'relational_action': return `${from}이 ${to}에게 구체적인 행동을 한다`;
-      case 'stage_push': return extra.stagePush
-        ? `관계 단계가 ${extra.stagePush.from}→${extra.stagePush.to}로 넘어가는 장면이 나온다`
-        : '관계 단계를 바꾸는 구체적 계기가 나온다';
-      case 'absent_contact': return '장면 밖 인물의 접촉(연락·흔적·도착 계기)이 드러난다';
-      default: return `${from}↔${to} 사이의 ${beatType} 비트가 장면에 나온다`;
-    }
-  };
   const relsimReadingNotes = scopeKey => {
     const reading = scopeKey ? Runtime.relationshipSimReadings?.[scopeKey] : null;
     if (!reading) return [];
@@ -54732,7 +54798,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         for (const r of triggered) {
           rows.push({
             title: `억결 시뮬레이터 · ${forcedBondPersonLabel(r.from)} ↔ ${forcedBondPersonLabel(r.to)}${r.offScene ? ' (장면 밖)' : ''}`,
-            body: `행동: ${forcedBondBeatIntentKo(r.beatType, forcedBondPersonLabel(r.from), forcedBondPersonLabel(r.to), { stagePush: r.stagePush })} · 발동 (${r.roll}/100 < ${r.chance}%) · ${FORCED_BOND_BEAT_LABELS[r.beatType] || r.beatType}${r.stagePush ? ` · 단계 전이(${r.stagePush.from}→${r.stagePush.to}): ${r.stagePush.success ? '성공' : '유지'}` : ''} · 요구 전개: 위 행동이 본문에 드러나야 함`
+            body: `행동: ${forcedBondBeatIntentKo(r.beatType, forcedBondPersonLabel(r.from), forcedBondPersonLabel(r.to), { stagePush: r.stagePush, tones: r.tones })} · 발동 (${r.roll}/100 < ${r.chance}%) · ${FORCED_BOND_BEAT_LABELS[r.beatType] || r.beatType}${r.stagePush ? ` · 단계 전이(${r.stagePush.from}→${r.stagePush.to}): ${r.stagePush.success ? '성공' : '유지'}` : ''} · 요구 전개: 위 행동이 본문에 드러나야 함`
           });
         }
       }
@@ -59058,6 +59124,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     async debugCaptureLibNativeReadSetFromHost({ messages = [], settings = {}, baseRecent = {}, scope = {} } = {}) {
       return captureLibNativeReadSetFromHost(messages, settings, baseRecent, scope, { forceHostRead: true });
+    },
+    // 비트 문장이 근거(톤·단계)로 만들어진 실제 행동인지 시험에서 직접 본다.
+    debugForcedBondBeatIntent({ beatType = 'relational_action', from = 'A', to = 'B', tones = [], stagePush = null, lang = 'ko' } = {}) {
+      const extra = { tones, stagePush };
+      return lang === 'en'
+        ? forcedBondBeatIntent(beatType, from, to, extra)
+        : forcedBondBeatIntentKo(beatType, from, to, extra);
     },
     debugForcedBondStageBlock({ stageName = 'aide_plot', recent = {}, settings = {} } = {}) {
       return forcedBondStageBlock(stageName, recent, settings, {});
