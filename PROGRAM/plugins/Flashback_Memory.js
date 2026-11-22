@@ -2624,6 +2624,7 @@ const PLUGIN_VERSION = '2.2.0';
   const MAINTENANCE_JOURNAL_READ_TIMEOUT_MS = 15000;
   const MAINTENANCE_JOURNAL_STALE_MS = 30 * 60 * 1000;
   const STORAGE_IO_TIMEOUT_MS = 60000;
+  const HOST_API_CALL_TIMEOUT_MS = 15000;
   const REMOTE_EMBEDDING_CONCURRENCY = 2;
   const RECALL_SHARD_READ_CONCURRENCY = 3;
   const STORAGE_SHARD_WRITE_CONCURRENCY = 2;
@@ -17105,7 +17106,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (typeof api?.getArg === 'function' && api.getArg !== api.getArgument) readers.push((strictReadOnly&&legacyStrictArgumentReaders.get(api.getArg)||api.getArg).bind(api));
       for (const reader of readers) {
         try {
-          const value = await reader(key);
+          const value = await withDeadline(reader(key), HOST_API_CALL_TIMEOUT_MS, `host argument ${key}`);
           if (value !== undefined && value !== null) return value;
         } catch (_) {if(strictReadOnly)throw Error('HEALTH_ARGUMENT_READ_UNAVAILABLE');}
       }
@@ -17321,7 +17322,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (typeof argApi?.getArg === 'function' && argApi.getArg !== argApi.getArgument) readers.push((strictReadOnly&&legacyStrictArgumentReaders.get(argApi.getArg)||argApi.getArg).bind(argApi));
       for (const reader of readers) {
         try {
-          const value = await reader(key);
+          const value = await withDeadline(reader(key), HOST_API_CALL_TIMEOUT_MS, `host argument ${key}`);
           if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) continue;
           // Old `int` declarations return numeric 0 when the field is blank.
           // the distinguishable string "0" and remains a valid override.
@@ -20557,7 +20558,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const safeApi = async (label, fn, options = {}) => {
-    try { return await fn(); } catch (error) { if (!options.silent) warn(`${label} unavailable`, error); return null; }
+    const timeoutMs = clampInt(options.timeoutMs, 100, 120000, HOST_API_CALL_TIMEOUT_MS);
+    try { return await withDeadline(fn(), timeoutMs, `host API ${label}`); } catch (error) { if (!options.silent) warn(`${label} unavailable`, error); return null; }
   };
 
   const requestDbPermissionIfPossible = async () => {
@@ -42215,7 +42217,11 @@ const MemorySuiteHealthRecovery = (() => {
 
   const assertEmbeddingWorkBoundary = async proof => {
     if (Runtime.unloaded) throw embeddingWorkError('FLASHBACK_EMBEDDING_RUNTIME_CLOSED');
-    const current = await readEmbeddingWorkBoundary(physicalContext(proof) ? { physicalRecovery: physicalContext(proof) } : {});
+    const current = await withDeadline(
+      readEmbeddingWorkBoundary(physicalContext(proof) ? { physicalRecovery: physicalContext(proof) } : {}),
+      STORAGE_IO_TIMEOUT_MS,
+      'embedding work boundary'
+    );
     if (current.scope.scopeKey !== proof.scope.scopeKey) throw embeddingWorkError('FLASHBACK_EMBEDDING_SCOPE_CHANGED');
     if (!current.configured || current.profile !== proof.profile || current.generation !== proof.generation) throw embeddingWorkError('FLASHBACK_EMBEDDING_PROFILE_CHANGED');
     if (current.storageBinding !== proof.storageBinding) throw embeddingWorkError('FLASHBACK_EMBEDDING_BACKEND_CHANGED');
@@ -50640,6 +50646,20 @@ ${cleanedText}`, 80),
   };
 
   const flashbackHealthChipLabel = health => ({'저장 상태 확인 필요':'저장 확인','임베딩 확인 필요':'벡터 확인','임베딩 미완료':'벡터 미완료','현재 채팅 상태 불러오는 중':'불러오는 중','부분 통계 표시 중':'부분 통계','기본 저장 상태에서 이상 없음':'기본 정상'})[health.title] || health.title;
+  const flashbackHealthChipMeta = (health, current) => {
+    const total = Array.isArray(current?.records) ? current.records.length : 0;
+    const work = current?.stats?.embeddingWork || {};
+    const failed = Math.max(0, Number(work.failed || 0) + Number(work.repairNeeded || 0) + Number(work.unconfigured || 0));
+    const open = Math.max(0, Number(work.pending || 0) + Number(work.running || 0) + Number(work.uncertain || 0));
+    const coverage = current?.turnVectors || null;
+    const missingTurns = coverage ? Math.max(0, Number(coverage.storedTurns || 0) - Number(coverage.vectorTurns || 0)) : 0;
+    if (health?.title === '임베딩 확인 필요' && failed > 0) return ` · ${formatNumber(failed)}건`;
+    if (health?.title === '임베딩 미완료') {
+      if (open > 0) return ` · ${formatNumber(open)}건`;
+      if (missingTurns > 0) return ` · ${formatNumber(missingTurns)}턴`;
+    }
+    return ` · ${formatNumber(total)}개`;
+  };
 
   const flashbackOverviewRecallSummary = (recall = Runtime.lastRecall, currentScopeKey = '') => {
     recall = resolveDisplayRecall(recall, currentScopeKey);
@@ -51661,7 +51681,7 @@ ${cleanedText}`, 80),
     const pageKey = routeTabKey[pageFor] || 'overview';
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
     const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
-    const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="currentColor" stroke-width="1.4"/></svg></div><div><div class="brand__name">FLASHBACK</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
+    const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="currentColor" stroke-width="1.4"/></svg></div><div><div class="brand__name">FLASHBACK</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta">${escapeHtml(flashbackHealthChipMeta(health, current))}</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}
 .frames>.frame-card,.list>.row{content-visibility:auto;contain-intrinsic-size:auto 72px}
 .fb-reanalysis-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px;min-width:0}
@@ -53467,7 +53487,7 @@ ${cleanedText}`, 80),
     setNodeText('overviewHealthTitle', health.title);
     setNodeText('overviewHealthMeta', health.meta);
     setNodeText('sidebarHealthState', flashbackHealthChipLabel(health));
-    setNodeText('sidebarHealthMeta', ` · ${formatNumber(current.records.length)}개`);
+    setNodeText('sidebarHealthMeta', flashbackHealthChipMeta(health, current));
     const recall = flashbackOverviewRecallSummary(Runtime.lastRecall, current.scope.scopeKey);
     setNodeText('overviewRecallCount', recall.value);
     setNodeText('overviewRecallMeta', recall.meta);
