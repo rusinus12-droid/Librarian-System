@@ -54402,18 +54402,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || receipt.worldlineId !== ctx.worldlineId || Number(receipt.sessionEpoch) !== Number(ctx.sessionEpoch)
         || Number(receipt.turn) !== Number(ctx.turn)) return { ok: false, reason: 'identity' };
       const legacyId = completedTurnRevisionIdLegacy(current);
+      const receiptCurrentId = completedTurnRevisionId(receipt);
+      const receiptLegacyId = completedTurnRevisionIdLegacy(receipt);
       const idOk = receipt.revisionId === ctx.revisionId || (!!legacyId && receipt.revisionId === legacyId);
       if (!idOk) return { ok: false, reason: 'revision_mismatch' };
-      const selfOk = completedTurnRevisionId(receipt) === receipt.revisionId
-        || completedTurnRevisionIdLegacy(receipt) === receipt.revisionId;
+      const selfOk = receiptCurrentId === receipt.revisionId || receiptLegacyId === receipt.revisionId;
       if (!selfOk) return { ok: false, reason: 'receipt_hash_mismatch' };
       const sameMessages = role => digest(asArray(receipt?.[role]?.chatIds)) === digest(asArray(current?.[role]?.chatIds));
       if (!sameMessages('user') || !sameMessages('assistant')) return { ok: false, reason: 'messages_differ' };
       if (receipt.sourceDigest !== current.sourceDigest && !isTextEquivalentCompletedTurn(receipt, current)) {
         return { ok: false, reason: 'source_changed' };
       }
-      const usedLegacy = !!legacyId && receipt.revisionId === legacyId && ctx.revisionId !== legacyId;
-      return { ok: true, reason: usedLegacy ? 'legacy_definition' : '', legacyRevisionId: usedLegacy ? legacyId : '' };
+      const usedLegacy = (!!legacyId && receipt.revisionId === legacyId && ctx.revisionId !== legacyId)
+        || (!!receiptLegacyId && receipt.revisionId === receiptLegacyId && receipt.revisionId !== receiptCurrentId);
+      return { ok: true, reason: usedLegacy ? 'legacy_definition' : '', legacyRevisionId: usedLegacy ? (receiptLegacyId || legacyId) : '' };
     };
     const readTextEquivalentReceipt = async (scope, worldlineId, sessionEpoch, turn, revisionId, current) => {
       // 예전 영수증은 레거시 id 로 저장됐다. 현재 id 키로만 찾으면 존재 자체를 못 보므로 두 키를 모두 본다.
@@ -54423,12 +54425,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const receiptKey = key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, candidateId);
         let receipt;
         try { receipt = await storage.getVerifiedJson(receiptKey, scope, null); } catch (_) { continue; }
-        const gate = textEquivalentReceiptGate(receipt, current, { worldlineId, sessionEpoch, turn, revisionId: candidateId });
+        const gate = textEquivalentReceiptGate(receipt, current, { worldlineId, sessionEpoch, turn, revisionId });
         if (!gate.ok) continue;
         if (gate.reason === 'legacy_definition') {
           // 계측: 어느 턴이 레거시 정의로 채택됐는지 남긴다(디버그 덤프에서 확인).
           Runtime.libraReceiptLenient = {
-            at: Date.now(), turn: Number(turn), candidateId, legacyRevisionId,
+            at: Date.now(), turn: Number(turn), candidateId, legacyRevisionId: gate.legacyRevisionId || legacyRevisionId,
             receiptRevisionId: receipt?.revisionId || ''
           };
         }
@@ -55449,6 +55451,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Automatic use is a projection of verified records, never a rewrite of source/Canonical bytes.
     const collectMemoryReviews=async(context,manifest,view)=>{
       const scope=context.scope,worldline=string(view?.head?.worldlineId||manifest?.activeWorldlineId||'main');
+      const frame=nativeReadFrames.get(scope);
+      if(frame&&!frame.disabled&&typeof frame.prefetch==='function'){
+        await frame.prefetch([memoryReviewKey(scope,worldline),key.manifest(scope),key.continuityState(scope),key.stateWorldlineMeta(scope),key.entityRegistry(scope)]).catch(()=>null);
+      }
       const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[],reviewProofs=[];
       const dependencies=new Map([[policy.key,policy.saved]]);
       dependencies.set(key.manifest(scope),await storage.getVerifiedJson(key.manifest(scope),scope,null));
@@ -55469,7 +55475,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Rejected facts were never stored and historical facts are not State, so neither is a review target.
       const pending=asArray(head?.unifiedApplied?.pending).filter(p=>p.fact&&p.reason!=='memory_record_quarantined');
       const currentPairs=buildPairs(context.chat,scope.scopeKey);
+      const canonicalCandidateRefs=[];
       for(const ref of fullContinuityRefs(manifest)){
+        const hasPending=pending.some(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision));
+        const hasSaved=Object.values(policy.decisions).some(saved=>saved.row?.kind==='canonical'&&saved.row.memoryId===ref.memoryId&&Number(saved.row.revision)===Number(ref.revision)&&saved.row.factId);
+        if(hasPending||hasSaved)canonicalCandidateRefs.push(ref);
+      }
+      if(frame&&!frame.disabled&&typeof frame.prefetch==='function'&&canonicalCandidateRefs.length){
+        await frame.prefetch(canonicalCandidateRefs.map(r=>r.key).filter(Boolean)).catch(()=>null);
+      }
+      for(const ref of canonicalCandidateRefs){
         const selected=pending.filter(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision));
         for(const saved of Object.values(policy.decisions)){const row=saved.row;if(row?.kind==='canonical'&&row.memoryId===ref.memoryId&&Number(row.revision)===Number(ref.revision)&&row.factId&&!selected.some(p=>p.fact===row.factId))selected.push({fact:row.factId,memoryId:row.memoryId,revision:row.revision,reason:saved.reason});}
         if(!selected.length)continue;
@@ -55478,9 +55493,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(!selected.some(p=>asArray(record.canonicalArtifact?.facts).some(f=>f.tempFactId===p.fact)))continue;
           // Source checks run only for records that actually yield a review row. The record's
           // sourceDigest binds the stored evidence, so its large body is not a read dependency.
-          await loadUnifiedApprovedBatch(context,ref,manifest);
+          const approved=await loadUnifiedApprovedBatch(context,ref,manifest);
           if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=currentPairs.slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
-            unifiedAssert(batch.length===BATCH_SIZE&&sourceDigest(batch)===record.sourceDigest,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
+            const matchesCurrent=batch.length===BATCH_SIZE&&(sourceDigest(batch)===record.sourceDigest
+              ||(asArray(approved?.batch).length===BATCH_SIZE&&batch.every((p,i)=>isTextEquivalentCompletedTurn(approved.batch[i],p))));
+            unifiedAssert(matchesCurrent,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
           dependencies.set(ref.key,record);
           const canonicalProof=getConsumedCanonicalProof(record);if(canonicalProof)reviewProofs.push(canonicalProof);
           const expanded=[...selected];
@@ -55505,10 +55522,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Only held claims and previously decided claims are review targets; normally admitted Micro needs no review.
       const microPending=asArray(view?.head?.microProjection?.pendingClaims);
       const reviewTurns=new Set([...microPending.map(p=>Number(p.turn)),...Object.values(policy.decisions).filter(d=>d.row?.kind==='micro').map(d=>Number(d.row.turn))]);
-      for(const pair of pairs.filter(p=>reviewTurns.has(p.turn))){
-        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs,allowProjectedEquivalent:true});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
+      const reviewPairs=pairs.filter(p=>reviewTurns.has(p.turn));
+      if(reviewPairs.length)await prefetchMicroTurnReads(scope,hostWorldline,reviewPairs.map(p=>p.turn));
+      for(const pair of reviewPairs){
+        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs,skipFinalContextCheck:true,allowProjectedEquivalent:true});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
-        if((active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair]))&&!(active.receipt&&isTextEquivalentCompletedTurn(active.receipt,pair))){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
+        const liveReceipt=active.currentReceipt||active.receipt;
+        const matchesCurrent=(active.record.sourceRevisionId===completedTurnRevisionId(pair)||active.record.sourceRevisionId===completedTurnRevisionIdLegacy(pair))&&active.record.sourceDigest===sourceDigest([pair]);
+        const matchesEquivalent=Boolean(liveReceipt&&isTextEquivalentCompletedTurn(liveReceipt,pair));
+        if(!matchesCurrent&&!matchesEquivalent){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
         reviewProofs.push(activeMicroConsumptionProof(active));
         const validated=microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey);if(!validated)continue;
@@ -55698,20 +55720,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
         for(const row of applied.filter(r=>r.kind==='micro'&&r.turn===microStateTurn.turn))microStateTurn.transitions.push({turn:row.turn,claimIndex:catalog.internal.get(row.id).index,disposition:'still_current',reason:'automatic_review'});}
       return {...view,head,authority,memoryReview:metadata,...(microStateTurn?{microStateTurn}:{})};
     };
-    const listMemoryReviews=async()=>{
-      const context=await resolveContext(),manifest=await loadManifest(context.scope,buildPairs(context.chat,context.scope.scopeKey).length);
-      const view=await loadContinuityStateForResponse(context.scope,manifest,{skipMemoryReview:true});
-      const catalog=await collectMemoryReviews(context,manifest,view);
-      await projectMemoryReviewForResponse(context.scope,manifest,view,{reviewCatalog:catalog});
-      catalog.previewDigest=digest({scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,rows:catalog.rows,headDigest:catalog.headDigest,dependencies:catalog.dependencies.size?[...catalog.dependencies].map(([k,v])=>[k,digest(v)]):[]});
-      return catalog;
+    const listMemoryReviews=async(existingContext=null)=>{
+      const baseContext=existingContext||await resolveContext(),basePairs=buildPairs(baseContext.chat,baseContext.scope.scopeKey);
+      return await withBackgroundReadJob(baseContext.scope,async jobScope=>{
+        const scopedContext={...baseContext,scope:jobScope},frame=nativeReadFrames.get(jobScope);
+        if(frame&&!frame.disabled&&typeof frame.prefetch==='function'){
+          await frame.prefetch([key.manifest(jobScope),key.continuityState(jobScope),key.stateWorldlineMeta(jobScope),key.entityRegistry(jobScope)]).catch(()=>null);
+        }
+        const manifest=await loadManifest(jobScope,basePairs.length);
+        const view=await loadContinuityStateForResponse(jobScope,manifest,{context:scopedContext,skipMemoryReview:true});
+        const catalog=await collectMemoryReviews(scopedContext,manifest,view);
+        await projectMemoryReviewForResponse(jobScope,manifest,view,{context:scopedContext,reviewCatalog:catalog});
+        catalog.previewDigest=digest({scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,rows:catalog.rows,headDigest:catalog.headDigest,dependencies:catalog.dependencies.size?[...catalog.dependencies].map(([k,v])=>[k,digest(v)]):[]});
+        return catalog;
+      },{retryTornRead:true});
     };
     const memoryReviewDto=catalog=>({schema:catalog.schema,scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,previewDigest:catalog.previewDigest,rows:clone(catalog.rows),unavailable:clone(catalog.unavailable)});
     const setMemoryReviewDecision=async request=>{
       unifiedAssert(['confirmed','rejected','automatic'].includes(request.status),'MEMORY_REVIEW_STATUS_INVALID');
       const initial=await resolveContext();unifiedAssert(initial.scope.scopeKey===request.scopeKey,'MEMORY_REVIEW_SCOPE_CHANGED');
       return await enqueue(initial.scope.scopeKey,async()=>{
-        assertPortableMemoryIdle();const catalog=await listMemoryReviews();
+        assertPortableMemoryIdle();const catalog=await listMemoryReviews(initial);
         unifiedAssert(catalog.scopeKey===request.scopeKey&&catalog.previewDigest===request.previewDigest,'MEMORY_REVIEW_PREVIEW_CHANGED');
         const selected=asArray(request.ids);unifiedAssert(selected.length>0&&selected.length<=32&&new Set(selected).size===selected.length,'MEMORY_REVIEW_SELECTION_INVALID');
         unifiedAssert(selected.every(id=>catalog.internal.has(id)),'MEMORY_REVIEW_TARGET_CHANGED');
@@ -55723,20 +55752,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unifiedAssert(digest(raw?JSON.parse(raw):null)===digest(before),'MEMORY_REVIEW_STORE_CHANGED');
         if(mode==='plugin_only'){
           const live=await resolveContext();unifiedAssert(live.scope.scopeKey===initial.scope.scopeKey,'MEMORY_REVIEW_SCOPE_CHANGED');
-          const rechecked=await listMemoryReviews();unifiedAssert(rechecked.previewDigest===catalog.previewDigest,'MEMORY_REVIEW_SOURCE_CHANGED');
+          const rechecked=await listMemoryReviews(live);unifiedAssert(rechecked.previewDigest===catalog.previewDigest,'MEMORY_REVIEW_SOURCE_CHANGED');
           await storage.setVerifiedJson(catalog.policy.key,next,initial.scope);
         }else{
           const conditions=[];
           const required=new Set([key.manifest(initial.scope),key.continuityState(initial.scope),key.entityRegistry(initial.scope),key.stateWorldlineMeta(initial.scope)]);
           for(const id of selected){const item=catalog.internal.get(id);if(item.active)required.add(item.active.headKey);else{required.add(item.ref.key);if(item.record.sourceEvidenceRef?.key)required.add(item.record.sourceEvidenceRef.key);}}
-          for(const [storageKey,value] of catalog.dependencies){if(storageKey===catalog.policy.key||!required.has(storageKey))continue;if(conditions.length>=63)throw Error('MEMORY_REVIEW_READSET_TOO_LARGE');
-            const v=await LibraProviderBridge.storage.getItem(storageKey);unifiedAssert(digest(v?JSON.parse(v):null)===digest(value),'MEMORY_REVIEW_SOURCE_CHANGED');conditions.push({key:storageKey,expected:v==null?{exists:false}:{exists:true,value:v}});}
+          const pendingChecks=[];
+          for(const [storageKey,value] of catalog.dependencies){if(storageKey===catalog.policy.key||!required.has(storageKey))continue;pendingChecks.push([storageKey,value]);}
+          if(pendingChecks.length>=64)throw Error('MEMORY_REVIEW_READSET_TOO_LARGE');
+          const fetchedValues=await Promise.all(pendingChecks.map(([storageKey])=>LibraProviderBridge.storage.getItem(storageKey)));
+          for(let i=0;i<pendingChecks.length;i+=1){const [storageKey,value]=pendingChecks[i],v=fetchedValues[i];
+            unifiedAssert(digest(v?JSON.parse(v):null)===digest(value),'MEMORY_REVIEW_SOURCE_CHANGED');conditions.push({key:storageKey,expected:v==null?{exists:false}:{exists:true,value:v}});}
           const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:catalog.policy.key,kind:'set',expected:raw==null?{exists:false}:{exists:true,value:raw},value:JSON.stringify(next)}]});
           const receipt=await commitVerifiedConditionalBatch(prepared);unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
         }
         unifiedAssert(digest(await storage.getVerifiedJson(catalog.policy.key,initial.scope,null))===digest(next),'MEMORY_REVIEW_READBACK_FAILED');
         state.lastMicroStateAdmissionRefresh={at:Date.now(),reason:'memory_review_changed'};state.memoryReadSerial+=1;
-        return {ok:true,status:request.status,count:selected.length,revision:next.revision};
+        const nextCatalog=memoryReviewDto(await listMemoryReviews(initial));
+        return {ok:true,status:request.status,count:selected.length,revision:next.revision,catalog:nextCatalog};
       });
     };
     // 최신값이 현재 State를 차지한다. 이전값은 리롤/롤백용 보류 이력으로 보존한다.
@@ -56123,11 +56157,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       }
       const worldlineBinding = { hostWorldlineId: hostWorldlineMeta.worldlineId, logicalWorldlineId };
-      const rawHead = await storage.getVerifiedJson(key.continuityState(scope), scope, null);
-      const exactHead = rawHead ? normalizeContinuityStateHead(rawHead, scope, manifest, { requireCurrent: true }) : null;
+      const rawHead = readOnly && options.rawHead !== undefined
+        ? options.rawHead : await storage.getVerifiedJson(key.continuityState(scope), scope, null);
+      const exactHead = readOnly && options.exactHead !== undefined
+        ? options.exactHead : (rawHead ? normalizeContinuityStateHead(rawHead, scope, manifest, { requireCurrent: true }) : null);
       const prunedHead = !exactHead && rawHead
         ? pruneContinuityStateHeadToRefs(rawHead, continuityStateRefs(manifest), scope).head : null;
-      const storedRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
+      const storedRegistry = readOnly && options.storedRegistry !== undefined
+        ? options.storedRegistry : await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
       let head = exactHead || prunedHead;
       let registry = storedRegistry;
       let basisKind = exactHead ? 'canonical_current' : prunedHead ? 'canonical_last_known' : 'unavailable';
@@ -56202,7 +56239,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (options.readOnly === true) return { status: 'pending_reconciliation', reason: 'admission_decision_replay_mismatch' };
         throw new Error('LIBRA_MICRO_STATE_ADMISSION_READBACK_FAILED');
       }
-      const current = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { allowProjectedEquivalent: true });
+      const current = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn,
+        readOnly ? { context, pairs: currentSourcePairs, skipFinalContextCheck: true, allowProjectedEquivalent: true } : { allowProjectedEquivalent: true });
       if (current.status !== 'verified' || current.record.analysisRevisionId !== active.record.analysisRevisionId) {
         return { status: 'stale_source', reason: 'micro_changed_after_admission' };
       }
@@ -56301,7 +56339,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const frame = nativeReadFrames.get(scope);
       if (!frame || frame.disabled || typeof frame.prefetch !== 'function' || !asArray(turns).length) return;
       try {
-        const rows = asArray(turns).map(turn => ({ microHead: key.microMemoryHead(scope, worldlineId, 0, turn),
+        const rows = asArray(turns).map(turn => ({ turn, microHead: key.microMemoryHead(scope, worldlineId, 0, turn),
           receiptHead: key.completedTurnHead(scope, worldlineId, 0, turn) }));
         await frame.prefetch(rows.flatMap(row => [row.receiptHead, row.microHead]));
         const named = [];
@@ -56309,6 +56347,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const [receiptHead, microHead] = [await storage.getVerifiedJson(row.receiptHead, scope, null).catch(() => null),
             await storage.getVerifiedJson(row.microHead, scope, null).catch(() => null)];
           for (const value of [receiptHead?.receiptKey, microHead?.recordKey, microHead?.workKey]) if (typeof value === 'string' && value) named.push(value);
+          if (microHead?.sourceRevisionId && microHead.sourceRevisionId !== receiptHead?.revisionId) {
+            named.push(key.completedTurnReceipt(scope, worldlineId, 0, row.turn, microHead.sourceRevisionId));
+          }
         }
         await frame.prefetch(named);
       } catch (_) { /* The per-turn reads report their own failures. */ }
@@ -56358,10 +56399,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const worldlineId = hostWorldlineIdForScope(scope);
       const pendingClaims = [], transitions = [], settledClaims = [];
       let projectedThroughTurn = canonicalThroughTurn;
-      if (!genesis && canonicalThroughTurn > 0) {
-        let admissionKeys = null;
+      let admissionKeys = null;
+      if ((!genesis && canonicalThroughTurn > 0) || canonicalThroughTurn < pairs.length) {
         try { admissionKeys = await microAdmissionInventory(scope, worldlineId); }
-        catch (_) { pendingClaims.push({ reason: 'overlap_admission_inventory_unavailable' }); }
+        catch (_) { if (!genesis && canonicalThroughTurn > 0) pendingClaims.push({ reason: 'overlap_admission_inventory_unavailable' }); }
+        const frame = nativeReadFrames.get(scope);
+        const admissionPrefix = `${PREFIX}:scope:${scope.scopeKey}:micro-state-admission:${worldlineId}:e0:t`;
+        if (admissionKeys && frame && !frame.disabled && typeof frame.prefetch === 'function') {
+          const decisionKeys = admissionKeys.filter(storageKey => string(storageKey).startsWith(admissionPrefix) && !string(storageKey).includes(':chunk:'));
+          if (decisionKeys.length) await frame.prefetch(decisionKeys).catch(() => null);
+        }
+      }
+      if (!genesis && canonicalThroughTurn > 0) {
         const overlap = [];
         const microHeadPrefix = key.microMemoryHead(scope, worldlineId, 0, '');
         const overlapTurns = admissionKeys ? [...new Set(admissionKeys.map(storageKey => {
@@ -56633,6 +56682,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       await prefetchMicroTurnReads(scope, worldlineId,
         Array.from({ length: Math.max(0, pairs.length - canonicalThroughTurn) }, (_, index) => canonicalThroughTurn + 1 + index));
+      let postRawHead = undefined, postExactHead = undefined, postStoredRegistry = undefined;
+      if (canonicalThroughTurn < pairs.length) {
+        try {
+          postRawHead = await storage.getVerifiedJson(key.continuityState(scope), scope, null);
+          postExactHead = postRawHead ? normalizeContinuityStateHead(postRawHead, scope, manifest, { requireCurrent: true }) : null;
+        } catch (_) { postRawHead = undefined; postExactHead = undefined; }
+        try { postStoredRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null); } catch (_) { postStoredRegistry = undefined; }
+      }
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         // One claim that cannot be applied must not discard the whole projection. Hold only that
         // claim (pending: micro_projection_apply_failed) and apply the rest of the turn again from
@@ -56663,7 +56720,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 }
                 stateProofs.push(activeMicroConsumptionProof(active));
                 let read;
-                try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active }); }
+                try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active,
+                  ...(postRawHead !== undefined ? { rawHead: postRawHead, exactHead: postExactHead } : {}),
+                  ...(postStoredRegistry !== undefined ? { storedRegistry: postStoredRegistry } : {}) }); }
                 catch (_) { read = { status: 'pending_reconciliation', reason: 'admission_read_failed' }; }
                 if (read.decisionKey && read.decision) stateProofs.push(stateDecisionConsumptionProof(read.decisionKey, read.decision));
                 if (read.status === 'superseded' && read.decision?.reason === 'explicit_user_correction') {
@@ -61380,7 +61439,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return !!(await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch));
     };
     const loadUnifiedApprovedBatch = async (context,ref,manifest=null) => {
-      const memory=await loadMemoryRef(ref);
+      const memory=await loadMemoryRef(ref,context?.scope||null);
       unifiedAssert(unifiedRecordAdmissionValid(memory,ref),'UNIFIED_RECORD_ADMISSION_MISMATCH');
       unifiedAssert(memory && memory.memoryId===ref.memoryId && Number(memory.revision)===Number(ref.revision)
         && memory.sourceDigest===ref.sourceDigest && memory.artifactDigest===ref.artifactDigest,'UNIFIED_REPLAY_CANONICAL_MISMATCH');
@@ -61389,7 +61448,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const member=await verifyStatePipelineArchiveMembership({manifest,ref,memory});
         unifiedAssert(member.ok===true,'UNIFIED_REPLAY_ARCHIVE_MEMBERSHIP');
       }
-      return await unifiedEvidenceRead(memory);
+      return await unifiedEvidenceRead(memory,context?.scope?k=>storage.getStoredJson(k,null,context.scope):undefined);
     };
     const buildUnifiedReplayCandidate = async ({context,manifest,cutoffTurn=Infinity,store=null,signal=null,collectIdentityTrace=false,transformMemory=null,allowIncompletePrefix=false}) => {
       await requireUnifiedStorageBackend(context,manifest);
@@ -72153,7 +72212,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
           const review = source.review;
           const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
-          const rows = facts.flatMap((fact, index) => memoryReviewDecision(review, 'canonical', memory, index) === 'rejected' ? [] : [{
+          const rows = facts.flatMap((fact, index) => (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected'
+            || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') ? [] : [{
             domain: fact.domain, text: string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {})),
             evidenceKeys: ['canonical:' + memory.memoryId + ':' + memory.revision + ':' + fact.assertionId]
           }]);
@@ -86576,14 +86636,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const byId=rowsById(),ids=[...selected].filter(id=>byId.get(id)&&byId.get(id).status!==value);if(!ids.length)return;
       busy=true;sync();let completed=0;
       try{
-        for(let offset=0;offset<ids.length;offset+=16){
-          if(!valid())return;const batch=ids.slice(offset,offset+16);
+        for(let offset=0;offset<ids.length;offset+=32){
+          if(!valid())return;const batch=ids.slice(offset,offset+32);
           if(!batch.every(id=>catalog.rows.some(row=>row.id===id)))throw Error('선택한 근거가 바뀌었습니다. 목록을 다시 읽고 선택해 주세요.');
           const out=await globalThis.__LIBRA__.setMemoryReviewDecision({scopeKey:catalog.scopeKey,previewDigest:catalog.previewDigest,ids:batch,status:value});if(!valid())return;
           if(!out?.ok)throw Error('저장 확인 실패');for(const id of batch)selected.delete(id);completed+=out.count;
-          catalog=await globalThis.__LIBRA__.listMemoryReviews();if(!valid())return;status.textContent=`${completed} / ${ids.length}개 저장 완료`;
+          catalog=out.catalog||await globalThis.__LIBRA__.listMemoryReviews();if(!valid())return;status.textContent=`${completed} / ${ids.length}개 저장 완료`;
         }
-        await refreshGuiSnapshot(false);if(valid()){render();status.textContent=`${completed}개를 ${{automatic:'자동 반영으로 되돌렸습니다',confirmed:'영구 승인했습니다',rejected:'반영 거부했습니다'}[value]}. 저장 후 다시 읽었습니다.`;}
+        render();status.textContent=`${completed}개를 ${{automatic:'자동 반영으로 되돌렸습니다',confirmed:'영구 승인했습니다',rejected:'반영 거부했습니다'}[value]}. 저장 후 다시 읽었습니다.`;
+        void refreshGuiSnapshot(false).catch(()=>{});
       }
       catch(error){if(valid()){render();status.textContent=`변경 중단 · ${completed}개 저장 완료 · ${String(error.code||error.message||error)}`;}}
       finally{busy=false;if(valid())sync();}
@@ -94742,8 +94803,11 @@ advanced
     const overlay = guiEl('div', { class: 'overlay is-open', 'aria-hidden': 'false', dataset: { libraPanelDialog: 'true' } });
     const close = () => { overlay.remove(); scheduleLibraAttentionRefresh('dialog_closed', 0); queueGuiRender(0, 'body'); };
     overlay.append(guiEl('div', { class: 'dialog dialog--wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
-      guiEl('div', { class: 'eyebrow', text: eyebrow }), guiEl('h2', { text: title }), body,
-      guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '닫기', onClick: close })])
+      guiEl('div', { class: 'state-dialog__head' }, [
+        guiEl('div', {}, [guiEl('div', { class: 'eyebrow', text: eyebrow }), guiEl('h2', { text: title })]),
+        guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '닫기', onClick: close })])
+      ]),
+      body
     ]));
     overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
     Gui.app.appendChild(overlay);

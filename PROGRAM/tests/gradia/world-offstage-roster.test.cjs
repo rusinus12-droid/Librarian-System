@@ -39,4 +39,22 @@ test('the world dynamics block states the whereabouts and the arrival rule', asy
   assert.match(block, /민수 @ 골목 창고/, 'a tracked person is reported with their place');
   assert.match(block, /stays where they are until an event moves them/);
   assert.match(block, /never place one person in two places at once/);
+
+  const blockWithSeraOnStage = host.plugin.debugWorldDynamicsStageBlock({
+    stageName: 'aide_world_dynamics',
+    recent: {
+      latestUser: '조용히 방을 나선다.',
+      visibleMessages: [{ role: 'assistant', content: '세라가 문을 열고 들어섰다.\n◈CG\nLOC|방|bg|맑음\n@|세라|sera\n◈' }]
+    },
+    settings: {
+      enableWorldDynamicsAide: true, mode: 'normal', writingMode: 'rp',
+      aideStageOrder: ['aide_world_dynamics'], worldSimulatorCast: ['민수', '세라', '지훈']
+    }
+  });
+  const whereaboutsSection = blockWithSeraOnStage.slice(
+    blockWithSeraOnStage.indexOf('[OFF-SCENE WHEREABOUTS'),
+    blockWithSeraOnStage.indexOf('[PERSISTENT OFF-SCENE RECORDS]')
+  );
+  assert.doesNotMatch(whereaboutsSection, /세라 @ 병원/, 'already-on-stage character is omitted from off-scene whereabouts');
+  assert.match(whereaboutsSection, /민수 @ 골목 창고/, 'off-scene character remains listed');
 });

@@ -33,6 +33,7 @@
     "ladder-stage-panel.test.cjs",
     "legacy-removal.test.cjs",
     "lib-read-consumer.test.cjs",
+    "living-world-and-gauges.test.cjs",
     "load-dev-dependency.test.cjs",
     "location-continuity.test.cjs",
     "lore-activation-scale.test.cjs",

@@ -26,6 +26,15 @@ test('a body part named for another person is not credited to the actor', async 
   const map = h.plugin.__testZoneOwners('소연이 뒤에서 하연의 몸을 열고 가슴과 외음부를 애무했다.', ['소연', '하연']);
   assert.equal(ownersText(map, 'clitoris_vulva'), '하연', '외음부는 하연의 몸');
   assert.equal(ownersText(map, 'breasts_nipples'), '하연', '가슴도 하연의 몸');
+
+  const fullNameMap = h.plugin.__testZoneOwners('소연이 뒤에서 하연의 몸을 열고 가슴과 외음부를 애무했다.', ['천소연', '천하연']);
+  assert.equal(ownersText(fullNameMap, 'clitoris_vulva'), '천하연', '성이 빠진 본문 표기도 전체 이름 소유자로 매핑');
+
+  const coordMap = h.plugin.__testZoneOwners('푸딩은 소연과 하연의 질내에 손가락을 집어넣었다.', ['푸딩', '천소연', '천하연']);
+  assert.equal(ownersText(coordMap, 'vaginal_canal'), '천소연,천하연', '과/와로 묶인 공동 소유자는 둘 다 적립');
+
+  const pronounMap = h.plugin.__testZoneOwners('하연은 포복해서 그의 하체에 다가가 남성기를 감쌌다.', ['푸딩', '천하연']);
+  assert.equal(ownersText(pronounMap, 'penis_shaft_scrotum'), '', '주격(하연은) 뒤 대명사(그의)의 의를 주어 소유로 오인하지 않음');
 });
 
 test('a zone the character owns herself is credited to her', async () => {

@@ -173,6 +173,12 @@ test('4) dialogue scanner catches leading ellipsis, suspected unquoted lines, an
   assert.ok(resWithFlags.reading.scannedFlags.some(flag => /Possible unquoted dialogue/.test(flag)), 'unquoted dialogue flagged');
   assert.ok(resWithFlags.reading.scannedFlags.some(flag => /Short ping-pong run/.test(flag)), 'short ping-pong flagged');
   assert.match(resWithFlags.notes[0].title, /화술 검토 완료 · 교정 0건 · 스캐너 감지/);
+  const scanNote = resWithFlags.notes.find(n => /^화술 스캐너 감지/.test(n.title));
+  assert.ok(scanNote, '화술 스캐너 감지 note rendered');
+  assert.match(scanNote.body, /첫머리 말줄임표 과다:/);
+  assert.match(scanNote.body, /단답형 핑퐁 연속:/);
+  assert.match(scanNote.body, /따옴표 누락 대사 의심/);
+  assert.doesNotMatch(scanNote.body, /Leading ellipsis overuse|Short ping-pong run|Possible unquoted dialogue|Echo-loop pair|Ending convergence/);
 
   // Clean draft with 0 repairs and 0 flags STILL renders summary note (never empty!)
   const cleanDraft = '"오늘 저녁엔 같이 밥이라도 먹자."\n"좋아, 내가 먼저 식당 잡아둘게."';

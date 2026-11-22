@@ -37,4 +37,17 @@ test('a stage push names what moves the pair across the line', async () => {
   });
   assert.match(line, /더는 숨기지 않고/, line);
   assert.doesNotMatch(line, /장면이 나온다/, 'no "a scene appears" hand-wave');
+
+  const held = intent(host, {
+    beatType: 'stage_push', from: '천소연', to: '푸딩', lang: 'ko',
+    stagePush: { from: 'tension', to: 'expressed', chance: 30, roll: 82, success: false }
+  });
+  assert.match(held, /머문다/, held);
+  assert.doesNotMatch(held, /더는 숨기지 않고/, 'a failed stage push must not command crossing into the next stage');
+
+  const absentWithTone = intent(host, {
+    beatType: 'absent_contact', from: '천소연', to: '푸딩', tones: ['affection'], lang: 'ko'
+  });
+  assert.match(absentWithTone, /연락|흔적/, absentWithTone);
+  assert.doesNotMatch(absentWithTone, /한 걸음 다가가 손을 뻗는다/, 'an absent character must not be told to walk up and touch the target');
 });

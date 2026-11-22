@@ -76,3 +76,19 @@ test("another person's drink does not deepen this sleeper", async t => {
   assert.match(line, /asleep/);
   assert.doesNotMatch(line, /알코올/, "someone else's alcohol is not this character's sleep aid");
 });
+
+test('a waking recorded in an assistant response clears the carried sleep state', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  packetFor(f, 'sleep-assistant-wake', {
+    latestUser: '조용히 방을 나선다.',
+    visibleMessages: [{ role: 'assistant', content: '세라는 침대에 누워 잠들었다.' }]
+  });
+  const afterAssistantWake = packetFor(f, 'sleep-assistant-wake', {
+    latestUser: '인사를 건넨다.',
+    visibleMessages: [
+      { role: 'assistant', content: '세라는 침대에 누워 잠들었다.' },
+      { role: 'assistant', content: '세라는 눈을 뜨고 일어나 앉았다.' }
+    ]
+  });
+  assert.equal(sleepLine(afterAssistantWake), '', 'a wake in the recent assistant response must not be overridden by carried sleep');
+});

@@ -28141,7 +28141,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         },
         context: {
           debtId: record.recordId,
-          repairTarget: recoveryDebtRepairTarget(record),
+          repairTarget: {
+            ...recoveryDebtRepairTarget(record),
+            ...(liveScope?.confident && liveScope?.key === scopeKey ? { sourcePrefixDigest: hayakuSourcePrefixDigest(liveScope, record.pairIndex) } : {})
+          },
           sourceEvidenceHash: recoveryDebtRepairTarget(record)?.sourceEvidenceHash || '',
           contextOnly: text(failure?.context?.contextOnly || ''),
           afterRequestRepair: clone(record.afterRequestRepair, null)
@@ -45527,6 +45530,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const normalized = compact(flow || '', 96);
     if (normalized === 'after_request_current_packet') return '1차 afterRequest 자동 복구';
     if (normalized === 'native_repair_debt') return 'Recovery Journal 백그라운드 복구';
+    if (normalized === 'native_repair_evidence_verification') return 'Recovery Journal 원문 대조 점검';
     if (normalized === 'failed_analysis_llm_resolution') return '실패 복구 LLM 재시도';
     if (normalized === 'failed_analysis_manual_resolution') return '실패 복구 사용자 수정';
     if (normalized === 'cold_start' || normalized === 'cold_start_batch') return 'Cold Start 분석';
@@ -45549,6 +45553,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ['SOURCE_AUTO_PENDING', /source_edit.*(?:consent|auto_pending)|consent_required/i, '원문 수정 · 명시적 재분석 대기', '원문이 수정되었습니다. 구간 점검에서 대상을 선택해 직접 재분석하세요.', '직접 선택한 원문 구간과 저장 결과를 확인해 주세요.'],
       ['SOURCE_CHANGED', /scope.*changed|source.*changed|fingerprint|target.*mismatch|source_edit_scope/i, '대화가 바뀜', '분석 당시와 채팅 또는 원문이 달라져 채택하지 않았습니다.', '현재 채팅의 대상 턴을 다시 선택해 주세요.'],
       ['SOURCE_MISSING', /target_missing|source.*missing|evidence.*(?:missing|incomplete)|scope_unavailable/i, '원문 확인 필요', '이 결과에 해당하는 원본 턴을 확인하지 못했습니다.', '목록을 새로고침하고 원문을 확인해 주세요.'],
+      ['EVIDENCE_STALE_PAIR', /recovery_evidence_live_(?:pair_unavailable|hash_mismatch|text_mismatch)/i, '이전 응답 리비전 불일치', '실패 당시 턴과 현재 대화 원문이 달라 이전 복구 대상을 건너뛰었습니다.', '현재 대화를 기준으로 누락 복구를 실행하면 새 원문으로 복구됩니다.'],
       ['STORAGE_WAIT', /timeout|timed.?out|deadline/i, '응답·저장 대기 초과', '응답이나 저장 확인이 늦어 완료로 처리하지 않았습니다.', '현재 상태를 새로고침한 뒤 다시 시도해 주세요.'],
       ['STORAGE_UNCONFIRMED', /storage|write_failed|readback|not_durable|preservation_failed|index_invalid|manifest.*invalid|payload_hash_mismatch/i, '저장 확인 실패', '분석 결과가 안전하게 저장되었는지 확인하지 못했습니다.', '원본은 유지됩니다. 저장 상태를 확인해 주세요.'],
       ['EMPTY_PACKET', /semantic_payload_empty|preview_unavailable/i, '기억 내용 없음', '응답에 저장할 실제 기억 내용이 없습니다.', 'AI 다시 분석 또는 직접 수정을 사용해 주세요.'],
@@ -45856,7 +45861,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const unit=ensureArray(collectNativeColdStartEvidence(scope).units).find(row=>Number(row.turn)===turn);
     if(!unit)return null;
     const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
-    const pair=ensureArray(snapshot.pairs).find(row=>Number(row.pairIndex)===turn);
+    const pair=ensureArray(snapshot.conversationPairs).find(row=>Number(row.pairIndex)===turn);
     const evidence=pair?recoveryEvidenceForAuthoritativePair(scope,pair):null;
     const repairText=evidence?'[Turn '+turn+']\n[User attempt]\n'+evidence.userText.trim()+'\n\n[Assistant outcome]\n'+evidence.assistantText.trim():'';
     const observed=nativeAnalysisSourceText(source?.text||'');
@@ -45960,6 +45965,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parsed = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
     return parsed?.schema === 'hayaku.analysis_failure_log.v1' && parsed.scopeKey === scopeKey ? ensureArray(parsed.entries) : [];
   };
+  const INCREMENTAL_DEBT_FAILURE_FLOWS = new Set([
+    'after_request_current_packet',
+    'after_request_recovery',
+    'native_repair_evidence_verification',
+    'native_repair_debt',
+    'native_repair_request_budget',
+    'incremental_recovery'
+  ]);
+  const analysisFailureResolutionMatches = (row, res) => Boolean(
+    res?.sourceRevisionId && ensureArray(res?.recordIds).length && (
+      (row?.sourceRevisionId && res.sourceRevisionId === row.sourceRevisionId)
+      || (INCREMENTAL_DEBT_FAILURE_FLOWS.has(row?.flow) && res.supersededDebtTurn === true)
+    )
+  );
   const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
   const analysisFailureResolutionKey = (scopeKey, row) => `${scopeKey}::${analysisFailureIdentity(row)}`;
   const attachAnalysisFailureProofs = async (scope, before, next) => {
@@ -45992,9 +46011,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
     const entries = await readAnalysisFailureLog(summary.scopeKey);
     const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
-      && row.sourceRevisionId === summary.sourceRevisionId && row.operationId === summary.operationId);
-    if (same) summary.failureKey = same.failureKey;
-    if (same) Object.assign(same, summary, { count: Number(same.count || 1) + 1 }); else entries.push({ ...summary, count: 1 });
+      && row.sourceRevisionId === summary.sourceRevisionId
+      && (row.operationId === summary.operationId || (INCREMENTAL_DEBT_FAILURE_FLOWS.has(summary.flow) && row.reason === summary.reason)));
+    if (same) {
+      summary.failureKey = same.failureKey;
+      summary.operationId = same.operationId || summary.operationId;
+      Object.assign(same, summary, { count: Number(same.count || 1) + 1 });
+    } else entries.push({ ...summary, count: 1 });
     entries.sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
     return await writeFailedAnalysisJsonExact(analysisFailureLogKey(summary.scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: summary.scopeKey, entries: entries.slice(-40) }, 'analysis_failure_log_write_failed');
   });
@@ -46005,7 +46028,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!pending.length) return;
     const applied = [];
     for (const [key, item] of pending) {
-      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && entry.sourceRevisionId === item.resolution.sourceRevisionId);
+      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && analysisFailureResolutionMatches(entry, item.resolution));
       if (!row || row.resolution) { Memory.analysisFailurePendingResolutions.delete(key); continue; }
       row.resolution = item.resolution;
       applied.push([key, item]);
@@ -46027,7 +46050,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     try {
       await enqueueFailedAnalysisMutation(async () => {
         const entries = await readAnalysisFailureLog(scope.key);
-        const unresolved = entries.filter(row => !row.resolution && row.sourceRevisionId && Number(capsule.createdAt || 0) >= Number(row.at || 0));
+        const unresolved = entries.filter(row => !row.resolution && (row.sourceRevisionId || INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)) && Number(capsule.createdAt || 0) >= Number(row.at || 0));
         if (!unresolved.length) return;
         const turns = new Set(unresolved.map(row => row.turn));
         const units = capsule.nativeColdStart === true ? new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit])) : null;
@@ -46046,8 +46069,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
               ? record.coldStartEpochId === capsule.epochId && record.recordState === 'historical'
               : record.incrementalRecoveryRunId === capsule.recoveryId && Number(record.targetPairIndex) === turn && record.recordState === 'active'));
           if (!records.length) continue;
-          for (const row of unresolved) if (!row.resolution && row.turn === turn && row.sourceRevisionId === prefix) {
-            const resolution = { sourceRevisionId: prefix, operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
+          for (const row of unresolved) if (!row.resolution && Number(row.turn) === turn) {
+            const exactMatch = Boolean(row.sourceRevisionId && row.sourceRevisionId === prefix);
+            const debtMatch = Boolean(!capsule.nativeColdStart && INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)
+              && (!row.sourceRevisionId || row.sourceRevisionId !== prefix)
+              && Number(capsule.createdAt || 0) > Number(row.at || 0));
+            if (!exactMatch && !debtMatch) continue;
+            const resolution = { sourceRevisionId: prefix, ...(debtMatch ? { supersededDebtTurn: true } : {}),
+              operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
               recordIds: records.map(record => record.recordId), packetHash: packet.packetHash, resolvedAt: now() };
             row.resolution = resolution;
             resolutions.set(analysisFailureIdentity(row), resolution);
@@ -46083,40 +46112,65 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const turns = new Set(unresolved.map(row => Number(row.turn)));
     const prefixes = new Map(), units = new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit]));
     let reconstructed = false;
+    const liveSources = new Set(['afterRequest', 'risu_chat_output', 'finalized_live_chat']);
     for (const record of ensureArray(ledger.records)) {
-      if (!['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource)
-        || record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
+      const isBridge = ['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource);
+      const isLive = liveSources.has(record.captureSource);
+      if (!isBridge && !isLive) continue;
+      if (record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
       if (!record.hash || stableHash64(text(record.raw).trim()) !== record.hash) continue;
       const packet = safeJsonParse(record.raw, null), meta = packet?.meta;
-      if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
-        || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      if (isBridge) {
+        if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
+          || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      } else {
+        if (record.recordState !== 'active' || !activeIds.has(record.recordId) || !(Number(record.boundAt) > 0)
+          || validateHayakuPacket(packet).ok !== true) continue;
+      }
       const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
       if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
       if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
       const prefix = prefixes.get(turn);
-      if (!prefix) continue;
       let operationId = '', adoptedAt = 0;
-      if (record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
+      if (prefix && record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
         && record.sourceRevisionBasis === prefix && meta.repair_target?.sourcePrefixDigest === prefix
         && record.recoveryTargetEvidenceHash === meta.source_evidence_hash) {
         operationId = record.incrementalRecoveryRunId;
         adoptedAt = adoptedAtById.get(record.recordId) || 0;
-      } else if (record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
+      } else if (prefix && record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
         && record.coldStartEpochId === ledger.coldStart?.activeEpochId && record.inheritedFromScopeKey === `cold_start:${scopeKey}`
         && meta.source_evidence_hash === units.get(turn)?.chunkHash) {
         operationId = record.coldStartTransferId;
         adoptedAt = Number(record.inheritedAt || 0);
       }
-      if (!operationId || !adoptedAt) continue;
-      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
-        || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
-          && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
-          && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
-        const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
-        if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
-        const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
-        Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
-        reconstructed = true;
+      if (operationId && adoptedAt && prefix) {
+        for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
+          || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
+            && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
+            && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
+          const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+          if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
+          const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
+          Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+          reconstructed = true;
+        }
+      }
+      const debtAdoptedAt = record.recordState === 'active' && activeIds.has(record.recordId)
+        && (isLive || record.captureSource === 'bridge_incremental_recovery')
+        ? Math.max(0, Number(record.boundAt || 0)) : 0;
+      if (debtAdoptedAt > 0) {
+        const debtOpId = record.incrementalRecoveryRunId || record.recordId;
+        const resolvedBasis = prefix || record.sourceRevisionBasis || '';
+        for (const row of unresolved) if (INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow) && Number(row.turn) === turn && debtAdoptedAt > Number(row.at)) {
+          const basis = resolvedBasis || row.sourceRevisionId || 'active_turn_recovery';
+          const superseded = !row.sourceRevisionId || row.sourceRevisionId !== basis;
+          const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+          if (prior && Number(prior.resolution.resolvedAt) >= debtAdoptedAt) continue;
+          const resolution = { sourceRevisionId: basis, ...(superseded ? { supersededDebtTurn: true } : {}),
+            operationId: debtOpId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: debtAdoptedAt };
+          Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+          reconstructed = true;
+        }
       }
     }
     if (!reconstructed) return false;
@@ -46126,7 +46180,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return true;
   };
   const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
-    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
+    const unresolved = rows.filter(row => !row.resolution && row.failureKey && (row.sourceRevisionId || INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)) && Number(row.turn) > 0
       && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
     if (!unresolved.length) return false;
     const scope = await RisuCompat.currentChatScope();
@@ -46169,13 +46223,32 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) { pushOperationLog('analysis:failure_resolution_recheck_unavailable', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
     const covered = new Set(ensureArray(coveredTurns).map(Number));
     return { logAvailable, rows: rows.map(row => {
-      const resolutionDurable = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
+      const resolutionDurable = analysisFailureResolutionMatches(row, row.resolution);
       const pending = Memory.analysisFailurePendingResolutions.get(analysisFailureResolutionKey(scopeKey, row));
-      const resolutionPending = !resolutionDurable && Boolean(row.sourceRevisionId && pending?.resolution.sourceRevisionId === row.sourceRevisionId && ensureArray(pending?.resolution.recordIds).length);
+      const resolutionPending = !resolutionDurable && analysisFailureResolutionMatches(row, pending?.resolution);
       const resolved = resolutionDurable || resolutionPending;
       return { ...row, ...(resolutionPending ? { resolution: clone(pending.resolution, {}) } : {}), flowLabel: failedAnalysisFlowLabel(row.flow), resolved, resolutionDurable, resolutionPending,
         keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
     }).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
+  };
+  const clearResolvedAnalysisFailures = async scopeKeyInput => {
+    const scopeKey = compact(scopeKeyInput || '', 196);
+    if (!scopeKey) return { ok: false, durable: false, cleared: 0, remaining: 0, reason: 'scope_unavailable' };
+    return await enqueueFailedAnalysisMutation(async () => {
+      const entries = await readAnalysisFailureLog(scopeKey);
+      const kept = entries.filter(entry => !analysisFailureResolutionMatches(entry, entry.resolution));
+      const cleared = entries.length - kept.length;
+      if (cleared > 0) {
+        const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey, entries: kept }, 'analysis_failure_clear_write_failed');
+        if (write.durable !== true) return { ok: false, durable: false, cleared: 0, remaining: entries.length, reason: write.reason || 'analysis_failure_clear_write_failed' };
+      }
+      for (let i = Memory.analysisFailureSummaries.length - 1; i >= 0; i -= 1) {
+        const row = Memory.analysisFailureSummaries[i];
+        if (row?.scopeKey === scopeKey && analysisFailureResolutionMatches(row, row.resolution)) Memory.analysisFailureSummaries.splice(i, 1);
+      }
+      Memory.analysisFailureReconstructionChecks.delete(scopeKey);
+      return { ok: true, durable: true, cleared, remaining: kept.length, scopeKey };
+    });
   };
   const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
   const saveFailedAnalysisArtifact = async input => {
@@ -58935,6 +59008,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         subsummary.textContent = '현재 활성 채팅의 패킷 원장과 세계선이 안정적으로 연결되어 있습니다.';
       }
       const openFailures = failureReport.rows.filter(row => !row.resolved || row.keptOld).length;
+      Memory.ledgerViewer.openFailureCount = openFailures;
+      viewerRenderHeaderHealth();
       if (openFailures) subsummary.textContent += ` 아직 해결되지 않은 분석 실패 ${openFailures}건은 아래에 있습니다.`;
     }
 
@@ -58983,18 +59058,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     // Why a turn failed: codes and counts only, never the source or the answer.
     if (!failureReport.logAvailable) entries.push({ owner: '분석 실패', badge: 'badge--warn', badgeText: '확인 불가', title: '저장된 실패 기록을 읽지 못했습니다', detail: '이번 실행에서 생긴 실패만 다음에 표시될 수 있습니다.' });
-    for (const row of failureReport.rows) {
+    const buildFailureEntry = (row, isResolvedHistory = false) => {
       const cause = ensureArray(row.cause).map(item => item.code + (Number(item.count) > 1 ? ' ×' + Number(item.count) : '')).join(', ');
-      entries.push({
+      return {
         owner: '분석 실패', failureTurn: Number(row.turn || 0),
         badge: row.resolutionPending || row.keptOld ? 'badge--warn' : row.resolved ? 'badge--ok' : 'badge--danger',
         badgeText: row.resolutionPending ? '복구됨 · 기록 저장 대기' : row.keptOld ? '기존 기억 유지' : row.resolved ? '이후 복구됨' : '미복구',
         title: `T${Number(row.turn || 0)} · ${row.title || '분석 확인 필요'}`,
-        detail: [`작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`, row.detail || '',
+        detail: [
+          `작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`,
+          isResolvedHistory ? '현재 원장에 복구 패킷이 정상 반영되어 더 이상 조치가 필요하지 않습니다.' : '',
+          row.detail || '',
           row.resolutionPending ? '기억 복구는 완료됐지만 진단 기록을 아직 저장하지 못했습니다. 저장소가 응답하면 다시 저장합니다.' : '',
-          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '', `원인 코드: ${cause || row.reason || row.code || '-'}`].filter(Boolean).join('\n')
-      });
-    }
+          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '',
+          `원인 코드: ${cause || row.reason || row.code || '-'}`
+        ].filter(Boolean).join('\n')
+      };
+    };
+    const activeFailureRows = failureReport.rows.filter(row => !row.resolved || row.keptOld || row.resolutionPending);
+    const resolvedHistoryRows = failureReport.rows.filter(row => row.resolved && !row.keptOld && !row.resolutionPending);
+    for (const row of activeFailureRows) entries.push(buildFailureEntry(row, false));
+    const resolvedHistoryEntries = resolvedHistoryRows.map(row => buildFailureEntry(row, true));
 
     const recentLogs = ensureArray(Memory.activityLog).slice(-10).reverse();
     const errorLogs = recentLogs.filter(log => log?.level === 'error' || log?.level === 'warn');
@@ -59010,23 +59094,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     }
 
+    const renderStatusEntryCard = row => `<div class="card card--tight"${row.failureTurn != null ? ` data-failure-row="${row.failureTurn}"` : ''} style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
+          <strong style="font-size:13px">${viewerEscapeHtml(row.title)}</strong>
+        </div>
+        <small class="muted" style="font-size:11px">${viewerEscapeHtml(row.owner)}</small>
+      </div>
+      ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${viewerEscapeHtml(row.detail)}</div>` : ''}
+    </div>`;
+
     const listNode = overlay.querySelector('[data-status-log-list]');
     if (listNode) {
-      listNode.innerHTML = entries.map(row => {
-        return `<div class="card card--tight"${row.failureTurn != null ? ` data-failure-row="${row.failureTurn}"` : ''} style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
-              <strong style="font-size:13px">${viewerEscapeHtml(row.title)}</strong>
-            </div>
-            <small class="muted" style="font-size:11px">${viewerEscapeHtml(row.owner)}</small>
-          </div>
-          ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${viewerEscapeHtml(row.detail)}</div>` : ''}
-        </div>`;
-      }).join('');
+      const resolvedFoldHtml = resolvedHistoryEntries.length ? `<details class="fold" data-resolved-failures-fold style="margin-top:4px"><summary>해결된 이전 실패 기록 ${resolvedHistoryEntries.length}건 (복구 완료 · 상단 실패 수 제외)</summary><div class="fold__body stack"><div class="cluster" style="justify-content:space-between;align-items:center"><span class="hint">이미 원장에 복구 패킷이 반영되어 더 이상 조치가 필요하지 않은 과거 기록입니다.</span><button class="btn btn--sm" type="button" data-clear-resolved-failures>해결된 기록 지우기</button></div>${resolvedHistoryEntries.map(renderStatusEntryCard).join('')}</div></details>` : '';
+      listNode.innerHTML = entries.map(renderStatusEntryCard).join('') + resolvedFoldHtml;
     }
 
-    overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + entries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
+    const allLogEntries = [...entries, ...resolvedHistoryEntries];
+    overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + allLogEntries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
   };
 
   const viewerRenderHeaderHealth = () => {
@@ -62754,6 +62840,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       });
     }
+    const statusLogsPanel = root.querySelector?.('#hayakuViewerPanelLogs');
+    if (statusLogsPanel && !statusLogsPanel.dataset.clearResolvedBound) {
+      statusLogsPanel.dataset.clearResolvedBound = '1';
+      statusLogsPanel.addEventListener('click', event => {
+        const clearBtn = event.target?.closest?.('[data-clear-resolved-failures]');
+        if (!clearBtn) return;
+        clearBtn.disabled = true;
+        const scopeKey = text(Memory.ledgerViewer.scope?.key || Memory.ledgerViewer.failureLogInput?.scopeKey || '');
+        void clearResolvedAnalysisFailures(scopeKey).then(async () => {
+          const failureInput = Memory.ledgerViewer.failureLogInput;
+          await viewerRefreshFailureCount(root, scopeKey, failureInput?.coverage, failureInput?.coldRun);
+          await viewerRenderStatusPanel();
+        }).catch(() => { clearBtn.disabled = false; });
+      });
+    }
     root.querySelector?.('#closeHayakuViewer')?.addEventListener('click', () => closeLedgerViewer());
     root.querySelector?.('#refreshHayakuViewer')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuWorldline')?.addEventListener('click', () => refreshLedgerViewer());
@@ -64176,6 +64277,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (!scope?.confident) return { logAvailable: false, reason: scope?.reason || 'scope_unavailable', rows: [] };
             const status = await nativeRecoveryStatus({ includeDebts: true });
             return clone(await analysisFailureReport(scope.key, { coveredTurns: status?.debt?.coverage?.coveredTurns, coldRun: status?.coldStartRun?.run }), { rows: [] });
+          },
+          clearResolved: async scopeKeyInput => {
+            const scope = await RisuCompat.currentChatScope();
+            const targetKey = compact(scopeKeyInput || scope?.key || '', 196);
+            if (!targetKey) return { ok: false, durable: false, cleared: 0, remaining: 0, reason: scope?.reason || 'scope_unavailable' };
+            return clone(await clearResolvedAnalysisFailures(targetKey), { ok: false, cleared: 0 });
           },
           list: async () => {
             const scope = await RisuCompat.currentChatScope();
