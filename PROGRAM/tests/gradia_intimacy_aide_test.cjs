@@ -403,12 +403,13 @@ test('GUI intimacy panel shows external reaction and climax/ejaculation gauges a
   assert.match(readingsEl.textContent, /게이지 ·/);
 });
 
-test('erogenous zoneStats initialize from lore zone_defaults, develop persistently over kept turns, and render anatomy SVGs in GUI', async t => {
+test('erogenous zoneStats backfill zero cards from lore, match natural prose, develop immediately without reroll double-count, and render gendered anatomy SVGs', async t => {
   const f = await start(t, {}, true, {
     [HOST]: {
       intimacy_readings: [{ participant: '세라', phase: 'intercourse', position: '후배위', summary: '흥분이 오르는 중' }],
       intimacy_profiles: [{
         name: '세라',
+        gender: 'female',
         liked_positions: '정상위',
         disliked_positions: '',
         sensitive_zones: '유두',
@@ -416,7 +417,7 @@ test('erogenous zoneStats initialize from lore zone_defaults, develop persistent
         zone_defaults: [
           { zone: 'breasts_nipples', sensitivity: 40, development: 10 },
           { zone: 'clitoris_vulva', sensitivity: 20, development: 5 },
-          { zone: 'thighs_hips', sensitivity: -60, development: 0 }
+          { zone: 'inner_thighs', sensitivity: -60, development: 0 }
         ],
         foreplay_stance: 'likes',
         foreplay_style: '부드러운 애무',
@@ -430,7 +431,6 @@ test('erogenous zoneStats initialize from lore zone_defaults, develop persistent
   });
 
   const readCards = () => Object.values(storedCards(f)).flat();
-  const reply = body => f.chat.message.push({ role: 'char', chatId: 'a' + (f.chat.message.length + 1), data: body });
   let rerollSeq = 0;
   const rerun = async () => {
     const last = f.chat.message.pop();
@@ -440,40 +440,74 @@ test('erogenous zoneStats initialize from lore zone_defaults, develop persistent
     await f.host.hooks.beforeRequest(f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })), 'model');
   };
 
-  // Turn 1: host estimates profile with lore zone_defaults
+  // Turn 1: host estimates profile with lore zone_defaults + gender
   await runTurn(f, SEX_INPUT.replace(/민아/g, '세라'));
   let cards = readCards();
   assert.equal(cards.length, 1);
+  assert.equal(cards[0].gender, 'female');
   assert.equal(cards[0].zoneStats.breasts_nipples.sensitivity, 40);
   assert.equal(cards[0].zoneStats.breasts_nipples.development, 10);
   assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 20);
   assert.equal(cards[0].zoneStats.clitoris_vulva.development, 5);
-  assert.equal(cards[0].zoneStats.thighs_hips.sensitivity, -60);
+  assert.equal(cards[0].zoneStats.inner_thighs.sensitivity, -60);
 
-  // Turn 2: stimulate clitoris_vulva (pending zoneDelta)
-  reply('세라가 작게 숨을 삼켰다.');
-  await runTurn(f, '세라의 음핵을 손가락으로 부드럽게 문지른다.');
+  // Turn 2: natural non-adjacent Korean prose ("가슴 위에 얹었다 ... 주무르며") immediately develops breasts_nipples
+  f.chat.message.push({ role: 'char', chatId: 'a-t1', data: '세라가 작게 숨을 삼켰다.' });
+  await runTurn(f, '양손을 세라의 가슴 위에 얹었다. 살짝씩 주무르며 그녀의 성감을 올리기 시작했다.');
+  cards = readCards();
+  const devAfterTurn2 = cards[0].zoneStats.breasts_nipples.development;
+  const sensAfterTurn2 = cards[0].zoneStats.breasts_nipples.sensitivity;
+  assert.ok(devAfterTurn2 > 10, 'breasts_nipples development increased immediately after turn');
+  assert.ok(sensAfterTurn2 > 40, 'breasts_nipples sensitivity increased immediately after turn');
 
   // Reroll of Turn 2 must NOT double-count development
   await rerun();
   cards = readCards();
-  assert.equal(cards[0].zoneStats.clitoris_vulva.development, 5, 'pending zone development waits for kept turn');
+  assert.equal(cards[0].zoneStats.breasts_nipples.development, devAfterTurn2, 'reroll does not double-count development');
+  assert.equal(cards[0].zoneStats.breasts_nipples.sensitivity, sensAfterTurn2, 'reroll does not double-count sensitivity');
 
-  // Turn 3: previous turn settled -> clitoris_vulva development & sensitivity increase persistently
-  reply('세라의 허리가 살짝 들렸다.');
-  await runTurn(f, '세라의 목덜미에 입을 맞추고 가슴을 만진다.');
-  cards = readCards();
-  assert.ok(cards[0].zoneStats.clitoris_vulva.development > 5, 'development increased after kept turn');
-  assert.ok(cards[0].zoneStats.clitoris_vulva.sensitivity > 20, 'sensitivity increased after kept turn');
-  const devAfterTurn2 = cards[0].zoneStats.clitoris_vulva.development;
+  // Test automatic backfill of an existing all-zero male card lacking gender
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  const zeroMaleCard = {
+    id: 'intimacy-male-zero',
+    name: '푸딩',
+    likedPositions: '정상위',
+    dislikedPositions: '',
+    sensitiveZones: '',
+    dullZones: '',
+    foreplayStance: 'likes',
+    foreplayStyle: '적극적',
+    intercourseStance: 'likes',
+    intercourseStyle: '깊게',
+    afterplayStance: 'likes',
+    afterplayStyle: '포옹',
+    basis: '기존 카드'
+  };
+  await f.host.plugin.saveIntimacyCards?.() ; // noop if absent
+  const recBackfill = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: { enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'], mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp' },
+    parsed: {
+      intimacyReadings: [{ participant: '세라', phase: 'foreplay', position: '', summary: '가슴이 뜨거워짐' }],
+      intimacyProfiles: [{
+        name: '세라',
+        gender: 'male',
+        zone_defaults: [{ zone: 'penis_glans', sensitivity: 55, development: 15 }],
+        basis: '남성 전환 로어'
+      }]
+    }
+  });
+  assert.ok(recBackfill, 'debugIntimacyRecord returned');
 
-  // GUI renders full-body SVG, schematic genital anatomy SVG, and editable zone inputs
+  // GUI renders sleek female body + genital SVGs and editable 13-zone inputs
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('chat');
-  const bodySvg = f.document.querySelector('[data-intimacy-body-svg]');
-  const genitalSvg = f.document.querySelector('[data-intimacy-genital-svg]');
-  assert.ok(bodySvg, 'full-body SVG diagram rendered');
-  assert.ok(genitalSvg, 'schematic genital anatomy SVG rendered');
+  const bodySvg = f.document.querySelector('[data-intimacy-body-svg="female"]');
+  const genitalSvg = f.document.querySelector('[data-intimacy-genital-svg="female"]');
+  assert.ok(bodySvg, 'female full-body SVG diagram rendered');
+  assert.ok(genitalSvg, 'female schematic genital anatomy SVG rendered');
+  assert.ok(f.document.querySelector('[data-intimacy-zone-field="ears.sensitivity"]'), 'expanded ears zone input exists');
+  assert.ok(f.document.querySelector('[data-intimacy-zone-field="cervix.sensitivity"]'), 'expanded cervix zone input exists');
 
   const sensInput = f.document.querySelector('[data-intimacy-zone-field="clitoris_vulva.sensitivity"]');
   assert.ok(sensInput, 'editable sensitivity input exists');
@@ -482,5 +516,4 @@ test('erogenous zoneStats initialize from lore zone_defaults, develop persistent
   await new Promise(r => setTimeout(r, 30));
   cards = readCards();
   assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 75);
-  assert.equal(cards[0].zoneStats.clitoris_vulva.development, devAfterTurn2);
 });

@@ -1917,6 +1917,19 @@
     MULTI_PIPELINE_MODES,
     'lightweight'
   );
+  const PREVIOUS_STAGE_MODES = Object.freeze(['auto', 'on', 'off']);
+  const normalizePreviousStageMode = value => normalizeChoice(
+    String(value || '').trim().toLowerCase(),
+    PREVIOUS_STAGE_MODES,
+    'auto'
+  );
+  const isPreviousStageEnabled = (settings = {}) => {
+    if (settings?.mode === 'off') return false;
+    const mode = normalizePreviousStageMode(settings?.previousStageMode ?? settings?.previous_stage_mode ?? 'auto');
+    if (mode === 'on') return true;
+    if (mode === 'off') return false;
+    return normalizeMultiPipelineMode(settings?.multiPipelineMode ?? settings?.multi_pipeline_mode) === 'heavyweight';
+  };
   // 억결 AIDE relationship cards. A card is user configuration for one chat (who,
   // toward whom, which tones), never memory: the current reading of every bond is
   // rebuilt each turn from canon, LIB memory and the recent scene.
@@ -5646,7 +5659,7 @@ ${BIANCA_PERSONA_TEXT}`;
     'vertex_flex_mode', 'llm_stream', 'llm_extra_body_json'
   ]);
   const LEGACY_SETTINGS_ARGUMENT_NAMES = Object.freeze([
-    'mode', 'multi_pipeline_mode', 'writing_mode', 'shadow_draft_mode', 'turn_window', 'max_recent_chars',
+    'mode', 'multi_pipeline_mode', 'previous_stage_mode', 'writing_mode', 'shadow_draft_mode', 'turn_window', 'max_recent_chars',
     'max_previous_stage_chars', 'max_injection_chars', 'gradation_mode', 'output_mode',
     'internal_draft_language', 'built_in_style_preset', 'injection_position', 'failure_mode',
     'stage_timeout_ms', 'provider_presets_risuai_enabled', 'default_preset',
@@ -6194,7 +6207,7 @@ ${BIANCA_PERSONA_TEXT}`;
     const aliases = {
       turnWindow: 'turn_window', maxRecentChars: 'max_recent_chars', maxPreviousStageChars: 'max_previous_stage_chars',
       maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode',
-      stageTimeoutMs: 'stage_timeout_ms', defaultPresetName: 'default_preset', aideStageOrder: 'aide_stage_order', quickProfile: 'quick_profile', multiPipelineMode: 'multi_pipeline_mode', writingMode: 'writing_mode', shadowDraftMode: 'shadow_draft_mode', novelShadowDraftMode: 'novel_shadow_draft_mode',
+      stageTimeoutMs: 'stage_timeout_ms', defaultPresetName: 'default_preset', aideStageOrder: 'aide_stage_order', quickProfile: 'quick_profile', multiPipelineMode: 'multi_pipeline_mode', previousStageMode: 'previous_stage_mode', writingMode: 'writing_mode', shadowDraftMode: 'shadow_draft_mode', novelShadowDraftMode: 'novel_shadow_draft_mode',
       gradationMode: 'gradation_mode', outputMode: 'output_mode', internalDraftLanguage: 'internal_draft_language', builtInStylePreset: 'built_in_style_preset', debugLog: 'debug_log', enableShadowRisuContext: 'shadow_include_risu_context', shadowRisuContextMaxChars: 'shadow_risu_context_max_chars', twoCallAide: 'two_call_aide', targetDraftMinChars: 'target_draft_min_chars', targetDraftMaxChars: 'target_draft_max_chars', guiEnabled: 'enable_gui',
       rpImpersonationScope: 'rp_impersonation_scope', memoryBudgetChars: 'memory_budget_chars', inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', novelInputAssistMode: 'novel_input_assist_mode', rpInputAssistMode: 'rp_input_assist_mode', novelInputAssistScope: 'novel_input_assist_scope', novelInputAssistConfirmationMode: 'novel_input_assist_confirmation_mode', informationTransferMode: 'information_transfer_mode',
       nsfwMode: 'nsfw_mode', nsfwGuidanceEnabled: 'nsfw_guidance_enabled', nsfwInjectFinalRequest: 'nsfw_inject_final_request', biancaInject: 'bianca_inject',
@@ -7283,6 +7296,7 @@ ${BIANCA_PERSONA_TEXT}`;
     const settings = {
       mode,
       multiPipelineMode,
+      previousStageMode: normalizePreviousStageMode(await runtimeCfg('previous_stage_mode', runtimeStored.previous_stage_mode ?? 'auto')),
       writingMode,
       shadowDraftMode,
       novelShadowDraftMode,
@@ -19137,7 +19151,7 @@ ${passage.text || ''}`, 420));
     const reasoningHeadroom = reasoningActive
       ? (isAnalysis
           ? Math.max(10240, Math.ceil(visibleWanted * 0.65))
-          : Math.max(2048, Math.ceil(visibleWanted * 0.75)))
+          : Math.max(10240, Math.ceil(visibleWanted * 1.15)))
       : 0;
     const wanted = visibleWanted + reasoningHeadroom;
     // A reasoning model can ask for more than the context can hold once input and margin are paid for.
@@ -19147,7 +19161,7 @@ ${passage.text || ''}`, 420));
     const contextOutputCap = contextTokens ? Math.max(1024, Math.floor(contextTokens * 0.35)) : 0;
     const draftSafetyCap = Math.min(32768, Math.max(8192, Math.ceil(draftChars / Math.min(1.7, charsPerToken)) + 2048));
     const reasoningDraftCap = reasoningActive
-      ? Math.min(32768, Math.max(draftSafetyCap, Math.ceil(visibleWanted * 1.8)))
+      ? Math.min(32768, Math.max(draftSafetyCap, visibleWanted + reasoningHeadroom))
       : draftSafetyCap;
     const reasoningAnalysisCap = reasoningActive
       ? (presetMax > MAX_ANALYSIS_RETRY_OUTPUT_TOKENS ? Math.min(presetMax - 2048, 14336) : MAX_ANALYSIS_RETRY_OUTPUT_TOKENS)
@@ -28451,14 +28465,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_MAX_CARDS = 12;
   // Body-part stimulation definitions: [id, label, baseClimaxPoints, baseEjaculationPoints, pattern]
   const INTIMACY_BODY_PARTS = Object.freeze([
-    ['lips_neck', '입술·목덜미·귀 (lips/neck/ears)', 10, 6, /키스|입술(?:을|에)?\s*(?:맞추|포개|빨|깨물|핥)|설키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣)|목덜미|목선|쇄골|귀(?:를|에|\s*뒤)|귓불|귓바퀴|kiss(?:ed|ing)?|tongue|neck|collarbone|earlobe/i],
-    ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방)(?:을|를|에)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지)|nipple|breast|fondl(?:e|ed|ing)/i],
-    ['thighs_hips', '허벅지·골반·엉덩이 (thighs/hips/buttocks)', 12, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|골반|엉덩이|둔부|허리)(?:을|를|에)?\s*(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지)|inner thigh|thighs|hips|buttocks|groin/i],
-    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:보지|외음부|음순|비소)(?:을|를|에)?\s*(?:만지|만졌|문지|비비|핥|빨|자극)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
-    ['vaginal_interior', '질내·G스팟·자궁구 (vaginal interior)', 30, 26, /삽입|질\s*안|질내|보지\s*(?:안|속)|내벽|지스팟|G스팟|자궁구|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
-    ['penis_glans', '음경·귀두 (penis/glans)', 0, 32, /(?:자지|음경|성기|페니스|귀두|기둥|불알|고환)(?:을|를|에)?\s*(?:만지|만졌|쥐|쥐었|훑|비비|문지|핥|빨|물고|삼키)|펠라(?:티오|치오)?|오럴|사까시|대딸|손으로\s*훑|파이즈리|가슴으로\s*끼우|fellatio|blowjob|handjob|penis|glans|shaft|stroke(?:d|s|ing)? his/i],
-    ['anal_perineum', '후구·회음부 (anal/perineum)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|anal|perineum|prostate/i]
+    ['lips_mouth', '입술·혀 (lips/mouth)', 10, 6, /키스|입술(?:을|에|로)?\s*(?:맞추|포개|빨|깨물|핥|부딪)|설키스|딥키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣|감싸)|입\s*안|kiss(?:ed|ing)?|tongue|lips/i],
+    ['ears', '귀·귓불 (ears)', 11, 6, /귀(?:를|에|\s*뒤|\s*안)|귓불|귓바퀴|귓가(?:에|를)?\s*(?:속삭|핥|깨물|숨)|earlobe|ear\b/i],
+    ['neck_collarbone', '목덜미·쇄골 (neck/collarbone)', 11, 6, /목덜미|목선|목(?:을|에)?\s*(?:핥|깨물|입맞|키스|빨|쓸)|쇄골|어깨선|neck|collarbone|nape/i],
+    ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방|유륜)(?:을|를|에|이|의)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지|얹|애무|감싸|누르|스치)|nipple|breast|fondl(?:e|ed|ing)/i],
+    ['abdomen_waist', '복부·허리·등 (abdomen/waist/back)', 10, 7, /(?:배|복부|아랫배|배꼽|허리|옆구리|등줄기|척추)(?:을|를|에|를)?[^\n.?!]{0,18}(?:쓸|쓰다듬|만지|감싸|핥|입맞|키스|쥐|움켜|문지)|waist|abdomen|lower belly|spine|back/i],
+    ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|hips|buttocks|butt\b/i],
+    ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞)|inner thigh|thighs|groin/i],
+    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|핥|빨|자극|눌|튕)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
+    ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|보지\s*(?:안|속)|내벽|질벽|지스팟|G스팟|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
+    ['cervix', '자궁구·심부 (cervix/deep)', 26, 22, /자궁구|자궁\s*입구|가장\s*깊은\s*곳|깊숙이\s*(?:찌르|찔러|닿|박|밀어)|cervix|deep thrust/i],
+    ['penis_glans', '귀두·소대 (glans/frenulum)', 0, 32, /귀두|소대|요도구|(?:자지|음경|성기|페니스)(?:의)?\s*(?:끝|머리|귀두)|펠라(?:티오|치오)?|오럴|사까시|파이즈리|가슴으로\s*끼우|fellatio|blowjob|glans|frenulum/i],
+    ['penis_shaft_scrotum', '음경 기둥·고환 (shaft/scrotum)', 0, 24, /(?:자지|음경|성기|페니스|기둥|장대|불알|고환|음낭)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|쥐|쥐었|훑|비비|문지|핥|빨|물고|삼키)|대딸|손으로\s*훑|handjob|penis|shaft|scrotum|testicle|stroke(?:d|s|ing)? his/i],
+    ['anal_perineum', '후구·회음부·전립선 (anal/perineum/prostate)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|anal|perineum|prostate/i]
   ]);
+  const INTIMACY_LEGACY_ZONE_MAP = Object.freeze({
+    lips_neck: ['lips_mouth', 'ears', 'neck_collarbone'],
+    thighs_hips: ['hips_buttocks', 'inner_thighs'],
+    vaginal_interior: ['vaginal_canal', 'cervix']
+  });
   const INTIMACY_CLIMAX_RESET_RE = /절정(?:에\s*(?:달했|도달|올랐|이르)|을\s*맞)|가버렸|가\s*버렸|오르가[즘슴](?:을\s*느꼈|에\s*달했)|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|climaxed|orgasmed|came hard/i;
   const INTIMACY_EJACULATION_RESET_RE = /사정(?:했|하였|하며|하고)|정액(?:을|이|가)?\s*(?:쏟|뿜|분출|가득\s*채웠)|싸버렸|쌌다|안에\s*쌌|속에\s*쌌|ejaculated|came inside|released his seed/i;
   const parseErogenousMap = (sensitiveZones = '', dullZones = '') => {
@@ -28485,15 +28510,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const normalizeIntimacyZoneStats = (rawStats, sensitiveZones = '', dullZones = '') => {
     const legacy = parseErogenousMap(sensitiveZones, dullZones);
     const sourceMap = {};
+    const expandKey = (rawKey, val) => {
+      const k = compact(rawKey, 40);
+      if (!k || !val || typeof val !== 'object') return;
+      if (INTIMACY_LEGACY_ZONE_MAP[k]) {
+        for (const mapped of INTIMACY_LEGACY_ZONE_MAP[k]) {
+          if (!sourceMap[mapped]) sourceMap[mapped] = val;
+        }
+      } else {
+        sourceMap[k] = val;
+      }
+    };
     if (Array.isArray(rawStats)) {
-      for (const item of rawStats) {
-        const key = compact(item?.zone || item?.id || '', 40);
-        if (key) sourceMap[key] = item;
-      }
+      for (const item of rawStats) expandKey(item?.zone || item?.id || '', item);
     } else if (rawStats && typeof rawStats === 'object') {
-      for (const [k, v] of Object.entries(rawStats)) {
-        if (v && typeof v === 'object') sourceMap[k] = v;
-      }
+      for (const [k, v] of Object.entries(rawStats)) expandKey(k, v);
     }
     const out = {};
     for (const [id] of INTIMACY_BODY_PARTS) {
@@ -28513,6 +28544,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return out;
   };
+  const intimacyZoneStatsAllZero = stats => !stats || INTIMACY_BODY_PARTS.every(([id]) => !stats[id]?.sensitivity && !stats[id]?.development);
   const normalizeIntimacyCard = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const name = compact(value.name || '', 80);
@@ -28521,12 +28553,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const card = {
       id: compact(value.id || '', 64),
       name,
+      gender: value.gender === 'male' ? 'male' : value.gender === 'female' ? 'female' : '',
       likedPositions: compact(value.likedPositions || '', 240),
       dislikedPositions: compact(value.dislikedPositions || '', 240),
       sensitiveZones,
       dullZones,
       zoneStats: normalizeIntimacyZoneStats(value.zoneStats ?? value.zone_defaults, sensitiveZones, dullZones),
       anatomyView: value.anatomyView === 'male' ? 'male' : value.anatomyView === 'female' ? 'female' : '',
+      lastZoneUpdateHash: compact(value.lastZoneUpdateHash || '', 40),
       basis: compact(value.basis || '', 360),
       origin: value.origin === 'user' ? 'user' : 'lore',
       createdAt: compact(value.createdAt || '', 40)
@@ -28651,7 +28685,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           };
           if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
             const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSamePerson(c.name, k)));
-            if (card) {
+            if (card && (!item.inputHash || card.lastZoneUpdateHash !== item.inputHash)) {
               if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
               for (const [zoneId, delta] of Object.entries(v.zoneDeltas)) {
                 const prev = card.zoneStats[zoneId] || { sensitivity: 0, development: 0 };
@@ -28660,6 +28694,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
                   development: intimacyClampDevelopment(prev.development + (Number(delta.dev) || 0))
                 };
               }
+              if (item.inputHash) card.lastZoneUpdateHash = item.inputHash;
             }
           }
         }
@@ -28843,6 +28878,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         climaxTriggeredThisTurn,
         ejaculationTriggeredThisTurn,
         stimulatedParts: lastTurnParts,
+        zoneDeltas,
+        inputHash: settleInfo?.inputHash || '',
         line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText].filter(Boolean).join(' · ')}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no direct body-part stimulation this turn → gauge decayed]'}`
       };
     });
@@ -29008,7 +29045,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
-            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 목덜미, 귀, 가슴, 유두, 허벅지, 골반, 엉덩이, 음핵, 질내, 음경, 귀두, 후구 — sensitive_zones multiply stimulation by ×1.5, dull_zones by ×0.6); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
@@ -29024,7 +29061,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const stance = { type: 'string', enum: [...INTIMACY_STANCES] };
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -29053,16 +29090,47 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const readings = normalizeIntimacyReadings(parsed?.intimacyReadings);
     if (scopeKey) Runtime.intimacyReadings[scopeKey] = { at: Date.now(), readings };
-    if (scopeKey) recordIntimacyProfiles(scopeKey, parsed?.intimacyProfiles, settings);
+    if (scopeKey) {
+      recordIntimacyProfiles(scopeKey, parsed?.intimacyProfiles, settings);
+      // Apply current-turn zone development immediately & reroll-safely on turn completion.
+      const telemetryGauges = Runtime.intimacyTelemetry?.[scopeKey]?.gauges || [];
+      const cards = intimacyCardsForScope(scopeKey);
+      let zoneChanged = false;
+      for (const g of telemetryGauges) {
+        const card = cards.find(c => c.name && (c.name === g.name || extensionSamePerson(c.name, g.name)));
+        if (!card || (g.inputHash && card.lastZoneUpdateHash === g.inputHash)) continue;
+        const deltas = { ...(g.zoneDeltas || {}) };
+        const reading = readings.find(r => r.participant && (r.participant === g.name || extensionSamePerson(r.participant, g.name)));
+        if (reading?.summary) {
+          for (const [id, , , , pattern] of INTIMACY_BODY_PARTS) {
+            if (!deltas[id] && pattern.test(reading.summary)) deltas[id] = { dev: 2, sens: 2 };
+          }
+        }
+        if (!Object.keys(deltas).length) continue;
+        if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
+        for (const [zoneId, delta] of Object.entries(deltas)) {
+          const prev = card.zoneStats[zoneId] || { sensitivity: 0, development: 0 };
+          card.zoneStats[zoneId] = {
+            sensitivity: intimacyClampSensitivity(prev.sensitivity + (Number(delta.sens) || 0)),
+            development: intimacyClampDevelopment(prev.development + (Number(delta.dev) || 0))
+          };
+        }
+        if (g.inputHash) card.lastZoneUpdateHash = g.inputHash;
+        zoneChanged = true;
+      }
+      if (zoneChanged) saveIntimacyCards().catch(error => warn('[intimacy zone stats save failed]', error));
+    }
   };
-  // A new profile becomes a card only for a name with no card yet: a card is never overwritten.
+  // A new profile becomes a card only for a name with no card yet, or backfills missing gender / all-zero zoneStats.
   const recordIntimacyProfiles = (scopeKey, profiles, settings = {}) => {
     if (!Runtime.intimacyCards || !Array.isArray(profiles) || !profiles.length) return [];
     const cards = [...intimacyCardsForScope(scopeKey)];
     const added = [];
+    let backfilled = false;
     for (const raw of profiles) {
       const card = normalizeIntimacyCard({
         name: raw?.name,
+        gender: raw?.gender,
         likedPositions: raw?.liked_positions,
         dislikedPositions: raw?.disliked_positions,
         sensitiveZones: raw?.sensitive_zones,
@@ -29080,15 +29148,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
       });
       const key = normalizeContinuityAlias(card?.name || '');
       if (!card?.name || !key) continue;
-      if (cards.some(existing => normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name))) continue;
       // The persona's tastes are the user's in RP; the stage is told so, and this holds it.
       if (intimacyModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
+      const existingIdx = cards.findIndex(existing => normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name));
+      if (existingIdx >= 0) {
+        const existing = cards[existingIdx];
+        let touched = false;
+        const next = { ...existing };
+        if (!next.gender && card.gender) { next.gender = card.gender; touched = true; }
+        if (intimacyZoneStatsAllZero(next.zoneStats) && !intimacyZoneStatsAllZero(card.zoneStats)) {
+          next.zoneStats = card.zoneStats;
+          if (!next.sensitiveZones && card.sensitiveZones) next.sensitiveZones = card.sensitiveZones;
+          if (!next.dullZones && card.dullZones) next.dullZones = card.dullZones;
+          touched = true;
+        }
+        if (touched) {
+          cards[existingIdx] = next;
+          backfilled = true;
+        }
+        continue;
+      }
       if (cards.length >= INTIMACY_MAX_CARDS) break;
       card.id = `intimacy-${Date.now().toString(36)}-${cards.length}`;
       cards.push(card);
       added.push(card);
     }
-    if (!added.length) return [];
+    if (!added.length && !backfilled) return [];
     Runtime.intimacyCards = { ...Runtime.intimacyCards, [scopeKey]: cards };
     saveIntimacyCards().catch(error => warn('[intimacy cards save failed]', error));
     return added;
@@ -29963,6 +30048,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : '',
       profiles.length ? `PREFERENCE CARDS (lore-based; treat as established):\n${profiles.map(card => `- ${relsimProfileLine(card)}`).join('\n')}` : '',
       missingProfiles.length ? `MISSING PREFERENCE CARDS: ${missingProfiles.map(forcedBondDisplayName).join(', ')}.` : '',
+      (() => {
+        const missingMood = profiles.filter(card => !card.moodHigh && !card.moodLow && !card.sulk).map(card => forcedBondDisplayName(card.name));
+        return missingMood.length ? `MISSING MOOD REACTIONS (backfill mood_high and mood_low in relationship_profiles): ${missingMood.join(', ')}.` : '';
+      })(),
       // The event list goes only to a turn where a couple may plan or mark something.
       (proposals.length || prepared.occasions.length) && gate !== 'staging'
         ? `EVENT IDEAS (use only when a preference card or lore points to it):\n${Object.values(RELSIM_EVENTS).map(def => `- ${def.label}: ${def.gist} (${def.public ? 'others see it' : 'private'}; prep ${def.prep})`).join('\n')}`
@@ -30029,6 +30118,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const list = [...(store.romancePrefs[scopeKey] || [])];
     const dismissed = new Set(store.dismissed?.romancePrefs?.[scopeKey] || []);
     const added = [];
+    let backfilled = false;
     for (const raw of profiles) {
       const card = normalizeRelsimProfile({
         name: forcedBondPerson(raw?.name || ''),
@@ -30042,13 +30132,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const key = normalizeContinuityAlias(card?.name || '');
       if (!card?.name || !key || dismissed.has(key) || !relsimProfileHasContent(card) || !card.basis) continue;
       if (relationshipSimModeGate(settings) !== 'novel' && relsimIsPersona(card.name)) continue;
-      if (list.some(item => item.name === card.name || extensionSamePerson(item.name, card.name))) continue;
+      const existingIdx = list.findIndex(item => item.name === card.name || extensionSamePerson(item.name, card.name));
+      if (existingIdx >= 0) {
+        const existing = list[existingIdx];
+        const next = { ...existing };
+        let touched = false;
+        if (!next.moodHigh && card.moodHigh) { next.moodHigh = card.moodHigh; touched = true; }
+        if (!next.moodLow && card.moodLow) { next.moodLow = card.moodLow; touched = true; }
+        if (!next.sulk && card.sulk) { next.sulk = card.sulk; touched = true; }
+        if (touched) {
+          list[existingIdx] = next;
+          backfilled = true;
+        }
+        continue;
+      }
       if (list.length >= RELSIM_MAX_PROFILES) break;
       card.id = `romance-${Date.now().toString(36)}-${list.length}`;
       list.push(card);
       added.push(card);
     }
-    if (!added.length) return [];
+    if (!added.length && !backfilled) return [];
     store.romancePrefs = { ...store.romancePrefs, [scopeKey]: list };
     saveLoreCards().catch(error => warn('[lore cards save failed]', error));
     return added;
@@ -31987,6 +32090,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
     return gradiaSourceRuleSyncInFlight;
   };
 
+  const trimAtSentenceBoundary = (value, maxChars = 240) => {
+    const clean = String(value || '')
+      .replace(/…\[truncated\]|\[truncated\]/gi, '')
+      .replace(/\r\n/g, '\n')
+      .trim();
+    if (!clean || clean.length <= maxChars) return clean;
+    const slice = clean.slice(0, maxChars);
+    let cut = -1;
+    for (const sep of ['\n', '. ', '! ', '? ', '。', '！', '？']) {
+      const idx = slice.lastIndexOf(sep);
+      if (idx >= Math.floor(maxChars * 0.45) && idx + sep.length > cut) {
+        cut = idx + (sep === '\n' ? 0 : sep.trimEnd().length);
+      }
+    }
+    if (cut > 0) return slice.slice(0, cut).trim();
+    const spaceIdx = slice.lastIndexOf(' ');
+    if (spaceIdx >= Math.floor(maxChars * 0.5)) return slice.slice(0, spaceIdx).trim();
+    return slice.trim();
+  };
+
   const buildShadowPreviousRecord = (recent = {}, settings = {}) => {
     const rawLib = libEvidenceWithoutMarkers(settings);
     const isManagedEvidenceBlock = /^\s*GRADIA EXTERNAL EVIDENCE:\s*UNTRUSTED QUOTED DATA/m.test(String(rawLib || ''));
@@ -31997,9 +32120,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       for (const rawLine of String(rawLib || '').split(/\r?\n/)) {
         const line = gradiaProjectSourceText(rawLine, effectiveRules).trim();
         if (!line || /^\[?(?:GRADIA EXTERNAL EVIDENCE|LIBRA|HAYAKU|FLASHBACK|MEMORY|STORY ARC)/i.test(line)) continue;
-        const cleaned = compact(line.replace(/^[-*•]\s*/, ''), 180);
+        const cleaned = trimAtSentenceBoundary(line.replace(/^[-*•]\s*/, ''), 240);
         if (!cleaned) continue;
-        if (libChars + cleaned.length > 900 || libFacts.length >= 10) break;
+        if (libChars + cleaned.length > 1400 || libFacts.length >= 12) break;
         libFacts.push(cleaned);
         libChars += cleaned.length;
       }
@@ -32017,21 +32140,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const role = String(msg?.role || '').toLowerCase();
       const speaker = role === 'user' ? 'User' : role === 'assistant' || role === 'char' ? 'Assistant' : (msg?.role || 'Scene');
       const filteredBody = gradiaProjectSourceText(text(msg?.content || ''), effectiveRules);
-      const body = compact(filteredBody, 240);
+      const body = trimAtSentenceBoundary(filteredBody, 420);
       if (!body) continue;
       const entry = `${speaker}: ${body}`;
       if (seenEvents.has(entry)) continue;
       seenEvents.add(entry);
-      if (recentChars + entry.length > 1100) break;
+      if (recentChars + entry.length > 2200) break;
       recentEvents.push(entry);
       recentChars += entry.length;
     }
     if (!recentEvents.length) {
-      const earlier = compactRecentTurnsTail(gradiaProjectSourceText(recent.earlierTurnsText || '', effectiveRules), 700);
+      const earlier = trimAtSentenceBoundary(gradiaProjectSourceText(recent.earlierTurnsText || '', effectiveRules), 900);
       if (earlier) recentEvents.push(earlier);
-      const prevUser = compact(gradiaProjectSourceText(previousUserInputForPrompt(recent) || '', effectiveRules), 220);
+      const prevUser = trimAtSentenceBoundary(gradiaProjectSourceText(previousUserInputForPrompt(recent) || '', effectiveRules), 320);
       if (prevUser) recentEvents.push(`User: ${prevUser}`);
-      const terminal = compact(gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', effectiveRules), 320);
+      const terminal = trimAtSentenceBoundary(gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', effectiveRules), 500);
       if (terminal) recentEvents.push(`Assistant (latest): ${terminal}`);
     }
 
@@ -32041,7 +32164,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ongoingConsequences = [];
     for (const item of recentEvents.slice(-3)) {
       if (/\?|아직|기다|약속|남겨|미완|보류|거절|다쳐|부상|잠긴|닫힌/.test(item)) {
-        ongoingConsequences.push(compact(item, 160));
+        ongoingConsequences.push(trimAtSentenceBoundary(item, 220));
       }
     }
     const doNotMisremember = [
@@ -32066,12 +32189,129 @@ function mountMemorySuiteReanalysisReview(container,config) {
       do_not_misremember: doNotMisremember,
       libFacts,
       recentEvents,
-      text: compact(lines.join('\n'), 2600)
+      text: trimAtSentenceBoundary(lines.join('\n'), 3600)
     };
   };
 
-  const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions) => {
-    const previousRecord = buildShadowPreviousRecord(recent, settings);
+  const sanitizePreviousSentence = value => String(value || '')
+    .replace(/…\[truncated\]|\[truncated\]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const formatPreviousGuardrailText = record => {
+    if (!record || typeof record !== 'object') return '';
+    const what = (Array.isArray(record.what_happened) ? record.what_happened : []).map(sanitizePreviousSentence).filter(Boolean);
+    const ongoing = (Array.isArray(record.ongoing_consequences) ? record.ongoing_consequences : []).map(sanitizePreviousSentence).filter(Boolean);
+    const guard = (Array.isArray(record.do_not_misremember) ? record.do_not_misremember : []).map(sanitizePreviousSentence).filter(Boolean);
+    if (!what.length && !ongoing.length && !guard.length) return '';
+    return [
+      '[PREVIOUS — CONFIRMED PAST RECORD & GUARDRAIL]',
+      ...(what.length ? ['확정된 직전 경과:', ...what.map(item => `- ${item}`)] : []),
+      ...(ongoing.length ? ['현재 유지 중인 물리·상황 제약:', ...ongoing.map(item => `- ${item}`)] : []),
+      ...(guard.length ? ['오기억·날조 금지 (가드레일):', ...guard.map(item => `- ${item}`)] : [])
+    ].join('\n');
+  };
+
+  const buildPreviousStagePrompt = (recent = {}, settings = {}) => {
+    const sourceRules = gradiaEffectiveSourceRules(settings);
+    const rawLib = libEvidenceWithoutMarkers(settings);
+    const filteredLib = gradiaProjectSourceText(rawLib, sourceRules);
+    const currentInput = text(submittedCurrentInput(recent) || '').trim();
+    const visible = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice() : [];
+    if (visible.length && currentInput && text(visible[visible.length - 1]?.content || '').trim() === currentInput) {
+      visible.pop();
+    }
+    const recentTurns = visible.slice(-8).map(msg => {
+      const role = String(msg?.role || '').toLowerCase();
+      const speaker = role === 'user' ? 'User' : role === 'assistant' || role === 'char' ? 'Assistant' : (msg?.role || 'Scene');
+      const body = trimAtSentenceBoundary(gradiaProjectSourceText(text(msg?.content || ''), sourceRules), 600);
+      return body ? `${speaker}: ${body}` : '';
+    }).filter(Boolean).join('\n\n')
+      || trimAtSentenceBoundary(gradiaProjectSourceText(recent.completeTurnsText || recent.visibleText || '', sourceRules), 2400);
+
+    const system = [
+      '{"stage":"previous","role":"pre_shadow_memory_reinterpretation"}',
+      'You are the standalone PREVIOUS stage running BEFORE Shadow Act.',
+      'Your job is NOT to copy or truncate raw chat prose. Read the Current Submitted User Input first, then reinterpret the supplied LIB memory evidence and recent completed chat into a concise, complete-sentence factual guardrail for THIS turn.',
+      'Rules:',
+      '- Recent completed chat always outranks older LIB memory when they conflict.',
+      '- Write complete, self-contained factual statements in Korean. NEVER copy long prose verbatim and NEVER emit "[truncated]" or ellipsis cuts.',
+      '- "what_happened": 2 to 6 concise factual sentences summarizing confirmed past/recent events relevant to the current turn.',
+      '- "ongoing_consequences": 0 to 5 active physical, spatial, or situational constraints carrying into this turn (e.g., unlocked door, shared bed, item requested/bought, pending arrival).',
+      '- "do_not_misremember": 2 to 5 specific anti-hallucination guardrails for this turn (what has NOT happened yet, unanswered questions, actor/target boundaries).',
+      'Output valid JSON only matching schema: { "what_happened": string[], "ongoing_consequences": string[], "do_not_misremember": string[] }.'
+    ].join('\n');
+
+    const user = [
+      `[CURRENT SUBMITTED USER INPUT]\n${currentInput || '(없음)'}`,
+      filteredLib ? `\n[LIB MEMORY EVIDENCE — FILTERED]\n${trimAtSentenceBoundary(filteredLib, 2200)}` : '',
+      recentTurns ? `\n[RECENT COMPLETED CHAT — FILTERED]\n${recentTurns}` : ''
+    ].filter(Boolean).join('\n');
+
+    return { system, user };
+  };
+
+  const runPreviousStage = async (recent = {}, settings = {}, ledger = {}) => {
+    const startedAt = Date.now();
+    const prompts = buildPreviousStagePrompt(recent, settings);
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['what_happened', 'ongoing_consequences', 'do_not_misremember'],
+      properties: {
+        what_happened: { type: 'array', items: { type: 'string' } },
+        ongoing_consequences: { type: 'array', items: { type: 'string' } },
+        do_not_misremember: { type: 'array', items: { type: 'string' } }
+      }
+    };
+    try {
+      await reportPipelineStageProgress('previous', 'analysis');
+      const result = await callLLMWithPreset(
+        settings,
+        'shadow_act',
+        prompts.system,
+        prompts.user,
+        {
+          temp: 0.15,
+          promptPhase: 'analysis',
+          jsonMode: true,
+          jsonSchema: schema,
+          jsonSchemaName: 'gradia_previous_analysis'
+        }
+      );
+      if (!result?.ok) {
+        recordStageTrace({ stage: 'previous', ok: false, reason: result?.reason || 'previous_llm_failed', provider: result?.provider || '', presetName: result?.presetName || '', model: result?.model || '', elapsedMs: Date.now() - startedAt, systemPrompt: prompts.system, userPrompt: prompts.user, rawResponse: result?.content || result?.raw || '' });
+        return null;
+      }
+      const parsed = relaxedJsonParse(result.content, 'previous');
+      if (!parsed || typeof parsed !== 'object') {
+        recordStageTrace({ stage: 'previous', ok: false, reason: 'previous_json_invalid', provider: result.provider || '', presetName: result.presetName || '', model: result.model || '', elapsedMs: Date.now() - startedAt, systemPrompt: prompts.system, userPrompt: prompts.user, rawResponse: result.content || '' });
+        return null;
+      }
+      const what_happened = (Array.isArray(parsed.what_happened) ? parsed.what_happened : []).map(sanitizePreviousSentence).filter(Boolean).slice(0, 8);
+      const ongoing_consequences = (Array.isArray(parsed.ongoing_consequences) ? parsed.ongoing_consequences : []).map(sanitizePreviousSentence).filter(Boolean).slice(0, 6);
+      const do_not_misremember = (Array.isArray(parsed.do_not_misremember) ? parsed.do_not_misremember : []).map(sanitizePreviousSentence).filter(Boolean).slice(0, 6);
+      const record = {
+        what_happened,
+        ongoing_consequences,
+        do_not_misremember,
+        text: ''
+      };
+      record.text = formatPreviousGuardrailText(record);
+      if (!record.text) {
+        recordStageTrace({ stage: 'previous', ok: false, reason: 'previous_empty_record', provider: result.provider || '', presetName: result.presetName || '', model: result.model || '', elapsedMs: Date.now() - startedAt, systemPrompt: prompts.system, userPrompt: prompts.user, rawResponse: result.content || '' });
+        return null;
+      }
+      recordStageTrace({ stage: 'previous', ok: true, provider: result.provider || '', presetName: result.presetName || '', model: result.model || '', elapsedMs: result.elapsedMs || (Date.now() - startedAt), systemPrompt: result.effectiveSystemPrompt || prompts.system, userPrompt: result.effectiveUserPrompt || prompts.user, rawResponse: result.content || '', parsed: record });
+      return record;
+    } catch (error) {
+      warn('previous_stage_exception', error);
+      return null;
+    }
+  };
+
+  const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions, ledger = null) => {
+    const previousText = ledger?.previousRecord?.text || '';
     const sourceRules = gradiaEffectiveSourceRules(settings);
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
     const recentChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.earlierTurnsText || '', sourceRules), 2200) || '(그보다 앞선 완료 RP 턴 없음)';
@@ -32083,7 +32323,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const lorebookContext = referencePacketBlockForPrompt(recent) || '(활성 로어북/캐릭터/페르소나 참조 없음 또는 접근 불가)';
     const othersInfo = compact(recent.othersInfo || '', 2500) || '(Others Info / 보조 패킷 없음)';
     return [
-      ...(previousRecord.hasContent ? [previousRecord.text, ''] : []),
+      ...(previousText ? [previousText, ''] : []),
       '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 실제 장면 작성에 사용]',
       lorebookContext,
       '',
@@ -32561,7 +32801,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ? 'Design the first same-turn draft. Do not search for or invent a CURRENT_SAME_TURN_DRAFT.'
         : 'Your own domain analysis is mandatory and independent. Missing notes from AIDEs that have not run yet are not an error.',
       '',
-      ...(stageName === 'shadow_act' ? (() => { const prev = buildShadowPreviousRecord(recent, settings); return prev.hasContent ? [prev.text, ''] : []; })() : []),
+      ...(stageName === 'shadow_act' && ledger?.previousRecord?.text ? [ledger.previousRecord.text, ''] : []),
       referencePacketBlockForPrompt(recent)
         ? analysisSourceBlock('Current-input Relevant Canon and Character Context - prioritized source text', referencePacketBlockForPrompt(recent))
         : '',
@@ -32692,7 +32932,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     return {
       system: fullDraftStageSystemShell(stageName, settings),
       user: stageName === 'shadow_act'
-        ? appendLibEvidence(buildShadowActDraftUserPrompt(recent, settings, creativeInstructions), settings)
+        ? appendLibEvidence(buildShadowActDraftUserPrompt(recent, settings, creativeInstructions, ledger), settings)
         : appendLibEvidence(buildAideDraftUserPrompt(stageName, recent, previous, settings, creativeInstructions), settings)
     };
   };
@@ -32712,7 +32952,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (stageName === 'shadow_act') {
       return {
         system: fullDraftStageSystemShell(stageName, settings),
-        user: appendLibEvidence(buildShadowActDraftUserPrompt(recent, settings, creativeInstructions), settings)
+        user: appendLibEvidence(buildShadowActDraftUserPrompt(recent, settings, creativeInstructions, ledger), settings)
       };
     }
     return {
@@ -45878,6 +46118,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try { await loadIntimacyCards(); } catch (_) {}
     }
     const shadowEnv = await prepareStage('shadow_act', null);
+    const prevScopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (isPreviousStageEnabled(shadowEnv.settings)) {
+      beginStageModelTiming('previous');
+      const prevRecord = await runPreviousStage(shadowEnv.recent, shadowEnv.settings, ledger);
+      finishStageModelTiming('previous');
+      if (prevRecord) {
+        ledger.previousRecord = prevRecord;
+      }
+      if (prevScopeKey) {
+        Runtime.shadowPrevious[prevScopeKey] = prevRecord
+          ? { at: Date.now(), record: prevRecord }
+          : { at: Date.now(), record: null };
+      }
+    } else if (prevScopeKey) {
+      Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), record: null };
+    }
     const multiPipelineMode = normalizeMultiPipelineMode(settings.multiPipelineMode);
     beginStageModelTiming('shadow_act');
     current = multiPipelineMode === 'heavyweight'
@@ -45898,22 +46154,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     recordExtensionAideOutputs(ledger, 'shadow_act', current?.twoCallAnalysis, settings);
     const shadowPlanning = shadowPlanningFromDomain(shadowAnalysis?.domain || {});
     rememberScenePurpose(shadowEnv.recent, shadowPlanning.storyAuthorPlan?.scene_purpose, 'shadow_act');
-    const codePreviousRecord = buildShadowPreviousRecord(shadowEnv.recent, shadowEnv.settings);
-    if (shadowPlanning.hasPreviousRecord) {
+    if (!ledger.previousRecord && shadowPlanning.hasPreviousRecord) {
       ledger.previousRecord = shadowPlanning.previousRecord;
-    } else if (codePreviousRecord.hasContent) {
-      ledger.previousRecord = {
-        what_happened: codePreviousRecord.what_happened,
-        ongoing_consequences: codePreviousRecord.ongoing_consequences,
-        do_not_misremember: codePreviousRecord.do_not_misremember,
-        text: codePreviousRecord.text
-      };
-    }
-    const prevScopeKey = compact(Runtime.activeScopeKey || '', 512);
-    if (prevScopeKey) {
-      Runtime.shadowPrevious[prevScopeKey] = ledger.previousRecord
-        ? { at: Date.now(), record: ledger.previousRecord }
-        : { at: Date.now(), record: null };
+      if (prevScopeKey) {
+        Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), record: ledger.previousRecord };
+      }
     }
     if (shadowPlanning.hasContent) {
       ledger.shadowDesign = {
@@ -47993,6 +48238,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const runtimeStateFromSettings = settings => ({
     mode: settings.mode,
     multiPipelineMode: normalizeMultiPipelineMode(settings.multiPipelineMode),
+    previousStageMode: normalizePreviousStageMode(settings.previousStageMode),
     writingMode: normalizeWritingMode(settings.writingMode, writingModeFromDraftMode(settings.shadowDraftMode)),
     shadowDraftMode: normalizeShadowDraftMode(settings.shadowDraftMode),
     novelShadowDraftMode: normalizeNovelShadowDraftMode(settings.novelShadowDraftMode || (settings.shadowDraftMode === 'author_directed' ? DEFAULT_SHADOW_DRAFT_MODE : settings.shadowDraftMode)),
@@ -48306,6 +48552,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ...base,
       mode: normalizeChoice(runtime.mode === 'full' ? 'normal' : runtime.mode, ['off', 'lite', 'normal'], 'normal'),
       multiPipelineMode: normalizeMultiPipelineMode(runtime.multiPipelineMode),
+      previousStageMode: normalizePreviousStageMode(runtime.previousStageMode),
       draftBudgetPreset: normalizeDraftBudgetPreset(runtime.draftBudgetPreset),
       writingMode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)),
       shadowDraftMode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)) === 'rp' ? 'author_directed' : normalizeNovelShadowDraftMode(runtime.shadowDraftMode),
@@ -48389,6 +48636,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return {
         mode: normalizeChoice(runtime.mode === 'full' ? 'normal' : runtime.mode, ['off', 'lite', 'normal'], 'normal'),
         multi_pipeline_mode: normalizeMultiPipelineMode(runtime.multiPipelineMode),
+        previous_stage_mode: normalizePreviousStageMode(runtime.previousStageMode),
         writing_mode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)),
         shadow_draft_mode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)) === 'rp' ? 'author_directed' : normalizeNovelShadowDraftMode(runtime.shadowDraftMode),
         novel_shadow_draft_mode: normalizeNovelShadowDraftMode(runtime.novelShadowDraftMode || runtime.shadowDraftMode),
@@ -50726,6 +50974,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             ? (asBool(importedLegacyTwoCall, true) ? 'heavyweight' : 'lightweight')
             : current.multiPipelineMode || 'lightweight'
       ),
+      previousStageMode: normalizePreviousStageMode(pick('previous_stage_mode', 'previousStageMode', current.previousStageMode || 'auto')),
       draftBudgetPreset: normalizeDraftBudgetPreset(pick('draft_budget_preset', 'draftBudgetPreset', current.draftBudgetPreset)),
       gradationMode: pick('gradation_mode', 'gradationMode', current.gradationMode || 'full_draft'),
       outputMode: normalizeChoice(pick('output_mode', 'outputMode', current.outputMode || 'draft_guided'), OUTPUT_MODES, 'draft_guided'),
@@ -51253,7 +51502,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       loreActivationMode: '로어 검색 방식', loreRerankerTopK: '단계별 일반 로어 최대 개수',
       skillStageSelections: 'Skill · 단계별 선택', skillStageReferences: 'Skill · 참고 문서 선택',
       skillCustomLibrary: 'Skill · 사용자 라이브러리', skillLegacyRouterSettings: 'Skill · 이전 설정 보관',
-      multiPipelineMode: '분석·작성 호출 방식', writingMode: '작성 모드', shadowDraftMode: 'SHADOW · 첫 초안 방식',
+      multiPipelineMode: '분석·작성 호출 방식', previousStageMode: 'PREVIOUS 기억 재해석', writingMode: '작성 모드', shadowDraftMode: 'SHADOW · 첫 초안 방식',
       novelShadowDraftMode: '소설 모드 · 첫 초안 방식', novelInputAssistMode: '소설 모드 · 인풋 방식',
       rpImpersonationScope: 'RP 모드 · 세부 모드', memoryBudgetChars: '작업 규모 · 기억 상한', rpInputAssistMode: 'RP 모드 · 인풋 방식', novelInputAssistScope: '소설 모드 · 인풋 적용 범위',
       novelInputAssistConfirmationMode: '소설 모드 · 인풋 확인 방식', outputMode: '응답 마무리 방식',
@@ -51697,6 +51946,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const modeIndex = ({ off: 0, lite: 1, normal: 2, full: 2 })[runtime.mode] ?? 2;
     mockupSetChoice(app.querySelector('#q-runmode'), modeIndex);
     mockupSetChoice(app.querySelector('#q-weight'), normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? 1 : 0);
+    const weightStep = app.querySelector('#q-weight')?.closest('.q-step');
+    if (weightStep && !app.querySelector('#q-previous')) {
+      const prevStep = guiEl('div', { class: 'q-step' }, [
+        guiEl('span', { class: 'q-step__no', text: '·' }),
+        guiEl('div', {}, [
+          guiEl('h3', { text: 'PREVIOUS 기억 재해석' }),
+          guiEl('p', { text: 'Shadow Act 시작 전 LIB 기억과 최근 챗을 이번 턴에 맞게 재해석해 가드레일을 만듭니다.' })
+        ]),
+        guiEl('div', { class: 'choices', id: 'q-previous' }, [
+          guiEl('button', { class: 'choice', type: 'button', text: '자동 (중량 기본·경량 끔)' }),
+          guiEl('button', { class: 'choice', type: 'button', text: '항상 켜기' }),
+          guiEl('button', { class: 'choice', type: 'button', text: '끄기' })
+        ])
+      ]);
+      weightStep.after(prevStep);
+    }
+    mockupSetChoice(app.querySelector('#q-previous'), PREVIOUS_STAGE_MODES.indexOf(normalizePreviousStageMode(runtime.previousStageMode)));
     const profileIndex = ({ fast: 0, balanced: 1, quality: 2 })[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')] ?? -1;
     mockupSetChoice(app.querySelector('#q-quality'), profileIndex);
     mockupRenderWorkScale(app);
@@ -51813,6 +52079,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const group = choice.parentElement, choices = [...group.querySelectorAll(':scope > .choice')], index = choices.indexOf(choice);
         if (group.id === 'q-runmode') { runtimeModePick(index); return; }
         if (group.id === 'q-weight') { applyMultiPipelineModeToGui(index === 0 ? 'lightweight' : 'heavyweight'); return; }
+        if (group.id === 'q-previous') { mockupRuntime().previousStageMode = PREVIOUS_STAGE_MODES[index] || 'auto'; markGuiDirty(); syncMockupGui(); return; }
         if (group.id === 'q-quality') { if (index >= 0) applyQuickProfileToGui(['fast','balanced','quality'][index]); return; }
         if (group.id === 'q-length') { if (index >= 0) applySimpleLengthToGui(['compact','standard','detailed','extended'][index]); return; }
         if (group.id === 'q-language') { if (index >= 0) applyInternalDraftLanguageToGui(['korean','english','japanese'][index]); return; }
@@ -52525,83 +52792,130 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const intimacyAnatomyPanel = card => {
     const zoneStats = card.zoneStats || normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
     const inferredGender = bodyStateProfileGender(card.name);
-    const view = card.anatomyView || (inferredGender === 'male' ? 'male' : 'female');
+    const view = card.anatomyView || card.gender || (inferredGender === 'male' ? 'male' : 'female');
     const statOf = id => zoneStats[id] || { sensitivity: 0, development: 0 };
-    const dotNode = (id, cx, cy, r, labelText, lx, ly) => {
+    const dotNode = (id, cx, cy, r, labelText, lx, ly, anchor = 'start') => {
       const st = statOf(id);
       const col = intimacyZoneHeatColor(st.sensitivity);
       const grp = intimacySvgEl('g', { 'data-intimacy-zone-hotspot': id });
+      const textX = anchor === 'end' ? lx - 3 : lx + 3;
       grp.append(
-        intimacySvgEl('line', { x1: cx, y1: cy, x2: lx, y2: ly, stroke: col, 'stroke-width': '1', 'stroke-dasharray': '2 2', opacity: '0.75' }),
-        intimacySvgEl('circle', { cx, cy, r: r + 3, fill: col, opacity: '0.22' }),
+        intimacySvgEl('line', { x1: cx, y1: cy, x2: lx, y2: ly, stroke: col, 'stroke-width': '1.1', 'stroke-dasharray': '2.5 2', opacity: '0.8' }),
+        intimacySvgEl('circle', { cx, cy, r: r + 4, fill: col, opacity: '0.18' }),
         intimacySvgEl('circle', { cx, cy, r, fill: col, stroke: '#ffffff', 'stroke-width': '1.2' }),
-        intimacySvgEl('text', { x: lx, y: ly, fill: 'currentColor', 'font-size': '9.5', 'font-weight': '600', 'dominant-baseline': 'middle' }, `${labelText} ${st.sensitivity > 0 ? `+${st.sensitivity}` : st.sensitivity}/D${st.development}`)
+        intimacySvgEl('text', { x: textX, y: ly, fill: 'currentColor', 'font-size': '9.5', 'font-weight': '600', 'text-anchor': anchor, 'dominant-baseline': 'middle' }, `${labelText} ${st.sensitivity > 0 ? `+${st.sensitivity}` : st.sensitivity}/D${st.development}`)
       );
       return grp;
     };
 
-    // 1) Full-body schematic silhouette SVG
-    const bodySvg = intimacySvgEl('svg', { viewBox: '0 0 220 250', width: '210', height: '240', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-body-svg': view });
-    bodySvg.append(
-      // Head & neck
-      intimacySvgEl('ellipse', { cx: '72', cy: '28', rx: '16', ry: '19', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.65' }),
-      intimacySvgEl('path', { d: 'M64 46 L62 60 L82 60 L80 46', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.65' }),
-      // Torso, shoulders, waist, hips
-      intimacySvgEl('path', {
-        d: view === 'female'
-          ? 'M42 68 Q72 58 102 68 L108 118 L96 140 Q106 160 100 182 L44 182 Q38 160 48 140 L36 118 Z'
-          : 'M38 68 Q72 58 106 68 L104 122 L95 148 L98 182 L46 182 L49 148 L40 122 Z',
-        fill: 'rgba(148,163,184,0.08)', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.7'
-      }),
-      // Arms (schematic)
-      intimacySvgEl('path', { d: 'M40 70 L24 134 L31 137 L42 86 M104 70 L120 134 L113 137 L102 86', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4', opacity: '0.45' }),
-      // Thighs / legs
-      intimacySvgEl('path', { d: 'M46 182 L44 238 M72 178 L66 238 M72 178 L78 238 M98 182 L100 238', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', opacity: '0.65' }),
-      // Dashed callout box around pelvic/genital region
-      intimacySvgEl('rect', { x: '54', y: '154', width: '36', height: '28', rx: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-dasharray': '3 2', opacity: '0.55' }),
-      dotNode('lips_neck', 72, 49, 5, '입술·목·귀', 112, 42),
-      dotNode('breasts_nipples', 72, 92, 5.5, '가슴·유두', 112, 92),
-      dotNode('thighs_hips', 92, 168, 5, '허벅지·골반', 112, 146),
-      dotNode('anal_perineum', 72, 182, 4.5, '후구·회음', 112, 198)
-    );
+    const gradId = `body-grad-${String(card.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '')}-${view}`;
+    const genGradId = `gen-grad-${String(card.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '')}-${view}`;
 
-    // 2) Schematic genital anatomy diagram SVG (female or male)
-    const genitalSvg = intimacySvgEl('svg', { viewBox: '0 0 210 185', width: '200', height: '176', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-genital-svg': view });
+    // 1) Refined full-body silhouette SVG (distinctly feminine vs masculine proportions)
+    const bodySvg = intimacySvgEl('svg', { viewBox: '0 0 280 310', width: '250', height: '276', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-body-svg': view });
+    const defs = intimacySvgEl('defs');
+    const bodyGrad = intimacySvgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
+    bodyGrad.append(
+      intimacySvgEl('stop', { offset: '0%', 'stop-color': view === 'female' ? '#fb7185' : '#60a5fa', 'stop-opacity': '0.14' }),
+      intimacySvgEl('stop', { offset: '100%', 'stop-color': '#94a3b8', 'stop-opacity': '0.06' })
+    );
+    defs.append(bodyGrad);
+    bodySvg.append(defs);
+
+    if (view === 'female') {
+      // Feminine anatomical contour: slender neck, sloped shoulders, bust curve, sculpted waist, hourglass hips, tapered legs
+      bodySvg.append(
+        intimacySvgEl('path', {
+          d: 'M140 16 C128 16 121 26 122 38 C123 48 129 55 133 58 L131 69 C117 72 103 77 98 86 L87 148 C86 153 91 155 94 149 L104 99 C105 113 107 125 114 138 C117 146 117 154 111 164 C101 180 99 198 104 218 L113 292 L125 292 L129 224 C132 212 136 206 140 206 C144 206 148 212 151 224 L155 292 L167 292 L176 218 C181 198 179 180 169 164 C163 154 163 146 166 138 C173 125 175 113 176 99 L186 149 C189 155 194 153 193 148 L182 86 C177 77 163 72 149 69 L147 58 C151 55 157 48 158 38 C159 26 152 16 140 16 Z',
+          fill: `url(#${gradId})`, stroke: 'currentColor', 'stroke-width': '1.45', 'stroke-linejoin': 'round', opacity: '0.82'
+        }),
+        // Clavicle, bust contours & navel accents
+        intimacySvgEl('path', { d: 'M122 76 Q132 82 140 78 Q148 82 158 76', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', opacity: '0.45' }),
+        intimacySvgEl('path', { d: 'M111 106 Q124 123 137 112 M143 112 Q156 123 169 106', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.15', opacity: '0.52' }),
+        intimacySvgEl('circle', { cx: '140', cy: '153', r: '1.3', fill: 'currentColor', opacity: '0.45' }),
+        intimacySvgEl('rect', { x: '120', y: '184', width: '40', height: '26', rx: '8', fill: 'none', stroke: 'currentColor', 'stroke-width': '0.9', 'stroke-dasharray': '3 2', opacity: '0.45' }),
+        dotNode('lips_mouth', 140, 44, 4.2, '입술·혀', 82, 34, 'end'),
+        dotNode('ears', 158, 36, 4.2, '귀', 198, 28, 'start'),
+        dotNode('neck_collarbone', 135, 65, 4.2, '목·쇄골', 82, 66, 'end'),
+        dotNode('breasts_nipples', 155, 111, 5, '가슴·유두', 198, 108, 'start'),
+        dotNode('abdomen_waist', 140, 149, 4.2, '복부·허리', 82, 146, 'end'),
+        dotNode('hips_buttocks', 171, 184, 4.5, '골반·엉덩이', 198, 184, 'start'),
+        dotNode('inner_thighs', 131, 224, 4.5, '허벅지 안쪽', 82, 228, 'end')
+      );
+    } else {
+      // Masculine anatomical contour: strong jaw, thicker neck, broad shoulders, pectoral line, V-taper waist, athletic thighs
+      bodySvg.append(
+        intimacySvgEl('path', {
+          d: 'M140 14 C127 14 120 23 121 36 L124 50 L129 56 L127 68 C108 71 91 77 86 88 L76 156 C75 162 82 164 85 157 L96 102 L102 142 C106 154 109 166 108 180 C105 195 104 208 107 224 L112 292 L127 292 L131 224 C133 211 136 205 140 205 C144 205 147 211 149 224 L153 292 L168 292 L173 224 C176 208 175 195 172 180 C171 166 174 154 178 142 L184 102 L195 157 C198 164 205 162 204 156 L194 88 C189 77 172 71 153 68 L151 56 L156 50 L159 36 C160 23 153 14 140 14 Z',
+          fill: `url(#${gradId})`, stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linejoin': 'round', opacity: '0.84'
+        }),
+        // Pectoral chest line, sternum, abs & iliac V-line accents
+        intimacySvgEl('path', { d: 'M105 104 Q122 114 138 108 M142 108 Q158 114 175 104', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', opacity: '0.52' }),
+        intimacySvgEl('path', { d: 'M129 124 L129 156 M151 124 L151 156 M124 173 L137 187 M156 173 L143 187', fill: 'none', stroke: 'currentColor', 'stroke-width': '0.9', opacity: '0.35' }),
+        intimacySvgEl('rect', { x: '120', y: '184', width: '40', height: '26', rx: '8', fill: 'none', stroke: 'currentColor', 'stroke-width': '0.9', 'stroke-dasharray': '3 2', opacity: '0.45' }),
+        dotNode('lips_mouth', 140, 44, 4.2, '입술·혀', 76, 34, 'end'),
+        dotNode('ears', 159, 34, 4.2, '귀', 204, 28, 'start'),
+        dotNode('neck_collarbone', 134, 65, 4.2, '목·쇄골', 76, 66, 'end'),
+        dotNode('breasts_nipples', 158, 106, 4.8, '가슴·유두', 204, 106, 'start'),
+        dotNode('abdomen_waist', 140, 148, 4.2, '복부·허리', 76, 146, 'end'),
+        dotNode('hips_buttocks', 171, 184, 4.5, '골반·엉덩이', 204, 184, 'start'),
+        dotNode('inner_thighs', 131, 224, 4.5, '허벅지 안쪽', 76, 228, 'end')
+      );
+    }
+
+    // 2) Refined schematic genital anatomy diagram SVG (female or male)
+    const genitalSvg = intimacySvgEl('svg', { viewBox: '0 0 250 235', width: '230', height: '216', style: 'max-width:100%;height:auto;flex:none', 'data-intimacy-genital-svg': view });
+    const gDefs = intimacySvgEl('defs');
+    const genGrad = intimacySvgEl('radialGradient', { id: genGradId, cx: '50%', cy: '45%', r: '55%' });
+    genGrad.append(
+      intimacySvgEl('stop', { offset: '0%', 'stop-color': view === 'female' ? '#fb7185' : '#60a5fa', 'stop-opacity': '0.2' }),
+      intimacySvgEl('stop', { offset: '100%', 'stop-color': '#94a3b8', 'stop-opacity': '0.04' })
+    );
+    gDefs.append(genGrad);
+    genitalSvg.append(gDefs);
+
     if (view === 'female') {
       genitalSvg.append(
-        intimacySvgEl('text', { x: '10', y: '14', fill: 'currentColor', 'font-size': '10', 'font-weight': '700', opacity: '0.85' }, '여성 성기 도식'),
-        // Outer labia schematic
-        intimacySvgEl('path', { d: 'M62 32 C38 56 38 112 62 138 C72 146 78 146 88 138 C112 112 112 56 88 32 Z', fill: 'rgba(251,113,133,0.08)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.7' }),
-        // Inner labia & clitoral hood schematic
-        intimacySvgEl('path', { d: 'M75 40 C63 54 62 104 75 126 C88 104 87 54 75 40 Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.75' }),
-        // Clitoral glans/hood
-        intimacySvgEl('circle', { cx: '75', cy: '48', r: '4.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.85' }),
-        // Vaginal canal / introitus schematic
-        intimacySvgEl('ellipse', { cx: '75', cy: '94', rx: '9', ry: '22', fill: 'rgba(225,29,72,0.08)', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.8' }),
-        // Perineum + anal ring schematic
-        intimacySvgEl('circle', { cx: '75', cy: '154', r: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.7' }),
-        dotNode('clitoris_vulva', 75, 48, 5.5, '음핵·외음', 114, 48),
-        dotNode('vaginal_interior', 75, 94, 6, '질내·G스팟', 114, 94),
-        dotNode('anal_perineum', 75, 154, 5, '후구·회음', 114, 154)
+        intimacySvgEl('text', { x: '10', y: '16', fill: 'currentColor', 'font-size': '10.5', 'font-weight': '700', opacity: '0.88' }, '여성 성기 해부 도식'),
+        // Outer labia majora & mons contour
+        intimacySvgEl('path', { d: 'M86 30 C52 54 48 122 78 158 C84 166 92 166 98 158 C128 122 124 54 90 30 Z', fill: `url(#${genGradId})`, stroke: 'currentColor', 'stroke-width': '1.45', opacity: '0.82' }),
+        // Inner labia minora folds & clitoral hood
+        intimacySvgEl('path', { d: 'M88 40 C73 56 71 112 88 144 C105 112 103 56 88 40 Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.25', opacity: '0.78' }),
+        // Clitoral glans & hood apex
+        intimacySvgEl('path', { d: 'M81 48 Q88 38 95 48', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', opacity: '0.85' }),
+        intimacySvgEl('circle', { cx: '88', cy: '52', r: '4.5', fill: 'rgba(251,113,133,0.22)', stroke: 'currentColor', 'stroke-width': '1.2', opacity: '0.9' }),
+        // Vaginal canal & anterior G-spot / deep cervix marker
+        intimacySvgEl('ellipse', { cx: '88', cy: '102', rx: '10', ry: '24', fill: 'rgba(225,29,72,0.12)', stroke: 'currentColor', 'stroke-width': '1.25', opacity: '0.85' }),
+        intimacySvgEl('circle', { cx: '88', cy: '118', r: '4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-dasharray': '2 1.5', opacity: '0.7' }),
+        // Perineum & anal ring
+        intimacySvgEl('line', { x1: '88', y1: '162', x2: '88', y2: '182', stroke: 'currentColor', 'stroke-width': '1', opacity: '0.45' }),
+        intimacySvgEl('circle', { cx: '88', cy: '192', r: '7', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.75' }),
+        dotNode('clitoris_vulva', 88, 52, 5.2, '음핵·외음', 132, 50, 'start'),
+        dotNode('vaginal_canal', 88, 94, 5.5, '질내·G스팟', 132, 94, 'start'),
+        dotNode('cervix', 88, 118, 4.8, '자궁구·심부', 132, 134, 'start'),
+        dotNode('anal_perineum', 88, 192, 5, '후구·회음부', 132, 192, 'start')
       );
     } else {
       genitalSvg.append(
-        intimacySvgEl('text', { x: '10', y: '14', fill: 'currentColor', 'font-size': '10', 'font-weight': '700', opacity: '0.85' }, '남성 성기 도식'),
-        // Shaft schematic
-        intimacySvgEl('path', { d: 'M62 120 L62 62 L88 62 L88 120', fill: 'rgba(148,163,184,0.08)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.75' }),
-        // Glans schematic
-        intimacySvgEl('path', { d: 'M59 62 C59 36 91 36 91 62 Z', fill: 'rgba(251,113,133,0.1)', stroke: 'currentColor', 'stroke-width': '1.5', opacity: '0.85' }),
-        // Scrotum / perineum schematic
-        intimacySvgEl('path', { d: 'M54 120 C48 144 68 152 75 140 C82 152 102 144 96 120', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4', opacity: '0.65' }),
-        intimacySvgEl('circle', { cx: '75', cy: '162', r: '5.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.7' }),
-        dotNode('penis_glans', 75, 52, 6, '음경·귀두', 114, 56),
-        dotNode('anal_perineum', 75, 162, 5, '후구·전립선', 114, 158)
+        intimacySvgEl('text', { x: '10', y: '16', fill: 'currentColor', 'font-size': '10.5', 'font-weight': '700', opacity: '0.88' }, '남성 성기 해부 도식'),
+        // Glans crown & coronal ridge
+        intimacySvgEl('path', { d: 'M71 74 C70 40 106 40 105 74 C100 79 76 79 71 74 Z', fill: `url(#${genGradId})`, stroke: 'currentColor', 'stroke-width': '1.45', opacity: '0.88' }),
+        intimacySvgEl('line', { x1: '88', y1: '45', x2: '88', y2: '52', stroke: 'currentColor', 'stroke-width': '1.1', opacity: '0.65' }),
+        // Shaft contour
+        intimacySvgEl('path', { d: 'M74 75 L73 136 L103 136 L102 75', fill: 'rgba(148,163,184,0.1)', stroke: 'currentColor', 'stroke-width': '1.45', opacity: '0.8' }),
+        // Scrotum contour
+        intimacySvgEl('path', { d: 'M65 136 C56 164 78 175 88 162 C98 175 120 164 111 136', fill: 'rgba(148,163,184,0.08)', stroke: 'currentColor', 'stroke-width': '1.35', opacity: '0.72' }),
+        // Perineum & prostate/anal zone
+        intimacySvgEl('circle', { cx: '88', cy: '194', r: '6.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', opacity: '0.75' }),
+        dotNode('penis_glans', 88, 58, 5.5, '귀두·소대', 132, 58, 'start'),
+        dotNode('penis_shaft_scrotum', 88, 114, 5.2, '기둥·고환', 132, 114, 'start'),
+        dotNode('anal_perineum', 88, 194, 5, '후구·전립선', 132, 194, 'start')
       );
     }
 
     const visibleZoneIds = view === 'female'
-      ? ['lips_neck', 'breasts_nipples', 'thighs_hips', 'clitoris_vulva', 'vaginal_interior', 'anal_perineum']
-      : ['lips_neck', 'breasts_nipples', 'thighs_hips', 'penis_glans', 'anal_perineum'];
+      ? ['lips_mouth', 'ears', 'neck_collarbone', 'breasts_nipples', 'abdomen_waist', 'hips_buttocks', 'inner_thighs', 'clitoris_vulva', 'vaginal_canal', 'cervix', 'anal_perineum']
+      : ['lips_mouth', 'ears', 'neck_collarbone', 'breasts_nipples', 'abdomen_waist', 'hips_buttocks', 'inner_thighs', 'penis_glans', 'penis_shaft_scrotum', 'anal_perineum'];
 
     const viewSelect = guiEl('select', { class: 'select', style: 'width:auto', dataset: { intimacyCardField: 'anatomyView', cardId: card.id } });
     mockupOption(viewSelect, 'female', '여성 도식');
@@ -52615,7 +52929,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const mult = intimacyZoneMultiplier(st);
       const col = intimacyZoneHeatColor(st.sensitivity);
       return guiEl('div', { class: 'cluster', style: 'gap:8px;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(148,163,184,0.14)' }, [
-        guiEl('span', { style: 'display:inline-flex;align-items:center;gap:6px;min-width:110px;font-size:12.5px' }, [
+        guiEl('span', { style: 'display:inline-flex;align-items:center;gap:6px;min-width:118px;font-size:12.5px' }, [
           guiEl('span', { style: `display:inline-block;width:9px;height:9px;border-radius:99px;background:${col}` }),
           guiEl('b', { text: label })
         ]),
@@ -52634,11 +52948,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         guiEl('b', { style: 'font-size:13px', text: '성감대 해부도 · 민감도(-100~+100) / 개발도(0~100)' }),
         viewSelect
       ]),
-      guiEl('div', { class: 'cluster', style: 'gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;padding:6px 0' }, [
+      guiEl('div', { class: 'cluster', style: 'gap:14px;align-items:center;flex-wrap:wrap;justify-content:center;padding:8px 0' }, [
         bodySvg,
         genitalSvg
       ]),
-      guiEl('p', { class: 'hint', style: 'margin:4px 0 8px', text: '로어로 기본값이 자동 설정되며, 실제 정사가 진행됨에 따라 개발도와 민감도가 서서히 올라 영속 저장됩니다.' }),
+      guiEl('p', { class: 'hint', style: 'margin:4px 0 8px', text: '로어로 기본값과 성별 도식이 자동 설정되며, 실제 정사가 진행됨에 따라 개발도와 민감도가 서서히 올라 영속 저장됩니다.' }),
       guiEl('div', { class: 'stack stack--sm' }, zoneRows)
     ]);
   };
