@@ -28243,14 +28243,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           || 0
       ) || 0);
     }).filter(value => value > 0);
-    if (!structuredTurns.length) {
+    const explicitTargetTurns = ensureArray(options.explicitTargetTurns).map(Number).filter(n => Number.isInteger(n) && n > 0);
+    if (!structuredTurns.length && !explicitTargetTurns.length) {
       return { ok: true, skipped: true, reason: 'manual_cold_start_required', saved: 0, coverageFloor: 0 };
     }
-    const coverageFloor = options.manualFullScan === true ? 1 : Math.min(...structuredTurns);
+    const coverageFloor = (options.manualFullScan === true || explicitTargetTurns.length > 0) ? 1 : Math.min(...structuredTurns);
     const freshCoverage = options.exactCoverage || exactHayakuTurnCoverage(snapshot, options.ledger || {scopeKey:scope.key,worldline,records:[]}, scope.key);
     const debts = ensureArray(recovery?.recoveryDebt?.debts)
       .filter(debt => freshCoverage.missingTurns.includes(Number(debt?.pairIndex)))
       .filter(debt => Math.max(0, Number(debt?.pairIndex || 0) || 0) >= coverageFloor)
+      .filter(debt => structuredTurns.length > 0 || explicitTargetTurns.includes(Number(debt?.pairIndex)))
       .slice(0, RECOVERY_VAULT_MAX_RECORDS);
     if (!debts.length) {
       return { ok: true, skipped: true, reason: 'detected_debts_before_hayaku_coverage', saved: 0, coverageFloor };
@@ -49632,7 +49634,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       debts:exactCoverage.rows.filter(r=>r.state==='missing').map(r=>({pairIndex:r.turn,issue:r.reason,source:{hasPacketMarkers:r.packetMarkersPresent}})),
       totalDebtCount:exactCoverage.missingTurns.length}};
     if(!recovery.active)return {ok:true,skipped:true,reason:exactCoverage.sourceEditPendingTurns.length?'source_edit_auto_pending':'no_packet_recovery_debt',saved:0,scopeKey:scope.key,coverage:exactCoverage};
-    const materialized = await materializeDetectedRecoveryVaultEvidence({scope,snapshot,worldline,ledger,packets,recovery,exactCoverage,manualFullScan:options.manualFullScan===true});
+    const materialized = await materializeDetectedRecoveryVaultEvidence({scope,snapshot,worldline,ledger,packets,recovery,exactCoverage,manualFullScan:options.manualFullScan===true,explicitTargetTurns:ensureArray(options.explicitTargetTurns)});
     return {...materialized,scanReason:compact(options?.reason||'native_repair_scan',96),scopeKey:scope.key,
       packetCount:packets.length,conversationPairCount:snapshot.conversationPairCount,detectedDebtCount:exactCoverage.missingTurns.length,coverage:exactCoverage};
   };
@@ -49734,12 +49736,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(options.expectedScopeKey && scope?.key!==options.expectedScopeKey)return {ok:false,skipped:true,reason:'coverage_scope_changed'};
       // Materialize missing-turn debt first so a legacy verified RE:TRACE
       // checkpoint can be adopted without requiring another Other Ax call.
-      const scan = await scanCurrentChatForNativeRecoveryDebts({ reason, scope,manualFullScan:options.force===true });
+      const selectedTurn=Number(options.targetPairIndex || ensureArray(options.targetTurns)[0] || 0);
+      const scan = await scanCurrentChatForNativeRecoveryDebts({ reason, scope,manualFullScan:options.force===true,explicitTargetTurns:selectedTurn>0?[selectedTurn]:[] });
       if (scan.ok === false || scan.durable === false) {
         const result={...scan,ok:false,repaired:false,stage:scan.stage||'recovery_debt_scan'};
         state.lastRepairResult=result;state.lastRepairError=compact(scan.error||scan.reason,320);return result;
       }
-      const selectedTurn=Number(options.targetPairIndex || ensureArray(options.targetTurns)[0] || 0);
       const checkedRow=ensureArray(scan.coverage?.rows).find(r=>r.turn===selectedTurn);
       if(options.expectedRow && (!checkedRow || !hayakuRecoverySourceRowMatches(options.expectedRow,checkedRow))) return {ok:false,skipped:true,reason:'selected_turn_source_changed'};
       const legacyTakeover = !selectedTurn && scope?.confident && scope?.key && scope.chatMessagesAvailable === true
@@ -49889,7 +49891,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(options.scopeKey&&scope.key!==options.scopeKey)return finish({ok:false,reason:'coverage_scope_changed'});
       setNativeManualRepairPhase('coverage_scan');
       for(const turn of targets)await assertHayakuSourceScope(scope.key,turn);
-      const scan=await scanCurrentChatForNativeRecoveryDebts({scope,reason:'manual_selected_scan',manualFullScan:true});
+      const scan=await scanCurrentChatForNativeRecoveryDebts({scope,reason:'manual_selected_scan',manualFullScan:true,explicitTargetTurns:targets});
       if(stopped())return finish({ok:false,cancelled:true,reason:'user_cancelled'});
       diagnostic.scan={ok:scan.ok===true,reason:compact(scan.reason||scan.error||'',240),durable:typeof scan.durable==='boolean'?scan.durable:null};
       if(scan.ok!==true)return finish({...scan,ok:false,reason:scan.reason||scan.error||'coverage_scan_failed'});
