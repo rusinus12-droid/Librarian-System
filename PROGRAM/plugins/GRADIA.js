@@ -28514,6 +28514,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...(Array.isArray(Gui?.characterLoreCatalog) ? Gui.characterLoreCatalog : []),
       ...(Array.isArray(refs?.lore) ? refs.lore : []),
       ...(Array.isArray(refs?.persona) ? refs.persona : []),
+      ...(Array.isArray(refs?.characterDefinition) ? refs.characterDefinition : []),
       ...(Array.isArray(refs?.character_definition) ? refs.character_definition : [])
     ];
     for (const raw of pool) {
@@ -28521,8 +28522,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const content = text(raw.content || raw.retrievedContent || raw.description || '');
       if (!content) continue;
       const item = {
-        name: compact(raw.name || raw.title || raw.key || raw.comment || '', 80),
-        keys: Array.isArray(raw.keys) ? raw.keys : [raw.key, raw.comment, raw.name, raw.title].filter(Boolean),
+        name: compact(raw.name || raw.title || raw.label || raw.key || raw.comment || '', 80),
+        keys: Array.isArray(raw.keys) ? raw.keys : [raw.key, raw.comment, raw.name, raw.title, raw.label].filter(Boolean),
         content
       };
       const aliases = loreRerankerIdentityAliases(item);
@@ -30717,8 +30718,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // A kiss or undressing alone is not an encounter; these are acts that only happen inside one.
   const INTIMACY_PHASE_SIGNALS = Object.freeze([
     ['foreplay', /애무|유두|젖꼭지|(?:가슴|젖가슴|유방|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨)|커닐링구스|펠라(?:티오|치오)?|오럴|사까시|쿤닐|클리토리스|음핵|애액|(?:남성기|여성기|보지|자지|음경|성기|페니스|귀두|육봉|양물|고환|불알|음낭|외음부|음순|비소|항문|후구)(?:을|를|에|이|가)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|쥐|쥐었|감싸|감쌌|훑|핥|빨|문지|문질|비비|비벼|비볐|쓰다듬|더듬|자극|꼬집|튕기|물고|삼키|눌러|눌렀)|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|대딸|수음|자위|핸드잡|파이즈리|풋잡|스마타|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘|냈|내)|입으로\s*(?:해|빨|물|삼)|caress(?:ed|ing)? (?:her|his) (?:breast|thigh|nipple)|fondl|foreplay|cunnilingus|fellatio|blowjob|handjob|paizuri|titjob|footjob|masturbat|nipple|clit|fingering|fingered/i],
-    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
-    ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|싸버|싼다|쌌|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
+    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:(?<![가-힣])질|(?<![가-힣])보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
+    ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|(?<![가-힣])(?:싸버|싼다|쌌)|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
     ['afterplay', /여운(?:에|이|을|속)|후희|베개\s*(?:대화|이야기)|팔베개|숨(?:을|이)?\s*(?:고르|골랐|돌리|가라앉)|뒷정리|(?:닦아\s*주|닦아주|닦아\s*냈)|afterglow|pillow talk|catching (?:his|her|their) breath/i]
   ]);
   // Cross-sentence / pronoun-bridged foreplay: e.g. "남성기는 존재감을 드러내고 있었다 ... 그것을 감싸고 비비기 시작했다"
@@ -31103,21 +31104,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // Body-part stimulation definitions: [id, label, baseClimaxPoints, baseEjaculationPoints, pattern]
   const INTIMACY_BODY_PARTS = Object.freeze([
     ['lips_mouth', '입술·혀 (lips/mouth)', 10, 6, /키스|입술(?:을|에|로)?\s*(?:맞추|포개|빨|깨물|핥|부딪)|설키스|딥키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣|감싸)|입\s*안|kiss(?:ed|ing)?|tongue|lips/i],
-    ['ears', '귀·귓불 (ears)', 11, 6, /귀(?:를|에|\s*뒤|\s*안)|귓불|귓바퀴|귓가(?:에|를)?\s*(?:속삭|핥|깨물|숨)|earlobe|ear\b/i],
-    ['neck_collarbone', '목덜미·쇄골 (neck/collarbone)', 11, 6, /목덜미|목선|목(?:을|에)?\s*(?:핥|깨물|입맞|키스|빨|쓸)|쇄골|어깨선|neck|collarbone|nape/i],
+    ['ears', '귀·귓불 (ears)', 11, 6, /(?<![가-힣])귀(?:를|에|\s*뒤|\s*안)|귓불|귓바퀴|귓가(?:에|를)?\s*(?:속삭|핥|깨물|숨)|earlobe|\bears?\b/i],
+    ['neck_collarbone', '목덜미·쇄골 (neck/collarbone)', 11, 6, /(?<![가-힣])목덜미|(?<![가-힣])목선|(?<![가-힣])목(?:을|에)?\s*(?:핥|깨물|입맞|키스|빨|쓸)|쇄골|어깨선|\bneck\b|\bcollarbone\b|\bnape\b/i],
     ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방|유륜)(?:을|를|에|이|의)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지|얹|애무|감싸|누르|스치)|nipple|breast|fondl(?:e|ed|ing)/i],
     ['abdomen_waist', '복부·허리·등 (abdomen/waist/back)', 10, 7, /(?:배|복부|아랫배|배꼽|허리|옆구리|등줄기|척추)(?:을|를|에|를)?[^\n.?!]{0,18}(?:쓸|쓰다듬|만지|감싸|핥|입맞|키스|쥐|움켜|문지)|waist|abdomen|lower belly|spine|back/i],
-    ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|hips|buttocks|butt\b/i],
+    ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|\bhips?\b|\bbuttocks\b|\bbutt\b/i],
     ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞|애무)|inner thigh|thighs|groin/i],
     ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:여성기|보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|비벼|비볐|감싸|감쌌|핥|빨|자극|눌|튕|애무)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
-    ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|보지\s*(?:안|속)|내벽|질벽|지스팟|G스팟|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
+    ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|(?<![가-힣])질(?:에|로|구|입구|속)|보지\s*(?:안|속)|(?<![가-힣])보지(?:에|로|속)|내벽|질벽|안쪽\s*벽|지스팟|G스팟|안쪽\s*살(?:이|을)?[^\n.?!]{0,14}(?:감아|조이|조여|붙잡|삼키|꿈틀)|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
     ['cervix', '자궁구·심부 (cervix/deep)', 26, 22, /자궁구|자궁\s*입구|가장\s*깊은\s*곳|깊숙이\s*(?:찌르|찔러|닿|박|밀어)|cervix|deep thrust/i],
     ['penis_glans', '귀두·소대 (glans/frenulum)', 0, 32, /귀두|소대|요도구|(?:남성기|자지|음경|성기|페니스|육봉|양물)(?:의)?\s*(?:끝|머리|귀두)|펠라(?:티오|치오)?|오럴|사까시|파이즈리|가슴으로\s*끼우|fellatio|blowjob|glans|frenulum/i],
-    ['penis_shaft_scrotum', '음경 기둥·고환 (shaft/scrotum)', 0, 24, /(?:남성기|자지|음경|성기|페니스|육봉|양물|기둥|장대|불알|고환|음낭)(?:을|를|에|의|이|가)?[^\n.?!]{0,18}(?:만지|만졌|쥐|쥐었|감싸|감쌌|훑|비비|비벼|비볐|문지|문질|핥|빨|물고|삼키)|대딸|손으로\s*훑|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘)|handjob|penis|shaft|scrotum|testicle|stroke(?:d|s|ing)? his/i],
+    ['penis_shaft_scrotum', '음경 기둥·고환 (shaft/scrotum)', 0, 24, /(?:남성기|자지|음경|성기|페니스|육봉|양물|기둥|장대|불알|고환|음낭)(?:을|를|에|의|이|가)?[^\n.?!]{0,18}(?:만지|만졌|쥐|쥐었|감싸|감쌌|훑|비비|비벼|비볐|문지|문질|핥|빨|물고|삼키|자극|애무|잡|쓰다듬|주무르|주물|눌|흔들|흔드|움직|당기|끌어|물어|빨아|세우|세웠|파묻|감기|감겼)|대딸|손으로\s*훑|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘)|handjob|penis|shaft|scrotum|testicle|stroke(?:d|s|ing)? his/i],
     ['anal_perineum', '후구·회음부·전립선 (anal/perineum/prostate)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|anal|perineum|prostate/i]
   ]);
-  const INTIMACY_PENETRATIVE_ACT_RE = /(?:삽입(?:한|하|해|후|중|된|되|을|이|하며)?|짧게\s*뺐다\s*(?:깊게\s*)?넣|깊숙이\s*(?:밀어\s*넣|박|찌르)|피스톤(?:\s*운동)?|왕복|박아\s*(?:넣|대|주)|질내(?:에|로)\s*(?:넣|박|밀)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:놀|흔들|흔드|움직|쳐|치|박|튕|넣|빼)|정상위|후배위|기승위|측위|굴곡위|입위|좌위|penetrat|thrust(?:ing|s)?\s+(?:in(?:to)?|deep)|inside\s+her)/i;
+  const INTIMACY_PENETRATIVE_ACT_RE = /(?:삽입(?:한|하|해|후|중|된|되|을|이|하며)?|짧게\s*뺐다\s*(?:깊게\s*)?넣|깊숙이\s*(?:밀어\s*넣|박|찌르)|피스톤(?:\s*운동)?|왕복|박아\s*(?:넣|대|주)|질내(?:에|로)\s*(?:넣|박|밀)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:질|보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:놀|흔들|흔드|움직|쳐|치|박|튕|넣|빼)|정상위|후배위|기승위|측위|굴곡위|입위|좌위|penetrat|thrust(?:ing|s)?\s+(?:in(?:to)?|deep)|inside\s+her)/i;
   const INTIMACY_PACING_RESTRAINT_RE = /(?:박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|참으려|페이스\s*조절|slow(?:ed|ing)?\s+(?:down|the pace)|hold(?:ing)?\s+back)/i;
+  const INTIMACY_ACTIVE_THRUST_RE = /(?:움직임(?:이|을)?\s*(?:격해|빨라|거칠|세지|세졌|몰아|깊어|강해|높아)|속도(?:가|를)?\s*(?:높|올리|올렸|빨라|붙|더하|더했)|박자(?:가|를)?\s*(?:빨라|거칠|몰아|높)|거칠게\s*(?:움직|몰아|쳐|밀|박|흔들)|더\s*(?:세게|깊게|빠르게|거칠게)|몰아(?:붙|치|쳤)|격렬하게|faster|harder|deeper|pounding|picking\s+up\s+(?:speed|pace)|thrusts?\s+(?:grow|growing|get|getting)\s+(?:faster|harder|rougher))/i;
+  const INTIMACY_EJACULATION_BRINK_RE = /(?:곧\s*(?:사정|쌀|싸|분출|터질)|사정(?:할\s*듯|할\s*것\s*같|직전|이\s*가까|이\s*임박|을\s*참기)|싸(?:기\s*직전|려\s*하|ㄹ\s*것\s*같|버릴\s*(?:것\s*같|듯))|한계(?:에\s*(?:달|다다|가까)|가\s*(?:오|왔|가까))|about\s+to\s+(?:cum|ejaculate|finish)|close\s+to\s+(?:cumming|ejaculating)|on\s+the\s+brink\s+of\s+(?:cumming|ejaculating))/i;
+  const INTIMACY_CLIMAX_BRINK_RE = /(?:곧\s*(?:절정|갈\s*것|가버릴|올\s*것)|절정(?:이\s*(?:가까|임박|다가)|에\s*(?:가까|다다)|직전|할\s*듯|할\s*것\s*같)|가버릴\s*(?:것\s*같|듯)|갈\s*것\s*같|오르가[즘슴]\s*(?:직전|이\s*가까)|about\s+to\s+(?:cum|climax|orgasm)|on\s+the\s+edge|close\s+to\s+climax)/i;
+  const INTIMACY_FEMALE_AROUSAL_PROSE_RE = /(?:허리가\s*(?:시트에서\s*떨어|휘|들리|들렸|젖혀|떨리|튕기)|발뒤꿈치가\s*시트를|다리가\s*(?:풀리|풀렸|떨리|떨렸|후들)|몸(?:을|이)\s*(?:떨었|떨며|경련|뒤틀|활처럼)|신음(?:이|을)\s*(?:터|삼키|참지|흘리|새어)|숨이\s*(?:목에서\s*끊|가빠|턱\s*끝)|애액(?:이|을)\s*(?:흐르|흘러|번들|젖|고이|묻)|흠뻑\s*젖|아랫배(?:가|에)\s*(?:조여|오므라|찌릿|열이|경련)|열이\s*올라\s*붉어|배가\s*(?:한\s*번\s*)?오므라|입술을\s*물었|숨을\s*몰아쉬)/i;
   const INTIMACY_LEGACY_ZONE_MAP = Object.freeze({
     lips_neck: ['lips_mouth', 'ears', 'neck_collarbone'],
     thighs_hips: ['hips_buttocks', 'inner_thighs'],
@@ -31200,6 +31205,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       zoneStats: normalizeIntimacyZoneStats(value.zoneStats ?? value.zone_defaults, sensitiveZones, dullZones),
       anatomyView: value.anatomyView === 'male' ? 'male' : value.anatomyView === 'female' ? 'female' : '',
       lastZoneUpdateHash: compact(value.lastZoneUpdateHash || '', 40),
+      lastAssistantZoneUpdateHash: compact(value.lastAssistantZoneUpdateHash || '', 40),
       basis: compact(value.basis || '', 360),
       origin: value.origin === 'user' ? 'user' : 'lore',
       createdAt: compact(value.createdAt || '', 40)
@@ -31394,7 +31400,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           interruptedBrink: false
         });
         if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
-          const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSamePerson(c.name, k)));
+          const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSameOrGivenName(c.name, k)));
           if (card && (!chat.lastInputHash || card.lastZoneUpdateHash !== chat.lastInputHash)) {
             const cardGender = intimacyCardGender(card, card.name);
             if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
@@ -31455,7 +31461,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   const INTIMACY_RESOLVED_RE = /(?:옷을?\s*(?:다\s*)?(?:챙겨\s*)?(?:입고|입었|입으며|걸치고|정리하고)|(?:방|모텔|호텔|침실|카페|집)\s*(?:을|를|에서)?\s*(?:나섰|나왔|나갔|떠났|걸어\s*나)|밖으로\s*(?:나섰|나왔|나갔|걸어)|각자\s*(?:돌아갔|헤어졌)|다음\s*날\s*(?:아침|이\s*되|이\s*밝)|날이\s*밝|아침이\s*되|got\s+dressed\s+and\s+left|walked\s+out|next\s+morning)/i;
   const intimacyMatchedBodyParts = value => {
-    const body = String(value || '');
+    const body = stripNonProseSceneTags(String(value || ''));
     if (!body) return [];
     const matched = INTIMACY_BODY_PARTS.filter(([, , , , pattern]) => pattern.test(body));
     if (INTIMACY_BRIDGED_TOUCH_RE.test(body)) {
@@ -31478,6 +31484,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // owns it ("하연의 외음부"), not to everyone present: crediting every participant made the
   // actor's gauge rise for the part the other person received.
   // Returns Map<zoneId, Set<ownerName>> where '' means the clause named no owner.
+  const INTIMACY_OBJECT_OWNED_ZONES = new Set(['breasts_nipples', 'clitoris_vulva', 'vaginal_canal', 'cervix', 'hips_buttocks', 'inner_thighs']);
   const intimacyBodyPartOwners = (value, names = []) => {
     const out = new Map();
     const body = String(value || '');
@@ -31489,6 +31496,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const shortName = name.length >= 3 && /^[가-힣]+$/.test(name) ? name.slice(1) : '';
       if (shortName && !people.includes(shortName)) searchTokens.push({ name, token: shortName });
     }
+    let lastObjectPerson = '';
     for (const clause of body.split(/(?<=[.!?。！？\n])/)) {
       const positions = [];
       for (const { name, token } of searchTokens) {
@@ -31501,6 +31509,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
           }
           from = end;
           at = clause.indexOf(token, from);
+        }
+      }
+      positions.sort((a, b) => a.at - b.at);
+      // Track explicit receiver/object mentions ("하연을 ...", "하연 쪽은 ...", "하연에게 ...") across clauses
+      for (const item of positions) {
+        const afterToken = clause.slice(item.end, item.end + 10);
+        if (/^\s*(?:을|를|에게|한테|쪽은|쪽이)(?:[^가-힣]|$)/.test(afterToken)) {
+          lastObjectPerson = item.name;
         }
       }
       for (const [id, , , , pattern] of INTIMACY_BODY_PARTS) {
@@ -31528,6 +31544,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
                   break;
                 }
               }
+            } else if (/^\s*(?:쪽은|쪽이|의\s*몸)/.test(between) && between.length <= 48) {
+              matchedOwners.push(nearest.name);
+            }
+          }
+          if (!matchedOwners.length) {
+            const preMatchWindow = clause.slice(Math.max(0, match.index - 24), match.index);
+            if (/(?:^|[\s,"'‘“(])(?:그녀|언니|누나|여동생|여자)의\s*$/.test(preMatchWindow)) {
+              const clauseObj = before.find(item => /^\s*(?:을|를|에게|한테|쪽은|쪽이)/.test(clause.slice(item.end, item.end + 10)));
+              matchedOwners.push(clauseObj?.name || lastObjectPerson || '__female__');
+            } else if (/(?:^|[\s,"'‘“(])(?:그|남자|오빠|형)의\s*$/.test(preMatchWindow)) {
+              matchedOwners.push('__male__');
+            } else if (INTIMACY_OBJECT_OWNED_ZONES.has(id)) {
+              const clauseObj = before.find(item => /^\s*(?:을|를|에게|한테|쪽은|쪽이)/.test(clause.slice(item.end, item.end + 10)));
+              if (clauseObj) matchedOwners.push(clauseObj.name);
+              else if (lastObjectPerson && before.length === 0) matchedOwners.push(lastObjectPerson);
             }
           }
           if (!out.has(id)) out.set(id, new Set());
@@ -31701,35 +31732,58 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ].filter(Boolean);
     const personaName = compact(Runtime.activePersonaName || '', 80);
     const personaMentioned = !!personaName && (
-      presentNames.some(p => extensionSamePerson(p, personaName))
+      presentNames.some(p => extensionSameOrGivenName(p, personaName))
       || extensionLineNames([input, lastAssistant].filter(Boolean).join('\n'), personaName)
+      || extensionTextMentionsName([input, lastAssistant].filter(Boolean).join('\n'), personaName)
     );
     const names = [];
     const addName = raw => {
       if (!raw) return;
-      if (!names.some(existing => extensionSamePerson(existing, raw))) names.push(raw);
+      const idx = names.findIndex(existing => extensionSameOrGivenName(existing, raw));
+      if (idx < 0) {
+        names.push(raw);
+      } else if (raw.length > names[idx].length) {
+        names[idx] = raw;
+      }
     };
     for (const raw of presentNames) {
-      if (bodyStateIsPersona(raw) || (personaName && extensionSamePerson(raw, personaName))) continue;
+      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName))) continue;
       addName(raw);
     }
-    if (!names.length) {
-      const cardPerson = extensionCardPerson(recent, presentNames);
-      for (const raw of [...cards.map(c => c.name), cardPerson].filter(Boolean)) {
-        if (bodyStateIsPersona(raw) || (personaName && extensionSamePerson(raw, personaName))) continue;
-        if (seedSteps.some(step => extensionLineNames(step, raw))) addName(raw);
-      }
+    const cardScanSteps = presentNames.length ? [input, lastAssistant].filter(Boolean) : seedSteps;
+    const cardPerson = extensionCardPerson(recent, presentNames);
+    for (const raw of [...cards.map(c => c.name), cardPerson].filter(Boolean)) {
+      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName))) continue;
+      if (cardScanSteps.some(step => extensionLineNames(step, raw) || extensionTextMentionsName(step, raw))) addName(raw);
     }
-    if (personaMentioned) addName(personaName);
+    if (personaMentioned || (personaName && (settledMap[compact(personaName, 80).toLowerCase()] || scene?.engaged || inputHasStim))) {
+      addName(personaName);
+    }
+    const intercourseOngoing = !!(
+      scene?.phase === 'intercourse'
+      || scene?.phase === 'climax'
+      || INTIMACY_PENETRATIVE_ACT_RE.test(lastAssistant)
+      || INTIMACY_PENETRATIVE_ACT_RE.test(input)
+    );
+    let assistantCardsDirty = false;
+    const resolvedGenderByName = new Map();
+    for (const n of names) {
+      const c = cards.find(item => item.name && (item.name === n || extensionSameOrGivenName(item.name, n))) || null;
+      resolvedGenderByName.set(n, intimacyResolveGender(n, c, recent));
+    }
+    const priorUserText = text(recent?.previousTurnUser || '');
+    const priorVaginalOwners = intimacyBodyPartOwners([priorUserText, lastAssistant].filter(Boolean).join('\n'), names).get('vaginal_canal') || null;
     const gauges = names.map(name => {
-      const card = cards.find(c => c.name && (c.name === name || extensionSamePerson(c.name, name))) || null;
+      const card = cards.find(c => c.name && (c.name === name || extensionSameOrGivenName(c.name, name))) || null;
       const zoneStats = card?.zoneStats || normalizeIntimacyZoneStats(null, card?.sensitiveZones || '', card?.dullZones || '');
       const multMap = Object.fromEntries(INTIMACY_BODY_PARTS.map(([id]) => [id, intimacyZoneMultiplier(zoneStats[id])]));
-      const gender = intimacyResolveGender(name, card, recent);
+      const gender = resolvedGenderByName.get(name) || intimacyResolveGender(name, card, recent);
       const showClimax = gender !== 'male';
       const showEjac = gender === 'male';
       const normKey = compact(name, 80).toLowerCase();
-      const settled = settledMap[normKey] || null;
+      const settled = settledMap[normKey]
+        || Object.values(settledMap).find(v => v?.name && extensionSameOrGivenName(v.name, name))
+        || null;
       if (scopeKey && typeof bodyStateSleepReport === 'function') bodyStateSleepReport(name, [], recent, scopeKey, settings);
       const sleepStore = scopeKey && typeof bodyStateSleepState === 'function' ? bodyStateSleepState(scopeKey) : null;
       const personKey = normalizeContinuityAlias(name) || name;
@@ -31743,27 +31797,39 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let lastTurnDeltaLubrication = 0;
       let lastTurnParts = [];
       let currentMatchedIds = [];
+      let assistantMatchedIds = [];
       let climaxTriggeredThisTurn = false;
       let ejaculationTriggeredThisTurn = false;
-      const scorePartsForText = (stepText, excludeZoneIds = null) => {
+      let climaxBrinkThisTurn = false;
+      let ejacBrinkThisTurn = false;
+      const malePeers = names.filter(peer => peer !== name && (resolvedGenderByName.get(peer) || intimacyCardGender(cards.find(c => c.name && extensionSameOrGivenName(c.name, peer)), peer, settings, scopeKey)) === 'male');
+      const femalePeers = names.filter(peer => peer !== name && (resolvedGenderByName.get(peer) || intimacyCardGender(cards.find(c => c.name && extensionSameOrGivenName(c.name, peer)), peer, settings, scopeKey)) !== 'male');
+      const scorePartsForText = (rawStepText, excludeZoneIds = null, stepOpts = {}) => {
+        const stepText = stripNonProseSceneTags(rawStepText);
         const boosters = intimacySensitivityOf(stepText);
         const boosterMult = boosters.length ? 1.35 : 1.0;
         const zoneOwners = intimacyBodyPartOwners(stepText, names);
         const ownsZone = id => {
           const owners = zoneOwners.get(id);
           if (!owners || !owners.size) return true;
+          if (owners.has('__female__')) return gender !== 'male';
+          if (owners.has('__male__')) return gender === 'male';
           if (owners.has(name)) return true;
+          if (id === 'breasts_nipples' && gender === 'male' && femalePeers.length) {
+            return owners.has('__male__');
+          }
           return Array.from(owners).every(owner => !owner);
         };
         const matchedParts = intimacyMatchedBodyParts(stepText)
           .filter(([id]) => (!excludeZoneIds || !excludeZoneIds.has(id)) && ownsZone(id))
           .filter(([id, , baseC, baseE]) => intimacyZoneAllowedForGender(id, gender) && (showClimax ? baseC > 0 : baseE > 0));
+        const activeIntercourseStep = INTIMACY_PENETRATIVE_ACT_RE.test(stepText)
+          || ((stepOpts.ongoingIntercourse ?? intercourseOngoing) && INTIMACY_ACTIVE_THRUST_RE.test(stepText));
         if (showEjac
           && !matchedParts.some(([id]) => id === 'penis_glans' || id === 'penis_shaft_scrotum')
           && (!excludeZoneIds || !excludeZoneIds.has('penis_glans'))
-          && INTIMACY_PENETRATIVE_ACT_RE.test(stepText)
+          && activeIntercourseStep
           && !/손가락(?:만|으로만)|fingering\s+only/i.test(stepText)) {
-          const malePeers = names.filter(peer => peer !== name && intimacyCardGender(cards.find(c => c.name && extensionSamePerson(c.name, peer)), peer, settings, scopeKey) === 'male');
           if (!malePeers.length || bodyStateIsPersona(name) || extensionTextMentionsName(stepText, name)) {
             const restrained = INTIMACY_PACING_RESTRAINT_RE.test(stepText);
             matchedParts.push([
@@ -31774,12 +31840,87 @@ Begin directly with the in-world response and finish the complete same-turn draf
             ]);
           }
         }
-        return { boosterMult, matchedParts };
+        let stepEjacBrink = false;
+        if (showEjac && INTIMACY_EJACULATION_BRINK_RE.test(stepText)) {
+          if (!malePeers.length || bodyStateIsPersona(name) || extensionTextMentionsName(stepText, name)) {
+            stepEjacBrink = true;
+            if (!matchedParts.some(([id]) => id === 'penis_glans' || id === 'penis_shaft_scrotum')
+              && (!excludeZoneIds || !excludeZoneIds.has('penis_glans'))) {
+              matchedParts.push([
+                'penis_glans',
+                '귀두·사정 임박 (ejaculation brink)',
+                0,
+                32
+              ]);
+            }
+          }
+        }
+        const namedFemalesInStep = femalePeers.filter(peer => extensionTextMentionsName(stepText, peer));
+        const isTargetedFemale = extensionTextMentionsName(stepText, name)
+          || !femalePeers.length
+          || (!namedFemalesInStep.length && (
+            priorVaginalOwners?.has(name)
+            || (!priorVaginalOwners?.size && (climaxGauge > 0 || lubricationGauge > 0) && extensionTextMentionsName([priorUserText, lastAssistant].join('\n'), name))
+          ));
+        if (showClimax
+          && (stepOpts.ongoingIntercourse ?? intercourseOngoing)
+          && INTIMACY_ACTIVE_THRUST_RE.test(stepText)
+          && !matchedParts.some(([id]) => id === 'vaginal_canal' || id === 'cervix')
+          && (!excludeZoneIds || !excludeZoneIds.has('vaginal_canal'))
+          && !/손가락(?:만|으로만)|fingering\s+only/i.test(stepText)
+          && isTargetedFemale) {
+          matchedParts.push([
+            'vaginal_canal',
+            '질내·격렬한 삽입 마찰 (vaginal canal/intercourse)',
+            26,
+            0
+          ]);
+        }
+        let stepClimaxBrink = false;
+        if (showClimax && INTIMACY_CLIMAX_BRINK_RE.test(stepText) && isTargetedFemale) {
+          stepClimaxBrink = true;
+          if (!matchedParts.some(([id]) => id === 'clitoris_vulva' || id === 'vaginal_canal')
+            && (!excludeZoneIds || !excludeZoneIds.has('clitoris_vulva'))) {
+            matchedParts.push([
+              'clitoris_vulva',
+              '음핵·절정 임박 (climax brink)',
+              28,
+              0
+            ]);
+          }
+        }
+        if (showClimax && !matchedParts.length && INTIMACY_FEMALE_AROUSAL_PROSE_RE.test(stepText)) {
+          let prosePerson = '';
+          let proseHitForMe = false;
+          for (const clause of String(stepText || '').split(/(?<=[.!?。！？\n])/)) {
+            const mentioned = names.filter(n => extensionTextMentionsName(clause, n));
+            if (mentioned.length === 1) prosePerson = mentioned[0];
+            if (INTIMACY_FEMALE_AROUSAL_PROSE_RE.test(clause)) {
+              const otherFemales = femalePeers.filter(peer => extensionTextMentionsName(clause, peer));
+              if (extensionTextMentionsName(clause, name)
+                || (!otherFemales.length && (/(?:그녀|언니|여동생)/.test(clause) || !femalePeers.length) && prosePerson === name)
+                || (!femalePeers.length && scene?.engaged)) {
+                proseHitForMe = true;
+                break;
+              }
+            }
+          }
+          const proseZoneId = (stepOpts.ongoingIntercourse ?? intercourseOngoing) ? 'vaginal_canal' : 'clitoris_vulva';
+          if (proseHitForMe && (!excludeZoneIds || !excludeZoneIds.has(proseZoneId))) {
+            matchedParts.push([
+              proseZoneId,
+              '신체 흥분 반응 (prose arousal)',
+              14,
+              0
+            ]);
+          }
+        }
+        return { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink };
       };
       if (settled) {
         const priorIds = new Set(Array.isArray(settled.lastMatchedIds) ? settled.lastMatchedIds : []);
         if (lastAssistant) {
-          const { boosterMult, matchedParts } = scorePartsForText(lastAssistant, priorIds);
+          const { boosterMult, matchedParts } = scorePartsForText(lastAssistant, priorIds, { ongoingIntercourse: INTIMACY_PENETRATIVE_ACT_RE.test(lastAssistant) || INTIMACY_PENETRATIVE_ACT_RE.test(priorUserText) });
           if (matchedParts.length) {
             let addC = 0;
             let addE = 0;
@@ -31790,6 +31931,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
               addC += showClimax ? Math.round(baseC * zoneMult * boosterMult * dim) : 0;
               addE += showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
               if (showClimax) addL += Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * boosterMult * dim);
+              assistantMatchedIds.push(id);
             });
             if (showClimax) climaxGauge = Math.min(100, climaxGauge + addC);
             if (showEjac) ejaculationGauge = Math.min(100, ejaculationGauge + addE);
@@ -31803,7 +31945,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
         const steps = input ? [input] : [];
         steps.forEach(stepText => {
-          const { boosterMult, matchedParts } = scorePartsForText(stepText, null);
+          const { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink } = scorePartsForText(stepText, null);
+          if (stepEjacBrink) ejacBrinkThisTurn = true;
+          if (stepClimaxBrink) climaxBrinkThisTurn = true;
           if (!matchedParts.length) {
             const decClimax = showClimax && climaxGauge > 0 ? Math.min(climaxGauge, INTIMACY_PASSIVE_DECAY_CLIMAX) : 0;
             const decEjac = showEjac && ejaculationGauge > 0 ? Math.min(ejaculationGauge, INTIMACY_PASSIVE_DECAY_EJACULATION) : 0;
@@ -31832,9 +31976,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
             currentMatchedIds.push(id);
             partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
           });
+          const preClimax = climaxGauge;
+          const preEjac = ejaculationGauge;
           if (showClimax) climaxGauge = Math.min(100, climaxGauge + addClimax);
           if (showEjac) ejaculationGauge = Math.min(100, ejaculationGauge + addEjac);
           if (showClimax) lubricationGauge = Math.min(100, lubricationGauge + addLub);
+          if (showClimax && stepClimaxBrink && climaxGauge < 82) {
+            climaxGauge = 82;
+            addClimax = Math.max(addClimax, climaxGauge - preClimax, 1);
+          }
+          if (showEjac && stepEjacBrink && ejaculationGauge < 82) {
+            ejaculationGauge = 82;
+            addEjac = Math.max(addEjac, ejaculationGauge - preEjac, 1);
+          }
           lastTurnDeltaClimax = addClimax;
           lastTurnDeltaEjac = addEjac;
           lastTurnDeltaLubrication = showClimax ? addLub : 0;
@@ -31843,15 +31997,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (showEjac && ejaculationGauge >= 100) ejaculationTriggeredThisTurn = true;
         });
       } else {
+        let runningIntercourse = false;
         seedSteps.forEach((stepText, stepIdx) => {
           const isCurrentTurn = stepIdx === seedSteps.length - 1 && !!input;
-          const { boosterMult, matchedParts } = scorePartsForText(stepText, null);
+          if (INTIMACY_PENETRATIVE_ACT_RE.test(stepText)) runningIntercourse = true;
+          const { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink } = scorePartsForText(stepText, null, { ongoingIntercourse: runningIntercourse });
           if (!isCurrentTurn) {
             if (showClimax && INTIMACY_CLIMAX_RESET_RE.test(stepText)) {
               climaxGauge = 15;
               lubricationGauge = Math.max(25, Math.round(lubricationGauge * 0.6));
             }
             if (showEjac && INTIMACY_EJACULATION_RESET_RE.test(stepText)) ejaculationGauge = 10;
+          } else {
+            if (stepEjacBrink) ejacBrinkThisTurn = true;
+            if (stepClimaxBrink) climaxBrinkThisTurn = true;
           }
           if (!matchedParts.length) {
             const decClimax = showClimax && climaxGauge > 0 ? Math.min(climaxGauge, INTIMACY_PASSIVE_DECAY_CLIMAX) : 0;
@@ -31883,12 +32042,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
             if (isCurrentTurn) {
               currentMatchedIds.push(id);
               partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
+            } else if (lastAssistant && stepText === lastAssistant) {
+              assistantMatchedIds.push(id);
             }
           });
+          const preClimax = climaxGauge;
+          const preEjac = ejaculationGauge;
           if (showClimax) climaxGauge = Math.min(100, climaxGauge + addClimax);
           if (showEjac) ejaculationGauge = Math.min(100, ejaculationGauge + addEjac);
           if (showClimax) lubricationGauge = Math.min(100, lubricationGauge + addLub);
           if (isCurrentTurn) {
+            if (showClimax && stepClimaxBrink && climaxGauge < 82) {
+              climaxGauge = 82;
+              addClimax = Math.max(addClimax, climaxGauge - preClimax, 1);
+            }
+            if (showEjac && stepEjacBrink && ejaculationGauge < 82) {
+              ejaculationGauge = 82;
+              addEjac = Math.max(addEjac, ejaculationGauge - preEjac, 1);
+            }
             lastTurnDeltaClimax = addClimax;
             lastTurnDeltaEjac = addEjac;
             lastTurnDeltaLubrication = showClimax ? addLub : 0;
@@ -31903,6 +32074,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
             if (showEjac && ejaculationGauge >= 100) ejaculationGauge = 10;
           }
         });
+      }
+      if (card && !settleInfo?.isReroll && settleInfo?.priorAssistantHash && settleInfo.priorAssistantHash !== '00000000'
+        && card.lastAssistantZoneUpdateHash !== settleInfo.priorAssistantHash && assistantMatchedIds.length) {
+        if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
+        for (const zId of new Set(assistantMatchedIds)) {
+          if (!intimacyZoneAllowedForGender(zId, gender)) continue;
+          const prevSt = card.zoneStats[zId] || { sensitivity: 0, development: 0 };
+          card.zoneStats[zId] = {
+            sensitivity: intimacyClampSensitivity(prevSt.sensitivity + 2),
+            development: intimacyClampDevelopment(prevSt.development + 2)
+          };
+        }
+        card.lastAssistantZoneUpdateHash = settleInfo.priorAssistantHash;
+        assistantCardsDirty = true;
       }
       const activeGaugeNow = showClimax ? climaxGauge : showEjac ? ejaculationGauge : 0;
       const extFactorsText = Array.isArray(externalReaction?.factors) ? externalReaction.factors.join(',') : '';
@@ -31922,7 +32107,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       }
       const zoneDeltas = {};
       if (currentMatchedIds.length) {
-        const stepAmt = (climaxTriggeredThisTurn || ejaculationTriggeredThisTurn) ? 3 : 2;
+        const stepAmt = (climaxTriggeredThisTurn || ejaculationTriggeredThisTurn) ? 4 : (activeGaugeNow >= 80 ? 3 : 2);
         for (const id of currentMatchedIds) zoneDeltas[id] = { dev: stepAmt, sens: stepAmt };
       }
       if (settleInfo?.chat && normKey) {
@@ -32442,14 +32627,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return notes;
   };
-  const intimacyPacket = (recent = {}, settings = null) => {
+  const intimacyPacket = (recent = {}, settings = null, options = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const scene = intimacyScene(recent);
     const cards = intimacyCardsForScope(scopeKey);
-    const externalReaction = scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null;
-    const gauges = computeIntimacyParticipantGauges(recent, cards, scene, externalReaction);
-    const contraception = scene.engaged ? computeIntimacyContraceptionVerdicts(recent, cards, scene, gauges, externalReaction, settings) : [];
-    if (scopeKey) {
+    const existingTelemetry = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey] : null;
+    const reuseSettled = !!(options?.preserveSettledTelemetry && existingTelemetry?.readingApplied && Array.isArray(existingTelemetry.gauges));
+    const externalReaction = reuseSettled
+      ? (existingTelemetry.externalReaction ?? (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null))
+      : (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null);
+    const gauges = reuseSettled ? existingTelemetry.gauges : computeIntimacyParticipantGauges(recent, cards, scene, externalReaction);
+    const contraception = reuseSettled
+      ? (Array.isArray(existingTelemetry.contraception) ? existingTelemetry.contraception : [])
+      : (scene.engaged ? computeIntimacyContraceptionVerdicts(recent, cards, scene, gauges, externalReaction, settings) : []);
+    if (scopeKey && !reuseSettled) {
       Runtime.intimacyTelemetry[scopeKey] = scene.engaged || gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0)
         ? { at: Date.now(), gauges, externalReaction, contraception }
         : { at: Date.now(), gauges: [], externalReaction: null, contraception: [] };
@@ -32512,7 +32703,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const duty = intimacyStageActive(settings) ? extensionAideDuty('aide_intimacy', stageName, INTIMACY_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const outputKind = phase === 'writing' ? '' : intimacyOutputKind(stageName, settings);
-    const packet = intimacyPacket(recent, settings);
+    const packet = intimacyPacket(recent, settings, { preserveSettledTelemetry: ledger?.intimacyReadingApplied === true });
     if (!packet.scene.engaged) {
       return [
         '[INTIMACY (정사) — SEXUAL ENCOUNTER DEPICTION]',
@@ -32581,7 +32772,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
-            'Also add a top-level "intimacy_body_responses" array. For every participant who was physically stimulated this response, write one item: name, zone (the body-part id that was stimulated), physical (the immediate bodily change: breath, muscle tension, wetness, flush, tremble, oversensitivity), reaction (what it makes them do or say next — a hand stopping, a sound, pulling in or away). A body that was touched changes; a response that says nothing about the body is not a response. Do not write responses for people who were not touched this turn, and never attribute a response to the person who gave the touch instead of the person who received it.',
+            'Also add a top-level "intimacy_body_responses" array. For every participant who was physically stimulated this response (including a male initiator receiving hand/oral/intercourse stimulation via penis_glans or penis_shaft_scrotum, as well as stimulated female participants), write one item: name, zone (the body-part id that was stimulated), physical (the immediate bodily change: breath, muscle tension, wetness, flush, tremble, oversensitivity), reaction (what it makes them do or say next — a hand stopping, a sound, pulling in or away). A body that was touched changes; a response that says nothing about the body is not a response. Do not write responses for people who were not touched this turn, and never attribute a response to the person who gave the touch instead of the person who received it.',
             `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
@@ -32637,12 +32828,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ledger.intimacyChecks.push({ stage: stageName, items: checks });
     }
     if (intimacyOutputKind(stageName, settings) !== 'readings') return;
+    ledger.intimacyReadingApplied = true;
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const readings = normalizeIntimacyReadings(parsed?.intimacyReadings);
     const bodyResponses = normalizeIntimacyBodyResponses(parsed?.intimacyBodyResponses);
     if (scopeKey) Runtime.intimacyReadings[scopeKey] = { at: Date.now(), readings, bodyResponses };
     if (scopeKey) {
       recordIntimacyProfiles(scopeKey, parsed?.intimacyProfiles, settings);
+      if (Runtime.intimacyTelemetry?.[scopeKey]) Runtime.intimacyTelemetry[scopeKey].readingApplied = true;
       // Apply current-turn zone development immediately & reroll-safely on turn completion,
       // and update gauges from settled readings (e.g. self-stimulation or giver->receiver acts).
       const telemetryGauges = Runtime.intimacyTelemetry?.[scopeKey]?.gauges || [];
@@ -32651,11 +32844,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let zoneChanged = false;
       let gaugeChanged = false;
       for (const g of telemetryGauges) {
-        const card = cards.find(c => c.name && (c.name === g.name || extensionSamePerson(c.name, g.name)));
+        const card = cards.find(c => c.name && (c.name === g.name || extensionSameOrGivenName(c.name, g.name)));
         const resolvedGender = intimacyCardGender(card, g.name) || intimacyNormalizeGender(g.gender);
         const showClimax = resolvedGender !== 'male';
         const showEjac = resolvedGender === 'male';
-        const reading = readings.find(r => r.participant && (r.participant === g.name || extensionSamePerson(r.participant, g.name)));
+        const reading = readings.find(r => r.participant && (r.participant === g.name || extensionSameOrGivenName(r.participant, g.name)));
         const rawDeltas = { ...(g.zoneDeltas || {}) };
         const deltas = {};
         for (const [zId, dVal] of Object.entries(rawDeltas)) {
@@ -32664,7 +32857,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         // AIDE 가 "이 사람의 이 부위가 반응했다"고 선언하면 그 부위를 그 사람에게 적립한다.
         // 본문 정규식 추측보다 우선한다(귀속 반전의 재발 방지).
         const declaredResponses = (Runtime.intimacyReadings?.[scopeKey]?.bodyResponses || [])
-          .filter(item => item.name && (item.name === g.name || extensionSamePerson(item.name, g.name)))
+          .filter(item => item.name && (item.name === g.name || extensionSameOrGivenName(item.name, g.name)))
           .filter(item => intimacyZoneAllowedForGender(item.zone, resolvedGender));
         const matchedFromReading = [];
         for (const item of declaredResponses) {
@@ -32678,6 +32871,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
           const ownsInSummary = id => {
             const owners = summaryOwners.get(id);
             if (!owners || !owners.size) return true;
+            if (owners.has('__female__')) return resolvedGender !== 'male';
+            if (owners.has('__male__')) return resolvedGender === 'male';
             if (owners.has(g.name)) return true;
             return Array.from(owners).every(owner => !owner);
           };
@@ -32739,6 +32934,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
               if (g.ejaculationGauge >= 100 && !g.interruptedBrink) g.ejaculationTriggeredThisTurn = true;
             }
             if (extraNotes.length) g.stimulatedParts = [...new Set([...(g.stimulatedParts || []), ...extraNotes])];
+            g.gender = resolvedGender;
+            g.showClimax = showClimax;
+            g.showEjac = showEjac;
+            const fmtPostDelta = d => (d > 0 ? `+${d}` : d < 0 ? `${d} [자극 부재 감쇠]` : '±0');
+            const postParts = [];
+            if (showClimax) postParts.push(`절정 수치(climax): ${g.climaxGauge}/100 (${fmtPostDelta(g.lastTurnDeltaClimax)}); 애액·윤활(lubrication): ${g.lubricationGauge || 0}/100 (${intimacyLubricationTier(g.lubricationGauge || 0)})`);
+            if (showEjac) postParts.push(`사정 수치(ejaculation): ${g.ejaculationGauge}/100 (${fmtPostDelta(g.lastTurnDeltaEjac)})`);
+            g.line = `- ${forcedBondDisplayName(g.name)}: ${postParts.join(' · ')}${g.stimulatedParts?.length ? ` [stimulated: ${g.stimulatedParts.join(', ')}]` : ''}`;
             const normKey = compact(g.name, 80).toLowerCase();
             if (chatScope && normKey) {
               const prevEntry = chatScope.settled?.[normKey] || {};
@@ -32763,6 +32966,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             gaugeChanged = true;
           }
         }
+        if (Object.keys(deltas).length) g.zoneDeltas = deltas;
         if (!card || (g.inputHash && card.lastZoneUpdateHash === g.inputHash)) continue;
         if (!Object.keys(deltas).length) continue;
         if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
@@ -38517,6 +38721,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         worldReadings: patch.worldReadings,
         intimacyCheck: patch.intimacyCheck,
         intimacyReadings: patch.intimacyReadings,
+        intimacyBodyResponses: patch.intimacyBodyResponses,
         intimacyProfiles: patch.intimacyProfiles,
         relationshipCheck: patch.relationshipCheck,
         relationshipEvents: patch.relationshipEvents,
@@ -38535,7 +38740,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         fixation: patch.fixation
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProfiles: precomputedAnalysis.bondProfiles?.length ? precomputedAnalysis.bondProfiles : patch.bondProfiles, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, stateProfiles: precomputedAnalysis.stateProfiles?.length ? precomputedAnalysis.stateProfiles : patch.stateProfiles, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings, intimacyCheck: precomputedAnalysis.intimacyCheck?.length ? precomputedAnalysis.intimacyCheck : patch.intimacyCheck, intimacyReadings: precomputedAnalysis.intimacyReadings?.length ? precomputedAnalysis.intimacyReadings : patch.intimacyReadings, relationshipCheck: precomputedAnalysis.relationshipCheck?.length ? precomputedAnalysis.relationshipCheck : patch.relationshipCheck, relationshipEvents: precomputedAnalysis.relationshipEvents?.length ? precomputedAnalysis.relationshipEvents : patch.relationshipEvents, relationshipOccasions: precomputedAnalysis.relationshipOccasions?.length ? precomputedAnalysis.relationshipOccasions : patch.relationshipOccasions, relationshipPairs: precomputedAnalysis.relationshipPairs?.length ? precomputedAnalysis.relationshipPairs : patch.relationshipPairs, relationshipProfiles: precomputedAnalysis.relationshipProfiles?.length ? precomputedAnalysis.relationshipProfiles : patch.relationshipProfiles, relationshipLibStatus: precomputedAnalysis.relationshipLibStatus?.length ? precomputedAnalysis.relationshipLibStatus : patch.relationshipLibStatus, intimacyProfiles: precomputedAnalysis.intimacyProfiles?.length ? precomputedAnalysis.intimacyProfiles : patch.intimacyProfiles, dispositionProfiles: precomputedAnalysis.dispositionProfiles?.length ? precomputedAnalysis.dispositionProfiles : patch.dispositionProfiles, knowledgeCheck: precomputedAnalysis.knowledgeCheck?.length ? precomputedAnalysis.knowledgeCheck : patch.knowledgeCheck, knowledgeLeaks: precomputedAnalysis.knowledgeLeaks?.length ? precomputedAnalysis.knowledgeLeaks : patch.knowledgeLeaks, knowledgeKept: precomputedAnalysis.knowledgeKept?.length ? precomputedAnalysis.knowledgeKept : patch.knowledgeKept, dialogueCheck: precomputedAnalysis.dialogueCheck?.length ? precomputedAnalysis.dialogueCheck : patch.dialogueCheck, dialogueRepairs: precomputedAnalysis.dialogueRepairs?.length ? precomputedAnalysis.dialogueRepairs : patch.dialogueRepairs }
+        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProfiles: precomputedAnalysis.bondProfiles?.length ? precomputedAnalysis.bondProfiles : patch.bondProfiles, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, stateProfiles: precomputedAnalysis.stateProfiles?.length ? precomputedAnalysis.stateProfiles : patch.stateProfiles, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings, intimacyCheck: precomputedAnalysis.intimacyCheck?.length ? precomputedAnalysis.intimacyCheck : patch.intimacyCheck, intimacyReadings: precomputedAnalysis.intimacyReadings?.length ? precomputedAnalysis.intimacyReadings : patch.intimacyReadings, intimacyBodyResponses: precomputedAnalysis.intimacyBodyResponses?.length ? precomputedAnalysis.intimacyBodyResponses : patch.intimacyBodyResponses, relationshipCheck: precomputedAnalysis.relationshipCheck?.length ? precomputedAnalysis.relationshipCheck : patch.relationshipCheck, relationshipEvents: precomputedAnalysis.relationshipEvents?.length ? precomputedAnalysis.relationshipEvents : patch.relationshipEvents, relationshipOccasions: precomputedAnalysis.relationshipOccasions?.length ? precomputedAnalysis.relationshipOccasions : patch.relationshipOccasions, relationshipPairs: precomputedAnalysis.relationshipPairs?.length ? precomputedAnalysis.relationshipPairs : patch.relationshipPairs, relationshipProfiles: precomputedAnalysis.relationshipProfiles?.length ? precomputedAnalysis.relationshipProfiles : patch.relationshipProfiles, relationshipLibStatus: precomputedAnalysis.relationshipLibStatus?.length ? precomputedAnalysis.relationshipLibStatus : patch.relationshipLibStatus, intimacyProfiles: precomputedAnalysis.intimacyProfiles?.length ? precomputedAnalysis.intimacyProfiles : patch.intimacyProfiles, dispositionProfiles: precomputedAnalysis.dispositionProfiles?.length ? precomputedAnalysis.dispositionProfiles : patch.dispositionProfiles, knowledgeCheck: precomputedAnalysis.knowledgeCheck?.length ? precomputedAnalysis.knowledgeCheck : patch.knowledgeCheck, knowledgeLeaks: precomputedAnalysis.knowledgeLeaks?.length ? precomputedAnalysis.knowledgeLeaks : patch.knowledgeLeaks, knowledgeKept: precomputedAnalysis.knowledgeKept?.length ? precomputedAnalysis.knowledgeKept : patch.knowledgeKept, dialogueCheck: precomputedAnalysis.dialogueCheck?.length ? precomputedAnalysis.dialogueCheck : patch.dialogueCheck, dialogueRepairs: precomputedAnalysis.dialogueRepairs?.length ? precomputedAnalysis.dialogueRepairs : patch.dialogueRepairs }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
