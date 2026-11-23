@@ -28236,7 +28236,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const BODY_STATE_SYMPTOM_RE = /아프|통증|두통|어지러|기침|열이|미열|오한|메스꺼|구토|피곤|피로|몸살|쑤시|저리|pain|ache|dizzy|cough|nausea|fatigue/i;
   const BODY_STATE_RECOVERY_RE = /나았|회복|완치|열이\s*내렸|괜찮아졌|아물|recovered|healed/i;
   const BODY_STATE_MEDICATION_RE = /약을|복용|진통제|해열제|처방|병원|치료|붕대|깁스|medicine|pill\b|bandage|cast\b/i;
-  const BODY_STATE_PERIOD_START_RE = /생리(?:를|가)?\s*(?:시작|터졌)|월경\s*시작|period\s+(?:started|began)/i;
+  const BODY_STATE_PERIOD_START_RE = /생리(?:를|가|는)?\s*(?:시작|터졌|왔|나왔)|월경(?:을|이)?\s*(?:시작|터졌|왔)|period\s+(?:started|began)/i;
+  const BODY_STATE_PERIOD_ONGOING_RE = /생리\s*중|생리\s*(?:[1-7]|[일이삼사오육칠])\s*일\s*(?:째|차)|생리(?:대|컵|팬티)|탐폰|생리통|그날(?:이|이라|인데)|생리\s*(?:때문|이라|중이|혈)|월경\s*중|월경통|menstruat(?:ing|ion)|on\s+(?:her|my|their)\s+period|period\s+(?:cramps?|pain)|(?:sanitary\s+)?(?:pad|tampon)/i;
+  const BODY_STATE_PERIOD_ENDED_RE = /생리(?:가|는|도)?\s*(?:끝났|끝나|멈췄|멎었|지났)|월경(?:이|은)?\s*(?:끝났|끝나|멈췄|지났)|period\s+(?:ended|finished|stopped|is\s+over)/i;
+  function bodyStateStatedPeriodDay(text) {
+    const m = String(text || '').match(/(?:생리|월경|period)\s*(?:day\s*)?([1-7])\s*(?:일\s*(?:째|차))?/i)
+      || String(text || '').match(/day\s*([1-7])\s+of\s+(?:her|my|their\s+)?period/i);
+    if (!m) return null;
+    const d = Number(m[1]);
+    return Number.isFinite(d) && d >= 1 && d <= 7 ? d : null;
+  }
   const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|안에\s*쌌|속에\s*쌌|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|가득)|slept together|had sex|intercourse/i;
   const BODY_STATE_CONTRACEPTION = Object.freeze({
     // Multiplier on the per-act conception chance under typical use.
@@ -29063,17 +29072,33 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const medication = latest(BODY_STATE_MEDICATION_RE);
     if (medication) lines.push(`  treatment recorded (${medication.source})`);
 
-    const periodEntry = latest(BODY_STATE_PERIOD_START_RE);
-    const fertility = bodyStateCanConceive(name, card, !!periodEntry);
+    const periodStartEntry = [...mine].reverse().find(entry => BODY_STATE_PERIOD_START_RE.test(entry.line) && !BODY_STATE_PERIOD_ENDED_RE.test(entry.line)) || null;
+    const periodOngoingEntry = [...mine].reverse().find(entry => BODY_STATE_PERIOD_ONGOING_RE.test(entry.line) && !BODY_STATE_PERIOD_ENDED_RE.test(entry.line)) || null;
+    const periodEndEntry = latest(BODY_STATE_PERIOD_ENDED_RE);
+    const activePeriodStart = periodStartEntry && (!periodEndEntry || mine.indexOf(periodStartEntry) >= mine.indexOf(periodEndEntry)) ? periodStartEntry : null;
+    const activePeriodOngoing = periodOngoingEntry && (!periodEndEntry || mine.indexOf(periodOngoingEntry) >= mine.indexOf(periodEndEntry)) ? periodOngoingEntry : null;
+    const periodEntry = activePeriodStart || periodStartEntry;
+    const activeMenstrualEntry = activePeriodOngoing || activePeriodStart;
+    const fertility = bodyStateCanConceive(name, card, !!(periodEntry || periodOngoingEntry));
     const today = bodyStateDayNumber(clock, now);
     // Without a card length, a seeded length (26–32 days) keeps each person's cycle stable.
     const length = card?.cycleLength || (fertility.value ? 26 + Math.floor(bodyStateSeedRoll(`${scopeKey}|${name}|cycle-length`) * 7) : BODY_STATE_DEFAULT_CYCLE);
     const cardPeriodDays = card?.lastPeriodStart ? bodyStateCardDays(card.lastPeriodStart, now, today) : null;
     let cycleDay = null;
     let cycleConfidence = 'unknown';
-    if (periodEntry) {
-      const elapsed = bodyStateElapsed(periodEntry, now, clock);
-      if (elapsed.days !== null) { cycleDay = (elapsed.days % length) + 1; cycleConfidence = elapsed.confidence; }
+    let ongoingMenstrualOnly = null;
+    const periodElapsed = periodEntry ? bodyStateElapsed(periodEntry, now, clock) : { days: null, confidence: 'unknown' };
+    if (periodEntry && periodElapsed.days !== null && !(activePeriodOngoing && mine.indexOf(activePeriodOngoing) > mine.indexOf(periodEntry) && periodElapsed.days >= 7)) {
+      cycleDay = (periodElapsed.days % length) + 1;
+      cycleConfidence = periodElapsed.confidence;
+    } else if (activeMenstrualEntry) {
+      const statedDay = bodyStateStatedPeriodDay(activeMenstrualEntry.line);
+      if (statedDay !== null) {
+        cycleDay = statedDay;
+        cycleConfidence = `stated (${activeMenstrualEntry.source})`;
+      } else {
+        ongoingMenstrualOnly = activeMenstrualEntry;
+      }
     } else if (cardPeriodDays !== null) {
       cycleDay = (cardPeriodDays % length) + 1;
       cycleConfidence = 'confirmed (card)';
@@ -29083,13 +29108,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
       cycleDay = ((today.day + offset) % length + length) % length + 1;
       cycleConfidence = `auto (fixed seed, ${today.basis})`;
     }
-    if (fertility.value === false) cycleDay = null;
+    if (fertility.value === false) { cycleDay = null; ongoingMenstrualOnly = null; }
     // A pregnancy or a recent birth replaces the cycle: there is no period to report then.
     const cycleAt = lines.length;
     const cycleLine = cycleDay !== null ? (() => {
       const phase = bodyStateCyclePhase(cycleDay, length);
       return `  cycle: day ${cycleDay} of ${length} (${cycleConfidence}) → ${phase.phase}; signs: ${phase.signs}`;
-    })() : '';
+    })() : ongoingMenstrualOnly ? `  cycle: menstrual (ongoing in ${ongoingMenstrualOnly.source}, day unknown — not fertile) → menstrual; signs: cramps, low energy, wants warmth and rest` : '';
     const cardConception = card?.conceptionDate ? bodyStateCardDays(card.conceptionDate, now, today) : null;
     let pregnancyLine = '';
     if (card?.conceptionDate) {
@@ -32199,10 +32224,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return gauges;
   };
-  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌)|콘돔\s*착용|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:wore|wearing|with|used)\s+a\s+condom/i;
+  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌|굴러\s*내려|말려\s*내려|뿌리까지\s*(?:덮|감싸))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워)|콘돔\s*착용|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?:wore|wearing|with|used)\s+a\s+condom/i;
   const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:없이|안\s*(?:끼|쓰|하|챙)|못\s*(?:끼|쓰)|빼고|거부|치우)|피임\s*(?:안\s*(?:하|했)|없이|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|(?:안|속|질내|자궁)(?:에|에다|으로)\s*(?:그대로\s*)?(?:싸|사정|쏟|부어)|질내\s*사정|안싸|\braw\b|bareback|without\s+(?:a\s+)?condom|no\s+protection|creampie/i;
-  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무)(?:이|은|가)?\s*(?:찢어|터졌|터져|빠졌|빠져|벗겨)|피임(?:이)?\s*실패|condom\s+(?:broke|ripped|slipped|burst)/i;
-  const INTIMACY_WITHDRAWAL_RE = /질외\s*사정|밖(?:에|에다)\s*(?:싸|사정|빼)|빼서\s*(?:싸|사정)|안에는?\s*(?:절대\s*)?안\s*(?:싸|돼)|pull(?:ing|ed)?\s+out/i;
+  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?\s*(?:찢어|터졌|터져|빠졌|빠져|벗겨|말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^.\n]{0,18}뭉쳐|뭉쳐\s*(?:있|버렸))|(?:뭉친\s*자리|콘돔|고무)[^.\n]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:condom|rubber)\s+(?:broke|ripped|slipped|bunched|rolled\s+up|burst)/i;
+  const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;
   const INTIMACY_ONGOING_BIRTH_CONTROL_RE = /경구\s*피임약|피임약(?:을)?\s*(?:복용|먹고|챙겨\s*먹|먹어)|미레나|루프\s*(?:시술|착용)|임플라논|(?:on|taking)\s+(?:the\s+)?(?:birth\s+control\s+)?pill|has\s+an?\s+iud/i;
   const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸|사정|쏟았|부었|가득\s*채웠)|안싸|came\s+inside|creampie/i;
 
@@ -32253,16 +32278,45 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const src = String(loreText || '');
     if (!src) return [];
     const rules = [
-      [/원칙|엄격|진지|보수적|냉정|철저|이성적|꼼꼼|계획적/i, '원칙·신중함'],
-      [/자존심|도도|까칠|거침없|직설|당당|기센|승부욕|츤데레/i, '도도·직설적 기질'],
-      [/수줍|부끄|내성적|소심|조심스럽|여린|순진|겁이\s*많/i, '수줍음·조심스러움'],
-      [/다정|헌신|따뜻|배려|온순|자상|챙기|순종/i, '다정·헌신적'],
-      [/대담|능글|도발|쾌락|솔직|적극적|유혹|장난기/i, '솔직·대담함'],
-      [/자매|언니|동생|가족애|책임감|장녀|보호본능/i, '책임감·유대']
+      [/원칙|엄격|진지|보수적|냉정|철저|이성적|꼼꼼|계획적|규율|질서|strict|disciplined|rational|cautious/i, '원칙·신중함'],
+      [/자존심|도도|까칠|거침없|직설|당당|기센|승부욕|츤데레|무뚝뚝|퉁명|proud|blunt|sharp-tongued|tsundere/i, '도도·직설적 기질'],
+      [/수줍|부끄|내성적|소심|조심스럽|여린|순진|겁이\s*많|말수\s*적|shy|timid|bashful|reserved/i, '수줍음·조심스러움'],
+      [/나른|게으르|느긋|무심|덤덤|고양이|퇴폐|귀찮|건조|냉소|lazy|languid|aloof|cat-like|nonchalant|dry/i, '나른·무심한 여유'],
+      [/체념|현실적|포기|받아들이|담담|무덤덤|한숨|달관|resigned|pragmatic|accepting|matter-of-fact/i, '체념·현실적 수용'],
+      [/다정|헌신|따뜻|배려|온순|자상|챙기|순종|gentle|caring|devoted|warm/i, '다정·헌신적'],
+      [/대담|능글|도발|쾌락|솔직|적극적|유혹|장난기|bold|playful|teasing|seductive|assertive/i, '솔직·대담함'],
+      [/자매|언니|동생|가족애|책임감|장녀|보호본능|sister|family|protective|responsible/i, '책임감·유대']
     ];
     const tags = [];
     for (const [pat, tag] of rules) if (pat.test(src)) tags.push(tag);
-    return tags.slice(0, 3);
+    return tags.slice(0, 4);
+  };
+
+  const buildContraceptionLoreVoiceCue = (loreTags = [], loreBrief = '', dispLabel = '') => {
+    const hints = [];
+    if (loreTags.includes('나른·무심한 여유') || loreTags.includes('체념·현실적 수용')) {
+      hints.push('과장된 비명이나 억지 수줍음 대신 나른한 한숨·체념 섞인 짧은 말투(예: 낮게 "밖에.", "어쩔 수 없네" 등 건조한 수용/선 긋기)');
+    }
+    if (loreTags.includes('도도·직설적 기질')) {
+      hints.push('눈빛·직설적인 촌철살인이나 자존심 섞인 냉정한 선 긋기');
+    }
+    if (loreTags.includes('원칙·신중함')) {
+      hints.push('현실적 위험을 짚는 이성적 경계·또렷한 어조와 행동 제지');
+    }
+    if (loreTags.includes('수줍음·조심스러움')) {
+      hints.push('머뭇거림·붉어진 얼굴과 조심스러운 속삭임');
+    }
+    if (loreTags.includes('솔직·대담함')) {
+      hints.push('솔직하고 대담한 시선·능글맞거나 주도적인 호흡 조절');
+    }
+    if (loreTags.includes('다정·헌신적')) {
+      hints.push('상대를 먼저 살피는 다정한 염려와 부드러운 당부');
+    }
+    if (loreTags.includes('책임감·유대')) {
+      hints.push('관계·책임감을 의식한 진중한 배려와 선 유지');
+    }
+    const base = hints.length ? hints.join(', ') : (loreBrief ? `로어 성격(${compact(loreBrief, 80)})에 맞는 고유한 말투·표정·호흡` : `인물 호감(${dispLabel || '현재'})에 맞는 개성적 반응`);
+    return `${base}으로 표현하되 천편일률적인 "빼!" 반복이나 로어와 맞지 않는 뻔한 반응은 피할 것`;
   };
 
   const computeIntimacyContraceptionVerdicts = (recent = {}, cards = [], scene = {}, gauges = [], externalReaction = null, settings = null) => {
@@ -32272,7 +32326,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .map(message => text(message?.content || ''))
       .filter(Boolean);
     if (rawMsgs.length && input && rawMsgs[rawMsgs.length - 1].trim() === input.trim()) rawMsgs.pop();
-    const recentWindow = rawMsgs.slice(-3);
+    const recentCandidates = rawMsgs.slice(-6);
+    const recentWindow = [];
+    for (let i = recentCandidates.length - 1; i >= 0; i -= 1) {
+      if (INTIMACY_RESOLVED_RE.test(recentCandidates[i])) break;
+      recentWindow.unshift(recentCandidates[i]);
+    }
     const encounterSteps = [...recentWindow, input].filter(Boolean);
     const encounterText = encounterSteps.join('\n');
     const latestStep = input || recentWindow[recentWindow.length - 1] || '';
@@ -32292,7 +32351,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const personaGender = personaName ? intimacyResolveGender(personaName, cards.find(c => c.name && extensionSamePerson(c.name, personaName)), recent) : '';
     const hasMaleParticipant = gauges.some(g => g.gender === 'male')
       || personaGender === 'male'
-      || /자지|음경|페니스|육봉|귀두|콘돔|사정|질외|정액/i.test(encounterText);
+      || /자지|음경|페니스|육봉|귀두|콘돔|고무|사정|질외|정액/i.test(encounterText);
     const allConfirmedFemaleOnly = !hasMaleParticipant
       && gauges.length > 0
       && gauges.every(g => g.gender === 'female')
@@ -32318,6 +32377,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           INTIMACY_PENETRATIVE_ACT_RE.test(line)
           || INTIMACY_CONDOM_PUT_ON_RE.test(line)
           || INTIMACY_CONDOM_NEGATED_RE.test(line)
+          || INTIMACY_CONDOM_FAILED_RE.test(line)
           || INTIMACY_WITHDRAWAL_RE.test(line)
         );
       });
@@ -32341,8 +32401,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const nowDate = bodyStateCurrentDate(recent);
     const todayNum = bodyStateDayNumber(clock, nowDate);
     const libBlock = libEvidenceWithoutMarkers(effectiveSettings);
+    const parsedLibLines = libBlock
+      ? String(libBlock).split(/\n+/).flatMap(full => forcedBondSentences(full).map(line => ({ source: 'LIB', line, full, relative: bodyStateRelativeDays(line) })))
+      : [];
 
-    // Step-by-step barrier/contraception state across recent encounter window (later action overrides earlier).
+    // Step-by-step barrier/contraception state across active encounter window (later action overrides earlier; slippage beats intact condom).
     let latestBarrierState = '';
     for (const step of encounterSteps) {
       if (INTIMACY_CONDOM_FAILED_RE.test(step)) latestBarrierState = 'condom_failed';
@@ -32350,6 +32413,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       else if (INTIMACY_CONDOM_PUT_ON_RE.test(step)) latestBarrierState = 'condom';
       else if (INTIMACY_WITHDRAWAL_RE.test(step)) latestBarrierState = 'withdrawal';
     }
+    const withdrawalRequested = INTIMACY_WITHDRAWAL_RE.test(encounterText) || latestBarrierState === 'withdrawal';
     const creampieAttemptOrDone = INTIMACY_CREAMPIE_RE.test(encounterText);
     const explicitSafeDayConsentInAct = /(?:생리\s*중|안전일)(?:이라|이니까|이니)?[^\n.?!]{0,24}(?:괜찮|그냥\s*해|피임\s*(?:안|필요\s*없)|넣어|해도\s*돼)/i.test(encounterText);
 
@@ -32388,11 +32452,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
         isProtected = true;
       } else if (latestBarrierState === 'condom_failed') {
         method = 'condom_failed';
-        methodLabel = '콘돔 파손·이탈 (피임 실패)';
+        methodLabel = '콘돔 파손·이탈 (뭉침·맨살 노출로 피임 실패)';
         isProtected = false;
       } else if (latestBarrierState === 'none_explicit') {
         method = 'none_explicit';
-        methodLabel = creampieAttemptOrDone ? '무피임 · 질내사정/시도' : '피임 안 함 (노콘·무피임 명시)';
+        methodLabel = creampieAttemptOrDone
+          ? '무피임 · 질내사정/시도'
+          : (withdrawalRequested ? '피임 안 함 (질외사정 요구 동반)' : '피임 안 함 (노콘·무피임 명시)');
         isProtected = false;
       } else if (latestBarrierState === 'withdrawal' || femaleCard?.contraception === 'withdrawal') {
         method = 'withdrawal';
@@ -32400,10 +32466,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         isProtected = false;
       }
 
-      // 2. Character lore & personality traits (never store LIB substrings in Runtime)
+      // 2. Character lore & personality traits (never store or emit LIB substrings)
       const safeLoreText = collectSafeCharacterLoreText(name, scopeKey, effectiveSettings, recent);
       const loreTags = extractLorePersonalityToneTags(safeLoreText);
       const loreBrief = typeof personLoreReactionBrief === 'function' ? personLoreReactionBrief(name, scopeKey, effectiveSettings, recent) : '';
+      const loreStyleCue = buildContraceptionLoreVoiceCue(loreTags, loreBrief, dispLabel);
       const safeCombined = [safeLoreText, encounterText, rawMsgs.slice(-6).join('\n')].filter(Boolean).join('\n');
       const libMentionsTarget = Boolean(libBlock && extensionTextMentionsName(libBlock, name));
 
@@ -32436,40 +32503,77 @@ Begin directly with the in-world response and finish the complete same-turn draf
         relLabel = relStatus ? (RELSIM_STATUSES?.[relStatus] || '연인·썸') : (['like', 'affection'].includes(dispLevel) ? '호감·연인 진행 중' : '썸·모호한 관계');
       }
 
-      // 4. Physiological cycle / safety window (only character-known, NEVER auto fixed seed)
-      const femaleBodyReading = bodyReadings.find(r => r?.character && extensionSameOrGivenName(r.character, femaleCard?.name || name))?.summary || '';
+      // 4. Physiological cycle / safety window (LIB + recent narrative + body card; NEVER auto fixed seed, NEVER leak raw LIB text)
+      const targetCycleName = femaleCard?.name || name;
+      const libTargetEntries = parsedLibLines.filter(e => bodyStateLineMentions(e.line, targetCycleName) || (e.full && bodyStateLineMentions(e.full, targetCycleName)));
+      const libCycleText = libTargetEntries.map(e => e.line).join('\n');
+      const femaleBodyReading = bodyReadings.find(r => r?.character && extensionSameOrGivenName(r.character, targetCycleName))?.summary || '';
       const knownBodyText = [
         femaleCard?.constitution || '',
         femaleCard?.basis || '',
         femaleBodyReading,
         encounterText,
-        recentWindow.join('\n')
+        rawMsgs.slice(-6).join('\n')
       ].filter(Boolean).join('\n');
       const cardCycleLen = femaleCard?.cycleLength || BODY_STATE_DEFAULT_CYCLE;
       const cardPeriodDays = femaleCard?.lastPeriodStart ? bodyStateCardDays(femaleCard.lastPeriodStart, nowDate, todayNum) : null;
       const explicitCycleDay = cardPeriodDays !== null ? (cardPeriodDays % cardCycleLen) + 1 : null;
       const ovDay = cardCycleLen - 14;
 
+      const orderedPeriodSteps = [...recentCandidates, input].filter(Boolean);
+      let lastScenePeriodIdx = -1;
+      let lastScenePeriodEndIdx = -1;
+      for (let idx = 0; idx < orderedPeriodSteps.length; idx += 1) {
+        const chunk = orderedPeriodSteps[idx];
+        if ((BODY_STATE_PERIOD_START_RE.test(chunk) || BODY_STATE_PERIOD_ONGOING_RE.test(chunk)) && !BODY_STATE_PERIOD_ENDED_RE.test(chunk)) {
+          lastScenePeriodIdx = idx;
+        }
+        if (BODY_STATE_PERIOD_ENDED_RE.test(chunk)) lastScenePeriodEndIdx = idx;
+      }
+      const scenePeriodEnded = lastScenePeriodEndIdx >= 0 && lastScenePeriodEndIdx > lastScenePeriodIdx;
+      const libLatestStart = [...libTargetEntries].reverse().find(e => BODY_STATE_PERIOD_START_RE.test(e.line) && !BODY_STATE_PERIOD_ENDED_RE.test(e.line)) || null;
+      const libLatestOngoing = [...libTargetEntries].reverse().find(e => BODY_STATE_PERIOD_ONGOING_RE.test(e.line) && !BODY_STATE_PERIOD_ENDED_RE.test(e.line)) || null;
+      const libLatestEnd = [...libTargetEntries].reverse().find(e => BODY_STATE_PERIOD_ENDED_RE.test(e.line)) || null;
+      const libActiveStart = libLatestStart && (!libLatestEnd || libTargetEntries.indexOf(libLatestStart) >= libTargetEntries.indexOf(libLatestEnd)) ? libLatestStart : null;
+      const libActiveOngoing = libLatestOngoing && (!libLatestEnd || libTargetEntries.indexOf(libLatestOngoing) >= libTargetEntries.indexOf(libLatestEnd)) ? libLatestOngoing : null;
+      const libStartElapsed = libLatestStart ? bodyStateElapsed(libLatestStart, nowDate, clock) : { days: null };
+      const libCycleDay = libStartElapsed.days !== null ? (libStartElapsed.days % cardCycleLen) + 1 : null;
+
+      const sceneMenstrualCue = (/생리\s*(?:중|[1-7]\s*일\s*(?:째|차)|기간|끝물|직후)|생리대|생리통|월경\s*(?:중|[1-7]\s*일)|그날이라|안전일(?:이라|이니까|이야|임)?|(?:on\s+her\s+|during\s+her\s+)period|menstruat(?:ing|ion)|safe\s+day/i.test(knownBodyText)
+        && !BODY_STATE_PERIOD_ENDED_RE.test(encounterText)
+        && !/안전일(?:이|은)?\s*아니/i.test(knownBodyText));
+      const libMenstrualCue = Boolean(
+        (libCycleDay !== null && libCycleDay <= 6 && !scenePeriodEnded)
+        || (libActiveOngoing && !scenePeriodEnded && !(libCycleDay !== null && libCycleDay > 7))
+        || (libActiveStart && libCycleDay === null && !scenePeriodEnded)
+        || (libCycleText && /안전일(?:이라|이니까|이야|임)?/i.test(libCycleText) && !/안전일(?:이|은)?\s*아니/i.test(libCycleText) && !scenePeriodEnded)
+      );
+      const fertileCueInText = /배란(?:일|기)|가임기|위험(?:한\s*날|일)|임신하기\s*쉬운\s*날|ovulat(?:ing|ion)|fertile\s+(?:window|day)/i;
+      const libFertileCue = Boolean((libCycleDay !== null && libCycleDay >= ovDay - 2 && libCycleDay <= ovDay + 2) || fertileCueInText.test(libCycleText));
+
       let cycleWindow = 'normal_risk';
       let cycleLabel = '일반 가임 주기';
-      if (femaleCard?.conceptionDate || /임신\s*(?:중|\d+\s*주|확인|사실)|이미\s*임신/i.test(knownBodyText)) {
+      let cycleSource = '일반 추정';
+      if (femaleCard?.conceptionDate || /임신\s*(?:중|\d+\s*주|확인|사실)|이미\s*임신/i.test(knownBodyText) || /임신\s*(?:중|\d+\s*주|확인|사실)|이미\s*임신/i.test(libCycleText)) {
         cycleWindow = 'already_pregnant';
         cycleLabel = '기임신 상태';
-      } else if (femaleCard?.canConceive === 'no' || /불임|난임\s*판정|정관\s*수술|피임\s*수술|폐경/i.test(knownBodyText)) {
+        cycleSource = /임신/.test(libCycleText) ? 'LIB 기록' : (femaleCard?.conceptionDate ? '인물 카드' : '최근 서사');
+      } else if (femaleCard?.canConceive === 'no' || /불임|난임\s*판정|정관\s*수술|피임\s*수술|폐경/i.test(knownBodyText) || /불임|난임\s*판정|피임\s*수술|폐경/i.test(libCycleText)) {
         cycleWindow = 'infertile';
         cycleLabel = '비가임 설정';
-      } else if (
-        (/생리\s*(?:중|\d+\s*일째|기간|끝물|직후)|월경\s*(?:중|\d+\s*일째)|그날이라|안전일(?:이라|이니까|이야|임)?|(?:on\s+her\s+|during\s+her\s+)period|safe\s+day/i.test(knownBodyText) && !/안전일(?:이|은)?\s*아니/i.test(knownBodyText))
-        || (explicitCycleDay !== null && explicitCycleDay <= 6)
-      ) {
+        cycleSource = /불임|난임|폐경/.test(libCycleText) ? 'LIB 기록' : (femaleCard?.canConceive === 'no' ? '인물 카드' : '최근 서사');
+      } else if (libMenstrualCue || sceneMenstrualCue) {
         cycleWindow = 'menstrual_safe';
         cycleLabel = '생리 중 · 안전일 인지';
-      } else if (
-        /배란(?:일|기)|가임기|위험(?:한\s*날|일)|임신하기\s*쉬운\s*날|ovulat(?:ing|ion)|fertile\s+(?:window|day)/i.test(knownBodyText)
-        || (explicitCycleDay !== null && explicitCycleDay >= ovDay - 2 && explicitCycleDay <= ovDay + 2)
-      ) {
+        cycleSource = libMenstrualCue ? 'LIB 기록' : '최근 서사';
+      } else if (explicitCycleDay !== null && explicitCycleDay <= 6) {
+        cycleWindow = 'menstrual_safe';
+        cycleLabel = '생리 중 · 안전일 인지';
+        cycleSource = '인물 카드';
+      } else if (fertileCueInText.test(knownBodyText) || libFertileCue || (explicitCycleDay !== null && explicitCycleDay >= ovDay - 2 && explicitCycleDay <= ovDay + 2)) {
         cycleWindow = 'fertile_danger';
         cycleLabel = '배란·위험일 인지';
+        cycleSource = libFertileCue ? 'LIB 기록' : (explicitCycleDay !== null ? '인물 카드' : '최근 서사');
       }
 
       // 5. Child / family plan (explicit card -> lore/LIB boolean cues)
@@ -32489,13 +32593,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
       // 6. Synthesize stance & lore-seeded behavioral reaction
       const lowTrust = dispLevel === 'hostile' || dispLevel === 'dislike' || mood <= -45;
-      const feverOrPain = /발열|몸살|배를?\s*움츠|생리통|아프|통증/i.test(knownBodyText);
+      const feverOrPain = /발열|몸살|배를?\s*움츠|생리통|아프|통증|cramp|fever/i.test(knownBodyText)
+        || /발열|몸살|생리통|하복부\s*통증|cramp|fever/i.test(libCycleText);
       const loreSeedHint = [loreTags.length ? `기질(${loreTags.join('·')})` : '', loreBrief ? `로어(${compact(loreBrief, 95)})` : ''].filter(Boolean).join(' · ');
+      const noPhantomCondomLock = (method === 'none_implicit' || method === 'none_explicit')
+        ? ' [연속성 잠금: 현재 장면에 콘돔·고무 착용 정황이 없으므로 서술 도중 없던 콘돔이 갑자기 착용된 상태로 바꾸지 말 것.]'
+        : '';
+      const failedCondomWarn = method === 'condom_failed'
+        ? ' [주의: 고무가 밑동 쪽으로 뭉치거나 파손·이탈되어 맨살이 드러난 피임 실패 상태이므로 안전한 피임으로 오인하지 말고 노출·당혹·후속 대처를 반영할 것.]'
+        : '';
+      const withdrawalNote = withdrawalRequested
+        ? ' 대사에 담긴 질외사정 요구(예: "밖에.", "밖으로")를 무시하고 임의로 질내사정으로 흘러가지 말 것.'
+        : '';
       const contextTag = [
         `피임:${methodLabel}`,
         `관계:${relLabel}`,
         `호감:${dispLabel}${mood ? `(${mood > 0 ? `+${mood}` : mood})` : ''}`,
-        `주기:${cycleLabel}`,
+        `주기:${cycleLabel}(${cycleSource})`,
         `자녀계획:${childPlanLabel}`
       ].join(' · ');
 
@@ -32510,57 +32624,59 @@ Begin directly with the in-world response and finish the complete same-turn draf
         badgeLabel = `피임 확인 (${methodLabel})`;
         badgeTone = 'ok';
         summaryKo = `${methodLabel} 상태로 피임 우려 없이 인물 성격과 관계 온도에 맞춰 반응합니다.`;
-        promptDirective = `${displayName}의 피임은 확인됨(${methodLabel}). 무피임 공포나 억지 질책을 넣지 말고 ${loreSeedHint || '로어 성격'}과 현재 호감도(${dispLabel})에 맞게 자연스럽게 몰입하거나 반응하라.`;
+        promptDirective = `${displayName}의 피임은 확인됨(${methodLabel}). 무피임 공포나 억지 질책을 넣지 말고 ${loreStyleCue}과 현재 호감도(${dispLabel})에 맞게 자연스럽게 몰입하거나 반응하라.`;
       } else if (g.sleeping && (g.wakefulnessGauge || 0) < 70) {
         stanceCode = 'asleep_unaware';
         badgeLabel = '피임 미실시 · 수면 중 미인지';
         badgeTone = 'warn';
         summaryKo = `깊은 수면(각성 ${g.wakefulnessGauge || 0}%) 상태로 피임 여부를 인지하지 못한 채 신체 반응만 나타납니다.`;
-        promptDirective = `수면 중이므로 피임 여부를 즉시 말로 따지지는 못한다. 다만 각성도 상승 시 몸을 비틀거나 무의식적 거부·긴장 반응을 ${loreSeedHint || '로어 체질'}에 맞춰 드러내라.`;
+        promptDirective = `수면 중이므로 피임 여부를 즉시 말로 따지지는 못한다. 다만 각성도 상승 시 몸을 비틀거나 무의식적 거부·긴장 반응을 ${loreSeedHint || '로어 체질'}에 맞춰 드러내라.${noPhantomCondomLock}`;
       } else if (cycleWindow === 'already_pregnant' || cycleWindow === 'infertile') {
         stanceCode = 'no_conception_risk';
         badgeLabel = cycleWindow === 'already_pregnant' ? '피임 미실시 · 기임신 상태' : '피임 미실시 · 비가임 인지';
         badgeTone = 'info';
         summaryKo = `${cycleLabel}이므로 피임 미실시에 따른 임신 공포 대신 현재 몸 상태와 관계 맥락에 맞춰 반응합니다.`;
-        promptDirective = `${cycleLabel} 상태(${loreSeedHint || '로어 기반'}). 임신 공포 반응 대신 몸의 부담·감정선·관계 맥락에 집중해 반응하라.`;
+        promptDirective = `${cycleLabel} 상태(${loreSeedHint || '로어 기반'}). 임신 공포 반응 대신 몸의 부담·감정선·관계 맥락에 집중해 ${loreStyleCue}로 반응하라.${noPhantomCondomLock}`;
       } else if ((lowTrust || relTier === 'casual_or_onenight') && !explicitSafeDayConsentInAct) {
         stanceCode = 'demand_stop_anger';
         badgeLabel = creampieAttemptOrDone ? '피임 미실시 · 무피임 질내사정 경악·격노' : '피임 미실시 · 즉시 제지·분노';
         badgeTone = 'warn';
         summaryKo = `${relLabel}(호감 ${dispLabel})에서 피임 없이 삽입${creampieAttemptOrDone ? '·사정' : ''}이 벌어져, 로어 성격에 따라 당장 멈추거나 빼라며 강하게 화내고 거부합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel}) 상태에서 피임 없이(${methodLabel}) 삽입되었으므로 캐릭터가 순응해 넘어가면 안 된다. ${loreSeedHint || '인물 로어 말투'}에 맞춰 당장 빼라고 밀치거나 콘돔 착용을 요구하며 강하게 화내고 경계하라.${creampieAttemptOrDone ? ' 질내사정 시에는 충격·분노와 사후피임약 추궁까지 연결하라.' : ''}`;
+        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel}) 상태에서 ${methodLabel} 상황(보호 없음)이므로 캐릭터가 순응해 넘어가면 안 된다. ${loreStyleCue}에 맞춰 당장 빼라고 밀치거나 콘돔 착용·중단을 강하게 요구하라.${creampieAttemptOrDone ? ' 질내사정 시에는 충격·분노와 사후피임약 추궁까지 연결하라.' : ''}${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
       } else if (cycleWindow === 'menstrual_safe') {
         stanceCode = 'safe_day_allow';
         badgeLabel = '피임 미실시 · 생리·안전일 감안 수용';
         badgeTone = 'info';
-        summaryKo = `생리 중(안전일)임을 인지하여 임신 걱정으로 거부하기보다 안전일이라 괜찮다고 감안·허용하며${feverOrPain ? ' 생리통·열감과 ' : ' '}로어 성격대로 반응합니다.`;
-        promptDirective = `[필수 실현] ${koJosa(displayName, '은/는')} 본인이 ${cycleLabel} 상태임을 안다. 피임 없이 삽입되어도 무작정 '임신한다'며 패닉하지 말고, 생리 중·안전일이라 괜찮다는 인식 아래 묵인·허용하거나 수줍게 속삭이며 받아들여라(단, ${feverOrPain ? '발열·하복부 뻐근함·통증과 ' : ''}${loreSeedHint || '로어 성격·관계 온도'}를 함께 드러낼 것).`;
+        summaryKo = `생리 중(안전일 · ${cycleSource})임을 인지하여 임신 걱정으로 거부하기보다 안전일이라 괜찮다고 감안·허용하며${feverOrPain ? ' 생리통·열감과 ' : ' '}로어 성격대로 반응합니다.`;
+        promptDirective = `[필수 실현] ${koJosa(displayName, '은/는')} 본인이 ${cycleLabel}(${cycleSource}) 상태임을 안다. 가임기로 오인해 막연히 패닉하지 말고, 생리 중이라 임신 위험은 낮다는 인식 아래 ${loreStyleCue}로 묵인·허용하거나 조심스럽게 선(예: 체념 어린 "밖에.", 천천히 등)을 그어라(단, ${feverOrPain ? '생리통·열감·하복부 뻐근함과 ' : ''}${loreSeedHint || '관계 온도'}를 함께 드러낼 것).${withdrawalNote}${failedCondomWarn}${noPhantomCondomLock}`;
       } else if (relTier === 'married_or_engaged' || relTier === 'deep_lovers') {
         if (effectiveChildPlan === 'none') {
           stanceCode = 'committed_no_child_caution';
           badgeLabel = '피임 미실시 · 자녀계획 없음 주의';
           badgeTone = 'warn';
           summaryKo = `${relLabel}이지만 자녀 계획이 없어 피임 없는 진행을 의식하며 질외사정이나 피임을 챙기려 합니다.`;
-          promptDirective = `[필수 실현] ${relLabel}로 애정은 깊지만 자녀 계획이 없다(${childPlanLabel}). ${loreSeedHint || '로어 성격'}답게 "안에는 안 돼 / 다음엔 콘돔 챙기자" 등 사랑하는 사이 특유의 걱정·주의와 질외 요구를 대사·행동에 드러내라.`;
+          promptDirective = `[필수 실현] ${relLabel}로 애정은 깊지만 자녀 계획이 없다(${childPlanLabel}). ${loreStyleCue}로 "밖에." 같은 질외사정 당부나 멈춤·다음 피임 요구를 성격답게 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
         } else {
           stanceCode = 'committed_subjective_accept';
           badgeLabel = '피임 미실시 · 깊은 관계·주관적 수용';
           badgeTone = 'ok';
           summaryKo = `${relLabel}(호감 ${dispLabel}) 및 캐릭터 주관·로어에 따라 굳이 피임을 요구하지 않고 내심 수용하거나 더 깊이 밀착합니다.`;
-          promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})이며 자녀 회피 설정이 없다. ${loreSeedHint || '인물 로어 주관'}에 따라 억지 피임 거부를 내지 말고, 노콘 감각을 자연스럽게 받아들이거나 애정과 신뢰 속에서 안겨드는 반응을 그려라.`;
+          promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})이며 자녀 회피 설정이 없다. ${loreStyleCue}에 따라 억지 피임 거부를 내지 말고, 노콘 감각을 자연스럽게 받아들이거나 애정과 신뢰 속에서 안겨드는 반응을 그려라.${withdrawalRequested ? ' 단, 직전에 질외("밖에")를 언급했다면 그 의사를 존중하라.' : ''}${noPhantomCondomLock}`;
         }
       } else if (cycleWindow === 'fertile_danger' || effectiveChildPlan === 'none') {
         stanceCode = 'fertile_or_unplanned_anxiety';
         badgeLabel = cycleWindow === 'fertile_danger' ? '피임 미실시 · 위험일 불안·질외 요구' : '피임 미실시 · 임신 우려·피임 의식';
         badgeTone = 'warn';
         summaryKo = `${relLabel}에서 ${cycleWindow === 'fertile_danger' ? '배란·위험일' : childPlanLabel} 부담이 겹쳐 흥분 속에서도 안에는 절대 싸지 말라며 강하게 의식·제지합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}인데 ${cycleWindow === 'fertile_danger' ? '배란·위험일이라 임신 위험이 매우 크다' : '아직 임신·자녀 계획이 없다'}. ${loreSeedHint || '로어 성격'}에 맞춰 열기 속에서도 불안과 망설임, "밖에 싸 / 콘돔 없이 위험해" 같은 실제 방어·질외사정 요구 반응을 선명히 그려라.`;
+        promptDirective = `[필수 실현] ${relLabel}인데 ${cycleWindow === 'fertile_danger' ? '배란·위험일이라 임신 위험이 매우 크다' : '아직 임신·자녀 계획이 없다'}. ${loreStyleCue}에 맞춰 열기 속에서도 불안·체념·경계심을 담아 "밖에." 같은 짧은 질외 요구, 손목 잡기, 혹은 중단 요구 등 캐릭터다운 실제 방어 반응을 선명히 그려라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
       } else {
         stanceCode = 'dating_hesitant_or_swept';
-        badgeLabel = method === 'withdrawal' ? '불완전 피임(질외) · 긴장·의식' : '피임 미실시 · 망설임과 열기 교차';
+        badgeLabel = method === 'withdrawal'
+          ? '불완전 피임(질외) · 긴장·수용/당부'
+          : (method === 'condom_failed' ? '콘돔 이탈·뭉침 · 맨살 노출 경계' : '피임 미실시 · 망설임과 열기 교차');
         badgeTone = 'warn';
-        summaryKo = `${relLabel}에서 피임 없이(${methodLabel}) 맞닿은 감각을 의식하며, 로어 성격에 따라 주저하거나 밖으로 빼 달라고 당부합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 ${methodLabel} 상태로 삽입 중. ${loreSeedHint || '인물 로어 성격'}에 따라 아무 생각 없이 넘기지 말고 맨살의 위험함·수줍은 제지·질외 당부 또는 열기에 휩쓸리는 내적 갈등을 구체적으로 드러내라.`;
+        summaryKo = `${relLabel}에서 ${method === 'condom_failed' ? '고무가 뭉쳐 맨살이 드러난 상태를 의식하며' : method === 'withdrawal' ? '질외사정("밖에.")을 전제로 긴장·타협하며' : `피임 없이(${methodLabel}) 맞닿은 감각을 의식하며`} 로어 성격에 따라 반응합니다.`;
+        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 ${methodLabel} 상태로 진행 중. ${loreStyleCue}에 따라 아무 생각 없이 넘기지 말고, 인물의 말투로 질외 요구("밖에.", "안에는 안 돼"), 체념 섞인 타협, 또는 흔들리는 내적 갈등을 구체적으로 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
       }
 
       return {
@@ -32575,6 +32691,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         mood,
         cycleWindow,
         cycleLabel,
+        cycleSource,
         childPlan: effectiveChildPlan,
         childPlanLabel,
         stanceCode,
@@ -32689,11 +32806,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
   };
   const INTIMACY_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction to contraception/unprotected contact in their own lore voice and situation. Enact EXTERNAL REACTION gauge tiers on the page: when NOTICED THIS TURN, stage a third party noticing through a concrete sensory channel and reacting in character; when gauge >= 60 even if not yet noticed, portray the corresponding environmental cues and NPC sound-muffling/tension in character.',
-    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, reaction to contraception/unprotected contact (grounded in lore, relationship, favorability, menstrual/safe window, and child plan), and voice stay their own and fit the relationship, the limits on record, and their preference card, and that nobody turns into a generic body. If a third party notices (EXTERNAL REACTION), ensure their reaction (direct interference, indirect interference, or ignoring) fits that character’s personality, role, and relationship.',
-    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel (sound, sightline, ajar/unlocked door, proximity).',
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction to contraception/menstruation/unprotected contact in their own lore voice and situation — including diverse reactions such as terse resigned withdrawal requests ("밖에.") or dry/strict pushback, avoiding repetitive stock lines or generic shyness. Never invent an unintroduced condom/rubber (콘돔·고무) mid-act when none was put on, and never treat slipped/bunched rubber as intact protection. Enact EXTERNAL REACTION gauge tiers on the page: when NOTICED THIS TURN, stage a third party noticing through a concrete sensory channel and reacting in character; when gauge >= 60 even if not yet noticed, portray the corresponding environmental cues and NPC sound-muffling/tension in character.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, reaction to contraception/unprotected contact (grounded in lore, relationship, favorability, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. If a third party notices (EXTERNAL REACTION), ensure their reaction (direct interference, indirect interference, or ignoring) fits that character’s personality, role, and relationship.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on, no treating slipped/bunched rubber as protected, and no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel (sound, sightline, ajar/unlocked door, proximity).',
     aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open.',
-    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks; a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier (including 60+/200 corridor/wall tension, muffling, notice/non-notice, or third-party reaction) contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks (including phantom condoms or misread slipped rubber); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier (including 60+/200 corridor/wall tension, muffling, notice/non-notice, or third-party reaction) contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
   });
   const intimacyOutputKind = (stageName, settings = {}) => {
     if (!intimacyStageActive(settings)) return '';
@@ -62804,12 +62921,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const prepared = relsimPrepare(recent, scoped);
       return cloneJson({ verdicts: prepared.verdicts, occasions: prepared.occasions.map(({ card, ...rest }) => rest), scene: prepared.scene, identity: prepared.identity });
     },
-    debugIntimacyPacket({ recent = {}, characterName = '', personaName = '', scopeKey = '', profileGenders = null, settings = null } = {}) {
+    debugIntimacyPacket({ recent = {}, characterName = '', personaName = '', scopeKey = '', profileGenders = null, settings = null, libEvidence = '' } = {}) {
       if (characterName) Runtime.activeCharacterName = characterName;
       if (personaName) Runtime.activePersonaName = personaName;
       if (scopeKey) Runtime.activeScopeKey = scopeKey;
       if (profileGenders) Runtime.activeProfileGenders = new Map(Object.entries(profileGenders).map(([k, v]) => [normalizeContinuityAlias(k), v]));
-      return intimacyPacket(recent, settings);
+      const scopedSettings = libEvidence ? { ...(settings || {}), [LIB_EVIDENCE_CONTEXT]: { block: libEvidence } } : settings;
+      return intimacyPacket(recent, scopedSettings);
     },
     debugIntimacyStageBlock({ stageName = 'aide_character', recent = {}, settings = {}, phase = 'writing' } = {}) {
       return intimacyStageBlock(stageName, recent, settings, {}, phase);

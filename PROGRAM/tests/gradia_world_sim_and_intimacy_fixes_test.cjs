@@ -464,3 +464,199 @@ test('8) multi-stage same-run telemetry preservation: later aide_world and aide_
   assert.match(stagePrompts.aide_world || '', /사정 수치\(ejaculation\): [1-9]/, 'aide_world saw settled post-reading male gauge instead of clobbering it');
   assert.match(stagePrompts.aide_plot || '', /사정 수치\(ejaculation\): [1-9]/, 'aide_plot saw settled post-reading male gauge instead of clobbering it');
 });
+
+test('9) LIB-backed menstruation overrides stale/random cycle guesses without leaking raw LIB text', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const secretToken = 'SECRET_LIB_RAW_STRING_9918';
+  const libBlock = `2026-11-22 천하연은 생리 중이라 하복부 통증을 느끼며 생리대를 갈았다. (${secretToken})`;
+  const settings = {
+    writing_mode: 'rp',
+    bodyStateCards: {
+      'lib-period-9': [
+        { name: '천하연', gender: 'female', lastPeriodStart: '2026-11-09', cycleLength: 28 }
+      ]
+    },
+    npcDisposition: {
+      'lib-period-9': {
+        default: 'like',
+        npcs: [{ name: '천하연', level: 'affection', note: '나른하고 무심하지만 정에 약한 고양이 같은 성격' }]
+      }
+    }
+  };
+
+  const pkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'lib-period-9',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    settings,
+    libEvidence: libBlock,
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '천하연이 침대 끝에 기대 푸딩을 바라봤다.' }
+      ],
+      latestUser: '푸딩은 천하연의 허리를 감싸 안고 그대로 안으로 삽입했다.'
+    }
+  });
+
+  assert.equal(pkt.contraception.length, 1);
+  const verdict = pkt.contraception[0];
+  assert.equal(verdict.cycleWindow, 'menstrual_safe');
+  assert.equal(verdict.cycleSource, 'LIB 기록');
+  assert.equal(verdict.stanceCode, 'safe_day_allow');
+  assert.doesNotMatch(JSON.stringify(pkt), new RegExp(secretToken), 'raw LIB text never leaks into intimacy packet');
+
+  const bodyPkt = f.host.plugin.debugBodyStatePacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'lib-period-9-body',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    libText: '천하연은 생리 중이다. 생리통으로 몸이 조금 무겁다.',
+    settings: { mode: 'normal', writing_mode: 'rp', bodyStateCards: {} },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '천하연이 이불을 끌어올렸다.' }],
+      latestUser: '푸딩이 천하연 옆에 누웠다.'
+    }
+  });
+  assert.match(bodyPkt, /→ menstrual;/, 'bodyStatePacket reports ongoing LIB menstruation instead of auto fixed-seed fertile guess');
+  assert.doesNotMatch(bodyPkt, /auto \(fixed seed/, 'ongoing LIB menstruation overrides auto fixed-seed cycle calculation');
+});
+
+test('10) rubber condom/slippage recognition, prior-encounter isolation, no-phantom-condom lock, and resigned "밖에." withdrawal', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const baseArgs = {
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'condom-fix-10',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: {
+        'condom-fix-10': { default: 'like', npcs: [{ name: '천하연', level: 'like', note: '나른하고 솔직한 편' }] }
+      }
+    }
+  };
+
+  // 10a: Rubber euphemism rolling down to base -> protected condom
+  const rolledPkt = f.host.plugin.debugIntimacyPacket({
+    ...baseArgs,
+    recent: {
+      visibleMessages: [{ role: 'char', content: '고무가 팽팽하게 늘어나며 밑으로 굴러 내려갔다. 곧 뿌리까지 덮이고 천하연과 숨결이 얽혔다.' }],
+      latestUser: '푸딩이 천하연의 안으로 천천히 삽입했다.'
+    }
+  });
+  assert.equal(rolledPkt.contraception[0].method, 'condom');
+  assert.equal(rolledPkt.contraception[0].protected, true);
+  assert.equal(rolledPkt.contraception[0].stanceCode, 'protected_confirmed');
+
+  // 10b: Rubber bunched at base exposing bare skin -> condom_failed (unprotected)
+  const slippedPkt = f.host.plugin.debugIntimacyPacket({
+    ...baseArgs,
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '푸딩이 천하연의 안으로 삽입해 허리를 움직였다.' },
+        { role: 'char', content: '푸딩이 그 자리를 내려다봤다. 고무가 밑동 쪽으로 뭉쳐 있었다. 한참을 움직인 탓이었다. 뭉친 자리 아래로 맨살이 조금 드러나 있었다.' }
+      ],
+      latestUser: '푸딩은 천하연의 허리를 잡은 채 멈칫하며 숨을 삼켰다.'
+    }
+  });
+  assert.equal(slippedPkt.contraception[0].method, 'condom_failed');
+  assert.equal(slippedPkt.contraception[0].protected, false);
+  assert.notEqual(slippedPkt.contraception[0].stanceCode, 'protected_confirmed');
+  assert.match(slippedPkt.contraception[0].promptDirective, /맨살|뭉쳐|피임 실패/);
+
+  // 10c: Resolved previous encounter condom must NOT carry into a new bare encounter + continuity lock active
+  const isolatedPkt = f.host.plugin.debugIntimacyPacket({
+    ...baseArgs,
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '푸딩은 콘돔을 끼우고 천하연을 안았다.' },
+        { role: 'char', content: '한참 뒤 두 사람은 옷을 다 챙겨 입고 방을 나섰다.' },
+        { role: 'char', content: '다음 날 밤, 침대 위에서 천하연이 시트를 쥐었다.' }
+      ],
+      latestUser: '푸딩이 아무 준비도 없이 바로 허리를 붙여 천하연의 안으로 삽입했다.'
+    }
+  });
+  assert.equal(isolatedPkt.contraception[0].method, 'none_implicit');
+  assert.equal(isolatedPkt.contraception[0].protected, false);
+  assert.match(isolatedPkt.contraception[0].promptDirective, /연속성 잠금.*콘돔/);
+
+  // 10d: Resigned terse "밖에." cue -> withdrawal
+  const withdrawalPkt = f.host.plugin.debugIntimacyPacket({
+    ...baseArgs,
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '푸딩이 그대로 안으로 삽입하자 천하연이 나른한 한숨을 흘리며 낮게 읊조렸다.\n"……밖에."' }
+      ],
+      latestUser: '푸딩이 움직임을 멈칫하며 천하연을 바라봤다.'
+    }
+  });
+  assert.equal(withdrawalPkt.contraception[0].method, 'withdrawal');
+  assert.equal(withdrawalPkt.contraception[0].protected, false);
+  assert.match(withdrawalPkt.contraception[0].promptDirective, /밖에\.|질외/);
+});
+
+test('11) Contraception/menstruation directives diversify reaction tone per character lore', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+
+  const lazyPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'lore-div-lazy',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    libEvidence: '천하연은 생리 중이다.',
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'lore-div-lazy': { default: 'like', npcs: [{ name: '천하연', level: 'like', note: '나른하고 무심하며 체념이 빠른 고양이 같은 성격, 직설적' }] } }
+    },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '천하연과 푸딩의 숨결이 얽혔다.' }],
+      latestUser: '푸딩이 콘돔 없이 천하연의 안으로 천천히 삽입했다.'
+    }
+  });
+
+  const shyPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '서윤',
+    personaName: '푸딩',
+    scopeKey: 'lore-div-shy',
+    profileGenders: { 서윤: 'female', 푸딩: 'male' },
+    libEvidence: '서윤은 생리 중이다.',
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'lore-div-shy': { default: 'like', npcs: [{ name: '서윤', level: 'like', note: '수줍음이 많고 내성적이며 조심스러운 성격' }] } }
+    },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '서윤과 푸딩의 숨결이 얽혔다.' }],
+      latestUser: '푸딩이 콘돔 없이 서윤의 안으로 천천히 삽입했다.'
+    }
+  });
+
+  const strictPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '진아',
+    personaName: '푸딩',
+    scopeKey: 'lore-div-strict',
+    profileGenders: { 진아: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'lore-div-strict': { default: 'like', npcs: [{ name: '진아', level: 'like', note: '원칙적이고 계획적이며 이성적인 성격' }] } }
+    },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '진아와 푸딩의 숨결이 얽혔다.' }],
+      latestUser: '푸딩이 콘돔 없이 진아의 안으로 천천히 삽입했다.'
+    }
+  });
+
+  const lazyDir = lazyPkt.contraception[0].promptDirective;
+  const shyDir = shyPkt.contraception[0].promptDirective;
+  const strictDir = strictPkt.contraception[0].promptDirective;
+
+  assert.doesNotMatch(lazyDir, /수줍게 속삭이며/, 'lazy/blunt character never forced into cookie-cutter shyness');
+  assert.match(lazyDir, /나른한 한숨|체념|직설/);
+  assert.match(shyDir, /머뭇거림|붉어진|조심스러운 속삭임/);
+  assert.match(strictDir, /이성적 경계|현실적 위험/);
+  assert.notEqual(lazyDir, shyDir);
+});
