@@ -17572,10 +17572,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   };
   const promptCacheCircuitDecision = (provider, fingerprint, profile = '') => {
-    const adapterKey = `${provider.providerFamily}:${provider.apiShape}:${provider.model}`;
+    const scopePart = text(Memory.currentScopeKey || Memory.projectionCacheScopeKey || 'global');
+    const adapterKey = `${scopePart}:${provider.providerFamily}:${provider.apiShape}:${provider.model}`;
     const states = Memory.promptCache.circuitByAdapter || (Memory.promptCache.circuitByAdapter = {});
-    const state = states[adapterKey] || (states[adapterKey] = { open: false, hashes: [], profile: '', transitions: 0 });
-    if (state.open) return { allowed: false, reason: 'native_adapter_circuit_open', adapterKey };
+    const nowAt = now();
+    const existingKeys = Object.keys(states);
+    if (existingKeys.length > 64) {
+      for (const staleKey of existingKeys.slice(0, existingKeys.length - 64)) delete states[staleKey];
+    }
+    const state = states[adapterKey] || (states[adapterKey] = { open: false, openedAt: 0, hashes: [], profile: '', transitions: 0 });
+    if (state.open) {
+      if (nowAt - Number(state.openedAt || 0) >= 600000) {
+        state.open = false;
+        state.openedAt = 0;
+        state.hashes = [];
+        state.transitions = 0;
+      } else {
+        return { allowed: false, reason: 'native_adapter_circuit_open', adapterKey };
+      }
+    }
     if (state.profile && state.profile !== profile) {
       state.hashes = [];
       state.transitions = 0;
@@ -17586,6 +17601,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     state.hashes = [...state.hashes, fingerprint.hash].slice(-5);
     if (state.transitions >= 2) {
       state.open = true;
+      state.openedAt = nowAt;
       return { allowed: false, reason: 'unstable_static_prefix_circuit_opened', adapterKey };
     }
     return { allowed: true, reason: '', adapterKey };
@@ -39014,6 +39030,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (requestClass.auxiliary) {
         return sanitizeAuxiliaryMessages(requestClass);
       }
+      if (promptCacheModeOf(settings) === 'native' && Memory.promptCache.registered !== true && !Memory.promptCache.registerAttempted) {
+        const nativeCacheRegistered = await RisuCompat.addBodyInterceptor(transformPromptCacheBody);
+        if (!nativeCacheRegistered) {
+          Memory.promptCache.nativeReason = Memory.promptCache.registerError || 'body_interceptor_registration_failed';
+        } else {
+          Memory.promptCache.nativeReason = '';
+        }
+      }
       const hostContextStartedAt = now();
       const [resolvedChatScope, resolvedHostContextBudget] = await Promise.all([
         RisuCompat.currentChatScope(),
@@ -43193,6 +43217,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const invalidateExternalLedgerCaches = scopeKey => {
     Memory.authoritativeLedgerCache = null;
+    try { Memory.globalRoutingCatalogCache?.clear?.(); } catch (_) {}
+    try { Memory.copiedChatSourceCache?.clear?.(); } catch (_) {}
+    if (!scopeKey) {
+      try { Memory.recoveryVaultCache?.clear?.(); } catch (_) {}
+    } else if (Memory.recoveryVaultCache instanceof Map) {
+      for (const k of [...Memory.recoveryVaultCache.keys()]) {
+        if (k === scopeKey || String(k).includes(scopeKey)) Memory.recoveryVaultCache.delete(k);
+      }
+    }
     if (!scopeKey || Memory.projectionCacheScopeKey === scopeKey) {
       try { Memory.projectionCache?.clear?.(); } catch (_) {}
       Memory.projectionCacheScopeKey = '';
@@ -51261,7 +51294,7 @@ const MemorySuiteHealthRecovery = (() => {
     const modeState = await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(descriptor, storageKey);
     const raw = modeState.raw;
     let value = null; try { value = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) {}
-    const valid = value?.version === 'hayaku_storage_ledger_v2' && value.scopeKey === scopeKey && Array.isArray(value.records);
+    const valid = STORAGE_LEDGER_COMPAT_VERSIONS.has(value?.version) && value.scopeKey === scopeKey && Array.isArray(value.records);
     return { scopeKey, mode: modeState.mode, valid, busy: Memory.nativeRecovery.inFlight === true || Memory.nativeRecovery.manualBatchInFlight === true,
       binding: JSON.stringify([descriptor, chat.bindedPersona || '', MemorySuiteHostLineage.inspect(character, chat), modeState.binding, modeState.mode, raw, chat.message || []]) };
   };
@@ -51327,7 +51360,7 @@ const MemorySuiteHealthRecovery = (() => {
     progress('verifying', '완료 턴·패킷 본문·원장·공유 아카이브를 대조합니다.');
     const storageKey = storageLedgerStorageKey(scope), raw = await read(storageKey);
     const value = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
-    if (raw != null && raw !== '' && (!objectish(value) || value.version !== STORAGE_LEDGER_VERSION
+    if (raw != null && raw !== '' && (!objectish(value) || !STORAGE_LEDGER_COMPAT_VERSIONS.has(value.version)
       || value.scopeKey !== scope.key || !Array.isArray(value.records))) throw Error('maintenance_ledger_invalid');
     const hydrated = await hydrateCapturedLedgerRaw(value, scope, {offline: true, read});
     let ledger = normalizeStorageLedger(hydrated, scope);

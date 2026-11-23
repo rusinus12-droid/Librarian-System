@@ -19823,6 +19823,7 @@ ${passage.text || ''}`, 420));
   const parseStreamText = (raw, provider = 'openai') => {
     const lines = String(raw || '').split(/\r?\n/);
     let out = '';
+    let sawDelta = false;
     let usage = null;
     let events = 0;
     let finishReason = '';
@@ -19832,18 +19833,32 @@ ${passage.text || ''}`, 420));
       events += 1;
       usage = obj.usage || obj.usageMetadata || obj.message_delta?.usage || usage;
       finishReason = providerFinishReason(obj) || finishReason;
-      out += obj.choices?.[0]?.delta?.content || '';
-      out += obj.choices?.[0]?.message?.content || '';
-      out += obj.delta?.text || '';
-      if (typeof obj.delta === 'string' && /output_text|content_part/i.test(String(obj.type || ''))) out += obj.delta;
-      out += obj.output_text || '';
-      out += obj.response?.output_text || '';
-      out += obj.message?.content || '';
-      out += typeof obj.response === 'string' ? obj.response : '';
-      out += obj.text || '';
+      const deltaChoice = obj.choices?.[0]?.delta?.content || '';
+      if (deltaChoice) { out += deltaChoice; sawDelta = true; }
+      const fullChoice = obj.choices?.[0]?.message?.content || '';
+      if (fullChoice && !sawDelta) out += fullChoice;
+      const deltaText = obj.delta?.text || '';
+      if (deltaText) { out += deltaText; sawDelta = true; }
+      if (typeof obj.delta === 'string' && /output_text|content_part/i.test(String(obj.type || ''))) { out += obj.delta; sawDelta = true; }
+      const outText = obj.output_text || '';
+      if (outText && !sawDelta) out += outText;
+      const respOutText = obj.response?.output_text || '';
+      if (respOutText && !sawDelta) out += respOutText;
+      const msgContent = obj.message?.content || '';
+      if (msgContent) { out += msgContent; sawDelta = true; }
+      const respStr = typeof obj.response === 'string' ? obj.response : '';
+      if (respStr) { out += respStr; sawDelta = true; }
+      const plainText = obj.text || '';
+      if (plainText) { out += plainText; sawDelta = true; }
       const candidateParts = obj.candidates?.[0]?.content?.parts || obj.candidates?.[0]?.content?.Parts || [];
-      if (Array.isArray(candidateParts)) out += candidateParts.map(part => text(part?.text || '')).join('');
-      if (Array.isArray(obj.content)) out += obj.content.map(block => text(block?.text || '')).join('');
+      if (Array.isArray(candidateParts) && candidateParts.length) {
+        const chunk = candidateParts.map(part => text(part?.text || '')).join('');
+        if (chunk) { out += chunk; sawDelta = true; }
+      }
+      if (Array.isArray(obj.content) && obj.content.length) {
+        const chunk = obj.content.map(block => text(block?.text || '')).join('');
+        if (chunk && !sawDelta) out += chunk;
+      }
       if (obj?.delta?.type === 'input_json_delta') toolJson += text(obj.delta.partial_json || '');
       if (obj?.content_block?.type === 'tool_use'
         && obj.content_block.input
@@ -19866,13 +19881,14 @@ ${passage.text || ''}`, 420));
     return { content, usage, finishReason, streamMeta: { provider, events, finishReason } };
   };
 
+  const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
   const normalizeExtraHeaders = (preset) => {
     const parsed = tryJsonParse(preset.extra_headers_json, {});
     const out = {};
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       for (const [key, value] of Object.entries(parsed)) {
         const k = String(key || '').trim();
-        if (k) out[k] = String(value ?? '');
+        if (k && !DANGEROUS_OBJECT_KEYS.has(k)) out[k] = String(value ?? '');
       }
     }
     return out;
@@ -19880,10 +19896,16 @@ ${passage.text || ''}`, 420));
 
   const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
   const deepMergeJson = (base, override) => {
-    if (!isPlainObject(base) || !isPlainObject(override)) return override;
-    const out = { ...base };
+    if (!isPlainObject(override)) return override;
+    const seed = isPlainObject(base) ? base : {};
+    const out = {};
+    for (const [key, value] of Object.entries(seed)) {
+      if (DANGEROUS_OBJECT_KEYS.has(key)) continue;
+      out[key] = value;
+    }
     for (const [key, value] of Object.entries(override)) {
-      out[key] = isPlainObject(value) && isPlainObject(out[key]) ? deepMergeJson(out[key], value) : value;
+      if (DANGEROUS_OBJECT_KEYS.has(key)) continue;
+      out[key] = isPlainObject(value) ? deepMergeJson(isPlainObject(out[key]) ? out[key] : {}, value) : value;
     }
     return out;
   };
@@ -20105,7 +20127,9 @@ ${passage.text || ''}`, 420));
       if (openAIExplicitCache) body.prompt_cache_options = { mode: 'explicit', ttl: '30m' };
     }
     if (body.stream && ['openai', 'openrouter'].includes(provider)) body.stream_options = { include_usage: true };
+    const stripTemperatureAfterExtra = !('temperature' in body);
     let finalBody = applyPresetExtraBody(body, preset);
+    if (stripTemperatureAfterExtra) delete finalBody.temperature;
     if (budget.requestDisablesReasoning && requiresExplicitThinkingDisable(preset)) {
       finalBody = { ...finalBody, thinking: { type: 'disabled' } };
       delete finalBody.reasoning_effort;
@@ -20343,7 +20367,10 @@ ${passage.text || ''}`, 420));
         body.tool_choice = { type: 'tool', name: 'return_json', disable_parallel_tool_use: true };
       }
     }
-    return applyPresetExtraBody(body, preset);
+    const stripTemperatureAfterExtra = !('temperature' in body);
+    const finalBody = applyPresetExtraBody(body, preset);
+    if (stripTemperatureAfterExtra && isPlainObject(finalBody)) delete finalBody.temperature;
+    return finalBody;
   };
 
   const callAnthropic = async (preset, systemPrompt, userPrompt, options = {}) => {
@@ -20550,7 +20577,7 @@ ${passage.text || ''}`, 420));
     }
   };
 
-  const geminiExplicitCacheDescriptor = (preset = {}, mode = 'gemini', options = {}) => {
+  const geminiExplicitCacheDescriptor = (preset = {}, mode = 'gemini', options = {}, systemPrompt = '') => {
     const sharedPrefix = sharedPromptPrefixForOptions(options);
     const sharedHash = geminiExplicitCacheHash(options);
     if (!sharedPrefix || !sharedHash) return null;
@@ -20563,14 +20590,17 @@ ${passage.text || ''}`, 420));
       ? vertex.createUrl
       : 'https://generativelanguage.googleapis.com/v1beta/cachedContents';
     const credential = providerCredentialCacheFingerprint(preset.key || '');
+    const sysText = text(systemPrompt || '').trim();
+    const sysHash = sysText ? referenceContentHash(sysText) : '';
     const cacheKey = createTextHasher()
       .update('gradia-gemini-explicit-cache-v1')
       .update(mode)
       .update(modelResource)
       .update(credential)
       .update(sharedHash)
+      .update(sysHash)
       .digest();
-    return { mode, sharedPrefix, sharedHash, modelResource, createUrl, cacheKey, vertex };
+    return { mode, sharedPrefix, sharedHash, systemPrompt: sysText, sysHash, modelResource, createUrl, cacheKey, vertex };
   };
 
   const geminiExplicitCacheHeaders = async (preset = {}, descriptor = {}) => {
@@ -20591,13 +20621,44 @@ ${passage.text || ''}`, 420));
     ?? 0
   ) || 0);
 
-  const invalidateGeminiExplicitCache = (descriptorOrKey, reason = '') => {
+  const pruneGeminiExplicitCacheMaps = (nowAt = Date.now()) => {
+    for (const [key, entry] of GeminiExplicitPromptCache.entries) {
+      if (!entry || nowAt >= Number(entry.expiresAt || 0) - GEMINI_EXPLICIT_CACHE_EXPIRY_SKEW_MS) {
+        GeminiExplicitPromptCache.entries.delete(key);
+      }
+    }
+    while (GeminiExplicitPromptCache.entries.size > 32) {
+      const oldest = GeminiExplicitPromptCache.entries.keys().next().value;
+      if (!oldest) break;
+      GeminiExplicitPromptCache.entries.delete(oldest);
+    }
+    for (const [key, failed] of GeminiExplicitPromptCache.failures) {
+      if (!failed || nowAt >= Number(failed.until || 0)) {
+        GeminiExplicitPromptCache.failures.delete(key);
+      }
+    }
+    while (GeminiExplicitPromptCache.failures.size > 32) {
+      const oldest = GeminiExplicitPromptCache.failures.keys().next().value;
+      if (!oldest) break;
+      GeminiExplicitPromptCache.failures.delete(oldest);
+    }
+  };
+
+  const invalidateGeminiExplicitCache = (descriptorOrKey, reason = '', recordFailure = false) => {
     const cacheKey = typeof descriptorOrKey === 'string' ? descriptorOrKey : descriptorOrKey?.cacheKey;
     if (!cacheKey) return false;
     const existed = GeminiExplicitPromptCache.entries.delete(cacheKey);
     GeminiExplicitPromptCache.inflight.delete(cacheKey);
     if (existed) GeminiExplicitPromptCache.stats.invalidations += 1;
-    if (reason) log('gemini_explicit_cache_invalidated', { cacheKey, reason: compact(reason, 300) });
+    if (recordFailure) {
+      GeminiExplicitPromptCache.failures.set(cacheKey, {
+        until: Date.now() + GEMINI_EXPLICIT_CACHE_FAILURE_BACKOFF_MS,
+        reason: compact(reason || 'cached_content_error', 500)
+      });
+      GeminiExplicitPromptCache.stats.failures += 1;
+      pruneGeminiExplicitCacheMaps();
+    }
+    if (reason) log('gemini_explicit_cache_invalidated', { cacheKey, reason: compact(reason, 300), recordFailure });
     return existed;
   };
 
@@ -20605,6 +20666,7 @@ ${passage.text || ''}`, 420));
     const headers = await geminiExplicitCacheHeaders(preset, descriptor);
     const body = {
       model: descriptor.modelResource,
+      ...(descriptor.systemPrompt ? { systemInstruction: { parts: [{ text: descriptor.systemPrompt }] } } : {}),
       contents: [{ role: 'user', parts: [{ text: descriptor.sharedPrefix }] }],
       displayName: `gradia-${descriptor.sharedHash.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)}`,
       ttl: `${GEMINI_EXPLICIT_CACHE_TTL_SECONDS}s`
@@ -20623,6 +20685,7 @@ ${passage.text || ''}`, 420));
       model: text(data?.model || descriptor.modelResource),
       cacheKey: descriptor.cacheKey,
       sharedHash: descriptor.sharedHash,
+      sysHash: descriptor.sysHash || '',
       createTokenCount: geminiCacheCreateTokenCount(data),
       createdAt: Date.now(),
       expiresAt: Number.isFinite(parsedExpiry) ? parsedExpiry : Date.now() + GEMINI_EXPLICIT_CACHE_TTL_SECONDS * 1000,
@@ -20630,8 +20693,8 @@ ${passage.text || ''}`, 420));
     };
   };
 
-  const ensureGeminiExplicitCache = async (preset = {}, mode = 'gemini', options = {}) => {
-    const descriptor = geminiExplicitCacheDescriptor(preset, mode, options);
+  const ensureGeminiExplicitCache = async (preset = {}, mode = 'gemini', options = {}, systemPrompt = '') => {
+    const descriptor = geminiExplicitCacheDescriptor(preset, mode, options, systemPrompt);
     const sharedPrefix = sharedPromptPrefixForOptions(options);
     const providerCacheEnabled = sharedPromptCacheEnabled(options);
     if (!descriptor || options.geminiExplicitCacheDisabled === true) {
@@ -20648,6 +20711,7 @@ ${passage.text || ''}`, 420));
         fallbackReason: 'explicit_plan_disabled'
       };
     }
+    pruneGeminiExplicitCacheMaps();
     const existing = GeminiExplicitPromptCache.entries.get(descriptor.cacheKey);
     if (existing && Date.now() < Number(existing.expiresAt || 0) - GEMINI_EXPLICIT_CACHE_EXPIRY_SKEW_MS) {
       GeminiExplicitPromptCache.stats.reuses += 1;
@@ -20678,11 +20742,13 @@ ${passage.text || ''}`, 420));
       GeminiExplicitPromptCache.entries.set(descriptor.cacheKey, entry);
       GeminiExplicitPromptCache.failures.delete(descriptor.cacheKey);
       GeminiExplicitPromptCache.stats.creates += 1;
+      pruneGeminiExplicitCacheMaps();
       return { ...entry, eligible: true, strategy: 'explicit', cacheName: entry.name, created: true, reused: false, fallbackReason: '' };
     } catch (error) {
       const reason = compact(error?.message || error, 500);
       GeminiExplicitPromptCache.failures.set(descriptor.cacheKey, { until: Date.now() + GEMINI_EXPLICIT_CACHE_FAILURE_BACKOFF_MS, reason });
       GeminiExplicitPromptCache.stats.failures += 1;
+      pruneGeminiExplicitCacheMaps();
       warn('gemini_explicit_cache_create_fallback', `${mode}:${providerModelLeaf(preset.model)} ${reason}`);
       return { eligible: true, strategy: 'implicit_fallback', cacheName: '', created: false, reused: false, createTokenCount: 0, fallbackReason: reason };
     } finally {
@@ -20706,7 +20772,7 @@ ${passage.text || ''}`, 420));
       ...(systemPrompt ? [{ text: systemPrompt }] : [])
     ];
     let body = {
-      systemInstruction: systemParts.length ? { parts: systemParts } : undefined,
+      systemInstruction: cachedContent ? undefined : (systemParts.length ? { parts: systemParts } : undefined),
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       ...(cachedContent ? { cachedContent } : {}),
       generationConfig: buildGeminiGenerationConfig(preset, options)
@@ -20729,7 +20795,7 @@ ${passage.text || ''}`, 420));
     }
     else if (key) headers['x-goog-api-key'] = key;
 
-    const explicitCache = await ensureGeminiExplicitCache(preset, mode, options);
+    const explicitCache = await ensureGeminiExplicitCache(preset, mode, options, systemPrompt);
     const body = buildGeminiRequestBody(preset, systemPrompt, userPrompt, {
       ...options,
       geminiCachedContent: explicitCache.cacheName || ''
@@ -20768,8 +20834,8 @@ ${passage.text || ''}`, 420));
     } catch (error) {
       const cacheError = explicitCache.cacheName ? geminiCachedContentErrorInfo(error) : null;
       if (cacheError && options.geminiCacheInlineFallback !== true) {
-        const descriptor = geminiExplicitCacheDescriptor(preset, mode, options);
-        if (descriptor) invalidateGeminiExplicitCache(descriptor, cacheError.message);
+        const descriptor = geminiExplicitCacheDescriptor(preset, mode, options, systemPrompt);
+        if (descriptor) invalidateGeminiExplicitCache(descriptor, cacheError.message, true);
         warn('gemini_cached_content_inline_fallback', `${mode}:${providerModelLeaf(preset.model)} ${cacheError.message}`);
         const fallback = await callGeminiLike(preset, systemPrompt, userPrompt, mode, {
           ...options,
@@ -20796,7 +20862,7 @@ ${passage.text || ''}`, 420));
     const url = vertexOpenAIUrl(preset.url, preset.key);
     const token = await getVertexAccessToken(preset.key);
     const headers = applyVertexFlexHeaders(
-      { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...normalizeExtraHeaders(preset) },
+      { 'Content-Type': 'application/json', ...normalizeExtraHeaders(preset), Authorization: `Bearer ${token}` },
       preset
     );
     const body = buildOpenAICompatPayload({ ...preset, provider: 'vertex-openai' }, systemPrompt, userPrompt, options);
@@ -50473,6 +50539,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     lastBackupExport: null,
     lastBackupRestore: null
   };
+  const rememberGradiaContinuityChecked = (scopeKey, result) => {
+    if (!scopeKey) return;
+    GradiaContinuityRuntime.checkedByScope.delete(scopeKey);
+    GradiaContinuityRuntime.checkedByScope.set(scopeKey, result);
+    while (GradiaContinuityRuntime.checkedByScope.size > 64) {
+      const oldest = GradiaContinuityRuntime.checkedByScope.keys().next().value;
+      if (!oldest) break;
+      GradiaContinuityRuntime.checkedByScope.delete(oldest);
+    }
+  };
 
   const gradiaChatIdOf = chat => text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
   const gradiaCharacterIdOf = character => text(character?.chaId || character?.id || character?.characterId || '').trim();
@@ -51182,7 +51258,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const inspection = await inspectGradiaNativeContinuity({ targetChatId: resolved.chatId });
       if (!inspection.ok || !inspection.candidate) {
         const result = { ok: inspection.ok, adopted: false, skipped: true, kind: inspection.kind, reason: inspection.reason, targetScopeKey, hostLineage: inspection.hostLineage };
-        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        rememberGradiaContinuityChecked(targetScopeKey, result);
         GradiaContinuityRuntime.lastResult = result;
         return result;
       }
@@ -51191,13 +51267,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const existing = receipts[cand.transferId];
       if (existing && existing.targetScopeKey === targetScopeKey && existing.sourceScopeKey === cand.sourceScopeKey) {
         const result = { ok: true, adopted: false, skipped: true, idempotentReplay: true, kind: cand.origin, reason: 'already_inherited', receipt: existing, targetScopeKey, hostLineage: inspection.hostLineage };
-        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        rememberGradiaContinuityChecked(targetScopeKey, result);
         GradiaContinuityRuntime.lastResult = result;
         return result;
       }
       if (!inspection.eligible) {
         const result = { ok: true, adopted: false, skipped: true, kind: cand.origin, reason: inspection.reason, targetScopeKey, candidate: cand, hostLineage: inspection.hostLineage };
-        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        rememberGradiaContinuityChecked(targetScopeKey, result);
         GradiaContinuityRuntime.lastResult = result;
         return result;
       }
@@ -51230,7 +51306,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       };
       await recordGradiaHandoffReceipt(cand.transferId, receipt);
       const result = { ...receipt, kind: cand.origin, hostLineage: inspection.hostLineage };
-      GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+      rememberGradiaContinuityChecked(targetScopeKey, result);
       GradiaContinuityRuntime.lastResult = result;
       return result;
     })();

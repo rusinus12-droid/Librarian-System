@@ -23631,7 +23631,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const loadFlashbackVectorShardPayload = async (storageKey, readOptions = {}) => {
     if(typeof readOptions.readLocal==='function'){
       const raw=await readOptions.readLocal(storageKey,readOptions.readScopeKey),parsed=typeof raw==='string'?tryJsonParse(raw,null):raw;
-      if(!parsed||text(parsed.digest||'')!==stableHash(safeStringify({scopeKey:parsed.scopeKey,commitId:parsed.commitId,shardIndex:parsed.shardIndex,items:parsed.items,data:parsed.data})))return null;
+      if(!parsed||text(parsed.digest||'')!==memorySuiteFlashbackVectorShardDigest({scopeKey:parsed.scopeKey,commitId:parsed.commitId,shardIndex:parsed.shardIndex,items:parsed.items,data:parsed.data}))return null;
       return readFlashbackPureProjection(serializedFlashbackReadValue(raw),
         { segmentId: storageKey, codecVersion: 'flashback-float32-sidecar-v1', transformVersion: 'decode-vector-v1' },
         readOptions, () => decodedFlashbackVectorShard(parsed));
@@ -25979,13 +25979,20 @@ const MemorySuiteSnapshotCache = (() => {
     const manifest = typeof rawManifest === 'string' ? tryJsonParse(rawManifest, null) : rawManifest;
     const shardCount = clampInt(manifest?.shardCount ?? manifest?.shards, 0, 100000, 0);
     const records = [];
+    let readFailed = Boolean(rawManifest && !manifest);
     for (let i = 0; i < shardCount; i += 1) {
-      const raw = await RisuCompat.getItem(`${STORAGE.legacyShardPrefix}${i}`);
-      const parsed = typeof raw === 'string' ? tryJsonParse(raw, null) : raw;
-      const shardRecords = Array.isArray(parsed?.records) ? parsed.records : Array.isArray(parsed) ? parsed : [];
-      for (const record of shardRecords) if (record && typeof record === 'object') records.push(record);
+      try {
+        const raw = await RisuCompat.getItem(`${STORAGE.legacyShardPrefix}${i}`);
+        if (raw == null || raw === '') continue;
+        const parsed = typeof raw === 'string' ? tryJsonParse(raw, null) : raw;
+        if (!parsed || typeof parsed !== 'object') { readFailed = true; continue; }
+        const shardRecords = Array.isArray(parsed?.records) ? parsed.records : Array.isArray(parsed) ? parsed : [];
+        for (const record of shardRecords) if (record && typeof record === 'object') records.push(record);
+      } catch (_) {
+        readFailed = true;
+      }
     }
-    return { manifest: manifest || {}, records };
+    return { manifest: manifest || {}, records, readFailed };
   };
 
   const cleanupLegacyGlobalStorage = async (legacyManifest = {}) => {
@@ -26007,6 +26014,9 @@ const MemorySuiteSnapshotCache = (() => {
       return { migrated: false, reason: 'already_done' };
     }
     const legacy = await loadLegacyGlobalRecords();
+    if (legacy.readFailed || (!legacy.records.length && (Number(legacy.manifest?.count || 0) > 0 || Number(legacy.manifest?.shardCount ?? legacy.manifest?.shards ?? 0) > 0))) {
+      return { migrated: false, reason: 'legacy_read_incomplete' };
+    }
     if (!legacy.records.length) {
       await requireStorageWrite(STORAGE.legacyMigration, safeStringify({ done: true, checkedAt: nowIso(), migrated: 0 }), 'legacy migration marker save');
       await cleanupLegacyGlobalStorage(legacy.manifest).catch(error => warn('legacy cleanup failed', error));

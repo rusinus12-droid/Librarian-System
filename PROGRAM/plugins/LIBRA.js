@@ -27756,6 +27756,7 @@ function summarizeAgentCbsTag(rawContent) {
   const parseStreamText = (raw, provider = 'openai') => {
     const lines = String(raw || '').split(/\r?\n/);
     let out = '';
+    let sawDelta = false;
     let usage = null;
     let events = 0;
     let finishReason = '';
@@ -27765,18 +27766,32 @@ function summarizeAgentCbsTag(rawContent) {
       events += 1;
       usage = obj.usage || obj.usageMetadata || obj.message_delta?.usage || usage;
       finishReason = providerFinishReason(obj) || finishReason;
-      out += obj.choices?.[0]?.delta?.content || '';
-      out += obj.choices?.[0]?.message?.content || '';
-      out += obj.delta?.text || '';
-      if (typeof obj.delta === 'string' && /output_text|content_part/i.test(String(obj.type || ''))) out += obj.delta;
-      out += obj.output_text || '';
-      out += obj.response?.output_text || '';
-      out += obj.message?.content || '';
-      out += typeof obj.response === 'string' ? obj.response : '';
-      out += obj.text || '';
+      const deltaChoice = obj.choices?.[0]?.delta?.content || '';
+      if (deltaChoice) { out += deltaChoice; sawDelta = true; }
+      const fullChoice = obj.choices?.[0]?.message?.content || '';
+      if (fullChoice && !sawDelta) out += fullChoice;
+      const deltaText = obj.delta?.text || '';
+      if (deltaText) { out += deltaText; sawDelta = true; }
+      if (typeof obj.delta === 'string' && /output_text|content_part/i.test(String(obj.type || ''))) { out += obj.delta; sawDelta = true; }
+      const outText = obj.output_text || '';
+      if (outText && !sawDelta) out += outText;
+      const respOutText = obj.response?.output_text || '';
+      if (respOutText && !sawDelta) out += respOutText;
+      const msgContent = obj.message?.content || '';
+      if (msgContent) { out += msgContent; sawDelta = true; }
+      const respStr = typeof obj.response === 'string' ? obj.response : '';
+      if (respStr) { out += respStr; sawDelta = true; }
+      const plainText = obj.text || '';
+      if (plainText) { out += plainText; sawDelta = true; }
       const candidateParts = obj.candidates?.[0]?.content?.parts || obj.candidates?.[0]?.content?.Parts || [];
-      if (Array.isArray(candidateParts)) out += candidateParts.map(part => text(part?.text || '')).join('');
-      if (Array.isArray(obj.content)) out += obj.content.map(block => text(block?.text || '')).join('');
+      if (Array.isArray(candidateParts) && candidateParts.length) {
+        const chunk = candidateParts.map(part => text(part?.text || '')).join('');
+        if (chunk) { out += chunk; sawDelta = true; }
+      }
+      if (Array.isArray(obj.content) && obj.content.length) {
+        const chunk = obj.content.map(block => text(block?.text || '')).join('');
+        if (chunk && !sawDelta) out += chunk;
+      }
       if (obj?.delta?.type === 'input_json_delta') toolJson += text(obj.delta.partial_json || '');
       if (obj?.content_block?.type === 'tool_use'
         && obj.content_block.input
@@ -27799,13 +27814,14 @@ function summarizeAgentCbsTag(rawContent) {
     return { content, usage, finishReason, streamMeta: { provider, events, finishReason } };
   };
 
+  const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
   const normalizeExtraHeaders = (preset) => {
     const parsed = tryJsonParse(preset.extra_headers_json, {});
     const out = {};
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       for (const [key, value] of Object.entries(parsed)) {
         const k = String(key || '').trim();
-        if (k) out[k] = String(value ?? '');
+        if (k && !DANGEROUS_OBJECT_KEYS.has(k)) out[k] = String(value ?? '');
       }
     }
     return out;
@@ -27813,10 +27829,16 @@ function summarizeAgentCbsTag(rawContent) {
 
   const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
   const deepMergeJson = (base, override) => {
-    if (!isPlainObject(base) || !isPlainObject(override)) return override;
-    const out = { ...base };
+    if (!isPlainObject(override)) return override;
+    const seed = isPlainObject(base) ? base : {};
+    const out = {};
+    for (const [key, value] of Object.entries(seed)) {
+      if (DANGEROUS_OBJECT_KEYS.has(key)) continue;
+      out[key] = value;
+    }
     for (const [key, value] of Object.entries(override)) {
-      out[key] = isPlainObject(value) && isPlainObject(out[key]) ? deepMergeJson(out[key], value) : value;
+      if (DANGEROUS_OBJECT_KEYS.has(key)) continue;
+      out[key] = isPlainObject(value) ? deepMergeJson(isPlainObject(out[key]) ? out[key] : {}, value) : value;
     }
     return out;
   };
@@ -28817,7 +28839,7 @@ function summarizeAgentCbsTag(rawContent) {
     const url = vertexOpenAIUrl(preset.url, preset.key);
     const token = await getVertexAccessToken(preset.key);
     const headers = applyVertexFlexHeaders(
-      { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...normalizeExtraHeaders(preset) },
+      { 'Content-Type': 'application/json', ...normalizeExtraHeaders(preset), Authorization: `Bearer ${token}` },
       preset
     );
     const body = buildOpenAICompatPayload({ ...preset, provider: 'vertex-openai' }, systemPrompt, userPrompt, options);
@@ -72624,8 +72646,23 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
           const loaded = await Promise.all(part.map(async row => {
             try {
-              const stored = await storage.getVerifiedJson(row.key, scanScope, null);
-              return { ...row, stored, record: await hydrateProjectionFromLocalStorage(stored) };
+              let vectorKey = row.key;
+              let stored = await storage.getVerifiedJson(vectorKey, scanScope, null);
+              if (!stored) {
+                let fallbackKey = string(row.ref?.vectorKey || '');
+                if (!fallbackKey || fallbackKey === vectorKey) {
+                  const mem = await storage.getVerifiedJson(row.ref.key, scanScope, null);
+                  fallbackKey = string(mem?.embedding?.vectorKey || '');
+                }
+                if (fallbackKey && fallbackKey !== vectorKey) {
+                  const candidate = await storage.getVerifiedJson(fallbackKey, scanScope, null);
+                  if (candidate && string(candidate.profileId || '') === query.profileId) {
+                    vectorKey = fallbackKey;
+                    stored = candidate;
+                  }
+                }
+              }
+              return { ...row, key: vectorKey, stored, record: await hydrateProjectionFromLocalStorage(stored) };
             }
             catch (_) { diagnostics.failedReads++; return { ...row, record: null }; }
           }));
@@ -92463,7 +92500,7 @@ advanced
     let derivedInspect = { complete: true, status: 'no_detected_issue' };
     try {
       const hr = LibraMemoryCore.healthRecovery;
-      if (hr) derivedInspect = hr.inspect();
+      if (hr) derivedInspect = await hr.inspect();
     } catch (_) {}
     const derivedNeedRefresh = !derivedInspect.complete || derivedInspect.status === 'attention';
 
@@ -92910,7 +92947,7 @@ advanced
     try {
       const hr = LibraMemoryCore.healthRecovery;
       if (hr) {
-        const preview = hr.preview();
+        const preview = await hr.preview();
         if (preview?.allowed) {
           await hr.repair(preview);
           actionsTaken.push('기억 읽기 캐시 무결성 갱신 완료');
@@ -98927,11 +98964,20 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           const localRef = vector.localVectorRef && typeof vector.localVectorRef === 'object' ? vector.localVectorRef : null;
           const inlinePayload = (Array.isArray(vector.vector) && vector.vector.length > 0)
             || Object.values(vector.entries && typeof vector.entries === 'object' ? vector.entries : {}).some(entry => Array.isArray(entry?.vector) && entry.vector.length > 0);
+          const originalProfileId = textValue(vector.originalEmbeddingProvenance?.profileId);
+          const sameSpaceMigrated = Boolean(
+            vector.sameSpaceMigration?.registryVersion
+            && originalProfileId
+            && textValue(vector.sameSpaceMigration?.targetProfileId || vector.profileId) === textValue(vector.profileId)
+          );
+          const matchingVectorProfile = id => !id
+            || textValue(id) === textValue(vector.profileId)
+            || (sameSpaceMigrated && textValue(id) === originalProfileId);
           const portablePayloadValid = portablePayload?.schema === 'libra.local_vector_payload.v1'
             && textValue(portablePayload.storageKey) === vectorKey
             && (!localRef?.localKey || textValue(portablePayload.localKey) === textValue(localRef.localKey))
             && (!localRef?.vectorHash || textValue(portablePayload.vectorHash) === textValue(localRef.vectorHash))
-            && (!portablePayload.profileId || textValue(portablePayload.profileId) === textValue(vector.profileId))
+            && matchingVectorProfile(portablePayload.profileId)
             && !!textValue(portablePayload.data);
           const localPayload = localRef?.localKey ? decoded.get(textValue(localRef.localKey)) : null;
           const localPayloadValid = localPayload?.schema === 'libra.local_vector_payload.v1'
@@ -98942,7 +98988,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           const nativeVectorKey = vectorKey.startsWith(scopePrefix) ? vectorKey.match(/:vector:(.+):r(\d+):([^:]+)$/) : null;
           if (nativeVectorKey && (textValue(nativeVectorKey[1]) !== textValue(memory.memoryId)
             || Number(nativeVectorKey[2]) !== Number(memory.revision || 0)
-            || textValue(nativeVectorKey[3]) !== textValue(vector.profileId))) {
+            || !matchingVectorProfile(nativeVectorKey[3]))) {
             throw new Error(`portable_backup_vector_key_identity_mismatch:${vectorKey}`);
           }
           const archiveVectorKey = vectorKey.match(/^libra:v1:shared-archive:([^:]+):vector:([^:]+):r(\d+):([^:]+)$/);
@@ -100395,10 +100441,11 @@ async function migrateStoryArcToNarrativeIfNeeded(options = {}) {
         const none={schema:__LIBRA_STORY_ARC_MIGRATION_SCHEMA,scopeKey,verified:true,status:'no_legacy_data',at:Date.now()};
         await __libraCompletionStorageWrite(markerKey,none); return none;
     }
+    let applied = hasCurrent;
     if (!hasCurrent) {
         const throughTurn = Number(legacy?.basis?.throughTurn || legacy?.throughTurn || legacy?.continuityState?.updatedThroughTurn || 0);
         const imported = __libraCompletionLegacyToNarrative(legacy, throughTurn);
-        let applied=false;
+        applied = false;
         const add = typeof addWorldManagerNarrativeCorrection === 'function' ? addWorldManagerNarrativeCorrection : globalThis.__LIBRA__?.addWorldManagerNarrativeCorrection;
         if (typeof add === 'function') {
             const correction={
@@ -100429,6 +100476,9 @@ async function migrateStoryArcToNarrativeIfNeeded(options = {}) {
                 locked:dest.locked===true, source:'user'
             },{scopeKey});
         }
+    }
+    if (!applied) {
+        return { schema:__LIBRA_STORY_ARC_MIGRATION_SCHEMA, scopeKey, verified:false, status:'pending_continuity_state', legacyKey, at:Date.now() };
     }
     const done={schema:__LIBRA_STORY_ARC_MIGRATION_SCHEMA,scopeKey,verified:true,status:hasCurrent?'legacy_preserved_current_narrative_kept':'migrated',legacyKey,at:Date.now()};
     await __libraCompletionStorageWrite(markerKey,done);
