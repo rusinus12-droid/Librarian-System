@@ -17018,7 +17018,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         const result=await MemorySuiteStorageBridge.managerControl(action,{operationId,planId:plan.planId,confirmation:'RESTORE '+plan.planId});
         Runtime.activeJobReadback={verified:true,namespaces:result.namespaces};
         Runtime.serverScopeScanCache={};Runtime.serverScopeCatalog=null;
-        await refreshServerControl();say('복원 완료: '+result.namespaces.join(', ')+'\n각 플러그인의 서버 연결 설정에서 ‘서버 자료 사용 · 로컬 업로드 안 함’을 선택하고 RisuAI를 새로고침하세요. 복원한 서버에 기존 로컬 자료를 자동 업로드하지 마세요.');
+        await refreshServerControl();say('복원 완료: '+result.namespaces.join(', ')+'\n페이지를 새로고침하거나 현재 채팅을 다시 여세요.\n각 플러그인의 서버 연결 설정에서 ‘서버 자료 사용 · 로컬 업로드 안 함’을 선택하고 RisuAI를 새로고침하세요. 복원한 서버에 기존 로컬 자료를 자동 업로드하지 마세요.');
       }
     }catch(error){if(action==='diagnose'&&state.diagnosis?.management==='조회 중')state.diagnosis.management='실패 · 권한/서버 기록 확인';say('작업 확인 필요: '+String(error?.message||error)+'\n응답이 끊겼다면 상태·이력을 먼저 조회하세요. 복원 실행을 시작한 경우 실패하더라도 재연결 확인이 필요할 수 있습니다.');}
     finally{if(jobKind)finishRetraceJob(Runtime.activeJobReadback?.verified===true?'관리 작업의 저장 결과를 검증했습니다.':'작업 미완료 · 실제 결과를 다시 확인하세요.',output?.textContent||'',Runtime.activeJobReadback);setBusy(false);renderServerControl();}

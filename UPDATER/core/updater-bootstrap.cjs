@@ -28,7 +28,7 @@ function isRuntimeRelative(relativePath) {
   return false;
 }
 
-function listStaticFiles(rootDir) {
+function listStaticFiles(rootDir, { requireEntrypoint = true } = {}) {
   const root = path.resolve(rootDir);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error('updater_bootstrap_source_missing');
   const files = [];
@@ -48,7 +48,7 @@ function listStaticFiles(rootDir) {
     }
   };
   walk(root);
-  if (!files.includes('updater.cjs')) throw new Error('updater_bootstrap_entrypoint_missing');
+  if (requireEntrypoint && !files.includes('updater.cjs')) throw new Error('updater_bootstrap_entrypoint_missing');
   // Replace dependencies first and the executable entrypoint last. If the
   // process dies early, the legacy updater entrypoint remains runnable.
   files.sort((left, right) => {
@@ -96,6 +96,7 @@ async function durableCopyFile(source, destination) {
 }
 
 async function backupStaticFiles(targetUpdaterDir, backupUpdaterDir, relativeFiles) {
+  await fsp.mkdir(backupUpdaterDir, { recursive: true, mode: 0o700 });
   for (const relative of relativeFiles) {
     const source = path.join(targetUpdaterDir, ...relative.split('/'));
     if (!fs.existsSync(source) || !fs.statSync(source).isFile()) continue;
@@ -111,8 +112,12 @@ async function installUpdaterIntoTarget({ sourceUpdaterDir, targetRoot, logger =
   const root = fs.realpathSync.native(path.resolve(targetRoot));
   const targetUpdater = path.join(root, 'UPDATER');
   if (sourceRoot === targetUpdater) throw new Error('updater_bootstrap_source_equals_target');
-  if (!fs.existsSync(targetUpdater) || !fs.statSync(targetUpdater).isDirectory()) throw new Error('updater_bootstrap_target_missing');
-  if (fs.lstatSync(targetUpdater).isSymbolicLink()) throw new Error('updater_bootstrap_target_symlink_rejected');
+  if (fs.existsSync(targetUpdater)) {
+    if (fs.lstatSync(targetUpdater).isSymbolicLink()) throw new Error('updater_bootstrap_target_symlink_rejected');
+    if (!fs.statSync(targetUpdater).isDirectory()) throw new Error('updater_bootstrap_target_missing');
+  } else {
+    await fsp.mkdir(targetUpdater, { recursive: true, mode: 0o755 });
+  }
 
   const sourceFiles = listStaticFiles(sourceRoot);
   if (staticTreeMatches(sourceRoot, targetUpdater, sourceFiles)) {
@@ -121,7 +126,7 @@ async function installUpdaterIntoTarget({ sourceUpdaterDir, targetRoot, logger =
 
   const operationId = `updater-bootstrap-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
   const rollbackUpdater = path.join(root, '.rollback', operationId, 'UPDATER');
-  const targetStaticFiles = listStaticFiles(targetUpdater).filter(relative => !isRuntimeRelative(relative));
+  const targetStaticFiles = listStaticFiles(targetUpdater, { requireEntrypoint: false }).filter(relative => !isRuntimeRelative(relative));
   const backupFiles = [...new Set([...sourceFiles, ...targetStaticFiles])].sort((a, b) => a.localeCompare(b, 'en'));
   await backupStaticFiles(targetUpdater, rollbackUpdater, backupFiles);
 

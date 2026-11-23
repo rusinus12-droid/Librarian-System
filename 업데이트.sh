@@ -22,8 +22,13 @@ IFS= read -r choice || exit 1
 
 case "$choice" in
   1)
-    sh "$ROOT/UPDATER/launch.sh" --user-update
-    status=$?
+    if [ ! -f "$ROOT/UPDATER/updater.cjs" ]; then
+      printf '%s\n' '[오류] UPDATER/updater.cjs 파일이 없습니다. 전체 릴리즈 압축 파일로 UPDATER 폴더를 먼저 복구하세요.' >&2
+      status=2
+    else
+      sh "$ROOT/UPDATER/launch.sh" --user-update
+      status=$?
+    fi
     ;;
   2)
     printf '%s\n' ''

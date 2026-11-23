@@ -1265,6 +1265,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const bootstrapAtUrl = async urlValue => {
     const url = normalizeServerUrl(urlValue);
+    const timeoutMs = /^https:/i.test(url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
     const payload = await fetchJson(`${url}/bootstrap`, {
       method: 'GET',
       headers: {
@@ -1272,7 +1273,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         'X-Memory-Suite-Plugin-Version': pluginVersion,
         ...(await accessKeyHeaders())
       }
-    }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
+    }, 'Librarian System connection test', timeoutMs);
     return validateBootstrapPayload(payload, url);
   };
 
@@ -1437,6 +1438,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const sequence = ++bootstrapSequence;
     const previous = state.bootstrap;
     const pending = (async () => {
+      const timeoutMs = /^https:/i.test(config.url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
       const payload = await fetchJson(`${config.url}/bootstrap`, {
         method: 'GET',
         headers: {
@@ -1444,7 +1446,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           'X-Memory-Suite-Plugin-Version': pluginVersion,
           ...(await accessKeyHeaders())
         }
-      }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
+      }, 'Librarian System bootstrap', timeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
       if (intent) await assertBootstrapIntent(intent);
       const currentUrl = await configuredServerUrlNow();
@@ -1482,7 +1484,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity', '/v1/flashback/writer'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (managerOnly && method !== 'GET' && !route.startsWith('/v1/manager/') && !(method === 'POST' && route === '/v1/kv/get-many')) throw managerOnlyError();
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
@@ -1541,7 +1543,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
       const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
@@ -6215,6 +6217,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (pending?.globalPlan && !syncJobTerminal(pending.status) && (pending.targetMode !== target || needsFreshInventory))
       await scopedCancelSyncJobImpl({},true);
     const result = await persistGlobalModeAllChats(target);
+    try {
+      const store = rawPluginStorage();
+      const rawChoice = await store?.getItem?.(resetChoiceKey);
+      if (rawChoice != null && rawChoice !== '') {
+        let parsedChoice = null;
+        try { parsedChoice = typeof rawChoice === 'string' ? JSON.parse(rawChoice) : rawChoice; } catch (_) {}
+        if (!deletedScopesForResetChoice(parsedChoice).length) {
+          await legacyRemoveVerified(store, resetChoiceKey).catch(() => {});
+          cacheQualifiedResetChoice(null);
+        }
+      }
+    } catch (_) {}
     return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:target, findings, result };
   };
   // END FAST MODE TRANSFER v1

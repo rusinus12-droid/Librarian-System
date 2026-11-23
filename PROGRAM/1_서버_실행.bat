@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
+cd /d "%~dp0"
 title Librarian System Server Launcher
 set "MEMORY_SUITE_RUNNER=%~dp0_server_foreground.cmd"
 

@@ -274,6 +274,19 @@ async function finalizeMigrationDecision({ root, journalPath, journal, hooks = {
       identity.assertHealth(current,journal.dataIdentity,journal.toVersion,false);
     }
     const done = await writeJournal(journalPath, journal, { status: 'complete', phase: 'complete', completedAt: new Date().toISOString() });
+    try {
+      const rbDir = path.join(root, '.rollback');
+      if (fs.existsSync(rbDir)) {
+        const dirs = fs.readdirSync(rbDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => ({
+          name: d.name,
+          mtime: fs.statSync(path.join(rbDir, d.name)).mtimeMs
+        })).sort((a, b) => b.mtime - a.mtime);
+        for (const old of dirs.slice(2)) {
+          if (old.name === journal.operationId) continue;
+          fs.rmSync(path.join(rbDir, old.name), { recursive: true, force: true });
+        }
+      }
+    } catch (_) {}
     logger('migration_required 업데이트 완료');
     return done;
   }

@@ -1074,10 +1074,32 @@ function restoreBackupOffline({ dataDir, backupDir = path.join(dataDir, 'backups
     writeRestoreJournal(dataDir, { ...journal, phase: 'INSTALLED', installedAt: new Date().toISOString() });
     const stores = {};
     for (const item of items) {
+      if (item.namespace === 'flashback') {
+        const fbDb = new DatabaseSync(item.currentPath);
+        try {
+          const hasFence = fbDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flashback_writer_fences'").get();
+          if (hasFence) fbDb.exec("UPDATE flashback_writer_fences SET owner = '', expires_at = 0;");
+        } finally {
+          fbDb.close();
+        }
+      }
       const checked = verifyBackupDatabase(item.currentPath);
       if (!checked.ok) throw new Error(`restored_store_integrity_failed:${item.namespace}:${checked.result}`);
       stores[item.namespace] = checked;
     }
+    try {
+      const resetFile = path.join(dataDir, 'config', 'namespace-reset.json');
+      let resetState = { epochs: {}, pending: null };
+      if (fs.existsSync(resetFile)) {
+        const existing = readJsonFile(resetFile, null);
+        if (existing && typeof existing === 'object' && !Array.isArray(existing)) resetState = existing;
+      }
+      const nextEpochs = { ...(resetState.epochs && typeof resetState.epochs === 'object' ? resetState.epochs : {}) };
+      for (const ns of targetNamespaces) nextEpochs[ns] = Math.max(0, Number(nextEpochs[ns] || 0) || 0) + 1;
+      resetState.epochs = nextEpochs;
+      fs.mkdirSync(path.dirname(resetFile), { recursive: true });
+      atomicWrite(resetFile, JSON.stringify(resetState));
+    } catch (_) {}
     writeRestoreJournal(dataDir, { ...journal, phase: 'VERIFIED', verifiedAt: new Date().toISOString() });
     writeRestoreJournal(dataDir, { ...journal, phase: 'COMMITTED', committedAt: new Date().toISOString() });
     for (const item of items) cleanupRestoreArtifact(item.rollbackPath);
@@ -1501,13 +1523,20 @@ function corsHeaders(request) {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'X-Content-Type-Options': 'nosniff'
   };
+  if (String(request?.headers?.['access-control-request-private-network'] || '').trim().toLowerCase() === 'true' || origin) {
+    headers['Access-Control-Allow-Private-Network'] = 'true';
+  }
   // Native RisuAI requests and local admin tools normally have no Origin. about:srcdoc
-  // plugin containers may send Origin:null. Normal remote web origins receive no CORS grant.
+  // plugin containers may send Origin:null. In remoteAccess mode HTTPS origins are permitted.
   if (origin === 'null') headers['Access-Control-Allow-Origin'] = 'null';
   else if (origin) {
     try {
       const parsed = new URL(origin);
-      if (['127.0.0.1', 'localhost', '::1'].includes(String(parsed.hostname || '').toLowerCase())) {
+      const hostname = String(parsed.hostname || '').toLowerCase();
+      const isLoopbackOrigin = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname)
+        || (request?.__memorySuiteContainer === true && hostname === 'host.docker.internal');
+      const isRemoteHttps = request?.__memorySuiteRemoteAccess === true && parsed.protocol === 'https:';
+      if (isLoopbackOrigin || isRemoteHttps) {
         headers['Access-Control-Allow-Origin'] = origin;
         headers.Vary = 'Origin';
       }
@@ -2714,6 +2743,10 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         }
         for (const item of plan) {
           repositories[item.namespace] = createRepository(dataDir, item.namespace, () => maintenanceMode === true);
+          if (item.namespace === 'flashback') {
+            repositories.flashback.writerFence?.releaseAll?.();
+            repositories.flashback.checkpoint?.();
+          }
           const checked = repositories[item.namespace].integrity();
           if (!checked.ok) throw new Error(`restored_store_integrity_failed:${item.namespace}:${checked.result}`);
           restored[item.namespace] = checked;
@@ -3318,8 +3351,28 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       return {records,tombstones,hasExistingData:records>0||NAMESPACES.some(ns=>catalog?.namespaces?.[ns]?.length>0)};
     }
   });
+  const authFailuresByIp = new Map();
+  const isAuthRateLimited = request => {
+    const ip = String(request?.socket?.remoteAddress || 'unknown');
+    const row = authFailuresByIp.get(ip);
+    if (!row) return false;
+    if (now() - row.windowStart > 60000) { authFailuresByIp.delete(ip); return false; }
+    return row.count >= 12;
+  };
+  const recordAuthFailure = request => {
+    const ip = String(request?.socket?.remoteAddress || 'unknown');
+    const current = now();
+    const row = authFailuresByIp.get(ip);
+    if (!row || current - row.windowStart > 60000) {
+      authFailuresByIp.set(ip, { windowStart: current, count: 1 });
+      while (authFailuresByIp.size > 256) authFailuresByIp.delete(authFailuresByIp.keys().next().value);
+    } else row.count += 1;
+  };
+
   const server = http.createServer(async (request, response) => {
     request.__memorySuiteDataInstanceId=dataInstanceId;
+    request.__memorySuiteRemoteAccess = remoteAccess;
+    request.__memorySuiteContainer = container;
     const requestStartedAt = now();
     let parsedUrl = null;
     try { parsedUrl = new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT)); } catch (_) {}
@@ -3334,6 +3387,16 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     });
     try {
       const url = parsedUrl || new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT));
+      if (!remoteAccess && !container) {
+        const rawHostHeader = String(request.headers.host || '').trim();
+        if (rawHostHeader) {
+          let parsedHost = '';
+          try { parsedHost = new URL(`http://${rawHostHeader}`).hostname.toLowerCase(); } catch (_) {}
+          if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsedHost)) {
+            return sendJson(request, response, 403, { ok: false, error: 'invalid_host_header' });
+          }
+        }
+      }
       if (authorityRuntime) authorityRuntime.assertRoute(request.method,url.pathname);
       if (request.method === 'OPTIONS') return sendJson(request, response, 204, {});
       const boundDataInstance=String(request.headers['x-memory-suite-data-instance']||'');
@@ -3364,14 +3427,17 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           autoBackupPolicy: { intervalMs: autoBackupIntervalMs, minCooldownMs: autoBackupMinCooldownMs, recentKeep: AUTO_BACKUP_RECENT_KEEP, dailyKeep: AUTO_BACKUP_DAILY_KEEP, weeklyKeep: AUTO_BACKUP_WEEKLY_KEEP },
           compute: { retired: true, enabled: false, configured: false, ready: false },
           scopeCatalogDegraded,
-          interruptedRestoreRecovery
+          interruptedRestoreRecovery: remoteAccess ? { recovered: Boolean(interruptedRestoreRecovery?.recovered) } : interruptedRestoreRecovery
         });
       }
       // Remote access mode: every /bootstrap needs this DATA's access key, the same PC included, because a
       // tunnel delivers other devices' requests from loopback as well.
-      if (url.pathname === '/bootstrap' && remoteAccess
-        && !safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
-        return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+      if (url.pathname === '/bootstrap' && remoteAccess) {
+        if (isAuthRateLimited(request)) return sendJson(request, response, 429, { ok: false, error: 'auth_rate_limited' });
+        if (!safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
+          recordAuthFailure(request);
+          return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+        }
       }
       if (request.method === 'GET' && url.pathname === '/bootstrap') {
         let requestedReadOwners;
@@ -3439,6 +3505,8 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
       const principal = authenticate(request);
       if (!principal) {
+        if (isAuthRateLimited(request)) return sendJson(request, response, 429, { ok: false, error: 'auth_rate_limited' });
+        recordAuthFailure(request);
         // A capability token this server start did not sign (restart in remote mode, mode change, key
         // rotation): the plugin bootstraps again once instead of failing.
         const supplied = String(request.headers.authorization || '').replace(/^Bearer\s+/, '').trim();
@@ -3622,7 +3690,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: repositories[namespace].integrity() });
       }
       if (request.method === 'POST' && url.pathname === '/v1/kv/get-many') {
-        const body = await readBody(request);
+        const body = await readBody(request, 512 * 1024, 'get_many_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         assertNamespaceAccess(principal, namespace, 'read');
@@ -3694,7 +3762,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request,response,200,{ok:true,result:await ownerScopeHealth(principal,body)});
       }
       if (request.method === 'POST' && ['/v1/owner/scope-delete/plan','/v1/owner/scope-delete/execute'].includes(url.pathname)) {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'owner_scope_body_too_large');
         assertNamespaceAccess(principal,'libra','write');
         if(!namespaceReset.allows('libra',request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         const result=await ownerScopeDelete(principal,url.pathname.endsWith('/plan')?'plan':'execute',body,
@@ -3707,7 +3775,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         if(!['hayaku','libra'].includes(namespace)||!hasRole(principal,'owner'))throw Object.assign(Error('owner_scope_copy_delete_forbidden'),{statusCode:403});
         assertNamespaceAccess(principal,namespace,'write');
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))throw Object.assign(Error('MEMORY_SUITE_RESET_RECONNECT_REQUIRED'),{statusCode:409});
-        const body=await readBody(request);
+        const body=await readBody(request, 256 * 1024, 'owner_scope_body_too_large');
         if(url.pathname.endsWith('/plan')){
           if(body.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==body.scopeId)throw Object.assign(Error('owner_scope_copy_delete_scope_mismatch'),{statusCode:409});
           const directServerDelete=body.directServerDelete===true;
@@ -4004,6 +4072,10 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     });
   };
 
+  server.headersTimeout = 15000;
+  server.requestTimeout = 120000;
+  server.keepAliveTimeout = 5000;
+
   server.on('close', () => {
     if (closing) return;
     closing = true;
@@ -4069,6 +4141,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
 
 function createRecoverySafeModeServer(options = {}, startupError = null) {
   const host = options.host || DEFAULT_HOST;
+  const container = options.container === true || process.env.LIBRARIAN_CONTAINER === '1';
+  const remoteMode = container || options.remoteAccess === true;
+  const listenHost = container ? '0.0.0.0' : host;
   const port = Number(options.port ?? DEFAULT_PORT);
   const dataDir = path.resolve(options.dataDir || path.resolve(__dirname, '..', '..', 'DATA'));
   assertLegacyAuthorityUnavailable({dataDir});
@@ -4087,6 +4162,8 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
   };
   const server = http.createServer(async (request, response) => {
     request.__memorySuiteDataInstanceId=dataInstanceId;
+    request.__memorySuiteContainer = container;
+    request.__memorySuiteRemoteAccess = remoteMode;
     try {
       const url = new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT));
       const boundDataInstance=String(request.headers['x-memory-suite-data-instance']||'');
@@ -4101,8 +4178,8 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
           protocol: { major: PROTOCOL_MAJOR, minor: PROTOCOL_MINOR },
           recoveryMode: true,
           status: 'recovery_only',
-          startupError: sanitizeDiagnosticText(startupError?.message || startupError || 'database_startup_failed', 600),
-          interruptedRestoreRecovery,
+          startupError: remoteMode ? 'database_startup_failed' : sanitizeDiagnosticText(startupError?.message || startupError || 'database_startup_failed', 600),
+          interruptedRestoreRecovery: remoteMode ? { recovered: Boolean(interruptedRestoreRecovery?.recovered) } : interruptedRestoreRecovery,
           backups: listBackupsFromDisk(backupDir).length
         });
       }
@@ -4135,6 +4212,9 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
       return sendJson(request, response, Number(error?.statusCode || 500), { ok: false, error: String(error?.message || error), ...(error?.checks ? { checks: error.checks } : {}) });
     }
   });
+  server.headersTimeout = 15000;
+  server.requestTimeout = 120000;
+  server.keepAliveTimeout = 5000;
   return {
     server, token, dataDir, backupDir, recoveryMode: true, startupError,
     listBackups: () => listBackupsFromDisk(backupDir),
@@ -4142,7 +4222,7 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
     restoreBackup: (backupId, namespaces) => restoreBackupOffline({ dataDir, backupDir, backupId, namespaces, reason: 'recovery-safe-mode' }),
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, host, () => { server.off('error', reject); resolve(server.address()); });
+      server.listen(port, listenHost, () => { server.off('error', reject); resolve(server.address()); });
     }),
     close: () => new Promise(resolve => {
       if (closing || !server.listening) return resolve();

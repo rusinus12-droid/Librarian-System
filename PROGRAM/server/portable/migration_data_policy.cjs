@@ -13,19 +13,25 @@ function allowlistedConfig(value = {}) {
   return out;
 }
 
+const OS_METADATA_NAMES = new Set(['desktop.ini', '.ds_store', 'thumbs.db', '._.ds_store']);
+const isOsMetadataEntry = name => {
+  const lower = String(name || '').toLowerCase();
+  return OS_METADATA_NAMES.has(lower) || lower.startsWith('._');
+};
+
 function assertRuntimeInventory(root) {
   const runtime = path.join(root, 'runtime');
   if (!fs.existsSync(runtime)) return;
   const runtimeStat = fs.lstatSync(runtime);
   if (!runtimeStat.isDirectory() || runtimeStat.isSymbolicLink()) throw new Error('migration_runtime_entry_invalid:runtime');
   const allowedRuntime = new Set(['portable-transfers']);
-  const unknownRuntime = fs.readdirSync(runtime).filter(name => !allowedRuntime.has(name));
+  const unknownRuntime = fs.readdirSync(runtime).filter(name => !allowedRuntime.has(name) && !isOsMetadataEntry(name));
   if (unknownRuntime.length) throw new Error(`migration_unknown_runtime_entries:${unknownRuntime.slice(0,8).join(',')}`);
   const transfers = path.join(runtime, 'portable-transfers');
   if (!fs.existsSync(transfers)) return;
   const transferStat = fs.lstatSync(transfers);
   if (!transferStat.isDirectory() || transferStat.isSymbolicLink()) throw new Error('migration_runtime_entry_invalid:portable-transfers');
-  const pending = fs.readdirSync(transfers);
+  const pending = fs.readdirSync(transfers).filter(name => !isOsMetadataEntry(name));
   if (pending.length) throw new Error(`migration_runtime_transfer_state_present:${pending.slice(0,8).join(',')}`);
 }
 
@@ -39,7 +45,7 @@ function assertPersistentDataFilesystemInventory(dataDir) {
     'stores','backups','config','logs','migrations','runtime','data-layout.json','runtime-token.txt',
     '이_DATA_폴더를_통째로_백업하세요.txt'
   ]);
-  const unknown = fs.readdirSync(root).filter(name => !allowedTop.has(name));
+  const unknown = fs.readdirSync(root).filter(name => !allowedTop.has(name) && !isOsMetadataEntry(name));
   // Unknown persistent files can carry user state. Never silently leave them
   // behind while calling the export "complete".
   if (unknown.length) throw new Error(`migration_unknown_data_entries:${unknown.slice(0,8).join(',')}`);

@@ -259,6 +259,21 @@ async function finalizeDecision({root, journalPath, journal, start = startServer
     journal = await writeJournal(journalPath, journal, committed
       ? {status:'complete',phase:'complete',completedAt:now}
       : {status:'rolled_back',phase:'rolled_back',rolledBackAt:now,rollbackOk:true});
+    if (committed) {
+      try {
+        const rbDir = path.join(root, '.rollback');
+        if (fs.existsSync(rbDir)) {
+          const dirs = fs.readdirSync(rbDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => ({
+            name: d.name,
+            mtime: fs.statSync(path.join(rbDir, d.name)).mtimeMs
+          })).sort((a, b) => b.mtime - a.mtime);
+          for (const old of dirs.slice(2)) {
+            if (old.name === journal.operationId) continue;
+            fs.rmSync(path.join(rbDir, old.name), { recursive: true, force: true });
+          }
+        }
+      } catch (_) {}
+    }
     logger(committed ? `업데이트 완료: ${journal.fromVersion} → ${journal.toVersion}` : '[ROLLBACK] 이전 버전 복구 완료');
     return journal;
   } catch (error) {
