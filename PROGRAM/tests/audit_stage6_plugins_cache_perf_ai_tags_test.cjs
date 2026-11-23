@@ -56,6 +56,9 @@ test('Stage 6 (#1): LIBRA enables single-stage system prompt cache without disab
 
 test('Stage 6 (#12): LIBRA coalesces concurrent resolveContext calls and uses summaryOnly scan refresh when GUI is hidden', async () => {
   let getCharacterCalls = 0;
+  let gatePromise = null;
+  let releaseGate = null;
+  let notifyGateEntered = null;
   const transformSource = src => src.replace(
     '      getUnifiedStorageStatus,',
     '      debugResolveContext: force => resolveContext(force),\n      getUnifiedStorageStatus,'
@@ -68,7 +71,10 @@ test('Stage 6 (#12): LIBRA coalesces concurrent resolveContext calls and uses su
     host: {
       getCharacter: async () => {
         getCharacterCalls += 1;
-        await new Promise(resolve => setTimeout(resolve, 25));
+        if (gatePromise) {
+          notifyGateEntered?.();
+          await gatePromise;
+        }
         return {
           chaId: 'char-1',
           name: 'Mina',
@@ -86,23 +92,41 @@ test('Stage 6 (#12): LIBRA coalesces concurrent resolveContext calls and uses su
     }
   });
   try {
+    // Drain any background startup resolveContext call before arming the gate.
+    await f.r.api.debugResolveContext(false);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    await f.r.api.debugResolveContext(false);
+
+    const gateHit = new Promise(resolve => { notifyGateEntered = resolve; });
+    gatePromise = new Promise(resolve => { releaseGate = resolve; });
     const before = getCharacterCalls;
-    const [a, b, c] = await Promise.all([
+    const pending = Promise.all([
       f.r.api.debugResolveContext(false),
       f.r.api.debugResolveContext(false),
       f.r.api.debugResolveContext(false)
     ]);
+    await gateHit;
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(getCharacterCalls - before, 1, 'concurrent resolveContext(false) calls must share one host read while in-flight');
+    gatePromise = null;
+    notifyGateEntered = null;
+    releaseGate?.();
+    const [a, b, c] = await pending;
     assert.equal(getCharacterCalls - before, 1, 'concurrent resolveContext(false) calls must share one host read');
     assert.equal(a.scope.scopeKey, b.scope.scopeKey);
     assert.equal(b.scope.scopeKey, c.scope.scopeKey);
 
     // Sequential call after completion must re-read live host state (no stale TTL caching)
+    const seqBefore = getCharacterCalls;
     await f.r.api.debugResolveContext(false);
-    assert.equal(getCharacterCalls - before, 2, 'sequential resolveContext(false) must re-read fresh host state');
+    assert.equal(getCharacterCalls - seqBefore, 1, 'sequential resolveContext(false) must re-read fresh host state');
 
     const src = read('plugins/LIBRA.js');
     assert.match(src, /summaryOnly:\s*options\.summaryOnly \?\? !\(typeof Gui !== 'undefined' && Gui\?\.visible\)/);
   } finally {
+    gatePromise = null;
+    notifyGateEntered = null;
+    try { releaseGate?.(); } catch (_) {}
     await f.r.cleanup();
   }
 });
