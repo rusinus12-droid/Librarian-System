@@ -139,6 +139,3 @@ jobs:
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
           '
-        env:
-          UPSTREAM_REPO: ${{ steps.lock.outputs.repository }}
-          UPSTREAM_COMMIT: ${{ steps.lock.outputs.commit }}

@@ -1,5 +1,5 @@
 7513a927947fd3138a9697173c2654ca5fcf636d9b6e17d5a8cbe459839442c9  ./.gitattributes
-590ee8fa21ed81bb6ca2e8fdfc81f6dcbbf9a784d1755da0dcaa594e5a7847e3  ./.github/workflows/_risu-compatibility-check.yml
+85947218c3c70b25a9352bc78cf407d544a4d4e7ff432888164129cadaa01770  ./.github/workflows/_risu-compatibility-check.yml
 7f36f51644919a7285791f9e7651ef7ab9af52f57d6e09ad6408fd1d5dc807b8  ./.github/workflows/manual-release.yml
 bc07865ec6811bd07430b183c1f62db3ee858839e52b41955c41541266517a21  ./.github/workflows/release-builder-gate.yml
 32c64eaa2c28ce1b29d6d9d56dc7d5bbf7e73b2596bd0c57a17f1d3d31fa5f19  ./.github/workflows/risu-compatibility-gate.yml
