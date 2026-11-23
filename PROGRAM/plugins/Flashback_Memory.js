@@ -18402,7 +18402,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     : [];
 
   const dot = (a, b) => {
-    if (!Array.isArray(a) || !Array.isArray(b) || !a.length || a.length !== b.length) return 0;
+    const isVec = v => Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView));
+    if (!isVec(a) || !isVec(b) || !a.length || a.length !== b.length) return 0;
     let sum = 0;
     let normA = 0;
     let normB = 0;
@@ -23875,11 +23876,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         missingPayloads += 1;
         return { ...record, vector: [], vectorPayloadMissing: true, vectorPayloadLocal: true };
       }
-      // The hydrated Array is request-local. It is never inserted into the recall-shard
-      // cache, so the persistent RAM copy remains the Float32 sidecar above.
+      // Hydrate in a single pass with direct Float32 indexing (avoiding Array.from callbacks + extra slice).
+      let vec = new Array(ref.length);
+      let sum = 0;
+      let valid = ref.length <= 65536;
+      const isF32 = floats instanceof Float32Array;
+      for (let i = 0; i < ref.length && valid; i += 1) {
+        const n = isF32 ? floats[ref.offset + i] : floats.at(ref.offset + i);
+        if (typeof n !== 'number' || !Number.isFinite(n)) { valid = false; break; }
+        sum += n * n;
+        vec[i] = n;
+      }
+      if (!valid || !(sum > 0) || !Number.isFinite(sum)) {
+        vec = null;
+        missingPayloads += 1;
+        return { ...record, vector: [], vectorPayloadMissing: true, vectorPayloadLocal: true };
+      }
       return {
         ...record,
-        vector: MemorySuiteExecutionContract.vector(Array.from({ length: ref.length }, (_, index) => floats.at(ref.offset + index))),
+        vector: vec,
         dim: ref.length,
         vectorPayloadMissing: false,
         vectorPayloadLocal: true

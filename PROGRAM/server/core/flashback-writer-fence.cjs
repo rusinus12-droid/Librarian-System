@@ -57,7 +57,7 @@ function createFlashbackWriterFence(database, namespace, transaction = null) {
       database.prepare("UPDATE flashback_writer_fences SET owner = '', expires_at = 0").run();
       return true;
     };
-    if (transaction?.runTransaction) return transaction.runTransaction({ action: 'release_all' }, body);
+    if (transaction?.runTransaction) return transaction.runTransaction({ action: 'release_all', maintenance: true }, body);
     database.exec('BEGIN IMMEDIATE');
     try { const result = body(); database.exec('COMMIT'); return result; }
     catch (error) { try { database.exec('ROLLBACK'); } catch (_) {} throw error; }

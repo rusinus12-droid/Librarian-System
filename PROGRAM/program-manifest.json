@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T13:08:54.553Z",
+  "generatedAt": "2026-11-23T13:35:09.432Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -1464,8 +1464,8 @@
       "bytes": 1909
     },
     "1_서버_실행.bat": {
-      "sha256": "699026901dccbb39326494ee0217a3e215dcd8384b26b10bf9163e5f3f531e4f",
-      "bytes": 1165
+      "sha256": "810e4715825f61935ec1f1d6ef17f66a8d498593568a9765168c35a53047bec3",
+      "bytes": 1201
     },
     "1_서버_실행.sh": {
       "sha256": "684c8e34e5cf9fefb8fd560ef39b30ae95b2364f1d9b494f76483bea713586c4",
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "ae18738fa110839b3d577d6360a991237a2b960571a6a28720cb2f56acc35cc3",
+      "sha256": "3b453e7d59f68a3904294a9c15962ea63972bbe2370c1cf1dc9f22b16586ba64",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4336,8 +4336,8 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "a83c64dec945d23569c952729f77971dfc26b675dd02498637a8da1182f1507b",
-      "bytes": 4025097
+      "sha256": "1dc3d14a3511e69844bd8c3b55fb07bb4f9613f03dab41b773ead6ad66ca9bc1",
+      "bytes": 4025638
     },
     "plugins/GRADIA.js": {
       "sha256": "607722cb35f266a009ea0b1805e899c9717a34f5a37e5b317da143cbd752c78e",
@@ -4352,8 +4352,8 @@
       "bytes": 889115
     },
     "plugins/LIBRA.js": {
-      "sha256": "756da455046e4f26d0beb32922a1ffbebac0dd719f379221ed46a3e6512cc4a9",
-      "bytes": 7096296
+      "sha256": "20e7b07790c1ca142a8cf0829764f71a9756bf2805c141109760490a83018f62",
+      "bytes": 7096572
     },
     "plugins/RETRACE.js": {
       "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
@@ -4596,8 +4596,8 @@
       "bytes": 9737
     },
     "server/core/flashback-writer-fence.cjs": {
-      "sha256": "8b0c3ed24ea5c3a14d5e78bce46356b63ab3e0457f5c66f6a73d3ce80edb9142",
-      "bytes": 3859
+      "sha256": "f23a3ccbbecf4edadcf0351257a08e5bac67e76695fbbc58b56da0d02e1ce6e5",
+      "bytes": 3878
     },
     "server/core/gradia-flashback-read-session.cjs": {
       "sha256": "8d05b2f4a56d97f638cc19a041e6b7b8c81f3d756ce0f49f445fefd5819ce4a2",
@@ -4684,8 +4684,8 @@
       "bytes": 1027
     },
     "server/server.cjs": {
-      "sha256": "a9eff283dec8c26f17f8bf10582292a847d843b928bf9052dec9ae54b75815c2",
-      "bytes": 245547
+      "sha256": "fad05cb4668fc7ef96060f9562c72d9fe50faad7f83112bac0ec0ab150837fa7",
+      "bytes": 246239
     },
     "tests/_libra_rc2_commit9_repro.js": {
       "sha256": "af0bdc824624db567215d82dcfc280a516e316dbb38d9bb2f171f1b4a9686ad7",

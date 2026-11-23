@@ -287,6 +287,15 @@ async function finalizeMigrationDecision({ root, journalPath, journal, hooks = {
         }
       }
     } catch (_) {}
+    try {
+      const updateDir = path.join(root, '.update');
+      const downloadDir = path.join(updateDir, 'download');
+      if (fs.existsSync(downloadDir)
+        && !fs.lstatSync(updateDir).isSymbolicLink()
+        && !fs.lstatSync(downloadDir).isSymbolicLink()) {
+        fs.rmSync(downloadDir, { recursive: true, force: true });
+      }
+    } catch (_) {}
     logger('migration_required 업데이트 완료');
     return done;
   }

@@ -30865,12 +30865,15 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
                     return false;
                 }
             },
-            async keys() {
+            async keys(prefix = '') {
                 const runtime = storageHost();
                 if (typeof runtime?.pluginStorage?.keys !== 'function')
                     return [];
                 try {
-                    const values = await runtime.pluginStorage.keys();
+                    const wanted = String(prefix || '');
+                    const values = wanted
+                        ? await runtime.pluginStorage.keys(wanted)
+                        : await runtime.pluginStorage.keys();
                     return Array.isArray(values) ? values.map(value => String(value || '')).filter(Boolean) : [];
                 }
                 catch (error) {
@@ -39956,7 +39959,7 @@ function createLibraReadonlySourceContext(owner) {
       const journalKey=`${PREFIX}:scope:${scope.scopeKey}:embedding-metadata-migration:v1`;
       if(await storage.getStoredJson(journalKey,null))throw new Error('MIGRATION_RECOVERY_REQUIRED');
       const prefix=`${PREFIX}:scope:${scope.scopeKey}:vector:`;
-      const vectorKeys=(await storage.keys()).filter(k=>k.startsWith(prefix)&&!k.includes('::chunk:'));
+      const vectorKeys=(await storage.keys(prefix)).filter(k=>k.startsWith(prefix)&&!k.includes('::chunk:'));
       if(vectorKeys.length>1000)throw new Error('MIGRATION_LIMIT');
       const rows=[],unknown=[];
       for(const vectorKey of vectorKeys){
@@ -42795,7 +42798,7 @@ function createLibraReadonlySourceContext(owner) {
       const prefix = `${PREFIX}:scope:${scopeKey}:`, micros = new Set(), works = new Map();
       const escaped = worldlineId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const microHead = new RegExp(`^micro-memory-head:${escaped}:e\\d+:t(\\d+)$`), microWork = new RegExp(`^micro-work:${escaped}:e\\d+:t(\\d+):([^:]+):`);
-      for (const storageKey of await storage.keys()) {
+      for (const storageKey of await storage.keys(`${prefix}micro-`)) {
         if (!String(storageKey).startsWith(prefix)) continue;
         const rest = String(storageKey).slice(prefix.length);
         let match = rest.match(microHead); if (match) micros.add(Number(match[1]));
@@ -44228,7 +44231,7 @@ function createLibraReadonlySourceContext(owner) {
     const nativeCopyVerifiedMicroCandidates = async (scope, sourcePairs, targetPairs,
       sharedPairLimit, sourceOptions = {}) => {
       const prefix = `${PREFIX}:scope:${scope.scopeKey}:micro-memory-head:`;
-      const keys = (sourceOptions.keys || await storage.keys())
+      const keys = (sourceOptions.keys || await storage.keys(prefix))
         .filter(storageKey => storageKey.startsWith(prefix)).sort();
       const readSource = sourceOptions.read || ((...args) => storage.getVerifiedJson(...args));
       const limit = Math.min(Number(sharedPairLimit || 0), sourcePairs.length, targetPairs.length);
@@ -44282,7 +44285,7 @@ function createLibraReadonlySourceContext(owner) {
     const nativeCopyVerifiedPendingMicroCandidates = async (scope, sourcePairs, targetPairs,
       sharedPairLimit, sourceOptions = {}) => {
       const scopePrefix = `${PREFIX}:scope:${scope.scopeKey}:`;
-      const keys = sourceOptions.keys || await storage.keys();
+      const keys = sourceOptions.keys || await storage.keys(`${scopePrefix}source-receipt-head:`);
       const readSource = sourceOptions.read || ((...args) => storage.getVerifiedJson(...args));
       const heads = keys.filter(storageKey => storageKey.startsWith(
         `${scopePrefix}source-receipt-head:`)).sort();
@@ -68598,7 +68601,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     const exportCurrentScope = async () => {
       const snapshot = await refreshSnapshot(undefined, { suppressGuiSchedule: true });
       const scopePrefix = `${PREFIX}:scope:${string(snapshot?.scope?.scopeKey || '')}:`;
-      const sidecarKeys = (await storage.keys()).filter(storageKey => storageKey.startsWith(scopePrefix) && (
+      const sidecarKeys = (await storage.keys(scopePrefix)).filter(storageKey => storageKey.startsWith(scopePrefix) && (
         storageKey.includes(':source-evidence:v1:') || storageKey.includes(':canonical-variants:') || storageKey.includes(':canonical-job:')
         || storageKey.includes(':canonical-job-head:') || storageKey.includes(':continuity-delta:')
         || storageKey.includes(':continuity-overrides:') || storageKey.includes(':candidate-work:')
@@ -68979,7 +68982,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     const cleanupExpiredHandoffPackages = async () => {
       const prefix = `${PREFIX}:handoff:`;
       const now = Date.now();
-      for (const storageKey of await storage.keys()) {
+      for (const storageKey of await storage.keys(prefix)) {
         if (!storageKey.startsWith(prefix) || storageKey.includes('::chunk:v1:')) continue;
         const value = await storage.getJson(storageKey, null);
         const expiresAt = Date.parse(string(value?.expiresAt || '')) || 0;
@@ -69876,7 +69879,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       await storage.remove(key.recallCatalog(context.scope));
       await storage.remove(key.continuityState(context.scope));
       const scopePrefix = `${PREFIX}:scope:${string(context.scope.scopeKey)}:`;
-      for (const storageKey of await storage.keys()) {
+      for (const storageKey of await storage.keys(scopePrefix)) {
         if (storageKey.startsWith(scopePrefix)) await storage.remove(storageKey);
       }
       await markNativeCopySuppressed(context.scope, 'manual_scope_delete');
@@ -71195,7 +71198,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const context = pinnedContext || await resolveContext();
       await pruneCanonicalJobHistory(context.scope, string(state.canonicalJob?.jobId || ''));
       const prefix = `${PREFIX}:scope:${context.scope.scopeKey}:canonical-job:`;
-      const jobKeys = (await storage.keys()).filter(storageKey => storageKey.startsWith(prefix) && !storageKey.includes('::chunk:'));
+      const jobKeys = (await storage.keys(prefix)).filter(storageKey => storageKey.startsWith(prefix) && !storageKey.includes('::chunk:'));
       const jobs = (await mapWithConcurrency(jobKeys, storageKey => storage.getJson(storageKey, null), 8)).filter(job => job?.schema === CANONICAL_JOB_SCHEMA && string(job.scopeKey || '') === string(context.scope.scopeKey)).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
       const size = Math.max(1, Math.min(50, Number(pageSize || 10))); const currentPage = Math.max(1, Number(page || 1));
       return { scopeKey: string(context.scope.scopeKey), page: currentPage, pageSize: size, total: jobs.length, jobs: clone(jobs.slice((currentPage - 1) * size, currentPage * size)) };
@@ -76549,7 +76552,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const originalManifest = clone(manifest);
       const originalHead = await storage.getJson(key.canonicalJobHead(context.scope), null);
       const jobPrefix = `${PREFIX}:scope:${context.scope.scopeKey}:canonical-job:`;
-      const jobKeys = (await storage.keys()).filter(storageKey => storageKey.startsWith(jobPrefix) && !storageKey.includes('::chunk:'));
+      const jobKeys = (await storage.keys(jobPrefix)).filter(storageKey => storageKey.startsWith(jobPrefix) && !storageKey.includes('::chunk:'));
       const originalJobs = new Map();
       const updatedJobs = new Map();
       for (const jobKey of jobKeys) {

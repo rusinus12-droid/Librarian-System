@@ -273,6 +273,15 @@ async function finalizeDecision({root, journalPath, journal, start = startServer
           }
         }
       } catch (_) {}
+      try {
+        const updateDir = path.join(root, '.update');
+        const downloadDir = path.join(updateDir, 'download');
+        if (fs.existsSync(downloadDir)
+          && !fs.lstatSync(updateDir).isSymbolicLink()
+          && !fs.lstatSync(downloadDir).isSymbolicLink()) {
+          fs.rmSync(downloadDir, { recursive: true, force: true });
+        }
+      } catch (_) {}
     }
     logger(committed ? `업데이트 완료: ${journal.fromVersion} → ${journal.toVersion}` : '[ROLLBACK] 이전 버전 복구 완료');
     return journal;

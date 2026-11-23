@@ -1799,7 +1799,8 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     prepare:prepareStatement,
     runTransaction:(input,body) => {
       const operationId = 'writer-fence:' + crypto.randomUUID();
-      return runRepositoryTransaction({operationId,fingerprint:sha256Text(JSON.stringify(input)),operationClass:'fence'},body);
+      const maintenance = input?.action === 'release_all' && input?.maintenance === true;
+      return runRepositoryTransaction({operationId,fingerprint:sha256Text(JSON.stringify(input)),operationClass:'fence',maintenance},body);
     }
   });
 
@@ -3547,13 +3548,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const action=url.pathname.slice('/v1/manager/control/'.length);
         const readOnly=['status','backups','history'].includes(action);
         if(request.method!==(readOnly?'GET':'POST'))return sendJson(request,response,405,{ok:false,error:'method_not_allowed'});
-        const result=await managerControl.handle(action,readOnly?{}:await readBody(request));
+        const result=await managerControl.handle(action,readOnly?{}:await readBody(request,256*1024,'manager_control_body_too_large'));
         return sendJson(request,response,200,{ok:true,result});
       }
       if (url.pathname.startsWith('/v1/manager/reset/')) {
         if (!isManagerRequest(principal) && !isAdminRequest(principal)) return sendJson(request,response,403,{ok:false,error:'manager_capability_required'});
         if(request.method!=='POST')return sendJson(request,response,405,{ok:false,error:'method_not_allowed'});
-        const body=await readBody(request);
+        const body=await readBody(request,64*1024,'manager_reset_body_too_large');
         if(url.pathname.endsWith('/plan'))return sendJson(request,response,200,{ok:true,result:namespaceReset.plan(body.namespaces)});
         if(url.pathname.endsWith('/execute'))return sendJson(request,response,200,{ok:true,result:await namespaceReset.execute(body)});
         return sendJson(request,response,404,{ok:false,error:'reset_route_not_found'});
@@ -3924,7 +3925,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 403, { ok: false, error: 'retrace_manager_capability_required' });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scopes/index') {
-        const body = await readBody(request);
+        const body = await readBody(request, 512 * 1024, 'manager_scopes_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         return sendJson(request, response, 200, { ok: true, result: replaceNamespaceScopeIndex(namespace, body.scopes || []) });
@@ -3933,7 +3934,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: { schema: 'memory-suite.scope-catalog.v1', generatedAt: now(), scopes: globalScopeCatalog() } });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-pin') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'manager_scope_pin_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         const scopeId = String(body.scopeId || '').trim().slice(0, 320);
@@ -3941,11 +3942,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: setCatalogScopePinned(namespace, scopeId, body.pinned === true) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-delete/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'manager_scope_delete_body_too_large');
         return sendJson(request, response, 200, createScopeDeletePlan(body));
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-delete/execute') {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'manager_scope_delete_body_too_large');
         return sendJson(request, response, 200, executeScopeDeletePlan(body));
       }
 
@@ -3954,7 +3955,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/create') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = await createBackup(body.kind === 'auto' ? 'auto' : 'manual', body.label || '');
         return sendJson(request, response, 200, result);
       }
@@ -3962,15 +3963,15 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: listBackups().map(item => ({ ...item, path: undefined })) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/scrub') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: scrubBackups(body.backupId || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/export') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: exportBackupArchiveById(body.backupId || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/import') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: importBackupArchiveFromPath(body.archivePath || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/libra/native-archive-repair/plan') {
@@ -3982,14 +3983,14 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: getLibraNativeArchiveRepair().execute(body) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'online' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/integrity') {
         return sendJson(request, response, 200, { ok: true, result: integrityAll() });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = await restoreBackup(body.backupId, body.namespaces || NAMESPACES);
         return sendJson(request, response, 200, result);
       }
@@ -4188,18 +4189,18 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
         return sendJson(request, response, 200, { ok: true, result: listBackupsFromDisk(backupDir).map(item => ({ ...item, path: undefined })) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/scrub') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const rows = body.backupId ? [findBackupById(backupDir, body.backupId)].filter(Boolean) : listBackupsFromDisk(backupDir);
         if (body.backupId && !rows.length) throw Object.assign(new Error('backup_not_found'), { statusCode: 404 });
         const results = rows.map(item => scrubBackupFromDisk(item, NAMESPACES));
         return sendJson(request, response, 200, { ok: true, result: { schema: 'memory-suite.backup-scrub-report.v1', checkedAt: new Date().toISOString(), ok: results.every(item => item.ok), results } });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'recovery-safe-mode' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = restoreBackupOffline({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, reason: 'recovery-safe-mode' });
         return sendJson(request, response, 200, result);
       }

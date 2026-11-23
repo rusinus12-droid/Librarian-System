@@ -9,6 +9,7 @@ if not exist "%MEMORY_SUITE_RUNNER%" (
   echo [Librarian System] 내부 실행 파일을 찾을 수 없습니다.
   echo ZIP 안에서 직접 실행하지 말고 전체 폴더를 먼저 압축 해제하세요.
   echo 누락: %MEMORY_SUITE_RUNNER%
+  cd /d "%~dp0.."
   pause
   exit /b 2
 )
@@ -25,5 +26,6 @@ if "%MEMORY_SUITE_EXIT_CODE%"=="0" (
   echo 위 오류 내용과 표시된 진단 로그를 확인하세요.
 )
 echo 이 창은 원인을 확인할 수 있도록 자동으로 닫히지 않습니다.
+cd /d "%~dp0.."
 pause
 exit /b %MEMORY_SUITE_EXIT_CODE%
