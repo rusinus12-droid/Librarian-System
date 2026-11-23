@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T14:51:03.653Z",
+  "generatedAt": "2026-11-23T14:56:52.784Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "131f23de405676e696a55cf19223d0b387a8eba20f1e254e65ad6292dcd363bc",
+      "sha256": "45c9e8f2485d899a82656bccfa5da2b081a8887ef889cd9490122532afc1282c",
       "bytes": 20734
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4352,8 +4352,8 @@
       "bytes": 889115
     },
     "plugins/LIBRA.js": {
-      "sha256": "e4cc93275d26266e3fdc4028f3d3f01cda9d63cd45e757e537c0e760b25e9825",
-      "bytes": 7105501
+      "sha256": "61105263bc9cb24f90cb08e70b25fc585473c1d5c1e56542f6841e751f316877",
+      "bytes": 7105476
     },
     "plugins/RETRACE.js": {
       "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
@@ -4732,8 +4732,8 @@
       "bytes": 10807
     },
     "tests/audit_stage5_residual_hardening_test.cjs": {
-      "sha256": "547d904294b9f00af7d9bdb86f96e740e7b135b383e31df2fb2f68629d158284",
-      "bytes": 6596
+      "sha256": "002896180d5af7b5e55143161d5187227f74d981e81f2b47c4cae622ad6fbd54",
+      "bytes": 6689
     },
     "tests/audit_stage6_plugins_cache_perf_ai_tags_test.cjs": {
       "sha256": "6a3a749b51c8eab9f957fb317773743e4bdcc640aaca7a20fdbc1a2ffd693b7b",

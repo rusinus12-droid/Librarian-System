@@ -107,6 +107,7 @@ test('Stage 5.5: LIBRA storage.keys forwards prefix and hot-path scanners pass s
   assert.match(libraSrc, /async keys\(prefix = ''\) \{[\s\S]{0,300}await runtime\.pluginStorage\.keys\(wanted\)/);
   assert.match(libraSrc, /for \(const storageKey of await storage\.keys\(`\$\{prefix\}micro-`\)\)/);
   assert.match(libraSrc, /storage\.keys\(scopePrefix\)/);
+  assert.doesNotMatch(libraSrc, /storage\.keys\(`\$\{scopePrefix\}source-receipt-head:`\)/);
   assert.match(libraSrc, /storage\.keys\(jobPrefix\)/);
 });
 

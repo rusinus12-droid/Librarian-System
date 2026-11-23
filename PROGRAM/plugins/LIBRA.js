@@ -44408,7 +44408,7 @@ function createLibraReadonlySourceContext(owner) {
     const nativeCopyVerifiedPendingMicroCandidates = async (scope, sourcePairs, targetPairs,
       sharedPairLimit, sourceOptions = {}) => {
       const scopePrefix = `${PREFIX}:scope:${scope.scopeKey}:`;
-      const keys = sourceOptions.keys || await storage.keys(`${scopePrefix}source-receipt-head:`);
+      const keys = sourceOptions.keys || await storage.keys(scopePrefix);
       const readSource = sourceOptions.read || ((...args) => storage.getVerifiedJson(...args));
       const heads = keys.filter(storageKey => storageKey.startsWith(
         `${scopePrefix}source-receipt-head:`)).sort();
