@@ -24242,7 +24242,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       representation:'source_record',_packetRecord:record,_localRecall:true,_recallIdentityRefs:[record.id,record.canonicalRef,...record.declaredRefs].filter(Boolean),_recallEntityRefs:ensureArray(record.entityRefs),
       packetHash:identity,visibility:{...record.visibility},links:record.declaredLinks,lifecycle:{status:value.status||value.lifecycle?.status||'',timeScope:value.time_scope||value.timeScope||value.lifecycle?.timeScope||''},
       scene_id:text(packet.meta?.scene_id||''),
-      locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat'},
+      locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat',...(Number.isFinite(Number(packet.distanceFromLatest))?{distanceFromLatest:Number(packet.distanceFromLatest)}:{}),...(text(packet.sessionEpoch||packet.inheritedFromScopeKey||'')?{sessionEpoch:text(packet.sessionEpoch||packet.inheritedFromScopeKey||'')}:{})},
       retrieval:{subject:value.name||value.title||'',entityNames:[]}};
   }).filter(row=>row.publicText);
   const boundPacketRecordRowCache = new WeakMap();
@@ -24288,12 +24288,41 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for(const row of storedRows){
       const record=row._packetRecord,aliases=row._recallSearchAliases;
       const existing=row.representation!=='state_projection'&&record?.recordKey?byKey.get(record.recordKey):null;
-      if(existing){existing._recallIdentityRefs=[...new Set([...existing._recallIdentityRefs,...localRecallRefs(row)])];continue;}
+      if(existing){
+        existing._recallIdentityRefs=[...new Set([...existing._recallIdentityRefs,...localRecallRefs(row)])];
+        if(!existing.sceneRelation&&row.sceneRelation)existing.sceneRelation=row.sceneRelation;
+        if(existing.locator&&existing.locator.distanceFromLatest===undefined&&Number(row.locator?.distanceFromLatest)>0){
+          existing.locator={...existing.locator,distanceFromLatest:Number(row.locator.distanceFromLatest)};
+        }
+        continue;
+      }
       const copy={...row,representation:row.representation||'legacy_record'};
       // Source preparation owns alias freshness, including empty/partial/skipped generations.
       // Never let a stored compatibility row revive an alias when no new rows were produced.
       if(sourceAliasesOnly&&aliases){delete copy._recallSearchAliases;if(!record)delete copy.recordKey;}
       out.push(copy);
+    }
+    const latestHash=text(store?._recallLatestPacket||'');
+    const headOrdinal=Number(store?.worldlineHeadOrdinal||store?.turn||0)||0;
+    const activeSceneId=text(store?.context?.sceneAnchors?.sceneId||'').trim();
+    const hasHeadReference=Boolean(latestHash||headOrdinal>0);
+    for(let index=0;index<out.length;index+=1){
+      const r=out[index];
+      if(!r||r.representation!=='source_record')continue;
+      const rowOrdinal=Number(r.locator?.worldlineOrdinal??r.worldlineOrdinal??r.locator?.sourcePairIndex??r.sourcePairIndex??0)||0;
+      let locator=r.locator;
+      if(hasHeadReference&&locator){
+        const isPrior=(latestHash&&r.packetHash&&r.packetHash!==latestHash)||(headOrdinal>0&&rowOrdinal>0&&rowOrdinal<headOrdinal);
+        if(locator.distanceFromLatest===undefined||(isPrior&&!(Number(locator.distanceFromLatest)>0))){
+          locator={...locator,distanceFromLatest:isPrior?(headOrdinal>0&&rowOrdinal>0&&headOrdinal>=rowOrdinal?headOrdinal-rowOrdinal:1):0};
+        }
+      }
+      let sceneRelation=r.sceneRelation;
+      if(!sceneRelation&&(activeSceneId||Number.isFinite(Number(locator?.distanceFromLatest)))){
+        const rowSceneId=text(r.scene_id||r.sceneId||'').trim();
+        sceneRelation=activeSceneId&&rowSceneId?(activeSceneId===rowSceneId?'same_scene':'prior_scene'):(Number(locator?.distanceFromLatest)>0?'prior_snapshot_unconfirmed':'current_or_unknown');
+      }
+      if(locator!==r.locator||sceneRelation!==r.sceneRelation)out[index]={...r,locator,sceneRelation};
     }
     return bindPacketRecordReferences(out,store);
   };
@@ -24754,10 +24783,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for(const [key,entry]of localRecallPacketCache){if(localRecallPacketCache.size<=512&&chars<=16000000)break;localRecallPacketCache.delete(key);chars-=entry.chars;}
     for(const entry of prepared.values())for(const row of entry.rows){const id=localRecallSourceKey(row);if(!seen.has(id)){seen.add(id);rows.push(row);}}
     const accepted=new Set(addresses.map(identityOf));
+    store._recallLatestPacket=addresses.length?identityOf(addresses.at(-1),addresses.length-1):'';
     const mergedRows=mergeRecallRecordSources(rows,ensureArray(store.index).filter(row=>accepted.has(row.packetHash)),store,true);
     rows.splice(0,rows.length,...mergedRows);
     rows.sort((a,b)=>Number(a.locator?.messageIndex??0)-Number(b.locator?.messageIndex??0)||localRecallSourceKey(a).localeCompare(localRecallSourceKey(b)));
-    store._recallSourceRows=rows;store._recallLatestPacket=addresses.length?identityOf(addresses.at(-1),addresses.length-1):'';
+    store._recallSourceRows=rows;
     store._recallSourceCoverage={version:LOCAL_RECALL_VERSION,addressCount:addresses.length,indexedCount:[...prepared.values()].filter(entry=>entry.complete!==false).length,pendingCount:addresses.length-[...prepared.values()].filter(entry=>entry.complete!==false).length,partialSourceCount:[...prepared.values()].filter(entry=>entry.complete===false).length,failed,processedThisRequest:processed,linkedReads,rows:rows.length,cacheKeyChars,cacheVerificationSources,complete:prepared.size===addresses.length&&[...prepared.values()].every(entry=>entry.complete!==false),
       aliasCertification:{policy:'complete_source_existing_secret_policy',certifiedSources:[...prepared.values()].filter(entry=>entry.aliasCertification?.proof).length,
         pendingSources:[...prepared.values()].filter(entry=>entry.complete===false&&entry.aliasCertification?.summary).length,
@@ -26574,8 +26604,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       scopeKey || value.scopeKey || '', pairIndex, userHash, assistantHash, assistantMessageIdHash
     ].join('\u0001'));
     const inheritedIdentity = sourceRecordId || stableHash64([pairIndex, userHash, assistantHash].join('\u0001'));
+    const originScopeKey = compact(value.originScopeKey || sourceScopeKey || '', 196);
+    const originRecordId = compact(value.originRecordId || sourceRecordId || inheritedIdentity, 196);
     const recordId = compact(value.recordId || (inheritedSessionHistory
-      ? `history:${sourceScopeKey || 'unknown'}:${inheritedIdentity}`
+      ? `history:${stableHash64(`${originScopeKey || 'unknown'}\u0001${originRecordId}`)}`
       : `debt:${pairIndex}:${branchIdentity}`), 196);
     const createdAt = Math.max(1, Number(value.createdAt || value.updatedAt || now()) || now());
     const updatedAt = Math.max(createdAt, Number(value.updatedAt || createdAt) || createdAt);
@@ -26633,6 +26665,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       reason: compact(value.reason || (inheritedSessionHistory ? 'session_handoff_history' : 'packet_missing'), 96),
       inheritedSessionHistory,
       permanentSessionHistory: inheritedSessionHistory,
+      originScopeKey,
+      originRecordId,
       sourceScopeKey,
       sourceRecordId: sourceRecordId || inheritedIdentity,
       handoffTransferId: compact(value.handoffTransferId || '', 160),
@@ -28511,25 +28545,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const targetVault = await loadRecoveryVault(targetKey, { force: true });
       const inheritedAt = now();
       const existing = new Map(ensureArray(targetVault.records).map(record => {
+        const originScope = compact(record.originScopeKey || record.sourceScopeKey || '', 196);
+        const originId = compact(record.originRecordId || record.sourceRecordId || recoveryVaultRecordIdentity(record), 196);
         const key = record.inheritedSessionHistory
-          ? `history:${record.sourceScopeKey}:${record.sourceRecordId}`
+          ? `history:${stableHash64(`${originScope}\u0001${originId}`)}`
           : `debt:${record.recordId || recoveryVaultRecordIdentity(record)}`;
         return [key, record];
       }));
       let copied = 0;
       for (const sourceRecord of ensureArray(sourceVault.records)) {
-        const sourceRecordId = recoveryVaultRecordIdentity(sourceRecord);
-        const key = `history:${sourceKey}:${sourceRecordId}`;
+        const originScopeKey = compact(sourceRecord.originScopeKey || sourceRecord.sourceScopeKey || sourceKey, 196);
+        const originRecordId = compact(sourceRecord.originRecordId || sourceRecord.sourceRecordId || recoveryVaultRecordIdentity(sourceRecord), 196);
+        const historyRecordId = `history:${stableHash64(`${originScopeKey}\u0001${originRecordId}`)}`;
+        const key = historyRecordId;
         if (existing.has(key)) continue;
-        const inherited = normalizeRecoveryVaultRecord({
+        const baseInherited = normalizeRecoveryVaultRecord({
           ...sourceRecord,
-          recordId: `history:${sourceKey}:${sourceRecordId}`,
+          recordId: historyRecordId,
           scopeKey: targetKey,
           sourcePairIndex: sourceRecord.sourcePairIndex || sourceRecord.pairIndex,
           inheritedSessionHistory: true,
           permanentSessionHistory: true,
+          originScopeKey,
+          originRecordId,
           sourceScopeKey: sourceKey,
-          sourceRecordId,
+          sourceRecordId: originRecordId,
           handoffTransferId: transfer,
           inheritedAt,
           sourceFingerprint: sourceBefore.fingerprint,
@@ -28537,8 +28577,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           reason: 'session_handoff_history',
           updatedAt: inheritedAt
         }, targetKey);
-        if (!inherited) continue;
-        existing.set(key, inherited);
+        if (!baseInherited) continue;
+        let finalInherited = baseInherited;
+        if (sourceRecord.evidenceManifest) {
+          const srcExpectedId = compact(sourceRecord.recordId || '', 196);
+          const sidecar = await readRecoveryEvidenceSidecar(sourceRecord.evidenceManifest, {
+            scopeKey: compact(sourceRecord.evidenceManifest.scopeKey || sourceRecord.scopeKey || sourceKey, 196),
+            ...(srcExpectedId ? { recordId: srcExpectedId } : {})
+          }).catch(() => null);
+          if (sidecar?.ok === true) {
+            const attached = await attachRecoveryEvidenceSidecar(baseInherited, {
+              user: sidecar.user,
+              assistant: sidecar.assistant
+            }).catch(() => null);
+            if (attached?.durable === true && attached.record) {
+              finalInherited = attached.record;
+            }
+          }
+        }
+        existing.set(key, finalInherited);
         copied += 1;
       }
       const write = copied > 0
@@ -28596,12 +28653,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!objectish(metadata) || metadata.version !== RECOVERY_VAULT_HANDOFF_VERSION) {
       return { ok: true, reason: 'recovery_vault_handoff_not_required', records: 0 };
     }
+    if (metadata.skipped === true) {
+      return { ok: true, skipped: true, reason: metadata.reason || 'recovery_vault_handoff_skipped_fail_open', records: 0, expected: Number(metadata.sourceRecords || 0) || 0, sourcePreserved: metadata.sourcePreserved !== false };
+    }
     const targetKey = compact(targetScopeKey || metadata.targetScopeKey || '', 196);
     const sourceKey = compact(metadata.sourceScopeKey || '', 196);
     const transfer = compact(metadata.transferId || '', 160);
     const targetVault = await loadRecoveryVault(targetKey, { force: true });
     const records = targetVault.records.filter(record => record.inheritedSessionHistory === true
-      && record.sourceScopeKey === sourceKey
+      && (record.sourceScopeKey === sourceKey || Boolean(record.originScopeKey))
       && (!transfer || record.handoffTransferId === transfer));
     const sourceNow = await recoveryVaultStorageFingerprint(sourceKey);
     const sourcePreserved = !metadata.sourceFingerprintBefore || metadata.sourceFingerprintBefore === sourceNow.fingerprint;
@@ -28975,16 +29035,45 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const lifecycle=snapshot&&worldline?await reconcileRecoveryVaultWorldlineLifecycleDirect(scope,snapshot,worldline,{reason:'raw_recall_worldline_reconcile'}):{vault:await loadRecoveryVault(scope.key)};
     const vault=lifecycle.vault,active=activeRecoveryVaultRecords(vault,snapshot,worldline);
     const passages=[];
-    const liveSnapshot=scope.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(scope.chatMessages,scope)):null;
+    const liveScope=Array.isArray(scope?.chatMessages)?scope:(scope?.chatMessagesAvailable===true&&Array.isArray(messages)?{...scope,chatMessages:messages}:scope);
+    const liveSnapshot=liveScope?.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(liveScope.chatMessages,liveScope)):null;
     const visibleRecentTurns = settings?.visibleRecentTurns instanceof Set ? settings.visibleRecentTurns : null;
     for(const record of active.records){
       const inherited=record?.inheritedSessionHistory===true||record?.permanentSessionHistory===true;
       if(!inherited&&visibleRecentTurns?.size&&visibleRecentTurns.has(Number(record?.pairIndex||record?.worldlineOrdinal||record?.targetPairIndex||0)))continue;
       // Current-session turns are read from the visible chat; a changed turn is skipped.
-      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,scope,liveSnapshot):null;
+      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,liveScope,liveSnapshot):null;
       if(!inherited&&liveSnapshot&&!live)continue;
+      const passageMaxChars=650;
+      let sidecarEvidence = null;
       for(const role of ['user','assistant']){
-        const body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');if(!body)continue;
+        let body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');
+        if (!live && !body && record.evidenceManifest && Number(record[role]?.chars || 0) > 0) {
+          if (sidecarEvidence === null) {
+            sidecarEvidence = await readRecoveryEvidenceSidecar(record.evidenceManifest, {
+              scopeKey: compact(record.evidenceManifest.scopeKey || record.scopeKey || scope.key, 196),
+              ...(record.recordId ? { recordId: compact(record.recordId, 196) } : {})
+            }).catch(() => ({ ok: false }));
+          }
+          if (sidecarEvidence?.ok === true) {
+            body = text(sidecarEvidence[role] || '');
+          }
+        }
+        if(!body)continue;
+        if(body.length>passageMaxChars){
+          const bodyHash=live?(role==='user'?live.userHash:live.assistantHash):record[role]?.hash;
+          const synthetic={recordId:record.recordId,pairIndex:record.pairIndex||record.targetPairIndex||1,updatedAt:record.updatedAt,reason:record.reason,
+            [role]:{text:body,hash:bodyHash||stableHash64(body)}};
+          const windowed=rawRecoveryPassagesForRole(synthetic,role,passageMaxChars);
+          if(windowed.length){
+            for(const passage of windowed){
+              passages.push({id:record.recordId+':'+role+':'+passage.passageId,publicText:passage.text,axis:'narrative',record,role});
+            }
+            continue;
+          }
+          passages.push({id:record.recordId+':'+role,publicText:body.slice(0,passageMaxChars),axis:'narrative',record,role});
+          continue;
+        }
         passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
       }
     }
@@ -28995,9 +29084,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(text(query||'').trim())rankedLists.push(localRecallRank(passages,[query]));
       const topics=ensureArray(context.topics);
       if(topics.length)rankedLists.push(localRecallRank(passages,topics));
-      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT):[];
+      const maxItems=Math.max(1,Math.min(PACKET_CORE_RECALL_CANDIDATE_LIMIT,Number(settings.rawRecallMaxItems||DEFAULT_SETTINGS.rawRecallMaxItems||6)||6));
+      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT).slice(0,maxItems):[];
     }
     const records=chosen.map((row,index)=>({id:row.id,text:row.publicText,role:row.role,pairIndex:row.record.pairIndex||row.record.targetPairIndex||1,
+      worldlineOrdinal:Number(row.record.worldlineOrdinal||row.record.pairIndex||row.record.targetPairIndex||1),
       sourceHash:row.record.sourceHash||'',historyScope:row.record.historyScope||'current_session',score:1/(61+index),
       epistemicCaution:true,epistemicStatus:'original_narration_not_universal_character_knowledge'}));
     const result={version:LOCAL_RECALL_VERSION,active:!!records.length,reason:records.length?'source_context':'no_candidates',records,vaultRecords:vault.records.length,passages:passages.length,candidates:records.length};
@@ -32034,11 +32125,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       lightweightIngest: true,
       sourceScope: 'hidden_packet_structured_light_ingest'
     };
-    upsertHayakuMemoryNote(store, buildHayakuMemoryNote(parsed, {
-      packetHash,
-      turn: store.turn,
-      sourceMeta: lightSourceMeta
-    }));
+    if (!(parsed?.meta?.packet_record_revision === 2 && Memory.settings?.debug !== true)) {
+      upsertHayakuMemoryNote(store, buildHayakuMemoryNote(parsed, {
+        packetHash,
+        turn: store.turn,
+        sourceMeta: lightSourceMeta
+      }));
+    }
     const makeRows = (axis, category, values, limit = 4) => packetItems(values).slice(0, limit).map((raw, index) => {
       const item = objectish(raw) ? raw : { label: compact(raw, 220), summary: compact(raw, 220) };
       const subject = item.name || item.title || item.label || item.summary || item.event || item.rule || item.from || `${category}_${index}`;
@@ -32244,7 +32337,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // Build packet-level natural memory only after restricted POV/secret
     // boundaries have been normalized and removed from the public summary.
     const ledgerMetaPacket = sanitizeLedgerMetaKnowledgeBoundaries(parsed, secrets, povMemories);
-    upsertHayakuMemoryNote(store, buildHayakuMemoryNote(ledgerMetaPacket, { packetHash, turn, sourceMeta }));
+    if (!(parsed?.meta?.packet_record_revision === 2 && Memory.settings?.debug !== true)) {
+      upsertHayakuMemoryNote(store, buildHayakuMemoryNote(ledgerMetaPacket, { packetHash, turn, sourceMeta }));
+    }
     ingestSignal.lastPacketRefReuseError = Boolean(ingestSignal.lastPacketRefReuseError || povRefSplit.hadConflict || secretRefSplit.hadConflict);
     ingestSignal.hasNewCharacter = hadPacketBaseline && hasNewStableItem(characters, previousCharacters);
     ingestSignal.hasRelationshipChange = hadPacketBaseline && hasRelationChange(relations, previousRelations);
@@ -33542,7 +33637,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         row.retrieval.priorityTerms = mergeValues([row.retrieval.priorityTerms, retrievalAliases], 128);
         row.retrieval.crossLingualTokens = mergeValues([row.retrieval.crossLingualTokens, canonicalRecallTokensForText(retrievalAliases.join(' '))], 160);
       }
-      return attachSparseAtomicRecord(row, item);
+      return (item._packetRecord && !options?.includeLegacyAtomic) ? row : attachSparseAtomicRecord(row, item);
     }).filter(row => !isLowSignalContinuityRow(row));
     const stateRows=ensureArray(store.entity?.characters).filter(item=>item._characterStateProjection?.active&&item._packetRecord&&item.recallSuppressed!==true).flatMap(item=>{
       const base=baseRows.find(row=>row.category==='character'&&row.publicRef===publicRefOf(item));if(!base)return [];
@@ -33568,6 +33663,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const rows = [...inheritedRows.map(row => attachPacketMemoryLifecycle(row, store)), ...buildDerivedEventMemoryRows(inheritedRows, store)];
     const remainingBeforeGraph = Number.isFinite(Number(options?.deadlineAt)) ? Math.max(0, Number(options.deadlineAt) - now()) : Number.POSITIVE_INFINITY;
     const policy = derivedIndexBuildPolicy(rows.length, remainingBeforeGraph, settings);
+    if (options?.skipUnusedDerivedStructures === true) {
+      store.index = selectProtectedIndexRows(rows, INDEX_ROW_LIMIT);
+      if (!store.memory || typeof store.memory !== 'object') store.memory = { summaries: [], notes: [], episodes: [], episodeIndex: null };
+      store.memory.episodeIndex = null;
+      store.memory.episodes = [];
+      Memory.lastDerivedIndexBuild = {
+        version: DERIVED_ROUTING_COMPILER_VERSION,
+        policy: { ...policy, typedGraphEnabled: false, episodeEnabled: false, reason: 'source_recall_direct' },
+        baseRows: baseRows.length,
+        indexRows: store.index.length,
+        graphMs: 0,
+        episodeMs: 0,
+        totalMs: now() - buildStartedAt
+      };
+      return;
+    }
     const derivedSettings = { ...settings, typedMemoryGraphEnabled: policy.typedGraphEnabled, hierarchicalEpisodeMemoryEnabled: policy.episodeEnabled };
     const graphStartedAt = now();
     store.index = attachUnifiedMemoryAssociations(selectProtectedIndexRows(rows, INDEX_ROW_LIMIT), store, derivedSettings);
@@ -33592,10 +33703,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const queryMentionsAny = (query = '', values = []) => ensureArray(values).some(value => RecallKeywordFeatures.mentions(query, value));
   const queryMentionedEntities = (store={},query='') => {
+    const dict=buildAliasDictionary(store);
+    const resolved=RecallKeywordFeatures.resolveMentions(query,dict).map(hit=>hit.canonical).filter(Boolean);
     const words=localRecallWords(query),hits=[];
-    for(const entry of buildAliasDictionary(store))for(const name of entry.names){const parts=localRecallWords(name);if(!parts.length)continue;
+    for(const entry of dict)for(const name of entry.names){const parts=localRecallWords(name);if(!parts.length)continue;
       for(let i=0;i<=words.length-parts.length;i++)if(parts.every((part,j)=>words[i+j]===part))hits.push({entry,start:i,end:i+parts.length});}
-    return [...new Set(hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical))];
+    const wordMatched=hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical);
+    return [...new Set([...resolved,...wordMatched])];
   };
   const normalizeSceneVisibility = value => {
     const raw = text(value).trim().toLowerCase();
@@ -35442,8 +35556,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return prepareHayakuRecallRows(rows,query,settings,store,[],[]);
   };
   const searchIndexCompositeRecall = async (store, query, settings = Memory.settings, owner = {}) => {
-    const rows=localRecallCandidates(store,query,settings,null);
-    return prepareHayakuRecallRows(rows,query,settings,store,[],[]);
+    const candidates=localRecallCandidates(store,query,settings,null);
+    const transition=applyHayakuTransitionBundleBoost(candidates,query,settings,store);
+    const rows=collapseCurrentWorldConflicts(transition.rows,query);
+    return prepareHayakuRecallRows(rows,query,settings,store,[],transition.bundles);
   };
   const firstTextOf = (source = {}, keys = []) => {
     for (const key of keys) {
@@ -35901,7 +36017,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parsed = safeJsonParse(materialized?.raw || '', null) || (objectish(packet?.meta) && objectish(packet?.entity) ? packet : null);
     if (!objectish(parsed)) return null;
     const packetType = recoveryPacketTypeOf(parsed);
-    if (isRecoveryPacketType(packetType)) return null;
+    const explicitOrdinal = Number(packet?.worldlineOrdinal || packet?.targetPairIndex || packet?.historicalOrdinal || 0) || 0;
+    const analysisStatus = text(parsed?.meta?.analysis_status || '').trim();
+    if (isRecoveryPacketType(packetType) && (!explicitOrdinal || /^partial_memory/.test(analysisStatus))) return null;
     const meta = objectish(parsed.meta) ? parsed.meta : {};
     const entity = objectish(parsed.entity) ? parsed.entity : {};
     const world = objectish(parsed.world) ? parsed.world : {};
@@ -35910,6 +36028,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return {
       packet,
       parsed,
+      packetType,
       meta,
       entity,
       world,
@@ -35927,13 +36046,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .map(sceneBatonPacketState)
       .filter(Boolean)
       .sort((a, b) => a.ordinal - b.ordinal
+        || (Number(isRecoveryPacketType(b.packetType)) - Number(isRecoveryPacketType(a.packetType)))
         || Number(a.packet?.messageIndex || 0) - Number(b.packet?.messageIndex || 0)
         || Number(a.packet?.capturedAt || 0) - Number(b.packet?.capturedAt || 0));
     const latest = states.at(-1);
     if (!latest) return { text: '', rows: [], sceneEpoch: '', sourcePacketHash: '', sceneId: '' };
     const latestLocationKey = normalizeKey(latest.location);
     const latestSceneKey = normalizeKey(latest.sceneId);
-    let sceneStart = latest;
+    const latestIdx = states.length - 1;
+    let sceneStartIdx = latestIdx;
     for (let index = states.length - 2; index >= 0; index -= 1) {
       const candidate = states[index];
       const candidateLocationKey = normalizeKey(candidate.location);
@@ -35941,7 +36062,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const sameLocation = latestLocationKey && candidateLocationKey === latestLocationKey;
       const sameDeclaredScene = latestSceneKey && candidateSceneKey === latestSceneKey;
       if (!sameLocation && !sameDeclaredScene) break;
-      sceneStart = candidate;
+      sceneStartIdx = index;
+    }
+    const sceneStart = states[sceneStartIdx];
+    const durableSlots = new Map();
+    const recordDurableSlots = rawChar => {
+      const item = itemObject(rawChar);
+      const key = normalizeKey(item.name || item.title || item.label || '');
+      if (!key) return;
+      const cur = durableSlots.get(key) || {};
+      const location = text(item.current_location || item.currentLocation || item.location || item.last_known_location || item.lastKnownLocation || '').trim();
+      const condition = text(item.condition || item.physical_state || item.physicalState || '').trim();
+      const attire = text(item.attire || item.outfit || '').trim();
+      const carrying = ensureArray(item.carrying || item.carried || item.inventory).filter(Boolean).join(', ').trim();
+      durableSlots.set(key, {
+        location: location || cur.location || '',
+        condition: condition || cur.condition || '',
+        attire: attire || cur.attire || '',
+        carrying: carrying || cur.carrying || ''
+      });
+    };
+    ensureArray(options?.store?.entity?.characters)
+      .filter(character => character?._characterStateProjection?.active)
+      .forEach(recordDurableSlots);
+    for (let index = sceneStartIdx; index < latestIdx; index += 1) {
+      packetItems(states[index].entity.characters || states[index].entity.character || states[index].entity.people).forEach(recordDurableSlots);
     }
     const sceneEpoch = stableHash64([
       'hayaku_scene_epoch_v1',
@@ -35978,44 +36123,30 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           boundary: '지식 경계'
         };
     const rows = [];
-    const add = (kind, value) => {
-      const body = compact(value, 240);
+    const add = (kind, value, maxLen = 240) => {
+      const body = compact(value, maxLen);
       if (!body) return;
       rows.push({ kind, text: body });
     };
     add('identity', `${labels.identity}: ${latest.sceneId || `epoch:${sceneEpoch}`}`);
     add('place_time', `${labels.placeTime}: ${[latest.location, latest.time].filter(Boolean).join(' · ')}`);
-    packetItems(latest.entity.characters || latest.entity.character || latest.entity.people)
-      .slice(0, 4)
-      .forEach(character => {
-        const item = itemObject(character);
-        const name = item.name || item.title || item.label || '';
-        const state = [
-          item.status || item.state || item.current_state || item.currentState,
-          item.location,
-          item.current_action || item.currentAction || item.last_action || item.lastAction,
-          item.condition || item.physical_state || item.physicalState,
-          item.attire || item.outfit,
-          ensureArray(item.carrying || item.carried || item.inventory).join(', ')
-        ].filter(Boolean).join(' · ');
-        const ownerLabel = name ? `[${name}]` : '';
-        add('participant', `${labels.participant}: ${[ownerLabel, state].filter(Boolean).join(' — ')}`);
-      });
-    packetItems(latest.entity.relations || latest.entity.relationships)
-      .slice(0, 2)
-      .forEach(relation => {
-        const item = itemObject(relation);
-        const from = item.from || item.subject || item.source || item.ownerEntityId || '';
-        const to = item.to || item.target || item.peer || '';
-        const relState = [item.status || item.state || item.dynamic || item.summary || item.text, item.trust, item.tension].filter(Boolean).join(' · ');
-        if (from && to && relState) {
-          const relHeader = language === 'en' ? 'Relationship (directional)' : '관계 방향';
-          add('relation', `${relHeader}: ${from} → ${to} — ${relState}`);
-        }
-      });
-    packetItems(latest.world.active_events || latest.world.activeEvents || latest.world.events)
-      .slice(0, 2)
-      .forEach(event => add('event', `${labels.event}: ${itemText(event)}`));
+    const participantItems = packetItems(latest.entity.characters || latest.entity.character || latest.entity.people).slice(0, 4);
+    const participantMaxChars = participantItems.length >= 3 ? 120 : 160;
+    participantItems.forEach(character => {
+      const item = itemObject(character);
+      const name = item.name || item.title || item.label || '';
+      const durable = durableSlots.get(normalizeKey(name)) || {};
+      const state = [
+        item.status || item.state || item.current_state || item.currentState,
+        item.current_location || item.currentLocation || item.location || durable.location,
+        item.current_action || item.currentAction || item.last_action || item.lastAction,
+        item.condition || item.physical_state || item.physicalState || durable.condition,
+        item.attire || item.outfit || durable.attire,
+        ensureArray(item.carrying || item.carried || item.inventory).filter(Boolean).join(', ') || durable.carrying
+      ].filter(Boolean).join(' · ');
+      const ownerLabel = name ? `[${name}]` : '';
+      add('participant', `${labels.participant}: ${[ownerLabel, state].filter(Boolean).join(' — ')}`, participantMaxChars);
+    });
     packetItems(latest.narrative.scene_deltas || latest.narrative.sceneDeltas || latest.narrative.deltas)
       .slice(-1)
       .forEach(delta => add('delta', `${labels.delta}: ${itemText(delta)}`));
@@ -36041,6 +36172,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           ? (language === 'en' ? ` (not known by: ${denied})` : ` (미인지: ${denied})`)
           : (language === 'en' ? ' (other characters: unconfirmed)' : ' (타 인물 인지 미확인)');
         add('knowledge_boundary', `${labels.boundary}: ${owner}${deniedSuffix} — ${item.summary || item.text || 'private knowledge'}`);
+      });
+    packetItems(latest.world.active_events || latest.world.activeEvents || latest.world.events)
+      .slice(0, 2)
+      .forEach(event => add('event', `${labels.event}: ${itemText(event)}`));
+    packetItems(latest.entity.relations || latest.entity.relationships)
+      .slice(0, 2)
+      .forEach(relation => {
+        const item = itemObject(relation);
+        const from = item.from || item.subject || item.source || item.ownerEntityId || '';
+        const to = item.to || item.target || item.peer || '';
+        const relState = [item.status || item.state || item.dynamic || item.summary || item.text, item.trust, item.tension].filter(Boolean).join(' · ');
+        if (from && to && relState) {
+          const relHeader = language === 'en' ? 'Relationship (directional)' : '관계 방향';
+          add('relation', `${relHeader}: ${from} → ${to} — ${relState}`);
+        }
       });
     const cap = Math.max(320, Math.min(1000, Number(options?.capChars || 800) || 800));
     const lines = [labels.lead];
@@ -36300,7 +36446,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const key = characterStateProjectionKeyForRow(row);
       if (!key) return;
       const previous = winners.get(key);
-      if (!previous || compareContinuityEvidenceObservation(previous, row) < 0) winners.set(key, row);
+      const cmp = previous ? compareContinuityEvidenceObservation(previous, row) : -1;
+      if (!previous || cmp < 0 || (cmp === 0 && row.representation === 'state_projection' && previous.representation !== 'state_projection')) winners.set(key, row);
     });
     return {
       ...selected,
@@ -36981,7 +37128,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const overrideLane=text(options?.laneOverride||'').trim();
     const semanticLane=continuityEvidenceLaneFor(axis,row,options);
     return {axis,row,memory,language,localSourceEntry:true,
-      continuityLane:CONTINUITY_EVIDENCE_LANE_ORDER.includes(overrideLane)?overrideLane:CONTINUITY_EVIDENCE_LANES.derivedSummaries,
+      continuityLane:CONTINUITY_EVIDENCE_LANE_ORDER.includes(overrideLane)?overrideLane:semanticLane,
       semanticLane,
       prefix:'',clauses:[body],extras:[],bodyKey:normalizeKey(body),lineKey:memory,boundaryKey:packetCoreRecallBoundaryKey(row),
       tokens:localRecallWords(body),entities:[],semanticKeys:[],sourceKeys:sourceKey?[sourceKey]:[],sourceRows:[{axis,row}],mergedDuplicates:0};
@@ -37265,6 +37412,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // An entry whose text another memory plugin already put into this request verbatim is left out.
     const peerKept=peerRecall?entries.filter(entry=>!peerRecall.covered(text(entry?.memory||''))):entries;
     const peerDropped=entries.length-peerKept.length;
+    const libraPeerActive=Boolean(peerRecall?.owners?.includes?.('libra'));
     const assessed=assessHayakuEvidence(peerKept,query);
     let recentChatDropped=0;
     const recentChatDroppedItems=[];
@@ -37277,6 +37425,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const unit={id:'entry:'+stableHash64(origins.map(o=>hayakuEvidenceRowId(o.row)).sort().join('|')+'\n'+entry.memory),entry,origins,
         rowIds:origins.map(o=>hayakuEvidenceRowId(o.row)),priority,weight:candidates.length?Math.max(...candidates.filter(c=>c.priorityRank===priority).map(c=>c.weight)):Number(entry.row?.score||0),
         lane:entry.continuityLane,semanticLane:entry.semanticLane||continuityEvidenceLaneFor(entry.axis,entry.row),body:entry.memory};
+      if(libraPeerActive){
+        const renderLane=effectiveHayakuRenderLane(unit);
+        if([CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(renderLane)){
+          unit.priority=Math.min(unit.priority,1.4);
+          unit.weight=Number(unit.weight||0)*1.22;
+        } else if(renderLane===CONTINUITY_EVIDENCE_LANES.derivedSummaries&&origins.length>0&&origins.every(o=>PACKET_CORE_RECALL_SUMMARY_RE.test(text(o?.row?.category||''))&&Number(o?.row?.locator?.distanceFromLatest||0)>4)){
+          unit.priority=Math.max(unit.priority,2.2);
+          unit.weight=Number(unit.weight||0)*0.72;
+        }
+      }
       if(visibleTurns&&isHayakuUnitCoveredByVisibleTurns(unit,visibleTurns)){
         recentChatDropped+=1;
         const turns=[...new Set(origins.map(o=>Number(o?.row?.locator?.worldlineOrdinal??o?.row?.worldlineOrdinal??o?.row?.locator?.sourcePairIndex??o?.row?.sourcePairIndex??0)).filter(n=>Number.isInteger(n)&&n>0))].sort((a,b)=>a-b);
@@ -37370,7 +37528,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const head=Number(prepared.metadata?.store?.worldlineHeadOrdinal||0);
     for(const unit of units){
       const protectedCore=[CONTINUITY_EVIDENCE_LANES.latestState,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,
-        CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(unit.lane);
+        CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(effectiveHayakuRenderLane(unit));
       const origins=ensureArray(unit.origins).map(origin=>origin.row);
       if(!origins.length&&(unit.raw||unit.partial))origins.push(unit.raw||unit.partial);
       for(const row of origins){
@@ -37402,7 +37560,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const linkedRows=new Set(requirements.filter(r=>r.linked).flatMap(r=>r.ids));
     const groups=[...requirements.map(r=>({id:r.id,units:r.units,priority:r.priority,linked:r.linked,requirement:r})),
       ...prepared.units.filter(u=>!dependent.has(u.id)).map(u=>({id:u.id,units:[u],priority:u.priority}))];
-    const rawCap=prepared.units.some(u=>!u.raw)?Math.min(Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars),1600,Math.floor(cap*.30)):Math.min(cap,Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars));
+    const rawCap=prepared.units.some(u=>!u.raw)?Math.min(Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars),1800,Math.max(Math.min(cap,1100),Math.floor(cap*.35))):Math.min(cap,Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars));
     const render=units=>renderHayakuEvidencePlan({units,language:prepared.language});
     const additions=g=>g.units.filter(u=>!picked.has(u.id));
     // Select marginal evidence rather than repeatedly spending the same finite
@@ -37477,7 +37635,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const groupEntityMismatch=group=>group.units.some(unit=>ensureArray(unit.origins).some(origin=>origin?.row?._recallEntityMismatch===true));
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
-      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane)&&!groupEntityMismatch(group));
+      const candidates=groups.filter(group=>group.units.some(unit=>effectiveHayakuRenderLane(unit)===lane)&&!groupEntityMismatch(group));
       candidates.sort((a,b)=>a.priority-b.priority||tie(a,b));
       if(candidates.length)reservedLanes.add(candidates[0].id);
     }
@@ -37527,7 +37685,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const representations=new Map();
     for(const unit of prepared.units){const key=representationKey(unit);if(key){const list=representations.get(key)||[];list.push(unit);representations.set(key,list);}}
     const protectedLanes=new Set([CONTINUITY_EVIDENCE_LANES.latestState,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences]);
-    const replaceable=unit=>!unit.raw&&!unit.partial&&!dependent.has(unit.id)&&!protectedLanes.has(unit.lane);
+    const replaceable=unit=>!unit.raw&&!unit.partial&&!dependent.has(unit.id)&&!protectedLanes.has(effectiveHayakuRenderLane(unit));
     const utility=units=>units.reduce((sum,unit)=>sum+unit.weight/(1+units.reduce((max,other)=>other===unit||unit.raw||other.raw?max:Math.max(max,similarity(unit,other)),0)),0);
     const relocate=group=>{
       const added=additions(group);if(group.requirement||added.length!==1||!replaceable(added[0]))return null;
@@ -37606,7 +37764,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const unit = chosen.find(value => value?.id === fragment?.id);
       const exact = Number.isSafeInteger(fragment?.start) && Number.isSafeInteger(fragment?.end)
         && fragment.start >= 0 && fragment.end > fragment.start && fragment.end <= body.length;
-      return {lane:core.includes(unit?.lane) ? 'core' : 'optional',
+      return {lane:core.includes(effectiveHayakuRenderLane(unit)) ? 'core' : 'optional',
         emittedText:exact ? body.slice(fragment.start,fragment.end) : '[emission unresolved]',
         attributionComplete:false,contributors:[]};
     }) : body === '' ? [] : null;
@@ -38025,12 +38183,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const hardDropped = dropped.filter(item => item.level === 'hard');
     const importantDropped = dropped.filter(item => item.level === 'important');
     const optionalDropped = dropped.filter(item => item.level === 'optional');
+    const rawDroppedCount = ensureArray(result?.rawDroppedIds).length;
     return {
-      needsPrecisionExpansion: hardDropped.length > 0 || importantDropped.length > 0,
+      needsPrecisionExpansion: hardDropped.length > 0 || importantDropped.length > 0 || rawDroppedCount > 0,
       hardDroppedCount: hardDropped.length,
-      importantDroppedCount: importantDropped.length,
+      importantDroppedCount: importantDropped.length + rawDroppedCount,
       optionalDroppedCount: optionalDropped.length,
-      totalDroppedCount: dropped.length,
+      totalDroppedCount: dropped.length + rawDroppedCount,
       hardDroppedReasons: uniq(hardDropped.flatMap(item => item.reasons), 24),
       importantDroppedReasons: uniq(importantDropped.flatMap(item => item.reasons), 24),
       droppedKeys: dropped.map(item => item.key),
@@ -38071,6 +38230,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     const structuralCache = promptCacheModeOf(settings) !== 'off';
     const outputContractSuppressed = packetCoreWriteSuppressed(settings);
+    const otherAxPromptWithheld = settings?.otherAxCanonicalPacket === true && !outputContractSuppressed;
     const staticCandidates = structuralCache
       ? [
           packetCacheStaticContract(settings, CACHE_STATIC_PROFILE_FULL),
@@ -38102,7 +38262,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const criticalTerminalSeal = buildPacketTerminalCompletionSeal(settings, { critical: true });
     const packetCoreRows = prepareHayakuEvidenceUnits(selected,query,settings,signatureOwner).units.flatMap(unit=>unit.origins||[]);
     const selectedRowKeys = uniq(packetCoreRows.map(({ axis, row }) => packetCoreRecallDeliveryRowKey(axis, row)).filter(Boolean), 128);
-    const atomicMinimumChars = outputContractSuppressed
+    const atomicMinimumChars = (outputContractSuppressed || otherAxPromptWithheld)
       ? 0
       : packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, criticalTerminalSeal]);
     const inactive = reason => ({
@@ -38138,17 +38298,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       budgetSafeFallbackApplied: false
     });
     if (outputContractSuppressed) return inactive('structured_output_only');
-    if (cap <= 0) return inactive('insufficient_context_budget');
-    if (!criticalStaticWrite || !runtimeSkeletonInstruction || !criticalTerminalSeal || atomicMinimumChars <= 0 || atomicMinimumChars > cap) {
-      return inactive('insufficient_context_budget');
+    if (!otherAxPromptWithheld) {
+      if (cap <= 0) return inactive('insufficient_context_budget');
+      if (!criticalStaticWrite || !runtimeSkeletonInstruction || !criticalTerminalSeal || atomicMinimumChars <= 0 || atomicMinimumChars > cap) {
+        return inactive('insufficient_context_budget');
+      }
     }
 
-    const terminalSeal = [fullTerminalSeal, compactTerminalSeal, criticalTerminalSeal]
-      .find(candidate => candidate && packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, candidate]) <= cap)
-      || criticalTerminalSeal;
+    const terminalSeal = otherAxPromptWithheld
+      ? ''
+      : ([fullTerminalSeal, compactTerminalSeal, criticalTerminalSeal]
+          .find(candidate => candidate && packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, candidate]) <= cap)
+          || criticalTerminalSeal);
     let sceneBatonText = '';
-    let selectedStaticContract = criticalStaticContract;
-    if (structuralCache) {
+    let selectedStaticContract = otherAxPromptWithheld ? { profile: '', hash: '', text: '' } : criticalStaticContract;
+    if (otherAxPromptWithheld) {
+      sceneBatonText = cap > 0 ? fitPacketCoreWholeLinesToBudget(sceneBaton?.text || '', cap, 2) : '';
+    } else if (structuralCache) {
       // Cache profile changes invalidate the provider prefix. Exhaust the
       // variable scene/recall allowance before lowering full -> compact -> critical.
       selectedStaticContract = staticCandidates.find(candidate => candidate.text
@@ -38182,18 +38348,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           ) >= desiredMemoryFloor)
         || criticalStaticContract;
     }
-    const staticWrite = selectedStaticContract.text;
-    const packetAuthoringChars = packetCoreJoinLength([
-      staticWrite,
-      healthRepairHint,
-      runtimeSkeletonInstruction,
-      terminalSeal
-    ]);
-    const physicalRecallRoomChars = packetCoreAvailablePartChars(
-      [sceneBatonText],
-      [staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal],
-      cap
-    );
+    const staticWrite = otherAxPromptWithheld ? '' : selectedStaticContract.text;
+    const effectiveHealthHint = otherAxPromptWithheld ? '' : healthRepairHint;
+    const effectiveRuntimeSkeleton = otherAxPromptWithheld ? '' : runtimeSkeletonInstruction;
+    const effectiveLineageInstruction = otherAxPromptWithheld ? '' : lineageInstruction;
+    const packetAuthoringChars = otherAxPromptWithheld
+      ? 0
+      : packetCoreJoinLength([
+          staticWrite,
+          effectiveHealthHint,
+          effectiveRuntimeSkeleton,
+          terminalSeal
+        ]);
+    const physicalRecallRoomChars = cap > 0
+      ? packetCoreAvailablePartChars(
+          [sceneBatonText],
+          otherAxPromptWithheld ? [] : [staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal],
+          cap
+        )
+      : 0;
     const presetKey = hayakuRecallPresetOf(settings);
     const preset = HAYAKU_RECALL_PRESETS[presetKey];
     const targetBudget = Number(preset?.targetBudgetChars) || RECALL_DATA_BUDGETS.standard;
@@ -38288,30 +38461,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallDataBudget.reasons = uniq([...ensureArray(recallDataBudget.reasons), 'context_limited_before_evidence_fit'], 24);
     }
 
-    let block = packetCoreJoinParts(structuralCache
-      ? [sceneBatonText, memoryBlock, healthRepairHint, runtimeSkeletonInstruction]
-      : [sceneBatonText, memoryBlock, staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-    let totalChars = packetCoreJoinLength([sceneBatonText, memoryBlock, staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+    let block = packetCoreJoinParts(otherAxPromptWithheld
+      ? [sceneBatonText, memoryBlock]
+      : (structuralCache
+          ? [sceneBatonText, memoryBlock, effectiveHealthHint, effectiveRuntimeSkeleton]
+          : [sceneBatonText, memoryBlock, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+    let totalChars = packetCoreJoinLength([sceneBatonText, memoryBlock, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     let budgetSafeFallbackApplied = false;
     if (totalChars > cap && memoryBlock) {
       budgetSafeFallbackApplied = true;
       memoryContextResult = emptyPacketCoreMemoryResult(memoryContextResult?.selectedRowKeys || selectedRowKeys);
       memoryBlock = '';
       memoryBudgetChars = 0;
-      block = packetCoreJoinParts(structuralCache
-        ? [sceneBatonText, healthRepairHint, runtimeSkeletonInstruction]
-        : [sceneBatonText, staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-      totalChars = packetCoreJoinLength([sceneBatonText, staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+      block = packetCoreJoinParts(otherAxPromptWithheld
+        ? [sceneBatonText]
+        : (structuralCache
+            ? [sceneBatonText, effectiveHealthHint, effectiveRuntimeSkeleton]
+            : [sceneBatonText, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+      totalChars = packetCoreJoinLength([sceneBatonText, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     }
     if (totalChars > cap && sceneBatonText) {
       budgetSafeFallbackApplied = true;
       sceneBatonText = '';
-      block = packetCoreJoinParts(structuralCache
-        ? [healthRepairHint, runtimeSkeletonInstruction]
-        : [staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-      totalChars = packetCoreJoinLength([staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+      block = packetCoreJoinParts(otherAxPromptWithheld
+        ? []
+        : (structuralCache
+            ? [effectiveHealthHint, effectiveRuntimeSkeleton]
+            : [staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+      totalChars = packetCoreJoinLength([staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     }
-    if (totalChars > cap) {
+    if (!otherAxPromptWithheld && totalChars > cap) {
       budgetSafeFallbackApplied = true;
       block = packetCoreJoinParts(structuralCache
         ? [healthRepairHint, runtimeSkeletonInstruction]
@@ -38353,7 +38532,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return {
       active: true,
-      reason: budgetSafeFallbackApplied ? 'atomic_budget_fallback' : 'atomic_contract_complete',
+      reason: otherAxPromptWithheld
+        ? (budgetSafeFallbackApplied ? 'otherax_canonical_budget_fallback' : 'otherax_canonical_withheld')
+        : (budgetSafeFallbackApplied ? 'atomic_budget_fallback' : 'atomic_contract_complete'),
       capChars: cap,
       atomicMinimumChars,
       packetAuthoringChars,
@@ -38365,14 +38546,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       fullStaticWrite,
       fullLineageInstruction: lineageInstruction,
       fullRuntimeSkeletonInstruction: runtimeSkeletonInstruction,
-      healthRepairHint,
+      healthRepairHint: effectiveHealthHint,
       fullTerminalSeal,
       packetCoreRows,
       staticWrite,
       staticProfile: selectedStaticContract.profile,
       staticContractHash: selectedStaticContract.hash,
-      lineageInstruction,
-      runtimeSkeletonInstruction,
+      lineageInstruction: effectiveLineageInstruction,
+      runtimeSkeletonInstruction: effectiveRuntimeSkeleton,
       terminalSeal,
       sceneBatonText,
       memoryContextResult,
@@ -38380,7 +38561,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       memoryBudgetChars,
       block,
       totalChars,
-      atomicContractPreserved: true,
+      atomicContractPreserved: !otherAxPromptWithheld,
       budgetSafeFallbackApplied
     };
   };
@@ -39226,7 +39407,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         0,
         ...packets.map(packet => Number(packet?.worldlineHeadOrdinal || packet?.worldlineOrdinal || 0)).filter(Number.isFinite)
       );
-      const sceneBaton = stage('buildSceneBaton', () => buildSceneBaton(packets, {
+      let sceneBaton = stage('buildSceneBaton', () => buildSceneBaton(packets, {
         memoryLanguage: settings.memoryLanguage,
         capChars: 800
       }));
@@ -39419,10 +39600,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
       });
       stage('rebuildIndex', () => {
-        if (!projectionCacheHit) rebuildIndex(store, { settings, deadlineAt: startedAt + requestBudgetMs, mode: settings.effectiveMode });
+        if (!projectionCacheHit) rebuildIndex(store, { settings, deadlineAt: startedAt + requestBudgetMs, mode: settings.effectiveMode, skipUnusedDerivedStructures: !settings.debug });
       });
+      sceneBaton = stage('refreshSceneBatonWithStore', () => buildSceneBaton(packets, {
+        memoryLanguage: settings.memoryLanguage,
+        capChars: 800,
+        store
+      }));
       const derivedBuildPolicy = Memory.lastDerivedIndexBuild?.policy || null;
       const derivedBuildMatchesRequested = !derivedBuildPolicy
+        || derivedBuildPolicy.reason === 'source_recall_direct'
         || ((settings.typedMemoryGraphEnabled === false || derivedBuildPolicy.typedGraphEnabled === true)
           && (settings.hierarchicalEpisodeMemoryEnabled === false || derivedBuildPolicy.episodeEnabled === true)
           && derivedBuildPolicy.reason !== 'prebuild_budget_guard');
@@ -39482,7 +39669,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         )),
         stageAsync('packetHealth', async () => computePacketHealth(packetResults, store)),
         stageAsync('rawRecoveryRecall', () => searchRecoveryVaultRawPassages(
-          chatScope,
+          { ...chatScope, chatMessages: authoritativeChatAvailable ? authoritativeChatMessages : [] },
           retrievalQuery,
           authoritativeChatAvailable ? authoritativeChatMessages : messages,
           visibleRecentTurns.turns.size ? { ...settings, visibleRecentTurns: visibleRecentTurns.turns } : settings,
@@ -39498,7 +39685,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const rawAnchorIntegration = stage('rawAnchorIntegration', () => integrateRawRecoveryAnchors(
         ensureArray(rawRecoveryRecall?.records), selectedWithLiveOverlay, query
       ));
-      const selectedForModel = selectedWithLiveOverlay;
+      const selectedForModel = stage('suppressOlderCharacterSnapshots', () => suppressOlderCharacterSnapshots(selectedWithLiveOverlay, query));
+      if (selectedForModel !== selectedWithLiveOverlay) carryHayakuRecallPreparation(selectedWithLiveOverlay, selectedForModel);
       const selectedForContext = {
         ...selectedForModel,
         partialMemoryEvidence: ensureArray(partialMemoryRecall),
@@ -39545,13 +39733,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ? buildPacketCoreCompactWriteInstruction(promptSettings, { critical: true })
         : packetCacheStaticContract(promptSettings, CACHE_STATIC_PROFILE_CRITICAL).text);
       const criticalTerminalSeal = stage('buildPacketCriticalTerminalSeal', () => buildPacketTerminalCompletionSeal(promptSettings, { critical: true }));
-      const mandatoryFullCoreChars = packetCoreJoinLength([
-        fullStaticWrite,
-        fullHealthRepairHint,
-        fullRuntimeSkeletonInstruction,
-        fullTerminalSeal
-      ]);
-      const mandatoryAtomicMinimumChars = packetCoreWriteSuppressed(promptSettings)
+      const otherAxPromptWithheld = settings?.otherAxCanonicalPacket === true && !packetCoreWriteSuppressed(promptSettings);
+      const mandatoryFullCoreChars = otherAxPromptWithheld
+        ? 0
+        : packetCoreJoinLength([
+            fullStaticWrite,
+            fullHealthRepairHint,
+            fullRuntimeSkeletonInstruction,
+            fullTerminalSeal
+          ]);
+      const mandatoryAtomicMinimumChars = (packetCoreWriteSuppressed(promptSettings) || otherAxPromptWithheld)
         ? 0
         : packetCoreJoinLength([
             criticalStaticWrite,
@@ -39560,13 +39751,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             criticalTerminalSeal
           ]);
       const hardContextExhaustion = !packetCoreWriteSuppressed(promptSettings)
+        && !otherAxPromptWithheld
         && hostBudgetAuthoritative
         && mandatoryAtomicMinimumChars > 0
         && hostSafeCapChars < mandatoryAtomicMinimumChars;
       // Without authoritative host limits we cannot truthfully declare hard
       // exhaustion, so the mandatory full core remains protected and only the
       // optional budget follows the conservative character heuristic.
-      const mandatoryCoreTargetChars = hardContextExhaustion
+      const mandatoryCoreTargetChars = (hardContextExhaustion || otherAxPromptWithheld)
         ? 0
         : (hostBudgetAuthoritative && hostSafeCapChars < mandatoryFullCoreChars
             ? mandatoryAtomicMinimumChars
@@ -39586,7 +39778,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // 기억 주입 공통 예산: while it is on, HAYAKU's share caps the recalled evidence (the packet-writing
       // contract stays outside it, as with HAYAKU's own budget). 중복 제거: peer blocks already in the request.
       const sharedRecallChars = memorySuiteRecallShareChars('hayaku');
-      const recallCapForEvidence = sharedRecallChars == null ? optionalInjectionBudgetChars : Math.min(optionalInjectionBudgetChars, sharedRecallChars);
+      const recallCapForEvidence = sharedRecallChars == null ? null : Math.min(optionalInjectionBudgetChars, sharedRecallChars);
       const peerRecall = memorySuitePeerRecallIndex(messages, 'hayaku');
       if (peerRecall.chars && selectedForContext && typeof selectedForContext === 'object') hayakuPeerRecallIndexes.set(selectedForContext, peerRecall);
       if (visibleRecentTurns.turns.size && selectedForContext && typeof selectedForContext === 'object') hayakuVisibleRecentTurns.set(selectedForContext, visibleRecentTurns);
@@ -39621,6 +39813,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const atomicPacketReservationApplied = packetWriteActive && mandatoryCoreTargetChars > 0;
       const atomicPacketReservationCapChars = mandatoryCoreTargetChars;
       if (packetWriteActive
+        && !otherAxPromptWithheld
         && hostBudgetAuthoritative
         && mandatoryFullCoreChars > mandatoryCoreTargetChars) {
         pushOperationLog('packet_core:degraded_for_context', {
@@ -39683,6 +39876,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             recoveryRequest: IN_BAND_RECOVERY_WRITE_ENABLED ? packetRecovery : null,
             packetWriteExpected: packetWriteActive,
             recoveryVaultOnly: !packetWriteActive,
+            fromRealBeforeRequest: true,
+            ...(outputContract?.packetPlacement ? { packetPlacement: clone(outputContract.packetPlacement, null) } : {}),
             ...(otherAxCanonicalPacketMode ? { otherAxCanonicalPacket: true } : {})
           }
         ))
@@ -40208,8 +40403,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(!hayakuRequestCurrent(recallToken)||!await verifyHayakuReadset(readsetFrame))return hayakuRecallPassthrough(messages);
       publishHayakuRecallDelivery(memoryContextResult,recallToken,retrievalQuery,settings);
       const injectedBodies = injectionResult.messages.map(messageContent);
-      const completeInjection = packetWriteActive && [staticWrite, packetBudgetPlan.runtimeSkeletonInstruction, tail]
-        .every(part => text(part).trim() && injectedBodies.some(body => body.includes(text(part).trim())));
+      const modeBParts = [sceneBatonText, memoryBlock].map(part => text(part).trim()).filter(Boolean);
+      const completeInjection = otherAxCanonicalPacketMode
+        ? modeBParts.every(part => injectedBodies.some(body => body.includes(part)))
+        : (packetWriteActive && [staticWrite, packetBudgetPlan.runtimeSkeletonInstruction, tail]
+            .every(part => text(part).trim() && injectedBodies.some(body => body.includes(text(part).trim()))));
       if (injectionReceiptContext && completeInjection) {
         lastHayakuRequestInjectionReceipt = {
           contextFingerprint: injectionReceiptContext,
@@ -40558,7 +40756,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return `<!-- ${PACKET_START}\n${JSON.stringify(normalized)}\n${PACKET_END} -->`;
   };
 
-  const replaceHayakuPacketText = (value = '', packet = {}) => {
+  const replaceHayakuPacketText = (value = '', packet = {}, placement = null) => {
     const serialized = serializeHayakuPacket(packet);
     if (!serialized) return { ok: false, reason: 'packet_validation_failed', text: text(value) };
     let visible = text(value)
@@ -40571,6 +40769,35 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       visible = visible.slice(0, commentStart >= 0 ? commentStart : danglingStart);
     }
     visible = visible.replace(/[ \t]+$/gm, '').replace(/\s+$/, '');
+    const closeTag = placement?.mode === 'inside_terminal_wrapper' ? text(placement?.closingTag || '').trim() : '';
+    if (closeTag) {
+      const matches = [...visible.matchAll(new RegExp(escapeRegExp(closeTag), 'gi'))];
+      const last = matches.at(-1);
+      if (last && Number.isInteger(last.index)) {
+        const head = visible.slice(0, last.index).replace(/\s+$/, '');
+        const closePart = visible.slice(last.index);
+        return {
+          ok: true,
+          reason: 'replaced',
+          placement: 'inside_terminal_wrapper',
+          text: `${head ? head + '\n\n' : ''}${serialized}\n${closePart}`,
+          packet: normalizeHayakuPacket(packet)
+        };
+      }
+    }
+    if (placement?.mode === 'before_required_footer') {
+      const footerMatch = /(<!--[\s\S]*?-->)\s*$/.exec(visible);
+      if (footerMatch && Number.isInteger(footerMatch.index)) {
+        const head = visible.slice(0, footerMatch.index).replace(/\s+$/, '');
+        return {
+          ok: true,
+          reason: 'replaced',
+          placement: 'before_required_footer',
+          text: `${head ? head + '\n\n' : ''}${serialized}\n\n${footerMatch[1]}`,
+          packet: normalizeHayakuPacket(packet)
+        };
+      }
+    }
     return { ok: true, reason: 'replaced', text: `${visible}\n\n${serialized}`, packet: normalizeHayakuPacket(packet) };
   };
 
@@ -41474,6 +41701,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceFingerprintBefore: compact(parsed?.sessionHandoff?.sourceFingerprintBefore || '', 96),
         sourceFingerprintAfter: compact(parsed?.sessionHandoff?.sourceFingerprintAfter || '', 96),
         sourcePreserved: parsed?.sessionHandoff?.sourcePreserved === true,
+        ...(objectish(parsed?.sessionHandoff?.recoveryVaultHandoff) ? { recoveryVaultHandoff: parsed.sessionHandoff.recoveryVaultHandoff } : {}),
+        ...(objectish(parsed?.sessionHandoff?.partialMemoryHandoff) ? { partialMemoryHandoff: parsed.sessionHandoff.partialMemoryHandoff } : {}),
         verified: parsed?.sessionHandoff?.verified === true,
         adoptedAt: finiteNonNegativeInteger(parsed?.sessionHandoff?.adoptedAt, 0)
       },
@@ -42268,13 +42497,38 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       error.code = 'SOURCE_MUTATION_DETECTED';
       throw error;
     }
-    const recoveryVaultHandoff = await inheritRecoveryVaultForBridgeSession(
+    let recoveryVaultHandoff = await inheritRecoveryVaultForBridgeSession(
       sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || ''
     );
+    let partialMemoryHandoff = { ok: true, skipped: false, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty' };
+    try {
+      partialMemoryHandoff = await inheritPartialMemoryForBridgeSession(
+        sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || ''
+      );
+    } catch (error) {
+      partialMemoryHandoff = {
+        ok: false,
+        skipped: true,
+        copiedRecords: 0,
+        adoptedRecords: 0,
+        records: 0,
+        reason: 'partial_memory_handoff_failed',
+        error: compact(error?.message || error, 240)
+      };
+    }
     if (recoveryVaultHandoff.ok !== true) {
-      const error = new Error(recoveryVaultHandoff.reason || 'recovery_vault_handoff_failed');
-      error.code = 'RECOVERY_VAULT_HANDOFF_FAILED';
-      throw error;
+      if (archive.recordCount > 0 || (partialMemoryHandoff.ok === true && Number(partialMemoryHandoff.adoptedRecords || 0) > 0)) {
+        recoveryVaultHandoff = {
+          ...recoveryVaultHandoff,
+          ok: false,
+          skipped: true,
+          sourcePreserved: recoveryVaultHandoff.sourcePreserved !== false
+        };
+      } else {
+        const error = new Error(recoveryVaultHandoff.reason || 'recovery_vault_handoff_failed');
+        error.code = 'RECOVERY_VAULT_HANDOFF_FAILED';
+        throw error;
+      }
     }
     return {
       ledger: {
@@ -42289,6 +42543,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           sourceFingerprintAfter: sourceIntegrityAfter.fingerprint,
           sourcePreserved: true,
           recoveryVaultHandoff,
+          partialMemoryHandoff,
           verified: false,
           adoptedAt: 0
         },
@@ -43510,6 +43765,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       existing.recoveryVaultOnly = options?.recoveryVaultOnly === true;
       if (options?.otherAxCanonicalPacket === true) existing.otherAxCanonicalPacket = true;
       else delete existing.otherAxCanonicalPacket;
+      if (options?.packetPlacement) existing.packetPlacement = clone(options.packetPlacement, null);
+      else delete existing.packetPlacement;
+      if (options?.fromRealBeforeRequest === true) existing.fromRealBeforeRequest = true;
       if (userEvidence && !existing.userEvidence) existing.userEvidence = clone(userEvidence);
       existing.recoveryTarget = existing.recoveryRequired
         ? clone(options?.recoveryTarget || recoveryTargetForCapture(snapshot, options?.recoveryRequest), null)
@@ -43550,6 +43808,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       packetWriteExpected: options?.packetWriteExpected !== false,
       recoveryVaultOnly: options?.recoveryVaultOnly === true,
       ...(options?.otherAxCanonicalPacket === true ? { otherAxCanonicalPacket: true } : {}),
+      ...(options?.packetPlacement ? { packetPlacement: clone(options.packetPlacement, null) } : {}),
+      ...(options?.fromRealBeforeRequest === true ? { fromRealBeforeRequest: true } : {}),
       recoveryTarget: options?.recoveryRequired === true
         ? clone(options?.recoveryTarget || recoveryTargetForCapture(snapshot, options?.recoveryRequest), null)
         : null,
@@ -44257,6 +44517,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceFingerprintBefore: compact(ledger?.sessionHandoff?.sourceFingerprintBefore || '', 96),
         sourceFingerprintAfter: compact(ledger?.sessionHandoff?.sourceFingerprintAfter || '', 96),
         sourcePreserved: ledger?.sessionHandoff?.sourcePreserved === true,
+        ...(objectish(ledger?.sessionHandoff?.recoveryVaultHandoff) ? { recoveryVaultHandoff: ledger.sessionHandoff.recoveryVaultHandoff } : {}),
+        ...(objectish(ledger?.sessionHandoff?.partialMemoryHandoff) ? { partialMemoryHandoff: ledger.sessionHandoff.partialMemoryHandoff } : {}),
         verified: ledger?.sessionHandoff?.verified === true,
         adoptedAt: finiteNonNegativeInteger(ledger?.sessionHandoff?.adoptedAt, 0)
       },
@@ -44431,6 +44693,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // This manual operation's proof ends here. The generic reconciliation
       // journal may replay without it, so retain uncertainty without enqueueing.
       if(sourcePublication){result.reason='SOURCE_EDIT_PUBLICATION_UNCONFIRMED';return result;}
+      if (writeOutcome.state === 'fulfilled' && readbackOutcome?.state === 'fulfilled' && String(reason || '').startsWith('bridge_session_')) {
+        result.storageState = 'rejected';
+        result.durable = false;
+        result.reason = result.reason || 'storage_readback_mismatch';
+        return result;
+      }
       if (readsetFrame && writeOutcome.state==='indeterminate') readsetFrame.pendingWrite=writeOutcome;
       const eventual = reconcileIndeterminateStorageLedgerWrite(scope, key, serialized, next, reason, writeOutcome,readsetFrame);
       Object.defineProperty(result, '_eventual', { value: eventual, enumerable: false, configurable: false });
@@ -44646,7 +44914,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const sourceAfter = sourceScopeKey ? await hayakuSourceLedgerStorageFingerprint(sourceScopeKey) : sourceBefore;
       const sourcePreserved = !sourceScopeKey || (!!sourceBefore.fingerprint && sourceBefore.fingerprint === sourceAfter.fingerprint);
       const recoveryVaultVerification = await verifyInheritedRecoveryVaultHandoff(ledger?.sessionHandoff?.recoveryVaultHandoff, scope.key);
-      const verifiedEmpty = sourcePreserved && recoveryVaultVerification.ok === true;
+      let partialMemoryHandoff = objectish(ledger?.sessionHandoff?.partialMemoryHandoff)
+        ? ledger.sessionHandoff.partialMemoryHandoff
+        : await inheritPartialMemoryForBridgeSession(sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || '')
+          .catch(error => ({ ok: false, skipped: true, records: 0, adoptedRecords: 0, copiedRecords: 0, reason: 'partial_memory_handoff_failed', error: compact(error?.message || error, 240) }));
+      const appliedSlices = [];
+      const skippedSlices = [];
+      if (recoveryVaultVerification.skipped === true) {
+        skippedSlices.push({ slice: 'recovery_vault', reason: recoveryVaultVerification.reason || 'recovery_vault_handoff_skipped_fail_open' });
+      } else if (Number(recoveryVaultVerification.records || 0) > 0) {
+        appliedSlices.push('recovery_vault');
+      }
+      if (partialMemoryHandoff?.skipped === true || partialMemoryHandoff?.ok === false) {
+        skippedSlices.push({ slice: 'partial_memory', reason: partialMemoryHandoff.reason || 'partial_memory_handoff_failed' });
+      } else if (Number(partialMemoryHandoff?.adoptedRecords || partialMemoryHandoff?.records || 0) > 0) {
+        appliedSlices.push('partial_memory');
+      }
+      const verifiedEmpty = sourcePreserved && (recoveryVaultVerification.ok === true || recoveryVaultVerification.skipped === true);
       const recoveryVaultReceipt = objectish(ledger?.sessionHandoff?.recoveryVaultHandoff)
         ? {
             ...ledger.sessionHandoff.recoveryVaultHandoff,
@@ -44664,6 +44948,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             ...ledger.sessionHandoff,
             sourcePreserved: true,
             recoveryVaultHandoff: recoveryVaultReceipt,
+            partialMemoryHandoff,
             verified: true,
             adoptedAt: ledger.sessionHandoff?.adoptedAt || now()
           }
@@ -44672,17 +44957,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         proofDurable = proofCommit.durable === true;
       }
       const finalVerified = verifiedEmpty && proofDurable;
+      const hasVaultOrPartial = recoveryVaultVerification.records > 0 || Number(partialMemoryHandoff?.adoptedRecords || 0) > 0;
       return {
         ...base,
         ok: finalVerified,
-        adopted: finalVerified && recoveryVaultVerification.records > 0,
+        adopted: finalVerified && hasVaultOrPartial,
         verified: finalVerified,
         durable: finalVerified,
         sourcePreserved,
         recoveryVaultHandoff: recoveryVaultReceipt || recoveryVaultVerification,
+        partialMemoryHandoff,
+        appliedSlices,
+        skippedSlices,
+        partial: skippedSlices.length > 0,
         recoveryVaultCopies: recoveryVaultVerification.records || 0,
         reason: finalVerified
-          ? (recoveryVaultVerification.records > 0 ? 'session_handoff_raw_history_only' : 'session_handoff_empty')
+          ? (hasVaultOrPartial ? 'session_handoff_raw_history_only' : 'session_handoff_empty')
           : (!sourcePreserved
             ? 'SOURCE_MUTATION_DETECTED'
             : (verifiedEmpty ? 'session_handoff_raw_proof_not_durable' : 'recovery_vault_handoff_verification_failed')),
@@ -44701,13 +44991,33 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return { ...base, ok: false, adopted: false, verified: false, durable: false, reason: 'source_scope_mismatch', records: logicalRecords, expectedRecords: expected, scopeKey: scope.key };
     }
     const proofBefore = compact(ledger.bridgeSourceFingerprintBefore || ledger.sessionHandoff?.sourceFingerprintBefore || sourceBefore.fingerprint || '', 96);
-    const newlyAdopted = ledger.bridgeSessionAdoption === true;
+    const targetLedgerStorageKey = storageLedgerStorageKey(scope);
+    const concurrentExistingRaw = ledger.bridgeSessionAdoption === true
+      ? await RisuCompat.getStorageItem(targetLedgerStorageKey, null)
+      : null;
+    const newlyAdopted = ledger.bridgeSessionAdoption === true && concurrentExistingRaw == null;
     const commit = newlyAdopted ? await writeStorageLedgerDirect(scope, ledger, 'bridge_session_handoff') : { durable: true, saved: false, ledger };
     const durableLocal = normalizeStorageLedger(await hydrateCapturedLedgerRaw(await RisuCompat.getStorageItem(storageLedgerStorageKey(scope), null),scope), scope);
     const durableRef = normalizeHayakuArchiveRef(durableLocal.archiveRef);
     const archive = await readHayakuSharedArchiveSummary(durableRef);
     const sourceAfter = await hayakuSourceLedgerStorageFingerprint(sourceScopeKey);
     const recoveryVaultVerification = await verifyInheritedRecoveryVaultHandoff(ledger?.sessionHandoff?.recoveryVaultHandoff, scope.key);
+    let partialMemoryHandoff = objectish(ledger?.sessionHandoff?.partialMemoryHandoff)
+      ? ledger.sessionHandoff.partialMemoryHandoff
+      : await inheritPartialMemoryForBridgeSession(sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || '')
+        .catch(error => ({ ok: false, skipped: true, records: 0, adoptedRecords: 0, copiedRecords: 0, reason: 'partial_memory_handoff_failed', error: compact(error?.message || error, 240) }));
+    const appliedSlices = ['packets'];
+    const skippedSlices = [];
+    if (recoveryVaultVerification.skipped === true) {
+      skippedSlices.push({ slice: 'recovery_vault', reason: recoveryVaultVerification.reason || 'recovery_vault_handoff_skipped_fail_open' });
+    } else if (Number(recoveryVaultVerification.records || 0) > 0) {
+      appliedSlices.push('recovery_vault');
+    }
+    if (partialMemoryHandoff?.skipped === true || partialMemoryHandoff?.ok === false) {
+      skippedSlices.push({ slice: 'partial_memory', reason: partialMemoryHandoff.reason || 'partial_memory_handoff_failed' });
+    } else if (Number(partialMemoryHandoff?.adoptedRecords || partialMemoryHandoff?.records || 0) > 0) {
+      appliedSlices.push('partial_memory');
+    }
     const recoveryVaultReceipt = objectish(ledger?.sessionHandoff?.recoveryVaultHandoff)
       ? {
           ...ledger.sessionHandoff.recoveryVaultHandoff,
@@ -44731,6 +45041,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           sourceFingerprintAfter: sourceAfter.fingerprint,
           sourcePreserved: true,
           recoveryVaultHandoff: recoveryVaultReceipt,
+          partialMemoryHandoff,
           verified: true,
           adoptedAt: durableLocal.sessionHandoff?.adoptedAt || now()
         }
@@ -44740,7 +45051,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         return { ...base, ok: false, adopted: false, verified: false, durable: false, sourcePreserved: true, reason: 'session_handoff_proof_not_durable', records: archive.records, expectedRecords: expected, scopeKey: scope.key, sourceScopeKey, targetChatId: scope.chatId, transferId: scope.bridgeHandoffTransferId, sourceFingerprintBefore: proofBefore, sourceFingerprintAfter: sourceAfter.fingerprint };
       }
     }
-    const verified = commit.durable === true && archive.verified === true && archive.records === expected && sourcePreserved && recoveryVaultVerification.ok === true;
+    const verified = commit.durable === true && archive.verified === true && archive.records === expected && sourcePreserved
+      && (recoveryVaultVerification.ok === true || recoveryVaultVerification.skipped === true);
     return {
       ...base,
       ok: verified,
@@ -44764,6 +45076,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       sourceFingerprintBefore: proofBefore,
       sourceFingerprintAfter: sourceAfter.fingerprint || '',
       recoveryVaultHandoff: recoveryVaultReceipt || recoveryVaultVerification,
+      partialMemoryHandoff,
+      appliedSlices,
+      skippedSlices,
+      partial: skippedSlices.length > 0,
       recoveryVaultCopies: recoveryVaultVerification.records || 0
     };
   });
@@ -45916,6 +46232,77 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     Memory.partialMemoryMutationQueue = queued.catch(() => null);
     return queued;
   };
+  const inheritPartialMemoryForBridgeSession = async (sourceScopeKey = '', targetScopeKey = '', transferId = '') => {
+    const sourceKey = compact(sourceScopeKey || '', 196);
+    const targetKey = compact(targetScopeKey || '', 196);
+    const transfer = compact(transferId || '', 160);
+    if (!sourceKey || !targetKey || sourceKey === targetKey) {
+      return { ok: false, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_handoff_identity_invalid' };
+    }
+    const srcRaw = await RisuCompat.getStorageItem(partialMemoryKey(sourceKey), null);
+    if (srcRaw == null) {
+      return { ok: true, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty', sourceScopeKey: sourceKey, targetScopeKey: targetKey, transferId: transfer };
+    }
+    const srcStore = typeof srcRaw === 'string' ? safeJsonParse(srcRaw, null) : srcRaw;
+    if (!objectish(srcStore) || srcStore.schema !== 'hayaku.partial_memory.v1' || srcStore.digest !== stableHash64(JSON.stringify(srcStore.records))) {
+      throw new Error('partial_memory_source_store_invalid');
+    }
+    const srcRecords = ensureArray(srcStore.records);
+    if (!srcRecords.length) {
+      return { ok: true, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty', sourceScopeKey: sourceKey, targetScopeKey: targetKey, transferId: transfer };
+    }
+    const tgtKey = partialMemoryKey(targetKey);
+    const tgtRaw = await RisuCompat.getStorageItem(tgtKey, null);
+    const tgtExisting = typeof tgtRaw === 'string' ? safeJsonParse(tgtRaw, null) : tgtRaw;
+    if (tgtRaw != null && (!objectish(tgtExisting) || tgtExisting.schema !== 'hayaku.partial_memory.v1' || tgtExisting.digest !== stableHash64(JSON.stringify(tgtExisting.records)))) {
+      throw new Error('partial_memory_target_store_invalid');
+    }
+    const existingList = clone(tgtExisting?.records || [], []);
+    const byId = new Map(existingList.map(row => [compact(row?.id || '', 96), row]).filter(([id]) => id));
+    let copiedRecords = 0;
+    const inheritedAt = now();
+    for (const row of srcRecords) {
+      const originScopeKey = compact(row?.originScopeKey || row?.sourceScopeKey || sourceKey, 196);
+      const originRecordId = compact(row?.originRecordId || row?.sourceRecordId || row?.id || '', 96);
+      const id = stableHash64(`${originScopeKey}\u0001${originRecordId}`);
+      if (byId.has(id)) continue;
+      byId.set(id, {
+        ...clone(row, {}),
+        id,
+        originScopeKey,
+        originRecordId,
+        sourceScopeKey: sourceKey,
+        sourceRecordId: originRecordId,
+        inheritedSessionHistory: true,
+        permanentSessionHistory: true,
+        handoffTransferId: transfer,
+        inheritedAt
+      });
+      copiedRecords += 1;
+    }
+    const nextRecords = [...byId.values()].slice(-256);
+    if (copiedRecords > 0) {
+      const store = {
+        schema: 'hayaku.partial_memory.v1',
+        scopeKey: targetKey,
+        records: nextRecords,
+        digest: stableHash64(JSON.stringify(nextRecords))
+      };
+      const write = await writeFailedAnalysisJsonExact(tgtKey, store, 'partial_memory_handoff_write_failed');
+      if (write.durable !== true) throw new Error(write.reason || 'partial_memory_handoff_readback_failed');
+    }
+    const adoptedRecords = nextRecords.filter(row => row?.inheritedSessionHistory === true).length;
+    return {
+      ok: true,
+      copiedRecords,
+      adoptedRecords,
+      records: nextRecords.length,
+      reason: copiedRecords > 0 ? 'partial_memory_copied_non_destructive' : 'partial_memory_already_adopted',
+      sourceScopeKey: sourceKey,
+      targetScopeKey: targetKey,
+      transferId: transfer
+    };
+  };
   const searchAcceptedPartialMemory = async (scope,query) => {
     if(!scope?.confident||!scope.key)return [];
     const raw=await RisuCompat.getStorageItem(partialMemoryKey(scope.key),null),store=typeof raw==='string'?safeJsonParse(raw,null):raw;
@@ -45930,10 +46317,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const coveredTurns=new Set(exactHayakuTurnCoverage(snapshot,boundLedger,scope.key).coveredTurns);
     const units=ensureArray(collectNativeColdStartEvidence(scope).units),candidates=[];
     for(const row of ensureArray(store.records)){
-      if(coveredTurns.has(Number(row.turn)))continue;
-      if(row.sourceProjection!==HAYAKU_ANALYSIS_SOURCE_PROJECTION)continue;
-      const unit=units.find(unit=>Number(unit.turn)===row.turn);
-      if(!unit||unit.chunkHash!==row.unitHash||hayakuSourcePrefixDigest(scope,row.turn)!==row.prefixDigest)continue;
+      const inherited = row?.inheritedSessionHistory === true || row?.permanentSessionHistory === true;
+      if (!inherited) {
+        if(coveredTurns.has(Number(row.turn)))continue;
+        if(row.sourceProjection!==HAYAKU_ANALYSIS_SOURCE_PROJECTION)continue;
+        const unit=units.find(unit=>Number(unit.turn)===row.turn);
+        if(!unit||unit.chunkHash!==row.unitHash||hayakuSourcePrefixDigest(scope,row.turn)!==row.prefixDigest)continue;
+      }
       for(const atom of new Map(ensureArray(row.atoms).map(atom=>[partialMemoryAtomKey(atom),atom])).values()){
         if(['holderEntityIds','knownByEntityIds','deniedToEntityIds'].some(key=>(atom.value?.[key]!=null&&!ensureArray(atom.value?._verifiedEntityBindings).includes(key))||atom.value?._unresolvedEntityBindings?.[key]!=null))continue;
         const body=JSON.stringify({memory:partialMemorySafeValue(atom),sourceQuotes:atom.evidence||[],interpretation:'historical evidence; owner binding unverified; not current State; prefer source quotes if conflicting'});if(!body||body.length>8000)continue;
@@ -47877,6 +48267,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!negated) return false;
     return !/(?:not|never|no|아니|않|못|없|ない|ぬ|不是|没有)/iu.test(JSON.stringify(item || {}).toLowerCase());
   };
+  const normalizeNativeGroundingTypography = value => normalizeNativeGroundingText(value)
+    .replace(/[“”„‟＂]/gu, '"')
+    .replace(/[‘’‚‛＇]/gu, "'")
+    .replace(/[—–―]/gu, '-')
+    .replace(/\s+([.,!?;:])/gu, '$1');
+  const nativeTargetIncludesQuote = (haystack, needle) => Boolean(needle && (
+    haystack.includes(needle)
+    || (needle.length >= 6 && normalizeNativeGroundingTypography(haystack).includes(normalizeNativeGroundingTypography(needle)))
+  ));
   const validateNativeRepairGrounding = (envelope, verifiedEvidence = {}) => {
     const shape = validateNativeRepairEnvelopeShape(envelope);
     if (shape.ok !== true) return shape;
@@ -47893,7 +48292,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (source !== 'target') rowErrors.push(`grounding_source_invalid:${index}:${source}`);
       if (!evidence.length) rowErrors.push(`grounding_evidence_missing:${index}:${path}`);
       evidence.forEach((quote, quoteIndex) => {
-        if (quote.length < 2 || !target.includes(quote)) rowErrors.push(`grounding_quote_not_in_target:${index}:${quoteIndex}:${path}`);
+        if (quote.length < 2 || !nativeTargetIncludesQuote(target, quote)) rowErrors.push(`grounding_quote_not_in_target:${index}:${quoteIndex}:${path}`);
       });
       if (path) { const previous=rowsByPath.get(path); rowsByPath.set(path,{path,source,evidence:[...(previous?.evidence||[]),...evidence],index}); }
     });
@@ -47910,8 +48309,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for (const anchor of anchors) {
         const normalized = normalizeNativeGroundingText(anchor.value);
         const rowEvidence = ensureArray(rowsByPath.get(path)?.evidence).join('\n');
-        if (normalized && (!target.includes(normalized) || !rowEvidence.includes(normalized))) {
-          if (/^(?:name|from|to)$/i.test(anchor.key) && !target.includes(normalized)) ambiguous.push({path,field:anchor.path||anchor.key,reason:'entity_identity_not_in_target'});
+        if (normalized && (!nativeTargetIncludesQuote(target, normalized) || !nativeTargetIncludesQuote(rowEvidence, normalized))) {
+          if (/^(?:name|from|to)$/i.test(anchor.key) && !nativeTargetIncludesQuote(target, normalized)) ambiguous.push({path,field:anchor.path||anchor.key,reason:'entity_identity_not_in_target'});
           else if (!/^(?:quote|line|dialogue)$/i.test(anchor.key) && !(/critical_dialogue/i.test(path) && anchor.key === 'text')) derived.push({path,field:anchor.path||anchor.key,evidence:ensureArray(rowsByPath.get(path)?.evidence),reason:'derived_expression_not_exact_quote'});
           else ambiguous.push({ path, field: anchor.path || anchor.key, value: compact(anchor.value, 160), reason: 'direct_fact_anchor_not_in_grounding_quote' });
         } else if (normalized && /^(?:relation|relationship|predicate|status|state|event|action|rule|secret|promise|text|quote|line|dialogue|summary|description|consequence|setup|payoff|emotion|knowledge|type)$/i.test(anchor.key)
@@ -47921,7 +48320,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       if (/critical_dialogue/i.test(path)) {
         const exactDialogue = anchors.filter(anchor => /^(?:text|quote|line|dialogue)$/i.test(anchor.key));
-        if (!exactDialogue.length || exactDialogue.some(anchor => !target.includes(normalizeNativeGroundingText(anchor.value)))) {
+        if (!exactDialogue.length || exactDialogue.some(anchor => !nativeTargetIncludesQuote(target, normalizeNativeGroundingText(anchor.value)))) {
           ambiguous.push({ path, reason: 'critical_dialogue_exact_quote_missing' });
         }
       }
@@ -48841,10 +49240,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     const runState = await readNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, HAYAKU_NATIVE_REGEN_RUN_SCHEMA);
     const previousRun = runState.available === true ? runState.run : null;
-    const sameRunTarget = !options.sourceEditValidate && previousRun
+    const sameRunTarget = Boolean(previousRun
       && ensureArray(previousRun.replacementRecordIds).join('\u0001') === replacementRecordIds.join('\u0001')
       && ensureArray(previousRun.targetTurns).map(Number).join(',') === turns.join(',')
-      && compact(previousRun.contractHash || '', 96) === compact(promptContract.contractHash, 96);
+      && compact(previousRun.contractHash || '', 96) === compact(promptContract.contractHash, 96));
     const previousByTurn = new Map((sameRunTarget ? ensureArray(previousRun?.chunks) : [])
       .map(entry => [Number(entry?.pairIndex || entry?.targetPairIndex || 0), entry]));
     const createdAt = sameRunTarget ? Math.max(1, Number(previousRun.createdAt || now()) || now()) : now();
@@ -48903,7 +49302,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       run.updatedAt = now();
       const write = await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
       if (write.durable !== true) throw new Error(write.reason || 'targeted_regeneration_checkpoint_write_failed');
-      if (Memory.nativeRecovery.job?.kind === 'targeted_regeneration') {
+      if (['targeted_regeneration', 'source_edit'].includes(Memory.nativeRecovery.job?.kind)) {
         updateNativeJobFromChunks(run, {
           state: run.state === 'running' ? 'analyzing' : run.state,
           message: run.state === 'running' ? '현재 턴을 Other Ax로 분석하고 있습니다.' : ''
@@ -49462,6 +49861,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
       }
 
+      const manualSettings = options?.explicitRetry === true ? await loadSettings() : null;
+      const manualExtraCalls = options?.explicitRetry === true && Number(manualSettings?.recoveryExtraCalls) === 1 ? 1 : 0;
       const analyzed = await executeNativeAnalysisAttempt('incremental_recovery', chunk, {
         scopeKey,
         sourceEvidenceHash: repairTarget.sourceEvidenceHash,
@@ -49472,7 +49873,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         failureFlow: 'native_repair_debt',
         debtId,
         runId,
-        maxPhysicalCalls: 1,
+        extraCalls: manualExtraCalls,
+        maxPhysicalCalls: 1 + manualExtraCalls,
         priorFailureReport: null
       });
       if (Memory.unloaded || !ownsRuntime()) {
@@ -51954,6 +52356,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               const logicalRecordCount = includeRecords
                 ? storageRecordsEligibleForHandoff(ledger, { includeSelectedUnbound: false }).length
                 : Math.max(0, Number(ledger.logicalRecordCount || 0) || 0);
+              const inspectVault = await loadRecoveryVault(scope.key, { force: false }).catch(() => ({ records: [] }));
+              const recoveryVaultCount = ensureArray(inspectVault?.records).length;
+              const inspectPartialRaw = await RisuCompat.getStorageItem(partialMemoryKey(scope.key), null).catch(() => null);
+              const inspectPartialParsed = typeof inspectPartialRaw === 'string' ? safeJsonParse(inspectPartialRaw, null) : inspectPartialRaw;
+              const partialMemoryCount = objectish(inspectPartialParsed) && inspectPartialParsed.schema === 'hayaku.partial_memory.v1'
+                ? ensureArray(inspectPartialParsed.records).length
+                : 0;
               result = {
                 available: ledger.enabled === true,
                 version: ledger.version,
@@ -51968,6 +52377,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 worldline: ledger.worldline,
                 records: includeRecords ? ensureArray(ledger.records) : [],
                 recordCount: logicalRecordCount,
+                recoveryVaultCount,
+                partialMemoryCount,
                 recordsIncluded: includeRecords,
                 archiveRef: normalizeHayakuArchiveRef(ledger.archiveRef),
                 archiveVerified: ledger.archiveVerified !== false,
@@ -53111,8 +53522,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         || latestUser?.messageIndex!==userEvidence.messageIndex || latestUser?.sourceMessageId!==userEvidence.sourceMessageId
         || currentPending?.lineage?.requestNonce!==pending.lineage.requestNonce
         || !assistantUnchanged || !afterRequestCaptureSourceCurrent(latest,pending))throw new Error('SOURCE_EDIT_SOURCE_CHANGED');
-      const replacement = replaceHayakuPacketText(source, analyzed.packet);
+      const replacement = replaceHayakuPacketText(source, analyzed.packet, pending?.packetPlacement || packetPlacementOf(Memory.settings));
       if (replacement.ok !== true) throw new Error(replacement.reason || 'after_request_packet_replacement_failed');
+      const normalizedVerifiedPacket = normalizeHayakuPacket(analyzed.packet);
+      pending.afterRequestVerifiedCandidate = {
+        raw: JSON.stringify(normalizedVerifiedPacket),
+        hash: analyzed.packetHash,
+        packetType: 'current_snapshot',
+        requestNonce: text(pending.lineage?.requestNonce || ''),
+        logicalTurnId: text(pending.lineage?.logicalTurnId || ''),
+        parentTurnNodeId: text(pending.lineage?.parentTurnNodeId || ''),
+        identityVersion: finiteNonNegativeInteger(pending.lineage?.identityVersion, 0),
+        lineageSchema: text(pending.lineage?.lineageSchema || ''),
+        turnOwnerKey: text(pending.lineage?.turnOwnerKey || ''),
+        generationAttemptId: text(pending.lineage?.generationAttemptId || ''),
+        assistantVisibleHash: stableHash64(assistantText)
+      };
       pending.afterRequestRepair = {
         attempted: true,
         enabled: true,
@@ -53218,6 +53643,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     entry.promise=enqueueHayakuChatOutputWork(scopeKey,task).finally(()=>{if(canonicalCaptureJobs.get(jobKey)===entry)canonicalCaptureJobs.delete(jobKey);});
     canonicalCaptureJobs.set(jobKey,entry);return entry.promise;
   };
+  const rescuedAfterRequestPacketsForCandidate = (pending, candidate) => {
+    if (candidate?.packets?.length) return [];
+    const verified = pending?.afterRequestVerifiedCandidate;
+    if (!verified?.raw || pending?.afterRequestRepair?.outcome !== 'candidate_returned_pending_commit') return [];
+    const expectedHash = compact(verified.assistantVisibleHash || '', 96);
+    const actualHash = compact(candidate?.pair?.assistantVisibleHash || '', 96);
+    if (!expectedHash || !actualHash || expectedHash !== actualHash) return [];
+    return [verified];
+  };
   const processRisuChatOutputEvent = async (eventValue,observation={}) => {
     if (typeof scheduleHayakuAttentionRefresh === 'function') scheduleHayakuAttentionRefresh('chat_output');
     if (Memory.unloaded || !ownsRuntime()) return { ok: false, skipped: true, reason: 'runtime_inactive' };
@@ -53304,12 +53738,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         Memory.chatOutputTurnRevisions.set(logicalKey, revisionState);
         while (Memory.chatOutputTurnRevisions.size > 256) Memory.chatOutputTurnRevisions.delete(Memory.chatOutputTurnRevisions.keys().next().value);
         stopFinalizedCaptureMonitor(pending);
+        const rescuedPackets = rescuedAfterRequestPacketsForCandidate(pending, candidate);
+        const effectivePackets = candidate.packets.length ? candidate.packets : rescuedPackets;
         let result;
-        if (candidate.packets.length) {
-          result = await persistCapturedPackets(pending, candidate.packets, 'risu_chat_output', { authoritativePair: true, pair: candidate.pair,
+        if (effectivePackets.length) {
+          result = await persistCapturedPackets(pending, effectivePackets, 'risu_chat_output', { authoritativePair: true, pair: candidate.pair,
             observedAt:observation.observedAt||null,chatQueueTiming,
             rawReceipt });
           if (result?.durable === true) {
+            if (rescuedPackets.length) {
+              pushOperationLog('native_recovery:after_request_packet_rescued_after_strip', {
+                scopeKey: liveScope.key,
+                pairIndex: candidate.pair?.pairIndex || 0,
+                requestNonce: pending.lineage?.requestNonce || '',
+                packetHash: effectivePackets[0]?.hash || ''
+              }, 'info');
+              await dischargeRecoveryVaultEvidence(liveScope.key, {
+                pairIndex: candidate.pair?.pairIndex,
+                userMessageIdHash: candidate.pair?.userMessageIdHash,
+                assistantMessageIdHash: candidate.pair?.assistantMessageIdHash,
+                userHash: candidate.pair?.userHash
+              }).catch(() => null);
+            }
             if (pending?.afterRequestRepair?.outcome === 'candidate_returned_pending_commit') {
               pending.afterRequestRepair.outcome = 'committed_chat_output_verified';
               pending.afterRequestRepair.committedAt = now();
@@ -53317,7 +53767,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 scopeKey: liveScope.key,
                 pairIndex: candidate.pair?.pairIndex || 0,
                 requestNonce: pending.lineage?.requestNonce || '',
-                packetHash: candidate.packets[0]?.hash || '',
+                packetHash: effectivePackets[0]?.hash || '',
                 durable: true
               }, 'success');
             }
@@ -53379,17 +53829,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const vaultResult = await upsertRecoveryVaultEvidence(pending, candidate, 'risu_chat_output_packet_missing_revision');
           recoveryOnly += vaultResult?.durable === true ? 1 : 0;
           result = { durable: vaultResult?.durable === true, saved: vaultResult?.saved === true, reason: 'recovery_vault_revision_saved', recoveryVault: true };
-          if (vaultResult?.durable === true && pending?.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
+          if (vaultResult?.durable === true && (pending?.otherAxCanonicalPacket === true || (pending?.fromRealBeforeRequest === true && afterRequestAutoRepairActive())) && !afterRequestAttemptedOrSettled(pending)) {
             result.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
           }
         }
         revisionState.durable=result?.durable===true;
-        Memory.lastChatOutputCapture = { ...revisionState, ...result, captureSource: 'risu_chat_output', deferredBinding: candidate.packets.length > 0 };
+        Memory.lastChatOutputCapture = { ...revisionState, ...result, captureSource: 'risu_chat_output', deferredBinding: effectivePackets.length > 0 };
         Memory.lastStorageCapture = {
           at: now(), source: 'risu_chat_output', scopeKey: liveScope.key, requestSequence: pending.requestSequence,
-          packetCount: candidate.packets.length, normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
+          packetCount: effectivePackets.length, normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
           semanticIncompletePackets: Math.max(0, Number(candidate.semanticIncompletePackets || 0) || 0),
-          revision, logicalKey, deferredBinding: candidate.packets.length > 0, ...result
+          revision, logicalKey, deferredBinding: effectivePackets.length > 0, ...result
         };
         pushOperationLog(result?.durable === true ? 'capture:risu_chat_output_revision_saved' : (result?.storageState === 'indeterminate' ? 'capture:risu_chat_output_storage_indeterminate' : 'capture:risu_chat_output_revision_failed'), Memory.lastStorageCapture, result?.durable === true ? 'success' : 'warn');
       }
@@ -53611,22 +54061,35 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!scopeKey || !turn) return false;
     const state = Memory.nativeRecovery;
     if (!(state.missedAfterRequestRepairs instanceof Set)) state.missedAfterRequestRepairs = new Set();
+    if (!(state.missedAfterRequestRetryCounts instanceof Map)) state.missedAfterRequestRetryCounts = new Map();
     const key = `${scopeKey}|${turn}|${requestNonce}`;
     if (state.missedAfterRequestRepairs.has(key)) return false;
     state.missedAfterRequestRepairs.add(key);
+    const retryIfTransient = () => {
+      if (Memory.unloaded || !ownsRuntime()) return false;
+      const count = Number(state.missedAfterRequestRetryCounts.get(key) || 0);
+      if (count >= 2) return false;
+      state.missedAfterRequestRetryCounts.set(key, count + 1);
+      state.missedAfterRequestRepairs.delete(key);
+      return scheduleMissedAfterRequestCanonicalPacket(pending);
+    };
     pushOperationLog('native_recovery:missed_after_request_repair_scheduled', { scopeKey, pairIndex: turn, requestNonce, delayMs: MISSED_AFTER_REQUEST_REPAIR_DELAY_MS }, 'info');
-    setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const skip = reason => pushOperationLog('native_recovery:missed_after_request_repair_skipped', { scopeKey, pairIndex: turn, requestNonce, reason }, 'info');
       try {
-        if (Memory.unloaded) return;
+        if (Memory.unloaded || !ownsRuntime()) return;
         if (afterRequestAttemptedOrSettled(pending)) return skip('after_request_ran');
-        // The otherAX canonical switch is the opt-in: it already spends one otherAX call per turn.
-        // Background auto repair is a separate sweep over old debt and does not gate this.
-        if (Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
+        // The otherAX canonical switch (or Mode A afterRequest auto-repair when host skipped afterRequest) opts in cleanly once.
+        if (pending?.otherAxCanonicalPacket === true && Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
+        if (pending?.otherAxCanonicalPacket !== true && Memory.settings?.otherAxCanonicalPacket !== true && !afterRequestAutoRepairActive()) return skip('after_request_auto_repair_off');
         const scope = await RisuCompat.currentChatScope().catch(() => null);
-        if (scope?.key !== scopeKey) return skip('chat_changed');
+        if (scope?.key !== scopeKey) {
+          retryIfTransient();
+          return skip('chat_changed');
+        }
         pushOperationLog('native_recovery:missed_after_request_repair_started', { scopeKey, pairIndex: turn, requestNonce }, 'info');
         const result = await runNativeMissingTurnBatch({ scopeKey, targetTurns: [turn], minimized: true });
+        if (result?.ok !== true && result?.reason === 'native_recovery_busy') retryIfTransient();
         pushOperationLog('native_recovery:missed_after_request_repair_finished', {
           scopeKey, pairIndex: turn, requestNonce, ok: result?.ok === true, reason: text(result?.reason || ''), physicalCalls: Number(result?.physicalCalls || 0)
         }, result?.ok === true ? 'success' : 'warn');
@@ -53634,6 +54097,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         pushOperationLog('native_recovery:missed_after_request_repair_finished', { scopeKey, pairIndex: turn, requestNonce, ok: false, reason: text(error?.message || error) }, 'warn');
       }
     }, MISSED_AFTER_REQUEST_REPAIR_DELAY_MS);
+    try { timer?.unref?.(); } catch (_) {}
     return true;
   };
   const finalizedChatPacketCandidate = (pending, liveScope) => {
@@ -53767,7 +54231,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             Number(state.pollDelayMs || FINALIZED_CAPTURE_POLL_MS) + 300
           );
           if (stableFor >= FINALIZED_CAPTURE_STABLE_MS) {
-            if (!candidate.packets.length) {
+            const rescuedPackets = rescuedAfterRequestPacketsForCandidate(pending, candidate);
+            const effectivePackets = candidate.packets.length ? candidate.packets : rescuedPackets;
+            if (!effectivePackets.length) {
               if (!state.incompleteReported) {
                 state.incompleteReported = true;
                 const packetMarkersPresent = Number(candidate.markerStartCount || 0) > 0
@@ -53812,7 +54278,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                   !packetWriteExpected || vaultResult.durable === true ? 'info' : 'warn'
                 );
                 if (packetWriteExpected && !packetMarkersPresent && vaultResult.durable === true
-                  && pending.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
+                  && (pending.otherAxCanonicalPacket === true || (pending.fromRealBeforeRequest === true && afterRequestAutoRepairActive())) && !afterRequestAttemptedOrSettled(pending)) {
                   Memory.lastStorageCapture.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
                 }
               }
@@ -53821,16 +54287,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               try {
                 const result = await persistCapturedPackets(
                   pending,
-                  candidate.packets,
+                  effectivePackets,
                   'finalized_live_chat',
                   { authoritativePair: true, pair: candidate.pair }
                 );
+                if (result?.durable === true && rescuedPackets.length) {
+                  pushOperationLog('native_recovery:after_request_packet_rescued_after_strip', {
+                    scopeKey: pending.scope.key,
+                    pairIndex: candidate.pair?.pairIndex || 0,
+                    requestNonce: pending.lineage?.requestNonce || '',
+                    packetHash: effectivePackets[0]?.hash || ''
+                  }, 'info');
+                  if (pending?.afterRequestRepair?.outcome === 'candidate_returned_pending_commit') {
+                    pending.afterRequestRepair.outcome = 'committed_chat_output_verified';
+                    pending.afterRequestRepair.committedAt = now();
+                  }
+                }
                 Memory.lastStorageCapture = {
                   at: now(),
                   source: 'finalized_live_chat',
                   scopeKey: pending.scope.key,
                   requestSequence: pending.requestSequence,
-                  packetCount: candidate.packets.length,
+                  packetCount: effectivePackets.length,
                   normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
                   semanticIncompletePackets: Math.max(0, Number(candidate.semanticIncompletePackets || 0) || 0),
                   captureDiagnostics: ensureArray(candidate.captureDiagnostics).slice(-8),
@@ -56085,7 +56563,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -57534,7 +58012,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       .finally(()=>{if(hayakuRebuildRun===run)hayakuRebuildRun=null;});
     return run.promise;
   };
-  const cancelHayakuRebuild=()=>{if(!hayakuRebuildRun)return false;hayakuRebuildRun.cancelled=true;return true;};
+  const cancelHayakuRebuild=()=>{if(!hayakuRebuildRun)return false;hayakuRebuildRun.cancelled=true;cancelNativeJob();return true;};
   const runHayakuSelectedReanalysis=selection=>{
     if (hayakuMaintenanceOperation) return Promise.resolve({ok: false, reason: 'maintenance_in_progress'});
     if(hayakuReanalysisRunning?.selection===selection)return hayakuReanalysisRunning.promise;
@@ -57602,26 +58080,28 @@ function mountMemorySuiteReanalysisReview(container,config) {
         };
         await assertCurrent();
         hayakuReanalysisStatus={scopeKey,running:true,error:'',lastResult:null};
-        beginNativeJob('source_edit',{scopeKey,targetTurns:units.map(u=>u.start),total:units.length,state:'analyzing',minimized:true,cancellable:false,message:'선택한 턴의 현재 채팅 내용을 재분석합니다.'});
+        beginNativeJob('source_edit',{scopeKey,targetTurns:units.map(u=>u.start),total:units.length,state:'analyzing',minimized:true,cancellable:true,message:'선택한 턴의 현재 채팅 내용을 재분석합니다.'});
         // The native replacement engine already stages a complete packet set
         // and publishes one ledger. Use it for every explicit selection so
         // an earlier turn cannot retire a still-pending selected turn's canon.
         const replacementRecordIds=[...new Set(units.flatMap(unit=>unit.replacementBindings.map(record=>record.recordId)))];
         if(!replacementRecordIds.length)throw Error('SOURCE_EDIT_REPLACEMENT_RECORDS_UNAVAILABLE');
         let result=await runNativeTargetedRegeneration({targetTurns:units.map(u=>u.start),replacementRecordIds,allowMissing:true,sourceEditValidate:assertCurrent,sourceEditScope:scopeKey,extraCalls:selection?.extraCalls});
+        if(result?.cancelled===true)throw Error('cancelled_by_user');
+        const reusedChunks=Math.max(0,Number(result?.reusedChunks||0)||0);
         if(result.ok===true){
           if(result.awaitingChoice!==true)throw Error('SOURCE_EDIT_ATOMIC_STAGE_INCOMPLETE');
           operation.atomicRunId=result.runId;
           await assertCurrent();
           result=await resolveNativeRegenerationChoice('adopt_regenerated',{runId:result.runId,sourceEditValidate:assertCurrent});
-          result={...result,atomicBatch:true,regenerated:result.ok?units.length:0,targetTurns:units.map(u=>u.start)};
+          result={...result,atomicBatch:true,regenerated:result.ok?units.length:0,reusedChunks,targetTurns:units.map(u=>u.start)};
         }
         if(result.ok!==true)throw Error(result.error||result.reason||'SOURCE_EDIT_PACKET_NOT_ADOPTED');
         hayakuReanalysisStatus={scopeKey,running:false,error:'',lastResult:result};finishNativeJob('completed',result,'');
         return {...result,committed:true};
       }catch(error){const reason=text(error?.message||error);hayakuReanalysisStatus={scopeKey,running:false,error:reason,lastResult:null};
-        if(Memory.nativeRecovery.job?.kind==='source_edit')finishNativeJob('failed',null,reason);
-        return {ok:false,reason};
+        if(Memory.nativeRecovery.job?.kind==='source_edit')finishNativeJob(reason==='cancelled_by_user'?'cancelled':'failed',null,reason);
+        return {ok:false,reason,...(reason==='cancelled_by_user'?{cancelled:true}:{})};
       }finally{if(hayakuReanalysisRunning===operation)hayakuReanalysisRunning=null;}
     })();return operation.promise;
   };

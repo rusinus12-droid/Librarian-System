@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T02:25:50.073Z",
+  "generatedAt": "2026-11-23T10:02:12.576Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "e380a0cf32d3e6e71ddfd79f8c43207fe66be7b2fac0dff7c50b4ab65d26e6e8",
+      "sha256": "3423d306f069e749c6cf60266339d687523ab6bfa7dc5a79d854596282578be4",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4336,28 +4336,28 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "b6ecc483152364dc10545d52e2a6ba92085ec5c1b65ce113e0c62d999b0402f9",
-      "bytes": 3982825
+      "sha256": "05204fd3e5ac2142510fdf279bf2da0aa2d0d3fbe7b1d0de1ed2b48753e85170",
+      "bytes": 4020392
     },
     "plugins/GRADIA.js": {
-      "sha256": "1b90aaf5a1b9c8512bcbb2ff1c4ec78cdb8d2425ff1c7444d519dea3adf843b6",
-      "bytes": 4385127
+      "sha256": "7cce7d12f373be20bc7fc259a12f251b04d60b8091a6fe9bde836c291013c1fd",
+      "bytes": 4394292
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "3bd48514e72816f69965f6be2de99947c25fdeea4c15e2032b7aa38e7db8a815",
-      "bytes": 4440815
+      "sha256": "c71a70e3a3d9d44b20c7c31e2925f4932661e5ce794427e9c2e4a42692df3efe",
+      "bytes": 4471072
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "9f8306df5c9498103e3a75988d544d6cd7219cda338ba74ea347ba76ccffd8f2",
-      "bytes": 860851
+      "sha256": "03bf7edf245181eb2d9283804e21a03855b85c61049cf77550e7b4241ee54fea",
+      "bytes": 888265
     },
     "plugins/LIBRA.js": {
-      "sha256": "4e7235f627492199456b59bafe9e6eee69c1830e07cf753a0e1833413d573c01",
-      "bytes": 7068170
+      "sha256": "de89e86600fd25631815bc3344e0ecd9cb0b60d4f4ff1d058eec07e3ad0568ab",
+      "bytes": 7084140
     },
     "plugins/RETRACE.js": {
-      "sha256": "69e927f9ffcc68bca435b946ea4468757fd53df93091f80b2d5c1228d1bc682c",
-      "bytes": 1316831
+      "sha256": "9c8d86c23f908820298309532e4896249f058eacdd7a92d3635c1bc520df8722",
+      "bytes": 1351037
     },
     "release-policy.json": {
       "sha256": "26e70bb033c5526671c9d3156f24f74117e89720bbfab3f4aeffb61b52b86247",
@@ -4460,8 +4460,8 @@
       "bytes": 91215
     },
     "sdk/MemorySuiteSourceInput.libra.source.js": {
-      "sha256": "beb60a8defb953b7000d8c194f68526bbac6c53754ced881b29ee7dd5d15e1c2",
-      "bytes": 41809
+      "sha256": "06f748d01c971db9f8ecfc8e39e92ae46337410fc128eb87ad5a5c107013012f",
+      "bytes": 41841
     },
     "sdk/MemorySuiteSourceInputControls.source.js": {
       "sha256": "14593e02c4fd7a842707b8d5cec7821ce48d5c6d90aab5dd7e644367589369f5",
@@ -4892,8 +4892,8 @@
       "bytes": 10547
     },
     "tests/browser/lia_mockup_mounted_product_browser_test.cjs": {
-      "sha256": "86b80d8850262cb510aa4355a955d413e2a8992d2e808843b2b3362e663dac79",
-      "bytes": 55588
+      "sha256": "cc4d23a1d630630a021343681fa11d90da9db2eaaa95f39677a227f39ca7fe80",
+      "bytes": 55548
     },
     "tests/browser/lia_scope_persona_management_browser_test.cjs": {
       "sha256": "48d779384d08bc9bb834b7f2c10736dd8c8793e09775d22787fc0717a387b244",
@@ -5664,8 +5664,8 @@
       "bytes": 855
     },
     "tests/fixtures/libra_gui_memory_dom_host.cjs": {
-      "sha256": "295c65e0bd94c3a3372719796e1b23ad6c60e9078e99415f86b99faf3ae6520c",
-      "bytes": 8015
+      "sha256": "4d1ca935df618d43b4fa320adbdf413f173e1f9309b85eb64c704a94335a37a0",
+      "bytes": 8040
     },
     "tests/fixtures/libra_host_lore_fixture.cjs": {
       "sha256": "a425018895f05b71a3b400ffb5b490df50601ee70570a3dd4cd39a283c44db47",
@@ -8367,6 +8367,10 @@
       "sha256": "228b761d03609e41a2f7b6bc073bf28949e2ffb5ef65c433276a59ad38f8639b",
       "bytes": 12904
     },
+    "tests/libra_canonical_cohesion_runtime_test.cjs": {
+      "sha256": "f2c0b31a48f69622c5ca191dae97528bec7cf665c67f33ab7b8d46c8b7335888",
+      "bytes": 28731
+    },
     "tests/libra_canonical_coverage_audit_test.cjs": {
       "sha256": "6ff23fa6d7c85f800dcdf0c4cd249965291fa37fcb8de75998a1f1bda7bcf511",
       "bytes": 3943
@@ -8850,6 +8854,10 @@
     "tests/libra_lens_archive_bounds_test.cjs": {
       "sha256": "54e2200923a125e0c53a04cedb80ad4daa916a82a98fade44a8829fc12c1df52",
       "bytes": 1405
+    },
+    "tests/libra_lens_consolidation_runtime_test.cjs": {
+      "sha256": "f8977a00c40b4b5921338d79616b572abbe69ce038f73ad24d0c01e5a897b0a4",
+      "bytes": 23990
     },
     "tests/libra_lens_excluded_reader_runtime_test.cjs": {
       "sha256": "903400d1cb31d26c2849f539698e3ff3a128d2ee899986092b800d49bffd1286",
@@ -9375,6 +9383,10 @@
       "sha256": "a93bb507feace759af457c023a663f71b6b78b5ae045ba47b119c7ddc5e894b9",
       "bytes": 6737
     },
+    "tests/libra_micro_viewer_grid_test.cjs": {
+      "sha256": "649342e8b4851a36da97d23a4047d1f4d15677395ae4dd4ebfd4a1b1863d23c5",
+      "bytes": 11194
+    },
     "tests/libra_mirror_linkage_runtime_test.cjs": {
       "sha256": "7d9be9a2b1c52e01e5401c5f72a06d1fe266b7246e2e7f28a547721b3d1eeed3",
       "bytes": 7053
@@ -9470,6 +9482,10 @@
     "tests/libra_partial_state_projection_server_runtime_test.cjs": {
       "sha256": "f80e7f549f1575f967fa735daf03b2c40e19dffd9e2981c954c7f231e8ce38d2",
       "bytes": 1289
+    },
+    "tests/libra_past_recall_priority_test.cjs": {
+      "sha256": "8557d6dd7cf017b8977de5f8c2f56362eb0f299e0bf675c5298d28b0d53c36be",
+      "bytes": 9585
     },
     "tests/libra_pending_state_missing_domain_canonical_priority_p1_test.cjs": {
       "sha256": "aeb45b47c112490b1388f6f30f9b6c94bf5394ffc784d423d47bd5374d564f7a",
@@ -10058,6 +10074,10 @@
     "tests/libra_sdk_conditional_batch_v1_test.cjs": {
       "sha256": "c853b372678cb9b6249abf52b15907c759acb4f2b4fa250007b4d2a964f8a38c",
       "bytes": 14056
+    },
+    "tests/libra_search_and_prompt_composition_test.cjs": {
+      "sha256": "c03bace8a2dd3480e39de0ac2de7b93ccadf58d98ba4a46a4d00d7aa4f4ee49d",
+      "bytes": 9487
     },
     "tests/libra_secondary_navigation_rail_contract_test.cjs": {
       "sha256": "e2816ad9cf025e9aa5f3995caba78bb694de9c03bf4966445af1f36c657e6eca",

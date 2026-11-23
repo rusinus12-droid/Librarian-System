@@ -15291,7 +15291,7 @@ const memorySuiteLibraResolveKeyScope = async ({ key, currentScope, registry }) 
         .sort((a, b) => b.length - a.length);
       if (ids.some(id => tail === id || tail.startsWith(`${id}:`))) return { kind: 'scope', ...candidate };
     }
-    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-vector:|state-vector:|micro-state-admission:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|story-clock:|lens:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
+    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-vector:|state-vector:|micro-state-admission:|memory-review:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|story-clock:|lens:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
     const scopeId = String(match?.[1] || '').trim();
     if (scopeId) return { kind: 'scope', scopeId, scopeKey: scopeId, aliases: [scopeId], label: scopeId };
     return { kind: 'scope', scopeAlias: tail };
@@ -15830,7 +15830,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     const digest = `${(Math.imul(hash ^ 31,16777619) >>> 0).toString(16).padStart(8,'0')}:${length+1}`;
     return digest === payload.vectorHash ? JSON.stringify([payload.storageKey,payload.profileId,layout]) : null;
   };
-  const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|state-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|story-clock|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
+  const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|state-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory-review|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|story-clock|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = await parse(row);
@@ -17502,6 +17502,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (timeOfDay) out.timeOfDay = timeOfDay;
     return Object.keys(out).length ? out : null;
   };
+  const normalizeStoryClockInheritedSeed = raw => {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+    const day = Number(src?.day);
+    if (!Number.isInteger(day) || day < 1 || day > STORY_CLOCK_MAX_DAY) return null;
+    return {
+      day,
+      timeOfDay: storyClockTime(src.timeOfDay),
+      date: storyClockDate(src.date),
+      anchorDate: storyClockDate(src.anchorDate),
+      basis: src.basis === 'clock' ? 'clock' : 'story',
+      sourceScopeKey: String(src.sourceScopeKey || '').slice(0, 200),
+      handoffTransferId: String(src.handoffTransferId || '').slice(0, 160)
+    };
+  };
   const normalizeStoryClockRecord = (raw, scopeKey = '') => {
     const src = raw && typeof raw === 'object' && !Array.isArray(raw) && raw.schema === STORY_CLOCK_SCHEMA
       && (!scopeKey || raw.scopeKey === scopeKey) ? raw : {};
@@ -17515,7 +17529,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const correction = normalizeStoryClockCorrection(row);
       if (/^\d+$/.test(turn) && correction) corrections[turn] = { ...correction, correctedAt: String(row.correctedAt || '') };
     }
+    const inheritedSeed = normalizeStoryClockInheritedSeed(src.inheritedSeed);
     return { schema: STORY_CLOCK_SCHEMA, scopeKey: String(src.scopeKey || scopeKey || ''), anchorDate: storyClockDate(src.anchorDate),
+      ...(inheritedSeed ? { inheritedSeed } : {}),
       updatedAt: String(src.updatedAt || ''), pairs, corrections };
   };
   // pairs: [{turn, revisionId}] of the chat as it stands, in any order. Returns one entry per pair.
@@ -17533,8 +17549,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .sort((a, b) => a.turn - b.turn).slice(-STORY_CLOCK_MAX_PAIRS);
     const rank = time => STORY_CLOCK_TIMES.indexOf(time);
     const entries = [];
-    let started = false, day = null, timeOfDay = '', ref = null, basis = '', gaps = 0;
-    const anchorNumber = storyClockDateNumber(clock.anchorDate);
+    const inheritedSeed = clock.inheritedSeed;
+    let started = Boolean(inheritedSeed?.day >= 1);
+    let day = started ? inheritedSeed.day : null;
+    let timeOfDay = started ? (inheritedSeed.timeOfDay || '') : '';
+    let ref = null;
+    let basis = started ? (inheritedSeed.basis === 'clock' ? 'clock' : 'story') : '';
+    let gaps = 0;
+    const anchorNumber = storyClockDateNumber(clock.anchorDate || inheritedSeed?.anchorDate || '');
+    if (started) {
+      const seedDateNumber = storyClockDateNumber(inheritedSeed?.date || '');
+      if (seedDateNumber !== null) ref = { day, number: seedDateNumber };
+      else if (anchorNumber !== null) ref = { day: 1, number: anchorNumber };
+    }
     for (const [index, pair] of pairs.entries()) {
       const stored = clock.pairs[pair.turn];
       const advance = stored && (stored.sourceRevisionId === pair.revisionId || pair.equivalentRevisionIds.includes(stored.sourceRevisionId))
@@ -17598,13 +17625,30 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const derivedAnchorDate = !clock.anchorDate && firstRef
       ? storyClockDate(storyClockDateFromNumber(firstRef.number + (1 - firstRef.day)))
       : '';
-    const effectiveAnchorDate = clock.anchorDate || derivedAnchorDate;
-    const anchorSource = clock.anchorDate ? 'manual' : (derivedAnchorDate ? 'derived' : '');
+    const effectiveAnchorDate = clock.anchorDate || inheritedSeed?.anchorDate || derivedAnchorDate;
+    const anchorSource = clock.anchorDate ? 'manual' : (inheritedSeed?.anchorDate ? 'inherited' : (derivedAnchorDate ? 'derived' : ''));
     const current = [...entries].reverse().find(entry => entry.known) || null;
     const latest = entries[entries.length - 1] || null;
+    const resolvedCurrent = current
+      ? { ...current, asOfTurn: current.turn, latestTurn: latest?.turn ?? current.turn, pendingTurns: entries.filter(entry => entry.turn > current.turn).length }
+      : (inheritedSeed?.day >= 1
+        ? {
+            turn: 0,
+            known: true,
+            day: inheritedSeed.day,
+            timeOfDay: inheritedSeed.timeOfDay || '',
+            date: inheritedSeed.date || (ref ? storyClockDateFromNumber(ref.number + (day - ref.day)) : ''),
+            basis,
+            status: 'inherited',
+            estimated: false,
+            asOfTurn: 0,
+            latestTurn: latest?.turn ?? 0,
+            pendingTurns: pairs.length
+          }
+        : null);
     return {
       schema: 'libra.story_clock_timeline.v1', anchorDate: clock.anchorDate, derivedAnchorDate, effectiveAnchorDate, anchorSource, basis, entries,
-      current: current ? { ...current, asOfTurn: current.turn, latestTurn: latest?.turn ?? current.turn, pendingTurns: entries.filter(entry => entry.turn > current.turn).length } : null
+      current: resolvedCurrent
     };
   };
   const formatStoryClockDay = entry => {
@@ -20835,16 +20879,32 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
 
-  // RisuAI checkPersonaBinded() semantics: only chat.bindedPersona identifies
-  // the persona that is actually active for this chat. selectedPersona is UI
-  // selection state and personas[0] is not an authority fallback.
+  // Check chat.bindedPersona first, then fall back to non-empty db.selectedPersona
+  // (numeric index or string ID) to stay aligned with LIA, GRADIA, and Flashback.
   const selectedPersonaFromDb = (db, currentChat = null) => {
     const personas = collectionFrom(db?.personas, 'personas');
-    if (!personas.length || !currentChat || typeof currentChat !== 'object') return null;
-    const selector = text(currentChat?.bindedPersona || '').trim();
-    if (!selector) return null;
-    const matched = personas.find(persona => text(persona?.id || '').trim() === selector);
-    return matched ? { ...matched, __source: 'chat.bindedPersona:id' } : null;
+    if (!personas.length) return null;
+    if (currentChat && typeof currentChat === 'object') {
+      const binded = text(currentChat?.bindedPersona || '').trim();
+      if (binded) {
+        const matched = personas.find(persona => text(persona?.id || '').trim() === binded);
+        if (matched) return { ...matched, __source: 'chat.bindedPersona:id' };
+      }
+    }
+    const rawSelected = db?.selectedPersona;
+    const selText = text(rawSelected ?? '').trim();
+    if (rawSelected !== null && rawSelected !== undefined && selText !== '') {
+      if (Number.isInteger(rawSelected) && personas[rawSelected]) {
+        return { ...personas[rawSelected], __source: 'database.selectedPersona:index' };
+      }
+      if (/^\d+$/.test(selText)) {
+        const numeric = Number.parseInt(selText, 10);
+        if (personas[numeric]) return { ...personas[numeric], __source: 'database.selectedPersona:index' };
+      }
+      const matchedSel = personas.find(persona => text(persona?.id || '').trim() === selText);
+      if (matchedSel) return { ...matchedSel, __source: 'database.selectedPersona:id' };
+    }
+    return null;
   };
 
 
@@ -21167,6 +21227,18 @@ function resolveAgentCbsUserName(db, chat) {
     const persona = personas.find(item => String(item?.id || '').trim() === bindedPersona);
     const personaName = String(persona?.name || '').trim();
     if (personaName) return { name: personaName, source: 'chat.bindedPersona' };
+  }
+  if (personas.length) {
+    const rawSelected = db?.selectedPersona;
+    const selText = String(rawSelected ?? '').trim();
+    if (rawSelected !== null && rawSelected !== undefined && selText !== '') {
+      let selected = null;
+      if (Number.isInteger(rawSelected) && personas[rawSelected]) selected = personas[rawSelected];
+      else if (/^\d+$/.test(selText)) selected = personas[Number.parseInt(selText, 10)] || null;
+      else selected = personas.find(item => String(item?.id || '').trim() === selText) || null;
+      const selectedName = String(selected?.name || '').trim();
+      if (selectedName) return { name: selectedName, source: 'database.selectedPersona' };
+    }
   }
 
   return { name: 'User', source: bindedPersona ? 'persona-not-found:User' : 'fallback:User' };
@@ -25095,10 +25167,12 @@ function summarizeAgentCbsTag(rawContent) {
     const noteCbs=/\{\{/.test(text(chat.note || chat.authorNote || chat.authorsNote || ''));
     const definitionCbs=Object.values(definitions).some(v=>typeof v==='string' && v.includes('{{'));
     const personaCbs=persona?JSON.stringify(persona).includes('{{'):false;
+    const personaBindingRef = text(chat.bindedPersona || '').trim()
+      || (persona ? `selected:${text(db?.selectedPersona ?? '').trim()}` : '');
     const entries = {
       author_note: {kind:'author_note', id:text(chat.id || ''),dependsOnCbs:noteCbs, digest:hash({raw:resolveCurrentChatAuthorNote(chat,cbs), cbsSource:noteCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})},
       character_definition: {kind:'character_definition', id:text(character.chaId || character.id || ''),dependsOnCbs:definitionCbs,digest:hash({definitions,cbs:definitionCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})},
-      persona: {kind:'persona', id:text(persona?.id || ''),dependsOnCbs:personaCbs,digest:hash({binding:chat.bindedPersona || '', persona:persona || null,cbs:personaCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})}
+      persona: {kind:'persona', id:text(persona?.id || ''),dependsOnCbs:personaCbs,digest:hash({binding:personaBindingRef, persona:persona || null,cbs:personaCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})}
     };
     const lore = candidates.map(candidate=>({
       kind:'lore', id:loreContinuityIdentity(candidate),
@@ -25111,7 +25185,7 @@ function summarizeAgentCbsTag(rawContent) {
         selective:candidate.selective, mode:candidate.mode, sourceType:candidate.sourceType, moduleKey:candidate.moduleKey})
     }));
     return {schema:CONSUMER_READSET_SCHEMA, characterId:text(character.chaId || character.id || ''), chatId:text(chat.id || ''),
-      entries, lore, bindingDigest:hash({persona:chat.bindedPersona || '', enabled:db.enabledModules || [], modules:character.modules || [], chatModules:chat.modules || []}),
+      entries, lore, bindingDigest:hash({persona:personaBindingRef, enabled:db.enabledModules || [], modules:character.modules || [], chatModules:chat.modules || []}),
       selectionDigest:hash(lore.map(item=>[item.id,item.selectionDigest]).sort((a,b)=>a[0].localeCompare(b[0]))),
       available:!!snapshot && !!snapshot.character};
   };
@@ -51801,6 +51875,7 @@ function createLibraReadonlySourceContext(owner) {
         locked,
         completionConditions: storyArcTextArray(source.completionConditions ?? source.completion_conditions ?? previous.completionConditions, 10, 520),
         doNotForce: storyArcTextArray(source.doNotForce ?? source.do_not_force ?? previous.doNotForce, 10, 520),
+        softPreferences: storyArcTextArray(source.softPreferences ?? source.soft_preferences ?? previous.softPreferences, 10, 520),
         rationale: compact(source.rationale ?? previous.rationale ?? '', 900)
       };
     };
@@ -51808,7 +51883,7 @@ function createLibraReadonlySourceContext(owner) {
     const storyArcSeedFromArc = arc => {
       if (!arc || ![STORY_ARC_SCHEMA, STORY_ARC_COMPATIBILITY_SCHEMA].includes(string(arc.schema || ''))) return null;
       const destination = storyArcDestination(arc.destination, {});
-      if (!destination.goal) return null;
+      if (!destination.goal && !destination.completionConditions.length && !destination.doNotForce.length && !destination.softPreferences.length) return null;
       return {
         schema: STORY_ARC_HANDOFF_SEED_SCHEMA,
         revision: Math.max(0, Number(arc.revision || 0)),
@@ -51954,7 +52029,11 @@ function createLibraReadonlySourceContext(owner) {
         let directionSeedApplied = false;
         let directionSeedWarning = '';
         const seedDestination = storyArcDestination(asObject(options.seedArc)?.destination || {}, {});
-        if (seedDestination.goal) {
+        const seedHasDirection = Boolean(seedDestination.goal
+          || seedDestination.completionConditions.length
+          || seedDestination.doNotForce.length
+          || seedDestination.softPreferences.length);
+        if (seedHasDirection) {
           try {
             const currentDirection = await getNarrativeDirection({ scopeKey });
             const currentHasDirection = !!currentDirection?.goal
@@ -51966,6 +52045,7 @@ function createLibraReadonlySourceContext(owner) {
                 goal: seedDestination.goal,
                 completionConditions: seedDestination.completionConditions,
                 doNotForce: seedDestination.doNotForce,
+                softPreferences: seedDestination.softPreferences,
                 locked: seedDestination.locked === true,
                 source: 'user'
               }, { scopeKey });
@@ -52315,7 +52395,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -68656,8 +68736,36 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const lensPreviewRows=await buildLensHandoffArchives(context,'preview');
       const inheritedLensPreview=await loadInheritedLensArchives(context.scope,manifest,{strict:true});
       const lensHandoff=lensArchiveStats([...lensPreviewRows.map(row=>row.ref),...inheritedLensPreview.rows.map(row=>row.ref)]);
+      const microSnapForInspect = await collectMicroHandoffArchive(context.scope, manifest).catch(() => null);
+      const inheritedMicroCountForInspect = asArray(manifest.inheritedMicroArchives).reduce((n, r) => n + Number(r?.recordCount || 0), 0);
+      const microOwnerRecords = Number(microSnapForInspect?.recordCount || 0) + inheritedMicroCountForInspect;
+      const storyClockForInspect = await loadStoryClock(context.scope).catch(() => null);
+      const storyClockPopulated = Boolean(storyClockForInspect && (
+        Object.keys(storyClockForInspect.pairs || {}).length > 0
+        || Object.keys(storyClockForInspect.corrections || {}).length > 0
+        || storyClockForInspect.anchorDate
+        || storyClockForInspect.inheritedSeed?.day >= 1
+      ));
+      const narrativeDirForInspect = await getNarrativeDirection({ scopeKey: string(context.scope.scopeKey || '') }).catch(() => null);
+      const narrativeDirectionPopulated = Boolean(narrativeDirForInspect && (
+        narrativeDirForInspect.goal
+        || asArray(narrativeDirForInspect.completionConditions).length > 0
+        || asArray(narrativeDirForInspect.doNotForce).length > 0
+        || asArray(narrativeDirForInspect.softPreferences).length > 0
+      ));
+      const worldlineMetaForInspect = await loadStateWorldlineMeta(context.scope).catch(() => null);
+      const reviewPolicyForInspect = worldlineMetaForInspect?.activeWorldlineId
+        ? await readMemoryReviewPolicy(context.scope, worldlineMetaForInspect.activeWorldlineId).catch(() => null)
+        : null;
+      const memoryReviewCount = Object.keys(reviewPolicyForInspect?.decisions || {}).length;
+      const memoryReviewPopulated = memoryReviewCount > 0;
       const base = {
         lensHandoff,
+        microOwnerRecords,
+        storyClockPopulated,
+        narrativeDirectionPopulated,
+        memoryReviewCount,
+        memoryReviewPopulated,
         schema: LIBRA_RETRACE_INSPECT_SCHEMA,
         pluginVersion: VERSION,
         available: true,
@@ -68711,7 +68819,11 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             memories: memoryRefs.length,
             liveMemories: memoryRefs.length - inheritedCount,
             inheritedMemories: inheritedCount,
-            partialMemories: memoryRefs.filter(ref => ref?.pipelineStatus === 'partial').length
+            partialMemories: memoryRefs.filter(ref => ref?.pipelineStatus === 'partial').length,
+            microOwnerRecords,
+            storyClockPopulated,
+            narrativeDirectionPopulated,
+            memoryReviewCount
           }
         });
       }
@@ -68727,7 +68839,11 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           memories: memoryRefs.length,
           liveMemories: memoryRefs.length - inheritedCount,
           inheritedMemories: inheritedCount,
-          partialMemories: memoryRefs.filter(ref => ref?.pipelineStatus === 'partial').length
+          partialMemories: memoryRefs.filter(ref => ref?.pipelineStatus === 'partial').length,
+          microOwnerRecords,
+          storyClockPopulated,
+          narrativeDirectionPopulated,
+          memoryReviewCount
         }
       });
     };
@@ -68811,10 +68927,23 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const memoryRefs = archive.memoryRefs;
         const expectedRecords = options.expectedRecords == null ? memoryRefs.length : Math.max(0, Number(options.expectedRecords || 0) || 0);
         if (expectedRecords !== memoryRefs.length) throw new Error('LIBRA handoff source count changed before preparation.');
-        const lensRows=await buildLensHandoffArchives(context,transferId);
-        const inheritedLens=await loadInheritedLensArchives(context.scope,manifest,{strict:true});
-        const lensArchiveRefs=[...lensRows.map(row=>row.ref),...inheritedLens.rows.map(row=>row.ref)];
-        const lensStats=lensArchiveStats(lensArchiveRefs);
+        const allowPartialSlices = options?.allowPartialSlices === true;
+        const skippedSlices = [];
+        let lensRows = [];
+        let lensArchiveRefs = [];
+        let lensStats = lensArchiveStats([]);
+        try {
+          lensRows = await buildLensHandoffArchives(context, transferId);
+          const inheritedLens = await loadInheritedLensArchives(context.scope, manifest, { strict: true });
+          lensArchiveRefs = [...lensRows.map(row => row.ref), ...inheritedLens.rows.map(row => row.ref)];
+          lensStats = lensArchiveStats(lensArchiveRefs);
+        } catch (error) {
+          if (!allowPartialSlices) throw error;
+          skippedSlices.push({ slice: 'lens', stage: 'prepare', reason: compact(error?.code || error?.message || error, 180) });
+          lensRows = [];
+          lensArchiveRefs = [];
+          lensStats = lensArchiveStats([]);
+        }
         const sourceIntegrityAfter = await libraSourceHandoffIntegritySnapshot(context.scope);
         const sourceIntegrityDiff = diffLibraHandoffIntegritySnapshots(sourceIntegrityBefore, sourceIntegrityAfter);
         state.lastHandoffSourceIntegrity = {
@@ -68834,7 +68963,17 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           error.details = clone(sourceIntegrityDiff);
           throw error;
         }
-        await storeLensHandoffArchives(lensRows,context.scope,writtenLensKeys,ownedLensValues);
+        if (lensRows.length) {
+          try {
+            await storeLensHandoffArchives(lensRows, context.scope, writtenLensKeys, ownedLensValues);
+          } catch (error) {
+            if (!allowPartialSlices) throw error;
+            skippedSlices.push({ slice: 'lens', stage: 'store', reason: compact(error?.code || error?.message || error, 180) });
+            lensRows = [];
+            lensArchiveRefs = [];
+            lensStats = lensArchiveStats([]);
+          }
+        }
         const microSnapshot = await collectMicroHandoffArchive(context.scope, manifest);
         if (microSnapshot.recordsDigest !== sourceIntegrityAfter.microRecordsDigest
           || microSnapshot.recordCount !== sourceIntegrityAfter.microRecordCount) {
@@ -68864,6 +69003,61 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           ? await storyArcCompatibilityProjection(context.scope, sourceContinuityState).catch(() => null)
           : null;
         const sourceStoryArcSeed = storyArcSeedFromArc(sourceStoryArcProjection);
+        let storyClockSeed = null;
+        try {
+          const sourceClock = await loadStoryClock(context.scope);
+          const resolvedClockRows = await resolveStoryClockPairRows(context.scope, sourceClock, pairs);
+          const sourceTimeline = computeStoryClockTimeline(sourceClock, resolvedClockRows);
+          const seedDay = Number(sourceTimeline?.current?.day || sourceClock?.inheritedSeed?.day || 0) || 0;
+          const seedAnchor = string(sourceTimeline?.effectiveAnchorDate || sourceClock?.anchorDate || sourceClock?.inheritedSeed?.anchorDate || '');
+          if (seedDay >= 1 || seedAnchor) {
+            storyClockSeed = {
+              day: seedDay >= 1 ? seedDay : 0,
+              timeOfDay: string(sourceTimeline?.current?.timeOfDay || sourceClock?.inheritedSeed?.timeOfDay || ''),
+              date: string(sourceTimeline?.current?.date || sourceClock?.inheritedSeed?.date || ''),
+              anchorDate: seedAnchor,
+              basis: string(sourceTimeline?.current?.basis || sourceClock?.inheritedSeed?.basis || 'story') === 'clock' ? 'clock' : 'story',
+              sourceScopeKey: string(context.scope.scopeKey || ''),
+              handoffTransferId: transferId
+            };
+          }
+        } catch (error) {
+          skippedSlices.push({ slice: 'story_clock', stage: 'prepare', reason: compact(error?.code || error?.message || error, 180) });
+        }
+        let narrativeDirectionSeed = null;
+        try {
+          const dir = await getNarrativeDirection({ scopeKey: string(context.scope.scopeKey || '') });
+          const hasDir = Boolean(dir?.goal
+            || asArray(dir?.completionConditions).length > 0
+            || asArray(dir?.doNotForce).length > 0
+            || asArray(dir?.softPreferences).length > 0);
+          if (hasDir) {
+            narrativeDirectionSeed = {
+              goal: string(dir.goal || ''),
+              completionConditions: asArray(dir.completionConditions),
+              doNotForce: asArray(dir.doNotForce),
+              softPreferences: asArray(dir.softPreferences),
+              locked: dir.locked === true,
+              source: string(dir.source || 'user') || 'user'
+            };
+          }
+        } catch (error) {
+          skippedSlices.push({ slice: 'narrative_direction', stage: 'prepare', reason: compact(error?.code || error?.message || error, 180) });
+        }
+        let memoryReviewSeed = null;
+        try {
+          const wlMeta = await loadStateWorldlineMeta(context.scope).catch(() => null);
+          const wlId = string(wlMeta?.activeWorldlineId || '');
+          if (wlId) {
+            const reviewPolicy = await readMemoryReviewPolicy(context.scope, wlId);
+            const decisions = asObject(reviewPolicy?.decisions);
+            if (Object.keys(decisions).length > 0) {
+              memoryReviewSeed = { worldlineId: wlId, decisions: clone(decisions) };
+            }
+          }
+        } catch (error) {
+          skippedSlices.push({ slice: 'memory_review', stage: 'prepare', reason: compact(error?.code || error?.message || error, 180) });
+        }
         const preparedAt = nowIso();
         const packageValue = {
           schema: LIBRA_SESSION_HANDOFF_PACKAGE_SCHEMA,
@@ -68876,6 +69070,10 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           lensArchiveRefs,lensArchiveRefsDigest:lensStats.lensArchiveRefsDigest,...lensStats,
           storyArcSeed: sourceStoryArcSeed,
           continuityStateSeed: sourceContinuityState ? clone(sourceContinuityState) : null,
+          storyClockSeed,
+          narrativeDirectionSeed,
+          memoryReviewSeed,
+          skippedSlices,
           expectedRecords,
           physicalMemoryCopies: 0,
           sourceFingerprintBefore: sourceIntegrityBefore.fingerprint,
@@ -69219,10 +69417,20 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         throw new Error('LIBRA_MICRO_HANDOFF_PACKAGE_REFS_INVALID');
       }
       for (const ref of sourceMicroArchiveRefs) await readMicroHandoffArchive(ref);
-      const sourceLensRefs=asArray(packageValue.lensArchiveRefs);
-      if(!Array.isArray(packageValue.lensArchiveRefs)||packageValue.lensArchiveRefsDigest!==lensRefsDigest(sourceLensRefs))throw lensError('LENS_HANDOFF_PACKAGE_INVALID','렌즈 승계 목록이 일치하지 않습니다.');
-      const registry=await readLensRegistry({force:true});
-      for(const ref of sourceLensRefs){if(registry.purgedLensIds.includes(ref.lensId))throw lensError('LENS_PURGED','삭제된 렌즈가 포함된 승계는 다시 준비해야 합니다.');await readLensHandoffArchive(ref);}
+      const allowPartialSlices = options?.allowPartialSlices === true;
+      const appliedSlices = ['canonical'];
+      const skippedSlices = [...asArray(packageValue.skippedSlices)];
+      let sourceLensRefs=asArray(packageValue.lensArchiveRefs);
+      try{
+        if(!Array.isArray(packageValue.lensArchiveRefs)||packageValue.lensArchiveRefsDigest!==lensRefsDigest(sourceLensRefs))throw lensError('LENS_HANDOFF_PACKAGE_INVALID','렌즈 승계 목록이 일치하지 않습니다.');
+        const registry=await readLensRegistry({force:true});
+        for(const ref of sourceLensRefs){if(registry.purgedLensIds.includes(ref.lensId))throw lensError('LENS_PURGED','삭제된 렌즈가 포함된 승계는 다시 준비해야 합니다.');await readLensHandoffArchive(ref);}
+        if(sourceLensRefs.length)appliedSlices.push('lens');
+      }catch(error){
+        if(!allowPartialSlices)throw error;
+        skippedSlices.push({slice:'lens',stage:'adopt',reason:compact(error?.code||error?.message||error,180)});
+        sourceLensRefs=[];
+      }
 
       const packageRecords = archive.memoryRefs.length;
       if (requestedExpectedRecords != null && requestedExpectedRecords !== packageRecords) {
@@ -69360,12 +69568,104 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         warn('LIBRA session-handoff Story Arc regeneration failed open', error);
         storyArcRebuild = { ok: false, reason: compact(error?.message || error, 500) };
       }
+      let microStateAdmitted = null;
+      if (verification.verified === true) {
+        try {
+          microStateAdmitted = await admitInheritedMicroStateClaims(target.scope);
+          if (manifest.inheritedMicroArchives?.length || microStateAdmitted?.admitted > 0) appliedSlices.push('micro_state');
+        } catch (error) {
+          skippedSlices.push({ slice: 'micro_state', stage: 'adopt', reason: compact(error?.code || error?.message || error, 180) });
+        }
+      }
+      let storyClockCopied = false;
+      if (verification.verified === true && packageValue.storyClockSeed) {
+        try {
+          const clockSeed = packageValue.storyClockSeed;
+          await updateStoryClock(target.scope, clock => ({
+            ...clock,
+            anchorDate: clock.anchorDate || storyClockDate(clockSeed.anchorDate || ''),
+            ...(Number(clockSeed.day) >= 1 ? { inheritedSeed: { ...clockSeed, handoffTransferId: transferId } } : {})
+          }));
+          storyClockCopied = true;
+          appliedSlices.push('story_clock');
+        } catch (error) {
+          skippedSlices.push({ slice: 'story_clock', stage: 'adopt', reason: compact(error?.code || error?.message || error, 180) });
+        }
+      }
+      let narrativeDirectionCopied = false;
+      if (verification.verified === true && packageValue.narrativeDirectionSeed) {
+        try {
+          const dirSeed = packageValue.narrativeDirectionSeed;
+          const currentDir = await getNarrativeDirection({ scopeKey: string(target.scope.scopeKey || '') });
+          const currentHasDir = Boolean(currentDir?.goal
+            || asArray(currentDir?.completionConditions).length > 0
+            || asArray(currentDir?.doNotForce).length > 0
+            || asArray(currentDir?.softPreferences).length > 0);
+          if (!currentHasDir) {
+            await setNarrativeDirection({
+              goal: string(dirSeed.goal || ''),
+              completionConditions: asArray(dirSeed.completionConditions),
+              doNotForce: asArray(dirSeed.doNotForce),
+              softPreferences: asArray(dirSeed.softPreferences),
+              locked: dirSeed.locked === true,
+              source: 'user'
+            }, { scopeKey: string(target.scope.scopeKey || '') });
+            narrativeDirectionCopied = true;
+            appliedSlices.push('narrative_direction');
+          }
+        } catch (error) {
+          skippedSlices.push({ slice: 'narrative_direction', stage: 'adopt', reason: compact(error?.code || error?.message || error, 180) });
+        }
+      }
+      let memoryReviewCopied = false;
+      if (verification.verified === true && packageValue.memoryReviewSeed?.decisions) {
+        try {
+          const targetWlMeta = await loadStateWorldlineMeta(target.scope);
+          const targetWorldlineId = string(targetWlMeta?.activeWorldlineId || 'main') || 'main';
+          const reviewKey = memoryReviewKey(target.scope, targetWorldlineId);
+          const existingReview = await readMemoryReviewPolicy(target.scope, targetWorldlineId).catch(() => ({ saved: null, decisions: {} }));
+          const targetDecisions = clone(existingReview.decisions || {});
+          for (const [idValue, entry] of Object.entries(asObject(packageValue.memoryReviewSeed.decisions))) {
+            if (!entry || typeof entry !== 'object' || !entry.row) continue;
+            targetDecisions[idValue] = {
+              ...clone(entry),
+              row: {
+                ...clone(entry.row),
+                id: idValue,
+                scopeKey: target.scope.scopeKey,
+                worldlineId: targetWorldlineId
+              }
+            };
+          }
+          const nextPolicy = {
+            schema: 'libra.memory_review.v1',
+            scopeKey: target.scope.scopeKey,
+            worldlineId: targetWorldlineId,
+            revision: Number(existingReview.saved?.revision || 0) + 1,
+            decisions: targetDecisions,
+            updatedAt: nowIso()
+          };
+          await storage.setVerifiedJson(reviewKey, nextPolicy, target.scope);
+          await readMemoryReviewPolicy(target.scope, targetWorldlineId);
+          memoryReviewCopied = true;
+          appliedSlices.push('memory_review');
+        } catch (error) {
+          skippedSlices.push({ slice: 'memory_review', stage: 'adopt', reason: compact(error?.code || error?.message || error, 180) });
+        }
+      }
+      const uniqueAppliedSlices = Array.from(new Set(appliedSlices));
       const finalReceipt = {
         ...persistedReceipt,
         storyArcSeedIncluded: !!handoffStoryArcSeed,
         storyArcDestinationLocked: handoffStoryArcSeed?.destination?.locked === true,
         continuityStateSeedIncluded: !!handoffContinuityStateSeed,
         continuityStateCopied,
+        storyClockCopied,
+        narrativeDirectionCopied,
+        memoryReviewCopied,
+        appliedSlices: uniqueAppliedSlices,
+        skippedSlices,
+        partial: skippedSlices.length > 0,
         storyArcRebuild: storyArcRebuild ? {
           ok: storyArcRebuild.ok !== false,
           reason: string(storyArcRebuild.reason || ''),
@@ -75088,7 +75388,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const localSuffix = targetKey.startsWith(`${PREFIX}:scope:${activeScope.scopeKey}:`)
             ? targetKey.slice(`${PREFIX}:scope:${activeScope.scopeKey}:`.length)
             : '';
-          const localAllowed = /^(?:manifest$|continuity-state$|story-arc$|story-clock:v1$|canonical-variants:v1$|memory:|vector:|continuity-delta:|source-evidence:v1:|source-receipt(?:-head|-capture)?:|person-span-inventory(?:-head)?:|micro-(?:work|memory(?:-head)?|vector|state-admission|handoff-archive):|entity-(?:registry|admission):|manual-state-disposition:|state-(?:corrections|correction-meta|correction-commit|worldline-meta|replay-cache|replay-errors|observation|pipeline-receipt|tracking-journal):|unified-migration:v1$)/.test(localSuffix);
+          const localAllowed = /^(?:manifest$|continuity-state$|story-arc$|story-clock:v1$|canonical-variants:v1$|planner-narrative-direction:v1$|memory:|vector:|continuity-delta:|source-evidence:v1:|source-receipt(?:-head|-capture)?:|person-span-inventory(?:-head)?:|micro-(?:work|memory(?:-head)?|vector|state-admission|handoff-archive):|inherited-micro-state-admission:|memory-review:v1:|entity-(?:registry|admission):|manual-state-disposition:|state-(?:corrections|correction-meta|correction-commit|worldline-meta|replay-cache|replay-errors|observation|pipeline-receipt|tracking-journal):|unified-migration:v1$)/.test(localSuffix);
           const sharedMatch = targetKey.match(/^libra:v1:shared-archive:([^:]+):(manifest$|memory:([^:]+):r(\d+)$|vector:([^:]+):r(\d+):([^:]+)$)/);
           let sharedAllowed = false;
           if (sharedMatch && ['import_as_predecessor_archive', 'reconstruct_native_copy'].includes(string(journal.mode || ''))) {
@@ -76785,7 +77085,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const clock = await loadStoryClock(scope);
       const next = mutate(clock);
       if (!next) return clock;
+      const inheritedSeed = normalizeStoryClockInheritedSeed(
+        next.inheritedSeed !== undefined ? next.inheritedSeed : clock.inheritedSeed
+      );
       const payload = { schema: STORY_CLOCK_SCHEMA, scopeKey: scope.scopeKey, anchorDate: next.anchorDate || '', updatedAt: nowIso(),
+        ...(inheritedSeed ? { inheritedSeed } : {}),
         pairs: next.pairs || {}, corrections: next.corrections || {} };
       await storage.setJson(key.storyClock(scope), payload);
       return normalizeStoryClockRecord(payload, scope.scopeKey);
@@ -100192,7 +100496,7 @@ function __libraCompletionNarrativeProjection(narrative, direction = null) {
             ongoingTensions:open.filter(t=>t.type==='conflict'||t.type==='consequence').map(t=>t.summary).filter(Boolean),
             updatedThroughTurn:Number(n.updatedThroughTurn||0)
         },
-        destination:d&&d.source==='user'?{goal:d.goal,completionConditions:d.completionConditions,doNotForce:d.doNotForce,locked:d.locked,source:'user'}:null,
+        destination:d&&d.source==='user'&&(d.goal||(Array.isArray(d.completionConditions)&&d.completionConditions.length)||(Array.isArray(d.doNotForce)&&d.doNotForce.length)||(Array.isArray(d.softPreferences)&&d.softPreferences.length))?{goal:d.goal,completionConditions:d.completionConditions,doNotForce:d.doNotForce,softPreferences:Array.isArray(d.softPreferences)?d.softPreferences:[],locked:d.locked,source:'user'}:null,
         beats:[], beatLedger:[], narrativeState:n
     };
 }

@@ -6183,6 +6183,15 @@ ${BIANCA_PERSONA_TEXT}`;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback;
   };
 
+  const readObjectStrict = async (key, fallback = {}) => {
+    if (isRetiredMemoryKey(key)) throw retiredMemoryError();
+    if (typeof API.pluginStorage?.getItem !== 'function') return fallback;
+    const raw = await API.pluginStorage.getItem(key);
+    if (raw == null || raw === '') return fallback;
+    const parsed = typeof raw === 'string' ? tryJsonParse(raw, fallback) : raw;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback;
+  };
+
   const writeObject = async (key, value) => await RisuCompat.setItem(key, JSON.stringify(value ?? {}, null, 2));
 
   const credentialClone = value => {
@@ -6350,11 +6359,21 @@ ${BIANCA_PERSONA_TEXT}`;
       loreActivationMode: 'lore_activation_mode', loreRerankerTopK: 'lore_reranker_top_k', skillStageSelections: 'skill_stage_selections', skillStageReferences: 'skill_stage_references', skillLegacyRouterSettings: 'skill_router_legacy_archive', skillCustomLibrary: 'skill_custom_library', skillRouterEnabled: 'skill_router_enabled', skillRouterTopK: 'skill_router_top_k', skillRouterReferences: 'skill_router_references', skillPriorityOverrides: 'skill_priority_overrides',
       excludedCharacterLoreIds: 'excluded_character_lore_ids', sourceIgnoredTags: 'source_ignored_tags', draftBudgetPreset: 'draft_budget_preset',
       sceneVariance: 'scene_variance', sceneVarianceCategories: 'scene_variance_categories',
+      npcDisposition: 'npc_disposition', forcedBondCards: 'forced_bond_cards', bodyStateCards: 'body_state_cards',
     };
     const out = {};
     for (const [key, value] of Object.entries(source || {})) {
       if (key === 'excluded_hypa_record_ids' || key === 'excludedHypaRecordIds' || /^backend(?:_hosting(?:_|$)|Hosting)/.test(key)) continue;
-      out[aliases[key] || key] = value;
+      const targetKey = aliases[key] || key;
+      if (aliases[key] && Object.prototype.hasOwnProperty.call(source, targetKey)) {
+        const camelVal = typeof value === 'string' ? tryJsonParse(value, null) : value;
+        const snakeVal = typeof source[targetKey] === 'string' ? tryJsonParse(source[targetKey], null) : source[targetKey];
+        if (camelVal && typeof camelVal === 'object' && snakeVal && typeof snakeVal === 'object' && !Array.isArray(camelVal) && !Array.isArray(snakeVal)) {
+          out[targetKey] = { ...camelVal, ...snakeVal };
+        }
+        continue;
+      }
+      out[targetKey] = value;
     }
     for (const key of Object.keys(out)) if (/^(?:arc_|arcDirector|arcHorizon|arcAutoReplan|arcNovelty|writer_|writerEnabled|writerReview|writerMax)/.test(key)) delete out[key];
     if (Object.prototype.hasOwnProperty.call(out, 'output_mode')) out.output_mode = 'draft_guided';
@@ -33110,12 +33129,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const previousHash = previousUser ? stableDraftHash(previousUser) : '';
     if (previousHash && previousHash !== chat.lastInputHash) { chat.turn += 1; chat.lastInputHash = previousHash; changed = true; }
     const keep = [];
+    const canSettleHandedOffPending = !previousUser && (Number(chat.turn || 0) > 0 || Object.keys(chat.pairs || {}).length > 0);
     for (const item of chat.pending) {
       if (previousUser && item.inputKey && item.inputKey === previousUser) {
         for (const change of item.changes) relsimApplyChange(chat, change, chat.turn);
         changed = true;
       } else if (item.inputHash === identity.inputHash && item.priorAssistantHash === identity.priorAssistantHash) {
         changed = true; // reroll of the same turn: this run makes its own pending
+      } else if (canSettleHandedOffPending && Array.isArray(item.changes) && item.changes.length) {
+        for (const change of item.changes) relsimApplyChange(chat, change, chat.turn);
+        changed = true;
       } else if (Date.now() - item.createdAt < 6 * 3600000 && !previousUser) {
         keep.push(item); // nothing to judge by yet (first turn of a chat)
       } else changed = true;
@@ -34601,7 +34624,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -50490,9 +50513,36 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (Object.keys(chat.pairs || {}).length > 0) return true;
     if (Array.isArray(chat.pending) && chat.pending.length > 0) return true;
     if (Array.isArray(chat.notes) && chat.notes.length > 0) return true;
+    if (Array.isArray(chat.bondHistory) && chat.bondHistory.length > 0) return true;
+    if (chat.activeSession && typeof chat.activeSession === 'object' && Object.keys(chat.activeSession).length > 0) return true;
     if (Number(chat.turn || 0) > 0) return true;
     return false;
   };
+
+  const isGradiaIntimacyGaugePopulated = entry => Boolean(
+    entry && typeof entry === 'object'
+    && (Object.keys(entry.settled || {}).length > 0 || (Array.isArray(entry.pending) && entry.pending.length > 0))
+  );
+
+  const isGradiaBodyStateSleepPopulated = entry => Boolean(
+    entry && typeof entry === 'object'
+    && (Object.keys(entry.people || {}).length > 0 || (Array.isArray(entry.items) && entry.items.length > 0))
+  );
+
+  const readRuntimeCardMaps = (runtimeSettings = {}) => ({
+    npcDispositionMap: {
+      ...normalizeNpcDispositionMap(runtimeSettings?.npcDisposition),
+      ...normalizeNpcDispositionMap(runtimeSettings?.npc_disposition)
+    },
+    forcedBondMap: {
+      ...normalizeForcedBondCardMap(runtimeSettings?.forcedBondCards),
+      ...normalizeForcedBondCardMap(runtimeSettings?.forced_bond_cards)
+    },
+    bodyStateMap: {
+      ...normalizeBodyStateCardMap(runtimeSettings?.bodyStateCards),
+      ...normalizeBodyStateCardMap(runtimeSettings?.body_state_cards)
+    }
+  });
 
   const emptyGradiaChatStatePayload = () => ({
     npcDisposition: null,
@@ -50506,7 +50556,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dismissed: { bodyState: [], forcedBond: [], npcDisposition: [], romancePrefs: [] }
     },
     intimacyCards: [],
-    relationshipState: null
+    intimacyGauges: null,
+    relationshipState: null,
+    worldSimLogs: [],
+    bodyStateSleep: null
   });
 
   const normalizeGradiaChatStatePayload = (raw = {}) => {
@@ -50552,13 +50605,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ? normalizeIntimacyCardMap({ [tmpKey]: src.intimacyCards }) : {};
     const intimacyCards = Array.isArray(intimacyMap[tmpKey]) ? cloneJson(intimacyMap[tmpKey]) : [];
 
+    const gaugeMap = src.intimacyGauges && typeof src.intimacyGauges === 'object'
+      ? normalizeIntimacyGaugeMap({ [tmpKey]: src.intimacyGauges }) : {};
+    const intimacyGauges = gaugeMap[tmpKey] && isGradiaIntimacyGaugePopulated(gaugeMap[tmpKey])
+      ? cloneJson(gaugeMap[tmpKey]) : null;
+
     const relsimStore = src.relationshipState && typeof src.relationshipState === 'object'
       ? normalizeRelsimStore({ chats: { [tmpKey]: src.relationshipState } })
       : { chats: {} };
     const relationshipState = relsimStore.chats[tmpKey] && isGradiaRelsimChatPopulated(relsimStore.chats[tmpKey])
       ? cloneJson(relsimStore.chats[tmpKey]) : null;
 
-    return { npcDisposition, forcedBondCards, bodyStateCards, loreCards, intimacyCards, relationshipState };
+    const worldSimMap = Array.isArray(src.worldSimLogs) && src.worldSimLogs.length
+      ? normalizeWorldSimLogMap({ [tmpKey]: src.worldSimLogs }) : {};
+    const worldSimLogs = Array.isArray(worldSimMap[tmpKey]) ? cloneJson(worldSimMap[tmpKey]) : [];
+
+    const sleepMap = src.bodyStateSleep && typeof src.bodyStateSleep === 'object'
+      ? normalizeBodyStateSleepMap({ [tmpKey]: src.bodyStateSleep }) : {};
+    const bodyStateSleep = sleepMap[tmpKey] && isGradiaBodyStateSleepPopulated(sleepMap[tmpKey])
+      ? cloneJson(sleepMap[tmpKey]) : null;
+
+    return { npcDisposition, forcedBondCards, bodyStateCards, loreCards, intimacyCards, intimacyGauges, relationshipState, worldSimLogs, bodyStateSleep };
   };
 
   const computeGradiaChatStateMetrics = payloadInput => {
@@ -50567,9 +50634,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const npcDispCount = payload.npcDisposition
       ? ((payload.npcDisposition.default ? 1 : 0) + (Array.isArray(payload.npcDisposition.npcs) ? payload.npcDisposition.npcs.length : 0))
       : 0;
-    const loreCardCount = lc.bodyState.length + lc.forcedBond.length + lc.npcDisposition.length + (lc.romancePrefs ? Object.keys(lc.romancePrefs).length : 0);
+    const romancePrefCount = Array.isArray(lc.romancePrefs)
+      ? lc.romancePrefs.length
+      : (lc.romancePrefs && typeof lc.romancePrefs === 'object' ? Object.keys(lc.romancePrefs).length : 0);
+    const loreCardCount = lc.bodyState.length + lc.forcedBond.length + lc.npcDisposition.length + romancePrefCount;
     const dismissedCount = lc.dismissed.bodyState.length + lc.dismissed.forcedBond.length + lc.dismissed.npcDisposition.length + lc.dismissed.romancePrefs.length;
     const relsimCount = payload.relationshipState ? 1 : 0;
+    const intimacyGaugesCount = payload.intimacyGauges ? Math.max(1, Object.keys(payload.intimacyGauges.settled || {}).length) : 0;
+    const worldSimLogsCount = Array.isArray(payload.worldSimLogs) ? payload.worldSimLogs.length : 0;
+    const bodyStateSleepCount = payload.bodyStateSleep ? Math.max(1, Object.keys(payload.bodyStateSleep.people || {}).length) : 0;
     const counts = {
       npcDisposition: npcDispCount,
       forcedBondCards: payload.forcedBondCards.length,
@@ -50577,29 +50650,39 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       loreCards: loreCardCount,
       dismissedLoreCards: dismissedCount,
       intimacyCards: payload.intimacyCards.length,
-      relationshipState: relsimCount
+      intimacyGauges: intimacyGaugesCount,
+      relationshipState: relsimCount,
+      worldSimLogs: worldSimLogsCount,
+      bodyStateSleep: bodyStateSleepCount
     };
-    const totalItems = counts.npcDisposition + counts.forcedBondCards + counts.bodyStateCards + counts.loreCards + counts.dismissedLoreCards + counts.intimacyCards + counts.relationshipState;
+    const totalItems = counts.npcDisposition + counts.forcedBondCards + counts.bodyStateCards + counts.loreCards
+      + counts.dismissedLoreCards + counts.intimacyCards + counts.intimacyGauges + counts.relationshipState
+      + counts.worldSimLogs + counts.bodyStateSleep;
     const digest = stableDraftHash(JSON.stringify(payload));
     return { payload, counts, totalItems, digest };
   };
 
-  const readGradiaChatStateSnapshot = async (scopeKey = '') => {
+  const readGradiaChatStateSnapshot = async (scopeKey = '', options = {}) => {
     const key = compact(scopeKey, 512);
     if (!key) {
       const empty = computeGradiaChatStateMetrics(emptyGradiaChatStatePayload());
       return { scopeKey: '', ...empty };
     }
-    const runtimeSettings = await readRuntimeSettings();
-    const npcDispositionMap = normalizeNpcDispositionMap(runtimeSettings?.npcDisposition);
-    const forcedBondMap = normalizeForcedBondCardMap(runtimeSettings?.forcedBondCards);
-    const bodyStateMap = normalizeBodyStateCardMap(runtimeSettings?.bodyStateCards);
-    const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+    const reader = options.strict === true ? readObjectStrict : readObject;
+    const runtimeRaw = options.strict === true ? await readObjectStrict(STORAGE_RUNTIME_SETTINGS_KEY, {}) : await readRuntimeSettings();
+    const runtimeSettings = options.strict === true ? normalizeRuntimeRecord(runtimeRaw) : runtimeRaw;
+    const { npcDispositionMap, forcedBondMap, bodyStateMap } = readRuntimeCardMaps(runtimeSettings);
+    const rawLore = await reader(STORAGE_LORE_CARDS_KEY, {});
     const loreStore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
-    const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+    const rawIntimacy = await reader(STORAGE_INTIMACY_CARDS_KEY, {});
     const intimacyMap = normalizeIntimacyCardMap(rawIntimacy.cards || {});
-    const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+    const gaugeMap = normalizeIntimacyGaugeMap(rawIntimacy.gauges || {});
+    const rawRelsim = await reader(STORAGE_RELATIONSHIP_STATE_KEY, {});
     const relsimStore = normalizeRelsimStore(rawRelsim);
+    const rawWorldSim = await reader(STORAGE_WORLD_SIM_LOG_KEY, {});
+    const worldSimMap = normalizeWorldSimLogMap(rawWorldSim.logs || {});
+    const rawSleep = await reader(STORAGE_GAUGE_CONTINUITY_KEY, {});
+    const sleepMap = normalizeBodyStateSleepMap(rawSleep.sleep || {});
 
     const metrics = computeGradiaChatStateMetrics({
       npcDisposition: npcDispositionMap[key] || null,
@@ -50618,7 +50701,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       },
       intimacyCards: intimacyMap[key] || [],
-      relationshipState: relsimStore.chats[key] || null
+      intimacyGauges: gaugeMap[key] || null,
+      relationshipState: relsimStore.chats[key] || null,
+      worldSimLogs: worldSimMap[key] || [],
+      bodyStateSleep: sleepMap[key] || null
     });
     return { scopeKey: key, ...metrics };
   };
@@ -50646,16 +50732,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         npcs: mergeUniqueCards(base.npcDisposition.npcs, inc.npcDisposition.npcs, item => text(item?.name || item?.id || '').trim().toLowerCase())
       };
     })();
-    const bondKey = item => `${text(item?.from || '').trim().toLowerCase()}::${text(item?.to || '').trim().toLowerCase()}::${text(item?.relation || '').trim().toLowerCase()}` || text(item?.id || '').trim().toLowerCase();
+    const bondKey = item => {
+      const from = text(item?.from || '').trim().toLowerCase();
+      const to = text(item?.to || '').trim().toLowerCase();
+      const detail = text(item?.relation || item?.direction || (Array.isArray(item?.tones) ? item.tones.join('+') : '') || '').trim().toLowerCase();
+      return (from || to || detail) ? `${from}::${to}::${detail}` : text(item?.id || '').trim().toLowerCase();
+    };
     const nameKey = item => text(item?.name || item?.id || '').trim().toLowerCase();
     const mergeStrList = (a = [], b = []) => [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])].map(v => String(v || '').trim()).filter(Boolean))];
+    const mergedRomance = mergeUniqueCards(
+      Array.isArray(base.loreCards.romancePrefs) ? base.loreCards.romancePrefs : [],
+      Array.isArray(inc.loreCards.romancePrefs) ? inc.loreCards.romancePrefs : [],
+      nameKey
+    );
     const loreCards = {
       bodyState: mergeUniqueCards(base.loreCards.bodyState, inc.loreCards.bodyState, nameKey),
       forcedBond: mergeUniqueCards(base.loreCards.forcedBond, inc.loreCards.forcedBond, bondKey),
       npcDisposition: mergeUniqueCards(base.loreCards.npcDisposition, inc.loreCards.npcDisposition, nameKey),
-      romancePrefs: base.loreCards.romancePrefs || inc.loreCards.romancePrefs
-        ? { ...(base.loreCards.romancePrefs || {}), ...(inc.loreCards.romancePrefs || {}) }
-        : null,
+      romancePrefs: mergedRomance.length ? mergedRomance : null,
       dismissed: {
         bodyState: mergeStrList(base.loreCards.dismissed.bodyState, inc.loreCards.dismissed.bodyState),
         forcedBond: mergeStrList(base.loreCards.dismissed.forcedBond, inc.loreCards.dismissed.forcedBond),
@@ -50671,7 +50765,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         lastInputHash: text(inc.relationshipState.lastInputHash || base.relationshipState.lastInputHash || '').trim(),
         pairs: { ...(base.relationshipState.pairs || {}), ...(inc.relationshipState.pairs || {}) },
         pending: mergeUniqueCards(base.relationshipState.pending, inc.relationshipState.pending, item => `${item?.inputHash || ''}::${item?.createdAt || ''}`),
-        notes: mergeUniqueCards(base.relationshipState.notes, inc.relationshipState.notes, item => `${item?.at || ''}::${text(item?.text || '').trim()}`)
+        notes: mergeUniqueCards(base.relationshipState.notes, inc.relationshipState.notes, item => `${item?.at || ''}::${text(item?.text || '').trim()}`),
+        activeSession: inc.relationshipState.activeSession ? cloneJson(inc.relationshipState.activeSession) : (base.relationshipState.activeSession ? cloneJson(base.relationshipState.activeSession) : null),
+        bondHistory: mergeUniqueCards(base.relationshipState.bondHistory, inc.relationshipState.bondHistory, item => `${item?.turn || ''}::${text(item?.from || '')}::${text(item?.to || '')}::${text(item?.summary || item?.note || '')}`)
+      };
+    })();
+    const intimacyGauges = (() => {
+      if (!base.intimacyGauges) return inc.intimacyGauges ? cloneJson(inc.intimacyGauges) : null;
+      if (!inc.intimacyGauges) return cloneJson(base.intimacyGauges);
+      return {
+        ...cloneJson(base.intimacyGauges),
+        ...cloneJson(inc.intimacyGauges),
+        settled: { ...(base.intimacyGauges.settled || {}), ...(inc.intimacyGauges.settled || {}) },
+        baseline: { ...(base.intimacyGauges.baseline || {}), ...(inc.intimacyGauges.baseline || {}) }
+      };
+    })();
+    const worldSimLogs = mergeUniqueCards(
+      base.worldSimLogs,
+      inc.worldSimLogs,
+      item => text(item?.id || `${item?.at || ''}::${item?.inputHash || ''}::${item?.summary || ''}`).trim()
+    ).slice(-WORLD_SIM_MAX_LOGS);
+    const bodyStateSleep = (() => {
+      if (!base.bodyStateSleep) return inc.bodyStateSleep ? cloneJson(inc.bodyStateSleep) : null;
+      if (!inc.bodyStateSleep) return cloneJson(base.bodyStateSleep);
+      return {
+        at: Math.max(Number(base.bodyStateSleep.at || 0), Number(inc.bodyStateSleep.at || 0)) || Date.now(),
+        items: mergeUniqueCards(base.bodyStateSleep.items, inc.bodyStateSleep.items, nameKey),
+        people: { ...(base.bodyStateSleep.people || {}), ...(inc.bodyStateSleep.people || {}) }
       };
     })();
     return normalizeGradiaChatStatePayload({
@@ -50680,7 +50800,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       bodyStateCards: mergeUniqueCards(base.bodyStateCards, inc.bodyStateCards, nameKey),
       loreCards,
       intimacyCards: mergeUniqueCards(base.intimacyCards, inc.intimacyCards, nameKey),
-      relationshipState
+      intimacyGauges,
+      relationshipState,
+      worldSimLogs,
+      bodyStateSleep
     });
   };
 
@@ -50689,59 +50812,132 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.settingsLoadedAt = 0;
     Runtime.loreCards = null;
     Runtime.intimacyCards = null;
+    Runtime.intimacyGauges = null;
     Runtime.relationshipState = null;
+    Runtime.worldSimLogs = null;
+    Runtime.gaugeContinuityLoaded = false;
+    Runtime.bodyStateSleep = {};
+    if (typeof Gui !== 'undefined' && Gui) {
+      Gui.state = null;
+      Gui.stateLoadedAt = 0;
+    }
     if (scopeKey) Runtime.activeScopeKey = scopeKey;
     clearRequestReuseCache();
+  };
+
+  const GRADIA_HANDOFF_SLICE_IDS = Object.freeze([
+    'runtimeCards',
+    'loreCards',
+    'intimacy',
+    'relationshipState',
+    'worldSimLogs',
+    'bodyStateSleep'
+  ]);
+
+  const gradiaSliceDigest = (payloadInput, sliceId) => {
+    const src = normalizeGradiaChatStatePayload(payloadInput);
+    if (sliceId === 'runtimeCards') return stableDraftHash(JSON.stringify({ n: src.npcDisposition, b: src.forcedBondCards, s: src.bodyStateCards }));
+    if (sliceId === 'loreCards') return stableDraftHash(JSON.stringify(src.loreCards));
+    if (sliceId === 'intimacy') return stableDraftHash(JSON.stringify({ c: src.intimacyCards, g: src.intimacyGauges }));
+    if (sliceId === 'relationshipState') return stableDraftHash(JSON.stringify(src.relationshipState));
+    if (sliceId === 'worldSimLogs') return stableDraftHash(JSON.stringify(src.worldSimLogs));
+    if (sliceId === 'bodyStateSleep') return stableDraftHash(JSON.stringify(src.bodyStateSleep));
+    return '';
+  };
+
+  const applyGradiaSliceToStore = async (key, srcInput, sliceId) => {
+    const src = normalizeGradiaChatStatePayload(srcInput);
+    if (sliceId === 'runtimeCards') {
+      const nextSettings = await readRuntimeSettings();
+      const { npcDispositionMap: nextNpc, forcedBondMap: nextBond, bodyStateMap: nextBody } = readRuntimeCardMaps(nextSettings);
+      if (src.npcDisposition && !npcDispositionEntryIsEmpty(src.npcDisposition)) nextNpc[key] = cloneJson(src.npcDisposition);
+      else delete nextNpc[key];
+      if (src.forcedBondCards.length) nextBond[key] = cloneJson(src.forcedBondCards);
+      else delete nextBond[key];
+      if (src.bodyStateCards.length) nextBody[key] = cloneJson(src.bodyStateCards);
+      else delete nextBody[key];
+      nextSettings.npc_disposition = nextNpc;
+      nextSettings.forced_bond_cards = nextBond;
+      nextSettings.body_state_cards = nextBody;
+      delete nextSettings.npcDisposition;
+      delete nextSettings.forcedBondCards;
+      delete nextSettings.bodyStateCards;
+      if (await writeRuntimeSettings(nextSettings) !== true) throw new Error('GRADIA_RUNTIME_SETTINGS_WRITE_FAILED');
+      return;
+    }
+    if (sliceId === 'loreCards') {
+      const lc = src.loreCards;
+      const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+      const nextLore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
+      if (lc.bodyState.length) nextLore.bodyState[key] = cloneJson(lc.bodyState); else delete nextLore.bodyState[key];
+      if (lc.forcedBond.length) nextLore.forcedBond[key] = cloneJson(lc.forcedBond); else delete nextLore.forcedBond[key];
+      if (lc.npcDisposition.length) nextLore.npcDisposition[key] = cloneJson(lc.npcDisposition); else delete nextLore.npcDisposition[key];
+      if (Array.isArray(lc.romancePrefs) && lc.romancePrefs.length) nextLore.romancePrefs[key] = cloneJson(lc.romancePrefs); else delete nextLore.romancePrefs[key];
+      if (lc.dismissed.bodyState.length) nextLore.dismissed.bodyState[key] = cloneJson(lc.dismissed.bodyState); else delete nextLore.dismissed.bodyState[key];
+      if (lc.dismissed.forcedBond.length) nextLore.dismissed.forcedBond[key] = cloneJson(lc.dismissed.forcedBond); else delete nextLore.dismissed.forcedBond[key];
+      if (lc.dismissed.npcDisposition.length) nextLore.dismissed.npcDisposition[key] = cloneJson(lc.dismissed.npcDisposition); else delete nextLore.dismissed.npcDisposition[key];
+      if (lc.dismissed.romancePrefs.length) nextLore.dismissed.romancePrefs[key] = cloneJson(lc.dismissed.romancePrefs); else delete nextLore.dismissed.romancePrefs[key];
+      if (await writeObject(STORAGE_LORE_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeLoreCardsStore(nextLore) }) !== true) {
+        throw new Error('GRADIA_LORE_CARDS_WRITE_FAILED');
+      }
+      return;
+    }
+    if (sliceId === 'intimacy') {
+      const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+      const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
+      const nextGauges = normalizeIntimacyGaugeMap(rawIntimacy.gauges || {});
+      if (src.intimacyCards.length) nextIntimacy[key] = cloneJson(src.intimacyCards);
+      else delete nextIntimacy[key];
+      if (src.intimacyGauges && isGradiaIntimacyGaugePopulated(src.intimacyGauges)) nextGauges[key] = cloneJson(src.intimacyGauges);
+      else delete nextGauges[key];
+      if (await writeObject(STORAGE_INTIMACY_CARDS_KEY, {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        cards: normalizeIntimacyCardMap(nextIntimacy),
+        gauges: normalizeIntimacyGaugeMap(nextGauges)
+      }) !== true) {
+        throw new Error('GRADIA_INTIMACY_WRITE_FAILED');
+      }
+      return;
+    }
+    if (sliceId === 'relationshipState') {
+      const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+      const nextRelsim = normalizeRelsimStore(rawRelsim);
+      if (src.relationshipState && isGradiaRelsimChatPopulated(src.relationshipState)) nextRelsim.chats[key] = cloneJson(src.relationshipState);
+      else delete nextRelsim.chats[key];
+      if (await writeObject(STORAGE_RELATIONSHIP_STATE_KEY, { version: 1, savedAt: new Date().toISOString(), ...normalizeRelsimStore(nextRelsim) }) !== true) {
+        throw new Error('GRADIA_RELATIONSHIP_STATE_WRITE_FAILED');
+      }
+      return;
+    }
+    if (sliceId === 'worldSimLogs') {
+      const rawWorld = await readObject(STORAGE_WORLD_SIM_LOG_KEY, {});
+      const nextLogs = normalizeWorldSimLogMap(rawWorld.logs || {});
+      if (Array.isArray(src.worldSimLogs) && src.worldSimLogs.length) nextLogs[key] = cloneJson(src.worldSimLogs);
+      else delete nextLogs[key];
+      if (await writeObject(STORAGE_WORLD_SIM_LOG_KEY, { version: 1, savedAt: new Date().toISOString(), logs: normalizeWorldSimLogMap(nextLogs) }) !== true) {
+        throw new Error('GRADIA_WORLD_SIM_LOG_WRITE_FAILED');
+      }
+      return;
+    }
+    if (sliceId === 'bodyStateSleep') {
+      const rawSleep = await readObject(STORAGE_GAUGE_CONTINUITY_KEY, {});
+      const nextSleep = normalizeBodyStateSleepMap(rawSleep.sleep || {});
+      if (src.bodyStateSleep && isGradiaBodyStateSleepPopulated(src.bodyStateSleep)) nextSleep[key] = cloneJson(src.bodyStateSleep);
+      else delete nextSleep[key];
+      if (await writeObject(STORAGE_GAUGE_CONTINUITY_KEY, { version: 1, savedAt: new Date().toISOString(), sleep: normalizeBodyStateSleepMap(nextSleep) }) !== true) {
+        throw new Error('GRADIA_BODY_STATE_SLEEP_WRITE_FAILED');
+      }
+    }
   };
 
   const applyGradiaPayloadToStores = async (targetScopeKey, payload) => {
     const key = compact(targetScopeKey, 512);
     if (!key) throw new Error('GRADIA_TARGET_SCOPE_REQUIRED');
     const src = normalizeGradiaChatStatePayload(payload);
-
-    // 1. runtime_settings:v2
-    const nextSettings = await readRuntimeSettings();
-    const nextNpc = normalizeNpcDispositionMap(nextSettings.npcDisposition);
-    const nextBond = normalizeForcedBondCardMap(nextSettings.forcedBondCards);
-    const nextBody = normalizeBodyStateCardMap(nextSettings.bodyStateCards);
-    if (src.npcDisposition && !npcDispositionEntryIsEmpty(src.npcDisposition)) nextNpc[key] = cloneJson(src.npcDisposition);
-    else delete nextNpc[key];
-    if (src.forcedBondCards.length) nextBond[key] = cloneJson(src.forcedBondCards);
-    else delete nextBond[key];
-    if (src.bodyStateCards.length) nextBody[key] = cloneJson(src.bodyStateCards);
-    else delete nextBody[key];
-    nextSettings.npcDisposition = nextNpc;
-    nextSettings.forcedBondCards = nextBond;
-    nextSettings.bodyStateCards = nextBody;
-    await writeRuntimeSettings(nextSettings);
-
-    // 2. lore_cards:v1
-    const lc = src.loreCards;
-    const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
-    const nextLore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
-    if (lc.bodyState.length) nextLore.bodyState[key] = cloneJson(lc.bodyState); else delete nextLore.bodyState[key];
-    if (lc.forcedBond.length) nextLore.forcedBond[key] = cloneJson(lc.forcedBond); else delete nextLore.forcedBond[key];
-    if (lc.npcDisposition.length) nextLore.npcDisposition[key] = cloneJson(lc.npcDisposition); else delete nextLore.npcDisposition[key];
-    if (lc.romancePrefs) nextLore.romancePrefs[key] = cloneJson(lc.romancePrefs); else delete nextLore.romancePrefs[key];
-    if (lc.dismissed.bodyState.length) nextLore.dismissed.bodyState[key] = cloneJson(lc.dismissed.bodyState); else delete nextLore.dismissed.bodyState[key];
-    if (lc.dismissed.forcedBond.length) nextLore.dismissed.forcedBond[key] = cloneJson(lc.dismissed.forcedBond); else delete nextLore.dismissed.forcedBond[key];
-    if (lc.dismissed.npcDisposition.length) nextLore.dismissed.npcDisposition[key] = cloneJson(lc.dismissed.npcDisposition); else delete nextLore.dismissed.npcDisposition[key];
-    if (lc.dismissed.romancePrefs.length) nextLore.dismissed.romancePrefs[key] = cloneJson(lc.dismissed.romancePrefs); else delete nextLore.dismissed.romancePrefs[key];
-    await writeObject(STORAGE_LORE_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeLoreCardsStore(nextLore) });
-
-    // 3. intimacy_cards:v1
-    const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
-    const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
-    if (src.intimacyCards.length) nextIntimacy[key] = cloneJson(src.intimacyCards);
-    else delete nextIntimacy[key];
-    await writeObject(STORAGE_INTIMACY_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeIntimacyCardMap(nextIntimacy) });
-
-    // 4. relationship_state:v1
-    const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
-    const nextRelsim = normalizeRelsimStore(rawRelsim);
-    if (src.relationshipState && isGradiaRelsimChatPopulated(src.relationshipState)) nextRelsim.chats[key] = cloneJson(src.relationshipState);
-    else delete nextRelsim.chats[key];
-    await writeObject(STORAGE_RELATIONSHIP_STATE_KEY, { version: 1, savedAt: new Date().toISOString(), ...normalizeRelsimStore(nextRelsim) });
+    for (const sliceId of GRADIA_HANDOFF_SLICE_IDS) {
+      await applyGradiaSliceToStore(key, src, sliceId);
+    }
   };
 
   const writeGradiaChatStateSnapshot = async (targetScopeKey, payloadInput, options = {}) => {
@@ -51209,7 +51405,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           STORAGE_RUNTIME_SETTINGS_KEY,
           STORAGE_LORE_CARDS_KEY,
           STORAGE_INTIMACY_CARDS_KEY,
-          STORAGE_RELATIONSHIP_STATE_KEY
+          STORAGE_RELATIONSHIP_STATE_KEY,
+          STORAGE_WORLD_SIM_LOG_KEY,
+          STORAGE_GAUGE_CONTINUITY_KEY
         ]
       },
       counts: snap.counts,
@@ -62539,7 +62737,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           scopeKey: '',
           sourceChatId: text(payload?.sourceChatId || '').trim(),
           itemCount: 0,
-          counts: { npcDisposition: 0, forcedBondCards: 0, bodyStateCards: 0, loreCards: 0, dismissedLoreCards: 0, intimacyCards: 0, relationshipState: 0 },
+          counts: { npcDisposition: 0, forcedBondCards: 0, bodyStateCards: 0, loreCards: 0, dismissedLoreCards: 0, intimacyCards: 0, intimacyGauges: 0, relationshipState: 0, worldSimLogs: 0, bodyStateSleep: 0 },
           digest: '',
           hasData: false,
           compatibility: gradiaRetraceCompatibility(),
@@ -62547,7 +62745,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         };
       }
       const scopeKey = loreContinuityScopeKey(resolved.character, resolved.chat);
-      const snap = await readGradiaChatStateSnapshot(scopeKey);
+      const snap = await readGradiaChatStateSnapshot(scopeKey, { strict: true });
       return {
         ok: true,
         scopeKey,
@@ -62587,7 +62785,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!sourceScopeKey || !targetScopeKey || sourceScopeKey === targetScopeKey) {
         throw new Error('GRADIA_HANDOFF_SCOPE_COLLISION');
       }
-      const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey);
+      const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey, { strict: true });
       if (expectedSourceDigest && sourceSnap.digest !== expectedSourceDigest) {
         throw new Error('GRADIA_HANDOFF_SOURCE_DIGEST_MISMATCH');
       }
@@ -62599,94 +62797,74 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         && existingReceipt.sourceScopeKey === sourceScopeKey
         && existingReceipt.targetScopeKey === targetScopeKey
         && existingReceipt.sourceDigest === sourceSnap.digest
-        && targetBefore.digest === sourceSnap.digest) {
+        && (targetBefore.digest === sourceSnap.digest || (existingReceipt.partial === true && targetBefore.digest === existingReceipt.targetDigest))) {
         return {
           ...existingReceipt,
           idempotentReplay: true,
-          verified: true,
+          verified: existingReceipt.partial === true ? false : true,
           durable: true,
           sourcePreserved: true,
           compatibility: gradiaRetraceCompatibility()
         };
       }
-      if (targetBefore.totalItems > 0 && (!existingReceipt || existingReceipt.transferId !== transferId)) {
+      const targetEmptyChatRetryAllowed = gradiaChatMessagesOf(active.chat).length === 0
+        && text(bridge.transferId || '').trim() === transferId;
+      if (targetBefore.totalItems > 0 && (!existingReceipt || existingReceipt.transferId !== transferId) && !targetEmptyChatRetryAllowed) {
         throw new Error('GRADIA_HANDOFF_TARGET_NOT_EMPTY');
       }
 
       const src = sourceSnap.payload;
+      const appliedSlices = [];
+      const skippedSlices = [];
       if (sourceSnap.totalItems > 0 && src) {
-        // 1. runtime_settings:v2 (npcDisposition, forcedBondCards, bodyStateCards)
-        if (src.npcDisposition || src.forcedBondCards.length || src.bodyStateCards.length) {
-          const nextSettings = await readRuntimeSettings();
-          const nextNpc = normalizeNpcDispositionMap(nextSettings.npcDisposition);
-          const nextBond = normalizeForcedBondCardMap(nextSettings.forcedBondCards);
-          const nextBody = normalizeBodyStateCardMap(nextSettings.bodyStateCards);
-          if (src.npcDisposition && !npcDispositionEntryIsEmpty(src.npcDisposition)) nextNpc[targetScopeKey] = cloneJson(src.npcDisposition);
-          if (src.forcedBondCards.length) nextBond[targetScopeKey] = cloneJson(src.forcedBondCards);
-          if (src.bodyStateCards.length) nextBody[targetScopeKey] = cloneJson(src.bodyStateCards);
-          nextSettings.npcDisposition = nextNpc;
-          nextSettings.forcedBondCards = nextBond;
-          nextSettings.bodyStateCards = nextBody;
-          await writeRuntimeSettings(nextSettings);
-        }
-        // 2. lore_cards:v1 (AI proposals + dismissed lists)
-        const lc = src.loreCards;
-        const hasLore = lc && (lc.bodyState.length || lc.forcedBond.length || lc.npcDisposition.length || lc.romancePrefs
-          || lc.dismissed.bodyState.length || lc.dismissed.forcedBond.length || lc.dismissed.npcDisposition.length || lc.dismissed.romancePrefs.length);
-        if (hasLore) {
-          const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
-          const nextLore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
-          if (lc.bodyState.length) nextLore.bodyState[targetScopeKey] = cloneJson(lc.bodyState);
-          if (lc.forcedBond.length) nextLore.forcedBond[targetScopeKey] = cloneJson(lc.forcedBond);
-          if (lc.npcDisposition.length) nextLore.npcDisposition[targetScopeKey] = cloneJson(lc.npcDisposition);
-          if (lc.romancePrefs) nextLore.romancePrefs[targetScopeKey] = cloneJson(lc.romancePrefs);
-          if (lc.dismissed.bodyState.length) nextLore.dismissed.bodyState[targetScopeKey] = cloneJson(lc.dismissed.bodyState);
-          if (lc.dismissed.forcedBond.length) nextLore.dismissed.forcedBond[targetScopeKey] = cloneJson(lc.dismissed.forcedBond);
-          if (lc.dismissed.npcDisposition.length) nextLore.dismissed.npcDisposition[targetScopeKey] = cloneJson(lc.dismissed.npcDisposition);
-          if (lc.dismissed.romancePrefs.length) nextLore.dismissed.romancePrefs[targetScopeKey] = cloneJson(lc.dismissed.romancePrefs);
-          await writeObject(STORAGE_LORE_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeLoreCardsStore(nextLore) });
-        }
-        // 3. intimacy_cards:v1
-        if (src.intimacyCards.length) {
-          const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
-          const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
-          nextIntimacy[targetScopeKey] = cloneJson(src.intimacyCards);
-          await writeObject(STORAGE_INTIMACY_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeIntimacyCardMap(nextIntimacy) });
-        }
-        // 4. relationship_state:v1
-        if (src.relationshipState) {
-          const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
-          const nextRelsim = normalizeRelsimStore(rawRelsim);
-          nextRelsim.chats[targetScopeKey] = cloneJson(src.relationshipState);
-          await writeObject(STORAGE_RELATIONSHIP_STATE_KEY, { version: 1, savedAt: new Date().toISOString(), ...normalizeRelsimStore(nextRelsim) });
+        for (const sliceId of GRADIA_HANDOFF_SLICE_IDS) {
+          const expectedSliceDigest = gradiaSliceDigest(src, sliceId);
+          const beforeSliceDigest = gradiaSliceDigest(targetBefore.payload, sliceId);
+          const emptySliceDigest = gradiaSliceDigest(emptyGradiaChatStatePayload(), sliceId);
+          if (expectedSliceDigest === emptySliceDigest && beforeSliceDigest === emptySliceDigest) {
+            appliedSlices.push(sliceId);
+            continue;
+          }
+          try {
+            await applyGradiaSliceToStore(targetScopeKey, src, sliceId);
+            const sliceReadback = await readGradiaChatStateSnapshot(targetScopeKey, { strict: true });
+            if (gradiaSliceDigest(sliceReadback.payload, sliceId) !== expectedSliceDigest) {
+              throw new Error(`GRADIA_SLICE_READBACK_MISMATCH:${sliceId}`);
+            }
+            appliedSlices.push(sliceId);
+          } catch (sliceError) {
+            skippedSlices.push({ slice: sliceId, reason: compact(sliceError?.message || sliceError || 'slice_write_failed', 200) });
+            try {
+              await applyGradiaSliceToStore(targetScopeKey, targetBefore.payload, sliceId);
+            } catch (_) {}
+          }
         }
       }
 
       // Physical readback verification of both target and untouched source
       const [sourceAfter, targetAfter] = await Promise.all([
-        readGradiaChatStateSnapshot(sourceScopeKey),
-        readGradiaChatStateSnapshot(targetScopeKey)
+        readGradiaChatStateSnapshot(sourceScopeKey, { strict: true }),
+        readGradiaChatStateSnapshot(targetScopeKey, { strict: true })
       ]);
       const sourcePreserved = sourceAfter.digest === sourceSnap.digest;
-      const targetVerified = targetAfter.digest === sourceSnap.digest;
+      const targetVerified = skippedSlices.length === 0 && targetAfter.digest === sourceSnap.digest;
+      const partial = skippedSlices.length > 0;
       if (!sourcePreserved) throw new Error('GRADIA_HANDOFF_SOURCE_MUTATION_DETECTED');
-      if (!targetVerified) throw new Error('GRADIA_HANDOFF_READBACK_MISMATCH');
+      if (sourceSnap.totalItems > 0 && skippedSlices.length === GRADIA_HANDOFF_SLICE_IDS.length) {
+        throw new Error(`GRADIA_HANDOFF_ALL_SLICES_FAILED:${skippedSlices.map(s => s.reason).join(';')}`);
+      }
 
-      // Invalidate in-memory caches so GRADIA GUI & next turn read inherited data immediately
-      Runtime.settings = null;
-      Runtime.settingsLoadedAt = 0;
-      Runtime.loreCards = null;
-      Runtime.intimacyCards = null;
-      Runtime.relationshipState = null;
-      Runtime.activeScopeKey = targetScopeKey;
-      clearRequestReuseCache();
+      invalidateGradiaScopeCaches(targetScopeKey);
 
       const receipt = {
         schema: GRADIA_HANDOFF_RECEIPT_SCHEMA,
         handoffContract: GRADIA_HANDOFF_CONTRACT,
-        ok: true,
-        adopted: sourceSnap.totalItems > 0,
-        verified: true,
+        ok: targetVerified || (partial && targetAfter.totalItems > 0),
+        adopted: sourceSnap.totalItems > 0 && targetAfter.totalItems > 0,
+        verified: targetVerified,
+        partial,
+        appliedSlices,
+        skippedSlices,
         durable: true,
         sourcePreserved: true,
         transferId,
@@ -62695,9 +62873,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         sourceScopeKey,
         targetScopeKey,
         items: targetAfter.totalItems,
+        expectedItems: sourceSnap.totalItems,
         counts: targetAfter.counts,
         sourceDigest: sourceSnap.digest,
         targetDigest: targetAfter.digest,
+        reason: targetVerified ? 'gradia_state_adopted' : (partial ? 'gradia_state_partial_fail_open' : 'gradia_no_data'),
         at: Date.now(),
         compatibility: gradiaRetraceCompatibility()
       };

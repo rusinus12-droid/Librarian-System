@@ -126,6 +126,7 @@ jobs:
             PROGRAM/tests/gradia_world_sim_and_intimacy_fixes_test.cjs \
             PROGRAM/tests/gradia_results_view_gui_test.cjs \
             PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/hayaku_continuity_and_recovery_improvements_test.cjs \
             PROGRAM/tests/hayaku_recovery_vault_concurrent_write_test.cjs \
             PROGRAM/tests/hayaku_analysis_failure_visibility_runtime_test.cjs \
             PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
@@ -154,10 +155,12 @@ jobs:
             PROGRAM/tests/memory_suite_recall_share_test.cjs \
             PROGRAM/tests/flashback_state_line_bookkeeping_free_test.cjs \
             PROGRAM/tests/flashback_source_rule_change_maintenance_test.cjs \
+            PROGRAM/tests/flashback_episode_segmentation_and_recall_test.cjs \
             PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
+            PROGRAM/tests/lia_authoring_binding_and_aux_improvements_test.cjs \
             PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
             PROGRAM/tests/hayaku_read_scope_reuse_test.cjs \
             PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
@@ -179,6 +182,7 @@ jobs:
             PROGRAM/tests/gradia_shadow_previous_test.cjs \
             PROGRAM/tests/gradia_continuity_and_backup_test.cjs \
             PROGRAM/tests/retrace_gradia_handoff_runtime_test.cjs \
+            PROGRAM/tests/retrace_fail_open_popup_and_chained_handoff_test.cjs \
             PROGRAM/tests/hayaku_native_otherax_recovery_runtime_test.cjs \
             PROGRAM/tests/libra_receipt_recovery_desk_contract_test.cjs \
             PROGRAM/tests/libra_lens_slot_preservation_and_reanalysis_test.cjs \

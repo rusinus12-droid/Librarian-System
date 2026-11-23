@@ -23216,6 +23216,40 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .sort((a, b) => a - b);
   };
 
+  const episodeIndexShardIndexes = (manifest = {}, maxShards = 2) => {
+    const shardCount = clampInt(manifest.shardCount, 0, 100000, 0);
+    const summaries = Array.isArray(manifest.shardSummaries) ? manifest.shardSummaries : [];
+    if (!shardCount || summaries.length !== shardCount || Number(manifest.shardIndexVersion || 0) < 1) return [];
+    const cap = clampInt(maxShards, 1, 8, 2);
+    return summaries
+      .map((summary, index) => ({ summary, index: Number(summary?.shardIndex ?? index) }))
+      .filter(({ summary, index }) => index >= 0 && index < shardCount
+        && Array.isArray(summary?.sourceTypes) && summary.sourceTypes.includes('episode_index'))
+      .slice(0, cap)
+      .map(item => item.index)
+      .sort((a, b) => a - b);
+  };
+
+  const episodeChildTurnShardIndexes = (manifest = {}, ranges = [], excludeIndexes = new Set(), maxShards = 2) => {
+    const shardCount = clampInt(manifest.shardCount, 0, 100000, 0);
+    const summaries = Array.isArray(manifest.shardSummaries) ? manifest.shardSummaries : [];
+    if (!shardCount || summaries.length !== shardCount || Number(manifest.shardIndexVersion || 0) < 1 || !Array.isArray(ranges) || !ranges.length) return [];
+    const cap = clampInt(maxShards, 1, 8, 2);
+    const out = [];
+    for (let i = 0; i < summaries.length && out.length < cap; i += 1) {
+      const summary = summaries[i];
+      const idx = Number(summary?.shardIndex ?? i);
+      if (idx < 0 || idx >= shardCount || excludeIndexes.has(idx)) continue;
+      const min = Number(summary?.responseTurnMin || 0) || 0;
+      const max = Number(summary?.responseTurnMax || 0) || 0;
+      if (min <= 0 || max < min) continue;
+      if (ranges.some(range => Number(range?.start || 0) > 0 && min <= Number(range.end || range.start) && max >= Number(range.start))) {
+        out.push(idx);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  };
+
   const mergeRecallShardSelections = (manifest = {}, ...selections) => {
     const shardCount = clampInt(manifest.shardCount, 0, 100000, 0);
     const indexes = Array.from(new Set(selections.flatMap(selection => Array.isArray(selection?.indexes) ? selection.indexes : [])))
@@ -24648,6 +24682,7 @@ const MemorySuiteSnapshotCache = (() => {
       seen.add(cursor.archiveScopeKey);
       const archiveManifest = await loadScopeManifest(cursor.archiveScopeKey);
       let archiveSelection = null;
+      const querySettings = query?.settings || DEFAULTS;
       if (query?.queryText) {
         archiveSelection = selectRecallShardIndexes(
           archiveManifest,
@@ -24655,15 +24690,114 @@ const MemorySuiteSnapshotCache = (() => {
           Array.isArray(query.queryVector) ? query.queryVector : [],
           query.queryProvider || 'hash',
           query.queryType || QUERY_TYPES.FACT,
-          query.settings || DEFAULTS,
+          querySettings,
           query.queryModel || '', query.requestPlan || null
         );
+        if (archiveSelection && !archiveSelection.fullScan && querySettings.episodeIndexEnabled !== false) {
+          const epArchiveIndexes = episodeIndexShardIndexes(archiveManifest, 2);
+          if (epArchiveIndexes.length) {
+            archiveSelection = mergeRecallShardSelections(archiveManifest, archiveSelection, {
+              indexes: epArchiveIndexes,
+              reason: 'episode_index_archive'
+            });
+          }
+        }
       }
       const archive = await loadSingleScopeRecordsForRecall(
         cursor.archiveScopeKey,
         archiveSelection,
         { manifest: archiveManifest, strictReadSet: options.strictReadSet }
       );
+      if (archiveSelection && !archiveSelection.fullScan && query?.queryText && querySettings.episodeIndexEnabled !== false) {
+        const archiveRecords = Array.isArray(archive.records) ? archive.records : [];
+        const loadedArchiveEpisodes = archiveRecords.filter(r => r && (r.autoEpisode || r.sourceType === 'episode_index'));
+        if (loadedArchiveEpisodes.length) {
+          const archiveKnownIds = new Set();
+          const loadedEpById = new Map();
+          for (const rec of archiveRecords) {
+            for (const cand of [rec?.id, rec?.sourceRecordId, rec?.hash, rec?.permanentHistoryId ? `fb_archive_${rec.permanentHistoryId}` : '']) {
+              const key = text(cand || '');
+              if (key) {
+                archiveKnownIds.add(key);
+                if (rec.autoEpisode || rec.sourceType === 'episode_index') loadedEpById.set(key, rec);
+              }
+            }
+          }
+          const qVec = Array.isArray(query.queryVector) ? query.queryVector : [];
+          const epFloor = Math.max(Number(querySettings.minScore || 0) + 0.08, 0.24);
+          const epLimit = clampInt(querySettings.episodeRecallCount, 1, 20, DEFAULTS.episodeRecallCount);
+          const matchedArchiveEps = loadedArchiveEpisodes
+            .map(ep => {
+              let score = 0;
+              if (qVec.length && Array.isArray(ep.vector) && ep.vector.length === qVec.length) {
+                const sem = recallSemanticSignals(ep, qVec, querySettings, {
+                  queryProvider: query.queryProvider || 'hash',
+                  queryModel: query.queryModel || ''
+                });
+                if (sem.vectorComparable && sem.fusedSemantic >= epFloor) score = sem.fusedSemantic;
+              } else {
+                const lex = lexicalOverlap(query.queryText, `${ep.title || ''}\n${ep.text || ''}`);
+                if (lex >= 0.08) score = lex;
+              }
+              return { ep, score };
+            })
+            .filter(row => row.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, epLimit)
+            .map(row => row.ep);
+          const matchedRanges = [];
+          for (const ep of matchedArchiveEps) {
+            const queue = (ep.childIds || []).map(id => ({ id: text(id), depth: 1, parent: ep }));
+            while (queue.length) {
+              const next = queue.shift();
+              if (!next?.id) continue;
+              const childEp = loadedEpById.get(next.id);
+              if (childEp && next.depth < 2) {
+                for (const cid of childEp.childIds || []) queue.push({ id: text(cid), depth: next.depth + 1, parent: childEp });
+                continue;
+              }
+              if (!archiveKnownIds.has(next.id) && next.parent?.turnRange?.start) {
+                matchedRanges.push(next.parent.turnRange);
+                break;
+              }
+            }
+          }
+          const missingArchiveChildShards = episodeChildTurnShardIndexes(
+            archiveManifest,
+            matchedRanges,
+            new Set(archiveSelection.indexes || []),
+            2
+          );
+          if (missingArchiveChildShards.length) {
+            const epArchive = await loadSingleScopeRecordsForRecall(
+              cursor.archiveScopeKey,
+              { indexes: missingArchiveChildShards, reason: 'episode_child_hydration', shardCount: archiveManifest.shardCount },
+              { manifest: archiveManifest, strictReadSet: options.strictReadSet }
+            );
+            archive.records = mergeRecallRecordLists(archiveRecords, epArchive.records || []);
+            if (archive.manifest) {
+              archive.manifest.missingShards = Math.max(0, Number(archive.manifest.missingShards || 0) || 0)
+                + Math.max(0, Number(epArchive.manifest?.missingShards || 0) || 0);
+              archive.manifest.corruptShards = Math.max(0, Number(archive.manifest.corruptShards || 0) || 0)
+                + Math.max(0, Number(epArchive.manifest?.corruptShards || 0) || 0);
+              archive.manifest.recordCountMismatch = archive.manifest.recordCountMismatch === true
+                || epArchive.manifest?.recordCountMismatch === true;
+            }
+            if (archive.performance && epArchive.performance) {
+              archive.performance.storageReads = Number(archive.performance.storageReads || 0) + Number(epArchive.performance.storageReads || 0);
+              archive.performance.cacheHits = Number(archive.performance.cacheHits || 0) + Number(epArchive.performance.cacheHits || 0);
+              archive.performance.shardRequests = Number(archive.performance.shardRequests || 0) + Number(epArchive.performance.shardRequests || 0);
+              archive.performance.storageReadMs = Number(archive.performance.storageReadMs || 0) + Number(epArchive.performance.storageReadMs || 0);
+              archive.performance.parseMs = Number(archive.performance.parseMs || 0) + Number(epArchive.performance.parseMs || 0);
+              archive.performance.checksumMs = Number(archive.performance.checksumMs || 0) + Number(epArchive.performance.checksumMs || 0);
+            }
+            archiveSelection = mergeRecallShardSelections(archiveManifest, archiveSelection, {
+              indexes: missingArchiveChildShards,
+              reason: 'episode_child_hydration'
+            });
+          }
+        }
+      }
       layers.push({ ref: cursor, manifest: archiveManifest, loaded: archive });
       missingShards += Math.max(0, Number(archive.manifest?.missingShards || 0) || 0);
       corruptShards += Math.max(0, Number(archive.manifest?.corruptShards || 0) || 0);
@@ -24775,7 +24909,63 @@ const MemorySuiteSnapshotCache = (() => {
         supersededArchiveMembers.add(memberId);
       }
     }
-    const records = mergeRecallRecordLists(markedArchiveRecords, local.records);
+    let records = mergeRecallRecordLists(markedArchiveRecords, local.records);
+    const epSynthSettings = options.archiveQuery?.settings || DEFAULTS;
+    if (options.archiveQuery && epSynthSettings.episodeIndexEnabled !== false && records.length) {
+      const existingEpisodes = records.filter(r => r && (r.autoEpisode || r.sourceType === 'episode_index') && text(r.episodeLevel || 'scene') === 'scene');
+      const coveredKeys = new Set();
+      for (const ep of existingEpisodes) {
+        for (const cid of Array.isArray(ep.childIds) ? ep.childIds : []) {
+          const k = text(cid || '');
+          if (k) coveredKeys.add(k);
+        }
+        for (const ch of Array.isArray(ep.childHashes) ? ep.childHashes : []) {
+          const k = text(ch || '');
+          if (k) coveredKeys.add(k);
+        }
+      }
+      const isCoveredByEpisode = record => {
+        for (const cand of [record?.id, record?.sourceRecordId, record?.hash, record?.permanentHistoryId ? `fb_archive_${record.permanentHistoryId}` : '']) {
+          const k = text(cand || '');
+          if (k && coveredKeys.has(k)) return true;
+        }
+        const turn = finiteTurnIndex(record);
+        if (turn > 0) {
+          const origin = text(record?.inheritedFromScopeKey || record?.inheritedViaScopeKey || '');
+          for (const ep of existingEpisodes) {
+            const epOrigin = text(ep?.inheritedFromScopeKey || ep?.inheritedViaScopeKey || '');
+            if (origin && epOrigin && origin !== epOrigin) continue;
+            const start = Number(ep?.turnRange?.start || 0) || 0;
+            const end = Number(ep?.turnRange?.end || 0) || 0;
+            if (start > 0 && end >= start && turn >= start && turn <= end) return true;
+          }
+        }
+        return false;
+      };
+      const uncoveredInherited = records
+        .filter(r => (isInheritedScopeMemoryRecord(r) || r.archiveReferenceOnly === true)
+          && isResponseMemoryRecord(r)
+          && !isCoveredByEpisode(r))
+        .sort(responseRecordSort);
+      if (uncoveredInherited.length) {
+        const tailEpisodes = buildEpisodeIndexRecords(
+          uncoveredInherited,
+          { ...epSynthSettings, episodeMinRecords: 1, includeInheritedRecords: true },
+          { scopeKey: text(local.manifest.scopeKey || '') }
+        ).map(ep => ({
+          ...ep,
+          synthesizedInMemory: true,
+          archiveReferenceOnly: uncoveredInherited.some(r => r.archiveReferenceOnly === true),
+          inheritedFromScopeKey: text(uncoveredInherited[0]?.inheritedFromScopeKey || ''),
+          inheritedViaScopeKey: text(uncoveredInherited[0]?.inheritedViaScopeKey || ''),
+          createdAt: text(uncoveredInherited[uncoveredInherited.length - 1]?.createdAt || ep.createdAt || ''),
+          updatedAt: text(uncoveredInherited[uncoveredInherited.length - 1]?.updatedAt || ep.updatedAt || '')
+        }));
+        if (tailEpisodes.length) {
+          records = mergeRecallRecordLists(records, tailEpisodes);
+        }
+      }
+    }
     return {
       manifest: {
         ...local.manifest,
@@ -27294,10 +27484,23 @@ const MemorySuiteSnapshotCache = (() => {
     }
 
     const preparedAt = nowIso();
+    const archiveIdMap = new Map();
+    for (const record of deltaSource) {
+      const archivedId = `fb_archive_${flashbackArchiveRecordIdentity(record)}`;
+      for (const candidate of [record?.id, record?.sourceRecordId, record?.hash]) {
+        const key = text(candidate || '');
+        if (key && !archiveIdMap.has(key)) archiveIdMap.set(key, archivedId);
+      }
+    }
     const prepared = deltaSource.map(record => {
       const identity = flashbackArchiveRecordIdentity(record);
+      const remappedChildIds = Array.isArray(record.childIds)
+        ? record.childIds.map(cid => archiveIdMap.get(text(cid)) || text(cid)).filter(Boolean)
+        : record.childIds;
       return normalizeInheritedScopeRecordForActiveHistory({
         ...record,
+        ...(Array.isArray(remappedChildIds) ? { childIds: remappedChildIds } : {}),
+        sourceRecordId: text(record.sourceRecordId || record.id || ''),
         id: `fb_archive_${identity}`,
         permanentHistoryId: identity,
         archiveCanonicalId: identity,
@@ -28802,13 +29005,42 @@ const MemorySuiteSnapshotCache = (() => {
           && text(freshScope.personaId || '') === expectedTargetPersonaId;
       };
 
+      const flashbackActorMatches = (sourceMeta = {}, targetMeta = {}, markerObj = {}, snapshotData = null) => {
+        const srcChar = text(sourceMeta.characterId || '').trim();
+        const tgtChar = text(targetMeta.characterId || '').trim();
+        if (srcChar && tgtChar && srcChar !== tgtChar) return false;
+        const srcPersona = text(sourceMeta.personaId || '').trim();
+        const tgtPersona = text(targetMeta.personaId || '').trim();
+        if (!srcPersona || !tgtPersona || srcPersona === tgtPersona) return true;
+        const markerLineage = uniqueTextList([
+          markerObj?.forkedFromPersonaId,
+          ...(Array.isArray(markerObj?.personaForkChain) ? markerObj.personaForkChain : []),
+          ...(Array.isArray(markerObj?.lineagePersonaIds) ? markerObj.lineagePersonaIds : [])
+        ], 16);
+        if (markerLineage.includes(srcPersona)) return true;
+        const personas = collectionFrom(snapshotData?.db?.personas);
+        const targetPersona = personas.find(p => sameIdentity(p, tgtPersona));
+        if (targetPersona) {
+          const targetLineage = uniqueTextList([
+            targetPersona.forkedFromPersonaId,
+            targetPersona.forkedFrom,
+            ...(Array.isArray(targetPersona.lineagePersonaIds) ? targetPersona.lineagePersonaIds : [])
+          ], 16);
+          if (targetLineage.includes(srcPersona)) return true;
+        }
+        if (personas.length) {
+          const sourceStillLive = personas.some((p, idx) => sameIdentity(p, srcPersona) || `personaIndex:${idx}` === srcPersona);
+          if (!sourceStillLive) return true;
+        }
+        return false;
+      };
+
       const sourceLocalForActor = await loadScopeRecordsRaw(sourceScopeKey);
       assertCompleteScopeLoad(sourceLocalForActor, 'session handoff receipt actor verification');
       const sourceManifestForActor = sourceLocalForActor.manifest || {};
       const sourceChatMatchesForActor = !sourceManifestForActor.chatId || !markerState.sourceChatId
         || text(sourceManifestForActor.chatId) === text(markerState.sourceChatId);
-      const directActorMatchesForActor = (!sourceManifestForActor.characterId || !targetScope.characterId || text(sourceManifestForActor.characterId) === text(targetScope.characterId))
-        && (!sourceManifestForActor.personaId || !targetScope.personaId || text(sourceManifestForActor.personaId) === text(targetScope.personaId));
+      const directActorMatchesForActor = flashbackActorMatches(sourceManifestForActor, targetScope, marker, targetSnapshot);
       if (!sourceChatMatchesForActor || !directActorMatchesForActor) {
         return { ...targetBase, sourceScopeKey, reason: !sourceChatMatchesForActor ? 'source_chat_mismatch' : 'source_actor_mismatch' };
       }
@@ -28877,8 +29109,7 @@ const MemorySuiteSnapshotCache = (() => {
         return { ...targetBase, sourceScopeKey, records: sourceRecordCount, expectedRecords, reason: 'source_record_count_mismatch' };
       }
       const sourceChatMatches = !sourceManifest.chatId || !markerState.sourceChatId || text(sourceManifest.chatId) === text(markerState.sourceChatId);
-      const directActorMatches = (!sourceManifest.characterId || !targetScope.characterId || text(sourceManifest.characterId) === text(targetScope.characterId))
-        && (!sourceManifest.personaId || !targetScope.personaId || text(sourceManifest.personaId) === text(targetScope.personaId));
+      const directActorMatches = flashbackActorMatches(sourceManifest, targetScope, marker, targetSnapshot);
       const actorMatches = directActorMatches;
       if (!sourceChatMatches || !actorMatches) {
         return { ...targetBase, sourceScopeKey, records: sourceRecordCount, expectedRecords, reason: !sourceChatMatches ? 'source_chat_mismatch' : 'source_actor_mismatch' };
@@ -31919,7 +32150,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -34517,7 +34748,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   const responseRecordsForEpisodeIndex = (records = [], settings = Runtime.settings || DEFAULTS) => buildStoredTurnVectorGroups(records
     .filter(record => (record.sourceType === 'chat_turn' ? 'response' : record.sourceType) === 'response')
-    .filter(record => !isInheritedScopeMemoryRecord(record))
+    .filter(record => settings?.includeInheritedRecords === true || !isInheritedScopeMemoryRecord(record))
     .filter(isRecallIndexableRecord)
     .filter(record => Array.isArray(record.vector) && record.vector.length && sanitizeAssistantForMemory(record.text, { stripRolePrefix: false }) && !isOwnInjection(record.text)))
     .map(group => {
@@ -34561,7 +34792,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   const sceneHeadingFromText = (value = '') => {
     const body = sanitizeAssistantForMemory(value, { stripRolePrefix: false });
-    const matches = body.match(/^(?:#{1,4}\s*)?(?:(?:볼륨|챕터|장면|막)\s*[^\r\n]{0,100}|(?:volume|chapter|scene|act)\s*[^\r\n]{0,100}|(?:章|場面|幕)\s*[^\r\n]{0,100})$/gimu);
+    const matches = body.match(/^(?:#{1,4}\s*(?:(?:볼륨|챕터|장면|막|제\s*\d+\s*(?:장|막|화|부))|(?:volume|chapter|scene|act)|(?:章|場面|幕|第\s*\d+\s*[章幕話部]))(?:\s|[:：\-—]|\d|$)[^\r\n]{0,80}|\[?\s*(?:(?:볼륨|챕터|장면|막)|(?:volume|chapter|scene|act)|(?:章|場面|幕))\s*(?:\d+|[IVXLC]+)(?:\s*[:：\-—\]\)]|\s*$)[^\r\n.!?。！？]{0,60})$/gimu);
     return normalizeForLexical(matches?.[matches.length - 1] || '');
   };
 
@@ -34575,16 +34806,54 @@ const MemorySuiteHealthRecovery = (() => {
     return reasons;
   };
 
-  const sceneTransitionSignals = (previous = {}, current = {}, settings = Runtime.settings || DEFAULTS) => {
+  const latentEpisodeSpecificLocation = value => {
+    const normalized = normalizeForLexical(value || '').trim();
+    if (!normalized || normalized.length < 3) return '';
+    const generic = new Set(['집', '방', '거리', '공원', '카페', '학교', '회사', '병원', '가게', '식당', '차', '차량', 'room', 'home', 'street', 'park', 'cafe', 'school', 'office', 'hospital', 'store', 'restaurant', 'car']);
+    return generic.has(normalized) ? '' : normalized;
+  };
+
+  const recordSpecificLocations = (record = {}) => {
+    const facts = typeof recordStructuredStateFacts === 'function' ? recordStructuredStateFacts(record) : [];
+    const sourceFacts = facts.length ? facts
+      : (typeof visibleContinuityFactsFromText === 'function' ? visibleContinuityFactsFromText(record.text || '', { turn: finiteTurnIndex(record) }) : []);
+    const out = new Set();
+    for (const fact of sourceFacts) {
+      if (normalizeStateProperty(fact?.property || '') !== 'location') continue;
+      const loc = latentEpisodeSpecificLocation(fact?.value || '') || normalizeForLexical(fact?.value || '').trim();
+      if (loc && loc.length >= 2) out.add(loc);
+    }
+    return out;
+  };
+
+  const sceneTransitionSignals = (previous = {}, current = {}, settings = Runtime.settings || DEFAULTS, extra = {}) => {
     const threshold = clampNumber(settings.episodeBoundarySimilarity, -1, 1, DEFAULTS.episodeBoundarySimilarity);
     const reasons = explicitSceneTransitionSignals(current.text || '');
     const previousHeading = sceneHeadingFromText(previous.text || '');
     const currentHeading = sceneHeadingFromText(current.text || '');
     if (currentHeading && currentHeading !== previousHeading) reasons.push('heading_changed');
     const comparable = recordVectorsComparable(previous, current, settings);
-    const similarity = comparable ? dot(previous.vector, current.vector) : null;
-    if (comparable && similarity < threshold) reasons.push('embedding_discontinuity');
+    const pairSim = comparable ? dot(previous.vector, current.vector) : null;
+    const windowSim = comparable && Array.isArray(extra.windowPrevVector) && Array.isArray(extra.windowCurrVector)
+      && extra.windowPrevVector.length && extra.windowPrevVector.length === extra.windowCurrVector.length
+      ? dot(extra.windowPrevVector, extra.windowCurrVector) : pairSim;
+    const centroidSim = comparable && Array.isArray(extra.runningCentroid) && extra.runningCentroid.length === current.vector.length
+      ? dot(extra.runningCentroid, current.vector) : pairSim;
+    const effectiveThreshold = Number.isFinite(extra.adaptiveFloor) ? extra.adaptiveFloor : threshold;
+    const shortBridgeProtected = windowSim !== null && pairSim !== null
+      && pairSim < effectiveThreshold && windowSim >= Math.max(effectiveThreshold + 0.12, 0.52);
+    if (comparable && !shortBridgeProtected && ((windowSim ?? pairSim) < effectiveThreshold || extra.strongValleyDip === true)) {
+      reasons.push('embedding_discontinuity');
+    }
+    if (comparable && !shortBridgeProtected && Number(extra.spanLength || 0) >= 3 && centroidSim !== null && centroidSim < effectiveThreshold) {
+      reasons.push('centroid_drift');
+    }
     if (!comparable) reasons.push('embedding_unavailable');
+    const prevLocations = extra.activeLocations?.size ? extra.activeLocations : recordSpecificLocations(previous);
+    const currLocations = recordSpecificLocations(current);
+    if (prevLocations.size > 0 && currLocations.size > 0 && !Array.from(currLocations).some(loc => prevLocations.has(loc))) {
+      reasons.push('structured_location_shift');
+    }
     const previousEntities = recordEntityAnchorSet(previous);
     const currentEntities = recordEntityAnchorSet(current);
     const entityUnion = new Set([...previousEntities, ...currentEntities]);
@@ -34592,12 +34861,26 @@ const MemorySuiteHealthRecovery = (() => {
       ? Array.from(previousEntities).filter(entity => currentEntities.has(entity)).length / entityUnion.size
       : 1;
     if (previousEntities.size >= 2 && currentEntities.size >= 2 && entityOverlap < 0.2) reasons.push('participant_shift');
-    const hardReasons = new Set(['explicit_time_jump', 'flashback_transition', 'pov_transition', 'heading_changed', 'explicit_location_transition']);
+    // Casual movement verbs ("entered the study") are treated as soft cues combined with
+    // structured location shifts, participant swaps, or semantic drops rather than hard cuts.
+    const hardReasons = new Set(['explicit_time_jump', 'flashback_transition', 'pov_transition', 'heading_changed']);
     const hard = reasons.some(reason => hardReasons.has(reason));
-    const narrativeReasons = reasons.filter(reason => !['embedding_discontinuity', 'embedding_unavailable', 'participant_shift'].includes(reason));
+    const narrativeReasons = reasons.filter(reason => !['embedding_discontinuity', 'centroid_drift', 'embedding_unavailable', 'participant_shift'].includes(reason));
+    const effectiveSim = windowSim ?? pairSim;
     const soft = (
-      reasons.includes('explicit_location_transition')
-      || (reasons.includes('embedding_discontinuity') && narrativeReasons.length >= 1)
+      reasons.includes('structured_location_shift')
+      || (reasons.includes('explicit_location_transition') && (
+        reasons.includes('participant_shift')
+        || reasons.includes('embedding_discontinuity')
+        || reasons.includes('centroid_drift')
+        || (effectiveSim !== null && effectiveSim < Math.max(effectiveThreshold + 0.18, 0.55))
+      ))
+      || ((reasons.includes('embedding_discontinuity') || reasons.includes('centroid_drift')) && (
+        extra.strongValleyDip === true
+        || reasons.includes('participant_shift')
+        || narrativeReasons.length >= 1
+      ))
+      || (reasons.includes('participant_shift') && effectiveSim !== null && effectiveSim < Math.max(effectiveThreshold + 0.15, 0.52))
       || narrativeReasons.length >= 2
     );
     return {
@@ -34605,7 +34888,9 @@ const MemorySuiteHealthRecovery = (() => {
       hard,
       soft,
       reasons: Array.from(new Set(reasons)),
-      similarity,
+      similarity: effectiveSim,
+      pairSimilarity: pairSim,
+      centroidSimilarity: centroidSim,
       vectorComparable: comparable,
       entityOverlap
     };
@@ -34661,31 +34946,156 @@ const MemorySuiteHealthRecovery = (() => {
     return new Set(selected.map(turn => turn.turnKey));
   };
 
+  const averageRecordVector = (records = [], settings = Runtime.settings || DEFAULTS) => {
+    const vectorGroup = compatibleRecordVectorGroup(records, settings);
+    const base = vectorGroup.records[0]?.vector || [];
+    if (!base.length) return [];
+    const sum = new Array(base.length).fill(0);
+    let count = 0;
+    for (const record of vectorGroup.records) {
+      for (let i = 0; i < base.length; i += 1) sum[i] += Number(record.vector[i]) || 0;
+      count += 1;
+    }
+    if (!count) return [];
+    return normalizeVector(sum.map(value => value / count));
+  };
+
   const detectEpisodeBoundaries = (turnRecords = [], settings = Runtime.settings || DEFAULTS) => {
     if (!turnRecords.length) return [];
     const minRecords = clampInt(settings.episodeMinRecords, 1, 40, DEFAULTS.episodeMinRecords);
     const maxRecords = clampInt(settings.episodeMaxRecords, 2, 120, DEFAULTS.episodeMaxRecords);
-    const boundaries = [0];
+    const baseThreshold = clampNumber(settings.episodeBoundarySimilarity, -1, 1, DEFAULTS.episodeBoundarySimilarity);
+    const n = turnRecords.length;
+    const winSims = new Array(n).fill(null);
+    const winPrevVecs = new Array(n).fill(null);
+    const winCurrVecs = new Array(n).fill(null);
+    for (let i = 1; i < n; i += 1) {
+      const prevSlice = turnRecords.slice(Math.max(0, i - 2), i);
+      const currSlice = turnRecords.slice(i, Math.min(n, i + 2));
+      const pVec = averageRecordVector(prevSlice, settings);
+      const cVec = averageRecordVector(currSlice, settings);
+      winPrevVecs[i] = pVec;
+      winCurrVecs[i] = cVec;
+      if (pVec.length && pVec.length === cVec.length && recordVectorsComparable(turnRecords[i - 1], turnRecords[i], settings)) {
+        winSims[i] = dot(pVec, cVec);
+      }
+    }
+    const validSims = winSims.filter(v => v !== null).slice().sort((a, b) => a - b);
+    let adaptiveFloor = baseThreshold;
+    if (validSims.length >= 4) {
+      const mid = Math.floor(validSims.length / 2);
+      const med = validSims.length % 2 ? validSims[mid] : (validSims[mid - 1] + validSims[mid]) / 2;
+      const devs = validSims.map(v => Math.abs(v - med)).sort((a, b) => a - b);
+      const dMid = Math.floor(devs.length / 2);
+      const mad = devs.length % 2 ? devs[dMid] : (devs[dMid - 1] + devs[dMid]) / 2;
+      adaptiveFloor = clampNumber(Math.min(Math.max(baseThreshold, med - Math.max(0.08, mad * 1.8)), 0.68), -1, 1, baseThreshold);
+    }
+    const strongValleyDip = new Array(n).fill(false);
+    for (let i = 1; i < n; i += 1) {
+      const s = winSims[i];
+      if (s === null || s >= adaptiveFloor) continue;
+      const leftDrop = i === 1 || winSims[i - 1] === null || s <= winSims[i - 1] - 0.06;
+      const rightDrop = i === n - 1 || winSims[i + 1] === null || s <= winSims[i + 1] - 0.06;
+      strongValleyDip[i] = leftDrop && rightDrop;
+    }
+
+    const perTurnDiag = new Array(n).fill(null);
+    let boundaries = [0];
     const diagnostics = new Map([[0, { reasons: ['start'], hard: true }]]);
     let spanStart = 0;
-    for (let i = 1; i < turnRecords.length; i += 1) {
+    let activeLocations = recordSpecificLocations(turnRecords[0]);
+    for (let i = 1; i < n; i += 1) {
       const prev = turnRecords[i - 1];
       const curr = turnRecords[i];
-      const transition = sceneTransitionSignals(prev, curr, settings);
-      const forcedMax = (i - spanStart) >= maxRecords;
+      const spanSlice = turnRecords.slice(spanStart, i);
+      const runningCentroid = averageRecordVector(spanSlice, settings);
+      const transition = sceneTransitionSignals(prev, curr, settings, {
+        windowPrevVector: winPrevVecs[i],
+        windowCurrVector: winCurrVecs[i],
+        runningCentroid,
+        adaptiveFloor,
+        strongValleyDip: strongValleyDip[i],
+        spanLength: i - spanStart,
+        activeLocations
+      });
+      perTurnDiag[i] = transition;
       const softAllowed = transition.hard || (i - spanStart) >= minRecords;
-      if (forcedMax || (transition.boundary && softAllowed)) {
+      if (transition.boundary && softAllowed) {
         boundaries.push(i);
         diagnostics.set(i, {
-          reasons: forcedMax ? [...transition.reasons, 'max_records'] : transition.reasons,
-          hard: forcedMax || transition.hard,
+          reasons: transition.reasons,
+          hard: transition.hard,
           similarity: transition.similarity,
           vectorComparable: transition.vectorComparable
         });
         spanStart = i;
+        activeLocations = recordSpecificLocations(curr);
+      } else if ((i - spanStart) >= maxRecords) {
+        const searchStart = Math.max(spanStart + minRecords, i - Math.floor(maxRecords / 2));
+        let bestK = i;
+        let bestCost = Number.POSITIVE_INFINITY;
+        for (let k = searchStart; k <= i; k += 1) {
+          const simVal = winSims[k] !== null ? winSims[k] : (perTurnDiag[k]?.similarity ?? 1);
+          const cuePenalty = perTurnDiag[k]?.soft || perTurnDiag[k]?.reasons?.includes('participant_shift') || perTurnDiag[k]?.reasons?.includes('explicit_location_transition') ? 0.12 : 0;
+          const cost = simVal - cuePenalty;
+          if (cost < bestCost) {
+            bestCost = cost;
+            bestK = k;
+          }
+        }
+        const seamDiag = perTurnDiag[bestK];
+        boundaries.push(bestK);
+        diagnostics.set(bestK, {
+          reasons: Array.from(new Set([...(seamDiag?.reasons || []), 'max_records_valley'])),
+          hard: Boolean(seamDiag?.hard),
+          similarity: seamDiag?.similarity ?? winSims[bestK],
+          vectorComparable: seamDiag?.vectorComparable ?? true
+        });
+        spanStart = bestK;
+        activeLocations = recordSpecificLocations(turnRecords[bestK]);
+        i = bestK;
+      } else {
+        const currLocs = recordSpecificLocations(curr);
+        if (currLocs.size) activeLocations = currLocs;
       }
     }
-    boundaries.push(turnRecords.length);
+    boundaries.push(n);
+
+    // Zero-orphan post-merge: fold spans shorter than minRecords into their closer neighbor
+    // unless sealed on both sides by hard narrative cuts.
+    if (n >= minRecords && boundaries.length > 2) {
+      let merged = true;
+      while (merged && boundaries.length > 2) {
+        merged = false;
+        for (let m = 0; m < boundaries.length - 1; m += 1) {
+          const sStart = boundaries[m];
+          const sEnd = boundaries[m + 1];
+          if ((sEnd - sStart) >= minRecords) continue;
+          const leftInternal = m > 0;
+          const rightInternal = m + 1 < boundaries.length - 1;
+          const leftDiag = leftInternal ? diagnostics.get(sStart) : null;
+          const rightDiag = rightInternal ? diagnostics.get(sEnd) : null;
+          const canDropLeft = leftInternal && leftDiag?.hard !== true && (sEnd - boundaries[m - 1]) <= maxRecords + minRecords;
+          const canDropRight = rightInternal && rightDiag?.hard !== true && (boundaries[m + 2] - sStart) <= maxRecords + minRecords;
+          if (!canDropLeft && !canDropRight) continue;
+          let dropIdx = -1;
+          if (canDropLeft && canDropRight) {
+            const leftSim = Number.isFinite(leftDiag?.similarity) ? leftDiag.similarity : 0.5;
+            const rightSim = Number.isFinite(rightDiag?.similarity) ? rightDiag.similarity : 0.5;
+            dropIdx = rightSim >= leftSim ? m + 1 : m;
+          } else {
+            dropIdx = canDropLeft ? m : m + 1;
+          }
+          if (dropIdx > 0 && dropIdx < boundaries.length - 1) {
+            diagnostics.delete(boundaries[dropIdx]);
+            boundaries.splice(dropIdx, 1);
+            merged = true;
+            break;
+          }
+        }
+      }
+    }
+
     try { Object.defineProperty(boundaries, 'diagnostics', { value: diagnostics, enumerable: false, configurable: true }); } catch (_) {}
     return boundaries;
   };
@@ -34722,19 +35132,34 @@ const MemorySuiteHealthRecovery = (() => {
 
   const isEpisodeMetaSentence = (sentence = '') => /<statusData|Thoughts|Reasoning|HAYAKU|schema|prompt|template|metadata|statusData|chain[_ -]?of[_ -]?thought/i.test(sentence);
 
-  const scoreSentenceForEpisode = (sentence, anchors = []) => {
+  const episodeStateCueTermsForRecord = (record = {}) => {
+    const facts = typeof recordStructuredStateFacts === 'function' ? recordStructuredStateFacts(record) : [];
+    const sourceFacts = facts.length ? facts
+      : (typeof visibleContinuityFactsFromText === 'function' ? visibleContinuityFactsFromText(record.text || '', { turn: finiteTurnIndex(record) }) : []);
+    const terms = [];
+    for (const fact of sourceFacts) {
+      const prop = normalizeStateProperty(fact?.property || '');
+      if (!['location', 'carrying', 'object_state'].includes(prop)) continue;
+      const val = normalizeForLexical(fact?.value || '').trim();
+      if (val && val.length >= 2) terms.push(val);
+    }
+    return Array.from(new Set(terms));
+  };
+
+  const scoreSentenceForEpisode = (sentence, anchors = [], stateCueTerms = []) => {
     const body = text(sentence || '').trim();
     if (!body || isEpisodeMetaSentence(body)) return -10;
     let score = 0;
     const normalized = normalizeForLexical(body);
     if ((anchors || []).some(anchor => anchor && normalized.includes(normalizeForLexical(anchor)))) score += 2;
+    if ((stateCueTerms || []).some(term => term && normalized.includes(term))) score += 1.5;
     if (/[가-힣]{2,}\s*(은|는|이|가|을|를|에게|와|과)/u.test(body)) score += 1;
     if (/(말했다|물었다|바라보았다|들어왔다|나갔다|안았다|잡았다|멈췄다|움직였다|속삭였다|웃었다|울었다|돌아섰다|다가왔다|떠났다|said|asked|looked|entered|left|held|stopped|moved)/i.test(body)) score += 1;
     score += Math.min(1.5, computeImportanceDensity(body) * 2);
     return score;
   };
 
-  const bestEpisodeSnippet = (record = {}) => {
+  const bestEpisodeSnippet = (record = {}, stateCueTerms = null) => {
     const clean = stripNarrativeSeparatorLines(stripNarrativeStructuralRoleMarkers(
       sanitizeAssistantForMemory(record.text, { stripRolePrefix: false })
     )).trim();
@@ -34744,24 +35169,39 @@ const MemorySuiteHealthRecovery = (() => {
       .map(unit => segmented.body.slice(unit.start, unit.end).trim())
       .filter(part => part && !isEpisodeMetaSentence(part));
     const anchors = Array.from(recordEntityAnchorSet(record));
+    const cues = Array.isArray(stateCueTerms) ? stateCueTerms : episodeStateCueTermsForRecord(record);
     const best = (sentences.length ? sentences : [clean])
-      .map(sentence => ({ sentence, score: scoreSentenceForEpisode(sentence, anchors) }))
+      .map(sentence => ({ sentence, score: scoreSentenceForEpisode(sentence, anchors, cues) }))
       .sort((a, b) => b.score - a.score || b.sentence.length - a.sentence.length)[0];
     return fitNarrativeTextToBudget(best?.sentence || firstSnippet(clean), 260);
   };
 
-  const averageRecordVector = (records = [], settings = Runtime.settings || DEFAULTS) => {
-    const vectorGroup = compatibleRecordVectorGroup(records, settings);
-    const base = vectorGroup.records[0]?.vector || [];
-    if (!base.length) return [];
-    const sum = new Array(base.length).fill(0);
-    let count = 0;
-    for (const record of vectorGroup.records) {
-      for (let i = 0; i < base.length; i += 1) sum[i] += Number(record.vector[i]) || 0;
-      count += 1;
+  const selectEpisodeSnippets = (children = [], maxSnippets = 8) => {
+    const items = [];
+    for (let idx = 0; idx < children.length; idx += 1) {
+      const record = children[idx];
+      const cues = episodeStateCueTermsForRecord(record);
+      const snippet = bestEpisodeSnippet(record, cues);
+      if (!snippet) continue;
+      const importance = Number(record.importanceScore ?? computeImportanceDensity(sanitizeAssistantForMemory(record.text, { stripRolePrefix: false }))) || 0;
+      items.push({ idx, snippet, priority: importance + (cues.length ? 0.35 : 0) });
     }
-    if (!count) return [];
-    return normalizeVector(sum.map(value => value / count));
+    if (items.length <= maxSnippets) return items.map(item => item.snippet);
+    const picked = new Set([0, items.length - 1]);
+    const middleSlots = Math.max(0, maxSnippets - 2);
+    const inner = items.slice(1, items.length - 1);
+    for (let bucket = 0; bucket < middleSlots && inner.length; bucket += 1) {
+      const bStart = Math.floor(bucket * inner.length / middleSlots);
+      const bEnd = Math.max(bStart + 1, Math.floor((bucket + 1) * inner.length / middleSlots));
+      let bestItem = null;
+      for (let j = bStart; j < bEnd && j < inner.length; j += 1) {
+        const globalIdx = j + 1;
+        if (picked.has(globalIdx)) continue;
+        if (!bestItem || inner[j].priority > bestItem.priority) bestItem = { globalIdx, priority: inner[j].priority };
+      }
+      if (bestItem) picked.add(bestItem.globalIdx);
+    }
+    return Array.from(picked).sort((a, b) => a - b).map(pos => items[pos].snippet);
   };
 
   const buildEpisodeIndexRecords = (records = [], settings = Runtime.settings || DEFAULTS, scope = {}) => {
@@ -34780,11 +35220,11 @@ const MemorySuiteHealthRecovery = (() => {
         (start > 0 && boundaryInfo?.hard === true)
         || (end < turns.length && endBoundaryInfo?.hard === true)
       );
-      if (children.length < minRecords && !hardBoundedShortScene) continue;
+      if (children.length < minRecords && !hardBoundedShortScene && turns.length < minRecords) continue;
       const vector = averageRecordVector(children, settings);
       if (!vector.length) continue;
       const vectorSpace = recordVectorSpace(children[0], settings);
-      const snippets = children.map(record => bestEpisodeSnippet(record)).filter(Boolean).slice(0, 6);
+      const snippets = selectEpisodeSnippets(children, 8);
       const childIds = children.flatMap(record => Array.isArray(record.turnRecordIds) ? record.turnRecordIds : [record.id || record.hash]).filter(Boolean);
       const childHashes = children.flatMap(record => Array.isArray(record.turnRecordHashes) ? record.turnRecordHashes : [record.hash || record.id]).filter(Boolean);
       const sourceHash = stableHash(childHashes.join('\n'));
@@ -34839,17 +35279,43 @@ const MemorySuiteHealthRecovery = (() => {
     if (settings.episodeHierarchyEnabled && out.length >= 2) {
       const sceneEpisodes = out.slice();
       const parentSize = clampInt(settings.episodeParentSize, 2, 20, DEFAULTS.episodeParentSize);
+      const sessionBreakFloor = Math.min(0.32, clampNumber(settings.episodeBoundarySimilarity, -1, 1, DEFAULTS.episodeBoundarySimilarity));
       let parentNo = 0;
       const parentGroups = [];
       let parentGroup = [];
       for (const episode of sceneEpisodes) {
-        if (parentGroup.length && (parentGroup.length >= parentSize || !recordVectorsComparable(parentGroup[0], episode, settings))) {
+        const hasMajorBreak = Array.isArray(episode.boundaryBeforeReasons) && episode.boundaryBeforeReasons.some(reason => (
+          reason === 'explicit_time_jump' || reason === 'flashback_transition' || reason === 'heading_changed'
+        ));
+        let strongCentroidDrop = false;
+        if (parentGroup.length >= 2 && Array.isArray(episode.vector) && episode.vector.length) {
+          const groupVec = averageRecordVector(parentGroup, settings);
+          if (groupVec.length === episode.vector.length && recordVectorsComparable(parentGroup[0], episode, settings)) {
+            strongCentroidDrop = dot(groupVec, episode.vector) < sessionBreakFloor;
+          }
+        }
+        if (parentGroup.length && (
+          parentGroup.length >= parentSize
+          || !recordVectorsComparable(parentGroup[0], episode, settings)
+          || (parentGroup.length >= 2 && (hasMajorBreak || strongCentroidDrop))
+        )) {
           parentGroups.push(parentGroup);
           parentGroup = [];
         }
         parentGroup.push(episode);
       }
       if (parentGroup.length) parentGroups.push(parentGroup);
+      if (parentGroups.length >= 2 && parentGroups[parentGroups.length - 1].length === 1) {
+        const prevGroup = parentGroups[parentGroups.length - 2];
+        const tailEpisode = parentGroups[parentGroups.length - 1][0];
+        const hasTailBreak = Array.isArray(tailEpisode.boundaryBeforeReasons) && tailEpisode.boundaryBeforeReasons.some(reason => (
+          reason === 'explicit_time_jump' || reason === 'flashback_transition' || reason === 'pov_transition'
+        ));
+        if (!hasTailBreak && prevGroup.length <= parentSize && recordVectorsComparable(prevGroup[0], tailEpisode, settings)) {
+          prevGroup.push(tailEpisode);
+          parentGroups.pop();
+        }
+      }
       for (const children of parentGroups) {
         if (children.length < 2) continue;
         const vector = averageRecordVector(children, settings);
@@ -36578,8 +37044,21 @@ const MemorySuiteHealthRecovery = (() => {
         && recallEntityMatch(record, anchors) > 0
       ) force(record, 'entity_focused', 0.88);
     }
-    if (queryIntent.topic === QUERY_TYPES.EVENT || context.queryType === QUERY_TYPES.EVENT) {
-      const recordById = new Map(responseRecords.map(record => [text(record.id || record.hash), record]));
+    if (settings.episodeIndexEnabled !== false && (
+      queryIntent.topic === QUERY_TYPES.EVENT
+      || context.queryType === QUERY_TYPES.EVENT
+      || context.episodeQueryType === QUERY_TYPES.EVENT
+      || [TEMPORAL_INTENTS.PAST, TEMPORAL_INTENTS.TIMELINE, TEMPORAL_INTENTS.COMPARE].includes(context.episodeTemporalIntent || context.temporalIntent)
+    )) {
+      const responseById = new Map(responseRecords.map(record => [text(record.id || record.hash), record]));
+      const allById = new Map();
+      for (const rec of records || []) {
+        const rid = text(rec?.id || '');
+        const rhash = text(rec?.hash || '');
+        if (rid) allById.set(rid, rec);
+        if (rhash && !allById.has(rhash)) allById.set(rhash, rec);
+      }
+      const episodeScoreFloor = Math.max(0.22, Number(settings.minScore || 0));
       const episodeParents = (records || [])
         .filter(record => record.autoEpisode || record.sourceType === 'episode_index')
         .map(record => {
@@ -36589,12 +37068,28 @@ const MemorySuiteHealthRecovery = (() => {
           const sparseHit = scoreBm25fCandidates([record], queryText, settings, { limit: 1 })[0];
           return { record, score: Math.max(semantic.vectorComparable ? semantic.fusedSemantic : 0, sparseHit?.score || 0) };
         })
+        .filter(item => item.score >= episodeScoreFloor)
         .sort((a, b) => b.score - a.score)
         .slice(0, Math.max(1, Number(settings.episodeRecallCount || DEFAULTS.episodeRecallCount)));
+      const childLimit = clampInt(settings.episodeChildLimit, 0, 120, DEFAULTS.episodeChildLimit);
+      let expanded = 0;
       for (const parent of episodeParents) {
-        for (const childId of parent.record.childIds || []) {
-          const child = recordById.get(text(childId));
-          if (child) force(child, 'episode_child', 0.84 + parent.score * 0.1);
+        const queue = (parent.record.childIds || []).map(id => ({ id: text(id), depth: 1 }));
+        const seenChild = new Set();
+        while (queue.length && expanded < childLimit) {
+          const next = queue.shift();
+          if (!next?.id || seenChild.has(next.id)) continue;
+          seenChild.add(next.id);
+          const child = responseById.get(next.id) || allById.get(next.id);
+          if (!child) continue;
+          if ((child.autoEpisode || child.sourceType === 'episode_index') && next.depth < 2) {
+            for (const nestedId of child.childIds || []) queue.push({ id: text(nestedId), depth: next.depth + 1 });
+            continue;
+          }
+          if (isResponseMemoryRecord(child)) {
+            force(child, 'episode_child', 0.84 + parent.score * 0.1);
+            expanded += 1;
+          }
         }
       }
     }
@@ -37552,7 +38047,14 @@ const MemorySuiteHealthRecovery = (() => {
     if(c.lexicalFallback)return {passed:Number(c.hybridLexicalSignal||0)>=0.3,reasons:['keyword_fallback']};
     if(c.contextualSemantic){
       if(Number(c.semanticCosine)>=Number(settings.minScore||0))return {passed:true,reasons:['contextual_embedding']};
-      return {passed:Number(c.hybridLexicalSignal||0)>=0.5,reasons:['hybrid_lexical']};
+      if(Number(c.hybridLexicalSignal||0)>=0.5)return {passed:true,reasons:['hybrid_lexical']};
+      if(Number(c.episodeTraversal||0)>=0.24 && Number(c.semanticCosine||0)>0 && Number(item.score||0)>=Number(settings.minScore||0)){
+        return {passed:true,reasons:['contextual_episode_child']};
+      }
+      if(Number(c.latentEpisodic||0)>=FLASHBACK_LATENT_EPISODIC_TUNING.minCueSignal && Number(item.score||0)>=Number(settings.minScore||0)){
+        return {passed:true,reasons:['latent_episode_cue']};
+      }
+      return {passed:false,reasons:['below_contextual_floor']};
     }
     const group = sourceGroup(item.record?.sourceType);
     const reasons = [];
@@ -37600,92 +38102,137 @@ const MemorySuiteHealthRecovery = (() => {
 
   const selectDiverseRecall = (items, settings) => selectFlashbackLegacyCandidates(items,settings);
 
+  const registerRecordLookupKeys = (map, record, value = record) => {
+    if (!map || !record || typeof record !== 'object') return;
+    for (const candidate of [
+      record.id,
+      record.sourceRecordId,
+      record.hash,
+      record.permanentHistoryId ? `fb_archive_${record.permanentHistoryId}` : ''
+    ]) {
+      const key = text(candidate || '');
+      if (key && !map.has(key)) map.set(key, value);
+    }
+  };
+
   const applyEpisodeTraversalBoost = (items, records, query, queryVector, queryAnchors, queryType, settings, context = {}) => {
+    const effectiveQueryType = context.episodeQueryType || queryType;
+    const effectiveTemporal = context.episodeTemporalIntent || context.temporalIntent;
     const multiResolutionEligible = settings.multiResolutionRecallEnabled !== false && (
-      [TEMPORAL_INTENTS.PAST, TEMPORAL_INTENTS.TIMELINE, TEMPORAL_INTENTS.COMPARE].includes(context.temporalIntent)
+      [TEMPORAL_INTENTS.PAST, TEMPORAL_INTENTS.TIMELINE, TEMPORAL_INTENTS.COMPARE].includes(effectiveTemporal)
       || (Array.isArray(context.queryTopics) && context.queryTopics.length > 1)
+      || context.semanticQuery === true
     );
-    if (!settings.episodeIndexEnabled || (queryType !== QUERY_TYPES.EVENT && !multiResolutionEligible)) return { episodeCount: 0, childCount: 0, boosted: 0 };
+    if (!settings.episodeIndexEnabled || (effectiveQueryType !== QUERY_TYPES.EVENT && !multiResolutionEligible)) {
+      return { episodeCount: 0, childCount: 0, boosted: 0, forced: 0 };
+    }
     const episodeLimit = clampInt(settings.episodeRecallCount, 0, 20, DEFAULTS.episodeRecallCount);
     const childLimit = clampInt(settings.episodeChildLimit, 0, 120, DEFAULTS.episodeChildLimit);
-    if (!episodeLimit || !childLimit) return { episodeCount: 0, childCount: 0, boosted: 0 };
+    if (!episodeLimit || !childLimit) return { episodeCount: 0, childCount: 0, boosted: 0, forced: 0 };
+    const episodeMinSimilarity = Math.max(Number(settings.minScore || 0) + 0.08, 0.24);
     const episodes = records
       .filter(record => (record.autoEpisode || record.sourceType === 'episode_index') && Array.isArray(record.vector) && record.vector.length === queryVector.length)
       .map(record => {
         const semantic = recallSemanticSignals(record, queryVector, settings, context);
-        return { record, semantic, score: semantic.fusedSemantic + ((Number(record.importanceScore || 0) || 0) * 0.08) };
+        const importanceTerm = context.semanticQuery === true ? 0 : ((Number(record.importanceScore || 0) || 0) * 0.08);
+        return { record, semantic, score: semantic.fusedSemantic + importanceTerm };
       })
-      .filter(item => item.semantic.vectorComparable)
+      .filter(item => item.semantic.vectorComparable && item.score >= episodeMinSimilarity)
       .sort((a, b) => b.score - a.score)
       .slice(0, episodeLimit);
-    if (!episodes.length) return { episodeCount: 0, childCount: 0, boosted: 0 };
+    if (!episodes.length) return { episodeCount: 0, childCount: 0, boosted: 0, forced: 0 };
     const recordById = new Map();
-    for (const record of records) {
-      const id = record?.id || record?.hash || '';
-      if (id) recordById.set(id, record);
-    }
+    for (const record of records) registerRecordLookupKeys(recordById, record, record);
     const childIds = new Set();
+    const parentScoreByChildId = new Map();
     for (const item of episodes) {
-      const queue = (item.record.childIds || []).map(id => ({ id, depth: 1 }));
+      const queue = [
+        ...(Array.isArray(item.record.childIds) ? item.record.childIds : []),
+        ...(Array.isArray(item.record.childHashes) ? item.record.childHashes : [])
+      ].map(id => ({ id: text(id), depth: 1 }));
       while (queue.length && childIds.size < childLimit) {
         const next = queue.shift();
-        if (!next?.id || childIds.has(next.id)) continue;
-        childIds.add(next.id);
+        if (!next?.id) continue;
         const child = recordById.get(next.id);
+        const resolvedKey = child ? text(child.id || child.hash || next.id) : next.id;
+        if (!resolvedKey || childIds.has(resolvedKey)) continue;
+        childIds.add(resolvedKey);
+        parentScoreByChildId.set(resolvedKey, Math.max(parentScoreByChildId.get(resolvedKey) || 0, item.score));
         if (next.depth < 2 && child?.sourceType === 'episode_index') {
-          for (const nestedId of child.childIds || []) queue.push({ id: nestedId, depth: next.depth + 1 });
+          for (const nestedId of [
+            ...(Array.isArray(child.childIds) ? child.childIds : []),
+            ...(Array.isArray(child.childHashes) ? child.childHashes : [])
+          ]) {
+            queue.push({ id: text(nestedId), depth: next.depth + 1 });
+          }
         }
       }
       if (childIds.size >= childLimit) break;
     }
-    if (!childIds.size) return { episodeCount: episodes.length, childCount: 0, boosted: 0 };
+    if (!childIds.size) return { episodeCount: episodes.length, childCount: 0, boosted: 0, forced: 0 };
     let boosted = 0;
     let forced = 0;
     const episodeScore = Math.max(0, ...episodes.map(item => cosineToUnit(item.score)));
     const itemById = new Map();
+    for (const item of items) registerRecordLookupKeys(itemById, item?.record, item);
+    const boostedItems = new Set();
     for (const item of items) {
-      const id = item.record?.id || item.record?.hash || '';
-      if (id) itemById.set(id, item);
-    }
-    for (const item of items) {
-      const id = item.record?.id || item.record?.hash || '';
-      if (!id || !childIds.has(id)) continue;
-      const boost = 0.035 + Math.min(0.04, episodeScore * 0.04);
+      const id = text(item.record?.id || item.record?.hash || '');
+      const matched = (id && childIds.has(id))
+        || (item.record?.sourceRecordId && childIds.has(text(item.record.sourceRecordId)))
+        || (item.record?.permanentHistoryId && childIds.has(`fb_archive_${text(item.record.permanentHistoryId)}`));
+      if (!matched || boostedItems.has(item)) continue;
+      boostedItems.add(item);
+      if (context.semanticQuery === true && Number(item.cosine || 0) <= 0.02) continue;
+      const parentScore = Number(parentScoreByChildId.get(id)
+        || (item.record?.sourceRecordId ? parentScoreByChildId.get(text(item.record.sourceRecordId)) : 0)
+        || episodeScore);
+      const boost = context.semanticQuery === true
+        ? 0.05 + Math.min(0.14, parentScore * 0.20)
+        : 0.035 + Math.min(0.04, episodeScore * 0.04);
       item.score = clampNumber(item.score + boost, 0, 1, item.score);
       item.mmrScore = item.score;
-      item.components = { ...(item.components || {}), episodeTraversal: episodeScore };
+      item.components = { ...(item.components || {}), episodeTraversal: Math.max(Number(item.components?.episodeTraversal || 0), parentScore) };
       item.gate = item.gate || null;
       boosted += 1;
     }
     for (const id of childIds) {
-      if (itemById.has(id)) continue;
       const record = recordById.get(id);
-      if (!record) continue;
+      if (!record || !isResponseMemoryRecord(record)) continue;
+      const canonicalId = text(record.id || record.hash || id);
+      if (itemById.has(id) || itemById.has(canonicalId)) continue;
       const item = scoreRecordForRecall(record, query, queryVector, queryAnchors, settings, context);
       if (!item) continue;
-      const boost = 0.045 + Math.min(0.055, episodeScore * 0.055);
-      item.score = clampNumber(Math.max(item.score + boost, 0.16), 0, 1, item.score);
+      const parentScore = Number(parentScoreByChildId.get(id) || episodeScore);
+      if (context.semanticQuery === true) {
+        const sem = Number(item.components?.semanticCosine || item.cosine || 0);
+        const childFloor = Math.max(0.05, Number(settings.minScore || 0) * 0.55);
+        if (sem < childFloor && !(parentScore >= 0.38 && sem > 0.02)) continue;
+        const boost = 0.05 + Math.min(0.14, parentScore * 0.20);
+        item.score = clampNumber(item.score + boost, 0, 1, item.score);
+      } else {
+        const boost = 0.045 + Math.min(0.055, episodeScore * 0.055);
+        item.score = clampNumber(Math.max(item.score + boost, 0.16), 0, 1, item.score);
+      }
       item.mmrScore = item.score;
-      item.components = { ...(item.components || {}), episodeTraversal: episodeScore, episodeForcedChild: 1 };
+      item.components = { ...(item.components || {}), episodeTraversal: Math.max(Number(item.components?.episodeTraversal || 0), parentScore), episodeForcedChild: 1 };
       items.push(item);
-      itemById.set(id, item);
+      registerRecordLookupKeys(itemById, record, item);
       forced += 1;
     }
     return { episodeCount: episodes.length, childCount: childIds.size, boosted, forced };
   };
 
-  const latentEpisodeSpecificLocation = value => {
-    const normalized = normalizeForLexical(value || '').trim();
-    if (!normalized || normalized.length < 3) return '';
-    const generic = new Set(['집', '방', '거리', '공원', '카페', '학교', '회사', '병원', '가게', '식당', '차', '차량', 'room', 'home', 'street', 'park', 'cafe', 'school', 'office', 'hospital', 'store', 'restaurant', 'car']);
-    return generic.has(normalized) ? '' : normalized;
-  };
-
-  const buildLatentEpisodeCueContext = (query = '', queryAnchors = {}, currentStateFacts = [], records = [], settings = Runtime.settings || DEFAULTS) => {
+  const buildLatentEpisodeCueContext = (query = '', queryAnchors = {}, currentStateFacts = [], records = [], settings = Runtime.settings || DEFAULTS, context = {}) => {
     const locations = new Set();
     const objects = new Set();
     const entities = new Set(queryAnchors?.entities || []);
-    for (const fact of Array.isArray(currentStateFacts) ? currentStateFacts : []) {
+    const directFacts = [
+      ...(Array.isArray(currentStateFacts) ? currentStateFacts : []),
+      ...(Array.isArray(context?.overlay?.facts) ? context.overlay.facts : []),
+      ...(typeof visibleContinuityFactsFromText === 'function' ? visibleContinuityFactsFromText(query || '', { turn: 0 }) : [])
+    ];
+    for (const fact of directFacts) {
       const property = normalizeStateProperty(fact?.property || '');
       const value = normalizeForLexical(fact?.value || '');
       if (fact?.entity && !text(fact.entity).startsWith('@')) entities.add(normalizeStateEntity(fact.entity));
@@ -37724,10 +38271,15 @@ const MemorySuiteHealthRecovery = (() => {
     return { query: text(query || ''), locations, objects, entities: entitySet, topics, sceneTurnKeys: sceneKeys };
   };
 
-  const latentEpisodeCueScore = (episode = {}, cue = {}, latestTurn = 0) => {
+  const latentEpisodeCueScore = (episode = {}, cue = {}, latestTurn = 0, options = {}) => {
     if (!episode?.autoEpisode || episode?.sourceType !== 'episode_index' || text(episode.episodeLevel || 'scene') !== 'scene') return null;
     const endTurn = Math.max(0, Number(episode?.turnRange?.end || finiteTurnIndex(episode) || 0) || 0);
-    const ageTurns = latestTurn > 0 && endTurn > 0 ? Math.max(0, latestTurn - endTurn) : 0;
+    const liveLatestTurn = Math.max(0, Number(options.liveLatestTurn ?? latestTurn ?? 0) || 0);
+    const maxInheritedTurn = Math.max(0, Number(options.maxInheritedTurn || 0) || 0);
+    const referenceLatestTurn = (isInheritedScopeMemoryRecord(episode) || episode.archiveReferenceOnly === true) && maxInheritedTurn > 0
+      ? Math.max(latestTurn, maxInheritedTurn + liveLatestTurn)
+      : latestTurn;
+    const ageTurns = referenceLatestTurn > 0 && endTurn > 0 ? Math.max(0, referenceLatestTurn - endTurn) : 0;
     if (ageTurns < FLASHBACK_LATENT_EPISODIC_TUNING.minAgeTurns) return null;
     const body = normalizeForLexical(`${episode.title || ''}\n${episode.text || ''}`);
     if (!body) return null;
@@ -37753,8 +38305,9 @@ const MemorySuiteHealthRecovery = (() => {
     );
     const decay = Math.max(FLASHBACK_LATENT_EPISODIC_TUNING.decayFloor, Math.exp(-ageTurns / 220));
     const signal = clampNumber(cueStrength * decay, 0, 1, 0);
-    const hasPhysicalCue = (placeSignal >= 0.65 || objectSignal >= 0.7)
-      && (!(cue.entities?.size > 0) || entitySignal >= 0.18 || topicSignal >= 0.25);
+    const hasPhysicalCue = (placeSignal >= 0.85 || objectSignal >= 0.85)
+      || ((placeSignal >= 0.65 || objectSignal >= 0.7)
+        && (!(cue.entities?.size > 0) || entitySignal >= 0.18 || topicSignal >= 0.25));
     const hasNarrativeCue = pairSignal >= 0.5 && topicSignal >= 0.22;
     if (!(hasPhysicalCue || hasNarrativeCue) || signal < FLASHBACK_LATENT_EPISODIC_TUNING.minCueSignal) return null;
     return { signal, cueStrength, placeSignal, objectSignal, entitySignal, pairSignal, topicSignal, ageTurns, endTurn };
@@ -37763,11 +38316,25 @@ const MemorySuiteHealthRecovery = (() => {
   const applyLatentEpisodicReactivation = (items = [], records = [], query = '', queryAnchors = {}, currentStateFacts = [], settings = Runtime.settings || DEFAULTS, context = {}) => {
     if (!settings.episodeIndexEnabled) return { activatedEpisodes: 0, activatedChildren: 0, episodeIds: [], cue: null };
     const latestTurn = Math.max(0, Number(context.latestResponseTurn || 0) || latestLiveResponseTurnIndex(records));
-    const cue = buildLatentEpisodeCueContext(query, queryAnchors, currentStateFacts, records, settings);
+    const maxInheritedByOrigin = new Map();
+    let maxInheritedGlobal = 0;
+    for (const r of records || []) {
+      if (!(isInheritedScopeMemoryRecord(r) || r?.archiveReferenceOnly === true)) continue;
+      const t = Math.max(0, Number(r?.turnRange?.end || finiteTurnIndex(r) || 0) || 0);
+      if (t <= 0) continue;
+      maxInheritedGlobal = Math.max(maxInheritedGlobal, t);
+      const origin = text(r?.inheritedFromScopeKey || r?.inheritedViaScopeKey || '');
+      if (origin) maxInheritedByOrigin.set(origin, Math.max(maxInheritedByOrigin.get(origin) || 0, t));
+    }
+    const cue = buildLatentEpisodeCueContext(query, queryAnchors, currentStateFacts, records, settings, context);
     if (!(cue.locations.size || cue.objects.size || (cue.entities.size >= 2 && cue.topics.size))) return { activatedEpisodes: 0, activatedChildren: 0, episodeIds: [], cue };
     const candidates = (records || [])
       .filter(record => record?.autoEpisode && record?.sourceType === 'episode_index' && text(record.episodeLevel || 'scene') === 'scene')
-      .map(record => ({ record, detail: latentEpisodeCueScore(record, cue, latestTurn) }))
+      .map(record => {
+        const origin = text(record?.inheritedFromScopeKey || record?.inheritedViaScopeKey || '');
+        const maxInheritedTurn = (origin ? maxInheritedByOrigin.get(origin) : 0) || maxInheritedGlobal;
+        return { record, detail: latentEpisodeCueScore(record, cue, latestTurn, { maxInheritedTurn, liveLatestTurn: latestTurn }) };
+      })
       .filter(row => row.detail)
       .filter(row => {
         const id = text(row.record.id || row.record.hash || '');
@@ -37779,11 +38346,9 @@ const MemorySuiteHealthRecovery = (() => {
       .slice(0, FLASHBACK_LATENT_EPISODIC_TUNING.maxActivatedEpisodes);
     if (!candidates.length) return { activatedEpisodes: 0, activatedChildren: 0, episodeIds: [], cue };
     const recordById = new Map();
-    for (const record of records || []) {
-      const id = text(record?.id || record?.hash || '');
-      if (id) recordById.set(id, record);
-    }
-    const itemById = new Map(items.map(item => [text(item?.record?.id || item?.record?.hash || ''), item]));
+    for (const record of records || []) registerRecordLookupKeys(recordById, record, record);
+    const itemById = new Map();
+    for (const item of items) registerRecordLookupKeys(itemById, item?.record, item);
     let activatedChildren = 0;
     const episodeIds = [];
     for (const candidate of candidates) {
@@ -37792,11 +38357,19 @@ const MemorySuiteHealthRecovery = (() => {
       if (!episodeId) continue;
       episodeIds.push(episodeId);
       const childRows = [];
-      for (const childId of Array.isArray(episode.childIds) ? episode.childIds : []) {
+      const seenChildRecords = new Set();
+      const childCandidates = [
+        ...(Array.isArray(episode.childIds) ? episode.childIds : []),
+        ...(Array.isArray(episode.childHashes) ? episode.childHashes : [])
+      ];
+      for (const childId of childCandidates) {
         const record = recordById.get(text(childId));
-        if (!record || !isResponseMemoryRecord(record)) continue;
-        let item = itemById.get(text(record.id || record.hash || '')) || scoreRecordForRecall(record, query, context.queryVector || [], queryAnchors, settings, context);
+        if (!record || !isResponseMemoryRecord(record) || seenChildRecords.has(record)) continue;
+        seenChildRecords.add(record);
+        const canonicalChildKey = text(record.id || record.sourceRecordId || record.hash || '');
+        let item = itemById.get(text(childId)) || itemById.get(canonicalChildKey) || scoreRecordForRecall(record, query, context.queryVector || [], queryAnchors, settings, context);
         if (!item) continue;
+        if (context.semanticQuery === true && Array.isArray(context.queryVector) && context.queryVector.length && Number(item.cosine || 0) < -0.05) continue;
         const detail = candidate.detail;
         item.components = {
           ...(item.components || {}),
@@ -37805,9 +38378,11 @@ const MemorySuiteHealthRecovery = (() => {
           forcedReasons: Array.from(new Set([...(item.components?.forcedReasons || []), 'latent_episode_cue']))
         };
         item.forcedReasons = Array.from(new Set([...(item.forcedReasons || []), 'latent_episode_cue']));
-        item.score = clampNumber(Math.max(Number(item.score || 0) + 0.08 + detail.signal * 0.08, 0.20 + detail.signal * 0.14), 0, 1, 0.2);
+        const minFloor = context.semanticQuery === true ? Number(settings.minScore || 0.1) + detail.signal * 0.10 : 0.20 + detail.signal * 0.14;
+        const boostStep = context.semanticQuery === true ? 0.06 + detail.signal * 0.08 : 0.08 + detail.signal * 0.08;
+        item.score = clampNumber(Math.max(Number(item.score || 0) + boostStep, minFloor), 0, 1, 0.15);
         item.mmrScore = item.score;
-        itemById.set(text(record.id || record.hash || ''), item);
+        registerRecordLookupKeys(itemById, record, item);
         childRows.push(item);
       }
       childRows.sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || storyOrderValue(b.record) - storyOrderValue(a.record));
@@ -38356,6 +38931,9 @@ const MemorySuiteHealthRecovery = (() => {
     const sceneContextShardIndexes = retirementPending || !sceneContext.active
       ? []
       : (selectRecallShardIndexes(manifest, sceneContext.text, sceneContext.vector, queryProvider, queryType, cfg, queryModel).indexes || []);
+    const episodeShardIndexes = retirementPending || !cfg.episodeIndexEnabled
+      ? []
+      : episodeIndexShardIndexes(manifest, 2);
     let shardSelection = mergeRecallShardSelections(manifest, baseShardSelection, {
       indexes: sourceShardIndexes,
       reason: sourceShardIndexes.length ? 'previous_turn_source' : ''
@@ -38365,6 +38943,9 @@ const MemorySuiteHealthRecovery = (() => {
     }, {
       indexes: sceneContextShardIndexes,
       reason: sceneContextShardIndexes.length ? 'scene_context_sources' : ''
+    }, {
+      indexes: episodeShardIndexes,
+      reason: episodeShardIndexes.length ? 'episode_index_sources' : ''
     });
     const recordLoadStartedAt = Date.now();
     const loaded = await loadScopeRecordsForRecall(scope.scopeKey, shardSelection, {
@@ -38444,6 +39025,72 @@ const MemorySuiteHealthRecovery = (() => {
         previousTurnProfile = semanticQuery ? {active:false,reason:'joint_query',currentWeight:1,previousWeight:0} : previousTurnRecallProfile(primaryQueryText, rawQueryAnchors, queryType, previousTurn);
       }
     }
+    if (!retirementPending && !shardSelection.fullScan && cfg.episodeIndexEnabled) {
+      const loadedEpisodes = storedRecords.filter(record => record && (record.autoEpisode || record.sourceType === 'episode_index'));
+      if (loadedEpisodes.length) {
+        const storedIds = new Set();
+        const loadedEpById = new Map();
+        for (const rec of storedRecords) {
+          for (const cand of [rec?.id, rec?.sourceRecordId, rec?.hash, rec?.permanentHistoryId ? `fb_archive_${rec.permanentHistoryId}` : '']) {
+            const key = text(cand || '');
+            if (key) storedIds.add(key);
+          }
+          if (rec && (rec.autoEpisode || rec.sourceType === 'episode_index')) {
+            registerRecordLookupKeys(loadedEpById, rec, rec);
+          }
+        }
+        const epFloor = Math.max(Number(cfg.minScore || 0) + 0.08, 0.24);
+        const epLimit = clampInt(cfg.episodeRecallCount, 1, 20, DEFAULTS.episodeRecallCount);
+        const matchedEps = loadedEpisodes
+          .filter(ep => Array.isArray(ep.vector) && queryVector.length && ep.vector.length === queryVector.length)
+          .map(ep => ({ ep, sem: recallSemanticSignals(ep, queryVector, cfg, { queryProvider, queryModel, queryProfileId, sceneContext }) }))
+          .filter(row => row.sem.vectorComparable && row.sem.fusedSemantic >= epFloor)
+          .sort((a, b) => b.sem.fusedSemantic - a.sem.fusedSemantic)
+          .slice(0, epLimit)
+          .map(row => row.ep);
+        const matchedRanges = [];
+        for (const ep of matchedEps) {
+          const queue = (ep.childIds || []).map(id => ({ id: text(id), depth: 1, parent: ep }));
+          while (queue.length) {
+            const next = queue.shift();
+            if (!next?.id) continue;
+            const childEp = loadedEpById.get(next.id);
+            if (childEp && next.depth < 2) {
+              for (const cid of childEp.childIds || []) queue.push({ id: text(cid), depth: next.depth + 1, parent: childEp });
+              continue;
+            }
+            if (!storedIds.has(next.id) && next.parent?.turnRange?.start) {
+              matchedRanges.push(next.parent.turnRange);
+              break;
+            }
+          }
+        }
+        const missingChildShards = episodeChildTurnShardIndexes(manifest, matchedRanges, new Set(shardSelection.indexes || []), 2);
+        if (missingChildShards.length) {
+          const epLoadStartedAt = Date.now();
+          const epLoaded = await loadScopeRecordsForRecall(scope.scopeKey, { indexes: missingChildShards, reason: 'episode_child_hydration', shardCount: manifest.shardCount }, {
+            manifest, strictReadSet,
+            archiveQuery: { queryText: cfg.contextualRecall !== false && sceneContext.active ? sceneContext.text : primaryQueryText,
+              queryVector: cfg.contextualRecall !== false && sceneContext.active ? sceneContext.vector : queryVector,
+              queryProvider, queryType, settings: cfg, queryModel, requestPlan: queryPlan }
+          });
+          const epElapsed = Date.now() - epLoadStartedAt;
+          stageElapsed.additionalRecallLoad += epElapsed;
+          stageElapsed.scopeStorageLoad += epElapsed;
+          stageElapsed.shardStorageReadWork += Number(epLoaded.performance?.storageReadMs || 0);
+          stageElapsed.shardParseWork += Number(epLoaded.performance?.parseMs || 0);
+          stageElapsed.shardChecksumWork += Number(epLoaded.performance?.checksumMs || 0);
+          storedRecords = mergeRecallRecordLists(storedRecords, epLoaded.records || []);
+          branchGate = applyRecallHardGates(storedRecords, recallHardGateContext);
+          storedRecords = branchGate;
+          externalSuppressed += Number(epLoaded.manifest?.externalRetirementPending || 0) || 0;
+          storageMissingShards += Number(epLoaded.manifest?.missingShards || 0) || 0;
+          storageCorruptShards += Number(epLoaded.manifest?.corruptShards || 0) || 0;
+          storageRecordCountMismatch = storageRecordCountMismatch || epLoaded.manifest?.recordCountMismatch === true;
+          shardSelection = mergeRecallShardSelections(manifest, shardSelection, { indexes: missingChildShards, reason: 'episode_child_hydration' });
+        }
+      }
+    }
     const modelEligible = record => recordEmbeddingCompatibility(record, cfg, {
       provider: queryProvider,
       model: queryModel,
@@ -38482,6 +39129,15 @@ const MemorySuiteHealthRecovery = (() => {
     applyCurrentUserOverlaySuppressions(latestStateByEntity, overlay.suppressions);
     applyCurrentStateValidityAging(latestStateByEntity, latestResponseTurn);
     const currentStateFacts = !semanticQuery && cfg.structuredStateEnabled ? collectCurrentStateFacts(latestStateByEntity, rawQueryAnchors, queryStateProperties, 14) : [];
+    const episodeStateFacts = cfg.structuredStateEnabled
+      ? (currentStateFacts.length ? currentStateFacts : collectCurrentStateFacts(latestStateByEntity, rawQueryAnchors, queryStateProperties, 14))
+      : [];
+    const episodeQueryType = semanticQuery
+      ? classifyRecallQuery(queryPlan.controlText, { ...rawQueryAnchors, normalized: RecallKeywordFeatures.normalize(queryPlan.controlText) })
+      : queryType;
+    const episodeTemporalIntent = semanticQuery
+      ? (queryPlan.intent.temporal === 'uncertain' ? 'unspecified' : classifyTemporalIntent(queryPlan.requestText.replace(/["“「『][^"”」』]*["”」』]/gu, ''), rawQueryAnchors))
+      : temporalIntent;
     const previousTurnNumber = Number(previousTurn.targetTurn || previousTurn.turnIndex || 0) || 0;
     const excludedPreviousTurnNumber = previousTurn.requestMatched === true ? previousTurnNumber : 0;
     const excludedPreviousTurnSourceHash = previousTurn.requestMatched === true ? text(previousTurn.sourceHash || '') : '';
@@ -38509,7 +39165,7 @@ const MemorySuiteHealthRecovery = (() => {
         ...(lexicalFallback ? { fallbackWarning: '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.', modelReadiness: { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } } : {}) };
     }
     const excludedRecentChatTurns = recentChatDuplicateTurns(records, options);
-    const recallContext = { scopeKey: scope.scopeKey, excludedRecentChatTurns, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
+    const recallContext = { scopeKey: scope.scopeKey, excludedRecentChatTurns, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, semanticQuery, episodeQueryType, episodeTemporalIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
     recallContext.allowLexicalFallback = !!lexicalFallback;
     recallContext.lexicalFallbackStatus = lexicalFallback?.status || '';
     recallContext.allowVectorsPending = lexicalFallback?.status === 'vectors_pending' || (cfg.heuristicRecall && records.some(r => !modelEligible(r)));
@@ -38589,8 +39245,8 @@ const MemorySuiteHealthRecovery = (() => {
     }
     const temporalHardGate = applyRecallTemporalHardGate(scoredRaw, { temporalIntent, truthIntent });
     const temporallyEligible = temporalHardGate;
-    const episodeTraversal = semanticQuery ? {episodeCount:0,childCount:0,boosted:0} : applyEpisodeTraversalBoost(temporallyEligible, records, primaryQueryText, queryVector, queryAnchors, queryType, cfg, recallContext);
-    const latentEpisodic = semanticQuery ? {activatedEpisodes:0,activatedChildren:0,episodeIds:[],cue:null} : applyLatentEpisodicReactivation(temporallyEligible, records, primaryQueryText, rawQueryAnchors, currentStateFacts, cfg, recallContext);
+    const episodeTraversal = applyEpisodeTraversalBoost(temporallyEligible, records, primaryQueryText, queryVector, queryAnchors, queryType, cfg, recallContext);
+    const latentEpisodic = applyLatentEpisodicReactivation(temporallyEligible, records, primaryQueryText, rawQueryAnchors, episodeStateFacts, cfg, recallContext);
     const currentSceneTail = cfg.heuristicRecall
       ? temporallyEligible.filter(item => item.components?.forcedReasons?.includes('current_scene_tail'))
       : [];

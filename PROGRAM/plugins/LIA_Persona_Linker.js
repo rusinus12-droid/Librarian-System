@@ -172,6 +172,11 @@ const PLUGIN_VERSION = "0.32.0";
   let preservedTranslationLanguage = "ko";
   let preservedOutputPane = "persona";
   let preservedResultVaultId = "";
+  let preservedAdoptionMode = "scoped";
+  let liaUnsavedProviderDraft = null;
+  let lastFailedRawOutput = "";
+  let activeLiaAiJob = null;
+  let liaRisuAuxQueue = Promise.resolve();
   let activeWorkspaceTab = "home";
   let liaUiVisible = false;
   let preservedWorldDrawerOpen = false;
@@ -191,17 +196,8 @@ const PLUGIN_VERSION = "0.32.0";
   let preservedPersonaAuditFixSelection = new Set();
   let preservedPersonaVariantProfile = "full";
   let preservedPersonaEvolution = null;
-  let preservedVisualTargetPersonaId = "__auto__";
   let preservedPersonaEvolutionSelection = new Set();
-  
-  
-  
-  let cachedIllustrationConfig = null;
-  
-  
-  
-  
-  
+
   let personaDatabaseMutationQueue = Promise.resolve();
   
   
@@ -474,6 +470,8 @@ const PLUGIN_VERSION = "0.32.0";
   ]);
   const PERSONA_SPEC_FIELD_KEYS = Object.freeze(PERSONA_SPEC_FIELD_DEFS.map((item) => item.key));
   const PERSONA_SPEC_FIELD_KEY_SET = new Set(PERSONA_SPEC_FIELD_KEYS);
+  const PERSONA_SPEC_ARRAY_KEYS = new Set(["skills", "limitations", "boundaries", "worldFitNotes"]);
+  const PERSONA_SPEC_MULTILINE_KEYS = new Set(["appearance", "personality", "visibleSide", "hiddenSide", "internalContradiction", "background", "speech", "motivation", "relationshipStyle", "relationshipToCharacter", "preferences", "conflictRepair", "knowledgeBoundary"]);
 
   const htmlEscape = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -483,10 +481,20 @@ const PLUGIN_VERSION = "0.32.0";
 
   const asArray = (value) => Array.isArray(value) ? value : [];
   const compact = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+  const compactMultiline = (value) => String(value ?? "").replace(/\r\n?/g, "\n").split("\n").map((line) => line.replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   const limitText = (value, max) => {
     const text = String(value ?? "").trim();
     return text.length > max ? `${text.slice(0, Math.max(0, max - 3)).trim()}...` : text;
   };
+  async function runWithLiaAiJob(kind, options, fn) {
+    if (typeof options === "function") { fn = options; options = {}; }
+    if (activeLiaAiJob) throw new Error("이미 진행 중인 AI 작업이 있습니다. 완료되거나 취소한 뒤 다시 시도해 주세요.");
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const job = { kind: String(kind || "ai_job"), dialogId: String(options?.dialogId || ""), owner: String(options?.owner || "ui"), controller, startedAt: Date.now() };
+    activeLiaAiJob = job;
+    try { return await fn(controller ? controller.signal : undefined, job); }
+    finally { if (activeLiaAiJob === job) activeLiaAiJob = null; }
+  }
   const unique = (items, max = 16) => {
     const seen = new Set();
     const out = [];
@@ -763,6 +771,7 @@ const PLUGIN_VERSION = "0.32.0";
         maxCompletionTokens: cfg.maxCompletionTokens,
         hasApiKey: Boolean(cfg.apiKey),
       },
+      lastFailedRawOutput: limitText(lastFailedRawOutput || "", 4000),
     });
   }
 
@@ -812,6 +821,7 @@ const PLUGIN_VERSION = "0.32.0";
         maxCompletionTokens: cfg.maxCompletionTokens,
         hasApiKey: Boolean(cfg.apiKey),
       },
+      lastFailedRawOutput: limitText(lastFailedRawOutput || "", 4000),
     });
   }
 
@@ -1590,6 +1600,7 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
         entryIndex,
         entry,
         name,
+        explicitPersonaMarker: Boolean(personaMatch),
         personaPrompt: normalized.content,
         note: `Character Lorebook: ${char?.name || "character"}`,
       });
@@ -1682,35 +1693,6 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
     return fields
       .map(([label, value]) => ({ label, content: limitText(String(value || "").trim(), maxChars) }))
       .filter((item) => item.content);
-  }
-
-  function inferCompatibility(persona, char, loreSignals) {
-    const text = compact([
-      persona?.name,
-      persona?.personaPrompt,
-      persona?.note,
-      char?.name,
-      char?.desc,
-      char?.personality,
-      char?.scenario,
-      ...loreSignals.map((lore) => `${lore.label} ${lore.key} ${lore.content}`),
-    ].join("\n")).toLowerCase();
-
-    const tags = [];
-    const add = (label, patterns) => {
-      if (patterns.some((pattern) => text.includes(pattern))) tags.push(label);
-    };
-    add("school_social_frame", ["school", "high school", "class", "student", "학교", "고등학교", "학생", "학원", "반"]);
-    add("romance_slow_burn", ["romance", "crush", "confession", "romantic", "로맨스", "연애", "고백", "호감"]);
-    add("grounded_realism", ["realistic", "slice of life", "현실", "일상", "평판", "소문"]);
-    add("neighborhood_cafe_frame", ["barista", "cafe owner", "coffee shop", "neighborhood cafe", "카페 사장", "바리스타", "동네 카페"]);
-    add("family_marriage_context", ["family", "husband", "wife", "daughter", "son", "married", "가족", "남편", "아내", "딸", "아들", "유부"]);
-    add("adult_social_frame", ["adult", "owner", "work", "occupation", "sexual", "lust", "성인", "사장", "직업", "성적"]);
-    add("canon_divergence", ["canon", "no meta", "original story", "캐논", "메타", "원작"]);
-    add("power_system", ["magic", "supernatural", " special ability", "ultimate talent", "power system", "마법", "초능력", "능력", "재능"]);
-    add("speech_style", ["speech", "tone", "banmal", "말투", "반말", "존댓말", "어조"]);
-
-    return unique(tags, 8);
   }
 
   function findFirst(text, patterns) {
@@ -1962,183 +1944,8 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
     ];
   }
 
-  function settingAgeLabel(targetFacts, personaFacts) {
-    if (personaFacts.age) return personaFacts.age;
-    if (targetFacts.setting === "school_social") return "High-school age peer";
-    if (targetFacts.setting === "academy_talent") return "Academy-appropriate student age";
-    if (targetFacts.setting === "neighborhood_cafe" || targetFacts.adultContext) return "Adult";
-    return "Setting-appropriate age";
-  }
-
   function isRichPersonaMode(ctx) {
     return ctx?.contextOptions?.richPersonaMode !== false;
-  }
-
-  function firstSource(...values) {
-    return values.map((value) => String(value || "").trim()).find(Boolean) || "";
-  }
-
-  function buildBehavioralLoopLines(personaFacts) {
-    const pride = firstSource(personaFacts.prideDigest, personaFacts.conflictStyleDigest);
-    const attachment = firstSource(personaFacts.attachmentDigest, personaFacts.jealousyDigest, personaFacts.romancePaceDigest);
-    const fear = firstSource(personaFacts.fearDigest, personaFacts.shameDigest, personaFacts.boundaryDigest);
-    const comfort = firstSource(personaFacts.comfortHabitDigest, personaFacts.speechDigest);
-    const stress = firstSource(personaFacts.stressHabitDigest, personaFacts.emotionalDigest);
-    return [
-      "## Behavioral Loops",
-      "- When ignored: {{user}} does not immediately disappear; he tests the silence through humor, pressure, curiosity, or a small provocation.",
-      `- When challenged: ${pride ? `source pride/conflict pressure should surface first (${limitText(pride, 240)}),` : "pride and competitiveness surface first,"} but deeper attachment or sincerity may appear if the challenge matters.`,
-      `- When praised: ${comfort ? `let visible softening, embarrassment, confidence, or relaxed habits draw from source cues (${limitText(comfort, 220)}).` : "{{user}} may become brighter, more playful, more confident, or briefly disarmed without losing initiative."}`,
-      `- When rejected: ${fear ? `draw from fear/shame/boundary cues (${limitText(fear, 220)});` : "he may joke it off, become sharper, withdraw briefly, or try to repair the moment;"} refusal and consequences must matter.`,
-      `- When trusted: ${attachment ? `attachment, protectiveness, loyalty, or possessive risk can grow from source cues (${limitText(attachment, 220)}),` : "he may become more sincere, careful, invested, or protective,"} but trust must not become instant control or entitlement.`,
-      `- When emotionally cornered: ${stress ? `stress habits and emotional pressure should show (${limitText(stress, 220)}),` : "he may become stubborn, too playful, abruptly honest, defensive, or quiet,"} while final actions and private choices remain open to RP.`,
-    ];
-  }
-
-  function buildSocialFootprintLines(targetFacts, personaFacts, targetRole, repeatContact, contactRule) {
-    const reputation = firstSource(personaFacts.reputationDigest, personaFacts.skillDigest, personaFacts.strengthsDigest);
-    const sensory = firstSource(personaFacts.sensoryDigest, personaFacts.appearanceDigest);
-    return [
-      "## Social Footprint",
-        `- Public role: ${targetRole}`,
-        `- Reputation: ${reputation ? limitText(reputation, 260) : "Start from visible behavior, public role, rumors, competence, and scene history rather than unsupported fame."}`,
-        `- Natural access routes: ${repeatContact}`,
-        `- Limitations: ${contactRule}`,
-        `- Social effect: ${sensory ? `appearance, voice, atmosphere, or sensory cues may affect attention (${limitText(sensory, 220)}), but` : "some attention, rumors, curiosity, visible pressure, or opportunities may occur, but"} individual reactions remain up to RP; never force attraction, obedience, love, fear, or consent.`,
-    ];
-  }
-
-  function buildRelationshipArcLines(personaFacts) {
-    const romance = firstSource(personaFacts.romancePaceDigest, personaFacts.relationshipDigest);
-    const conflict = firstSource(personaFacts.conflictStyleDigest, personaFacts.jealousyDigest, personaFacts.prideDigest);
-    const repair = firstSource(personaFacts.apologyStyleDigest, personaFacts.moralCodeDigest);
-    return [
-      "## Relationship Arc with {{char}}",
-      "- Initial distance: begin from the current RP's established relationship, public role, and plausible social access; do not invent prior intimacy.",
-      "- Early friction: awkwardness, teasing, rivalry, suspicion, curiosity, boundaries, or social mismatch can create momentum without deciding {{char}}'s feelings.",
-      `- Familiarity: ${romance ? `pace closeness through source relationship cues (${limitText(romance, 240)}).` : "let shared scenes, repeated contact, jokes, favors, conflict, and consequences slowly make interaction easier or more loaded."}`,
-      "- Attachment risk: deeper investment may create protectiveness, jealousy, pride, hesitation, or fear of becoming irrelevant, but it must emerge through events.",
-      `- Conflict point: ${conflict ? limitText(conflict, 260) : "pride, pushiness, misread boundaries, rivalry, ignored effort, or social consequences can cause tension."}`,
-      `- Repair route: ${repair ? limitText(repair, 260) : "repair through apology, restraint, changed behavior, small favors, honest conversation, or giving {{char}} space."}`,
-    ];
-  }
-
-  function buildSceneHookLines(targetFacts, personaFacts, repeatContact) {
-    const routine = firstSource(personaFacts.dailyRoutineDigest, personaFacts.comfortHabitDigest);
-    const stress = firstSource(personaFacts.stressHabitDigest, personaFacts.fearDigest);
-    const skill = firstSource(personaFacts.skillDigest, personaFacts.strengthsDigest);
-    const softSpot = firstSource(personaFacts.desireDigest, personaFacts.attachmentDigest, personaFacts.moralCodeDigest);
-    return [
-      "## Scene Hooks",
-      `- Recurring places: ${repeatContact}`,
-      `- Routine-based encounters: ${routine ? limitText(routine, 240) : "commutes, work/school obligations, shared spaces, errands, breaks, messages, and repeated public routes."}`,
-      `- Soft spots: ${softSpot ? limitText(softSpot, 240) : "sincere effort, visible loneliness, competence, humor, strong reactions, vulnerability, or shared pressure."}`,
-      `- Stress habits: ${stress ? limitText(stress, 240) : "banter getting sharper, overconfidence, stubborn persistence, sudden silence, restless movement, or poorly hidden concern."}`,
-      `- Small favors: ${skill ? `use source skills as practical favors (${limitText(skill, 220)}).` : "directions, help with tasks, shared food/drinks, covering a small mistake, carrying something, or offering useful information."}`,
-      "- Rivalry/friendship/boundary-aware interest triggers: challenge, praise, teasing, competence, visible boundaries, repeated timing, risk, humor, and moments where {{user}} must choose restraint or sincerity.",
-    ];
-  }
-
-  function buildDynamicPersonaProfile(ctx) {
-    const personaFacts = inferPersonaFacts(ctx.personaInfo?.persona || {});
-    const targetFacts = inferTargetFacts(ctx);
-    const richMode = isRichPersonaMode(ctx);
-    const roleOptions = buildRoleOptions(targetFacts, personaFacts);
-    const preservedTraits = traitSentence(personaFacts.traits);
-    const genderLine = personaFacts.gender === "Male"
-      ? "Male. Always treat and refer to {{user}} as a man."
-      : personaFacts.gender === "Female"
-        ? "Female. Always treat and refer to {{user}} as a woman."
-        : "Use the source persona and active chat context for gendered references.";
-    const targetRole = roleOptions[0] || `${personaFacts.name} belongs in the current character/world through a plausible ordinary role.`;
-    const repeatContact = roleOptions[1] || "Repeated contact should come from ordinary social routes, shared obligations, recurring locations, or current RP events.";
-    const contactRule = roleOptions[2] || "Prefer believable access before granting intimacy, authority, secrets, or exceptional status.";
-    const relationshipRules = [];
-    if (targetFacts.familyContext) relationshipRules.push("Respect existing family ties, household roles, and public consequences; do not erase spouse/children/family context.");
-    if (targetFacts.romanceContext) relationshipRules.push("Romantic or erotic tension must be earned through scene events, mutual reactions, risk, restraint, and consequences.");
-    if (targetFacts.adultContext) relationshipRules.push("Use adult, age-appropriate framing. Do not route adult intimacy through a minor or ambiguous underage identity.");
-    if (!relationshipRules.length) relationshipRules.push("Build trust, rivalry, comedy, conflict, or intimacy through current RP actions instead of assuming it already exists.");
-
-    return {
-      personaFacts,
-      targetFacts,
-      lines: [
-        "## Adapted Persona Profile",
-        `- Name: ${personaFacts.name}`,
-        `- Gender: ${genderLine}`,
-        `- Age/Role in this setting: ${settingAgeLabel(targetFacts, personaFacts)}; ${targetRole}`,
-        `- Public identity: Keep the source identity public-facing, but adapt access, reputation, and assumptions to ${targetFacts.charName}'s setting.`,
-        `- Social position: Ordinary and lore-compatible first; no unsupported privilege, canon authority, supernatural status, or instant intimacy.`,
-        `- First impression: Active, socially bold, quick to create momentum, and memorable through timing, pressure, humor, or sincerity.`,
-        "",
-        "## Preserved Core",
-        `- Preserve core traits: ${preservedTraits}.`,
-        `- Preserve species/nationality unless the setting requires a natural equivalent: ${personaFacts.species}; ${personaFacts.nationality}.`,
-        "- Preserve the source persona's principle of creating movement in stagnant scenes through initiative, talk, humor, pressure, curiosity, or sincerity.",
-        "- Preserve his tendency to become more engaged when ignored, challenged, or treated as background noise.",
-        personaFacts.speechDigest ? `- Speech/behavior source to preserve: ${personaFacts.speechDigest}` : "- Keep speech active, context-sensitive, and socially responsive.",
-        "",
-        "## Setting-Specific Placement",
-        `- {{user}} exists inside the current world as: ${targetRole}`,
-        `- Natural repeated contact: ${repeatContact}`,
-        `- Contact limitation: ${contactRule}`,
-        "- He belongs through ordinary routes first, then becomes important through RP events, choices, consequences, reputation, and interaction history.",
-        "- Do not make {{user}} an external viewer, narrator, canon expert, prophecy holder, system owner, or privileged exception unless active lore or User Rewrite Directives explicitly say so.",
-        "",
-        "## Appearance Adaptation",
-        personaFacts.appearanceDigest ? `- Maintain source appearance: ${personaFacts.appearanceDigest}` : "- Maintain source appearance where available; avoid inventing flashy traits unless the source or setting supports them.",
-        "- Adjust clothing, public presentation, and atmosphere to the setting's era, occupation, school/work rules, social class, and recurring location.",
-        "- Appearance should support in-world plausibility and first impression, not override character lore or create unsupported status.",
-        "",
-        ...(richMode ? [
-          ...buildBehavioralLoopLines(personaFacts),
-          "",
-          ...buildSocialFootprintLines(targetFacts, personaFacts, targetRole, repeatContact, contactRule),
-          "",
-          ...buildRelationshipArcLines(personaFacts),
-          "",
-          ...buildSceneHookLines(targetFacts, personaFacts, repeatContact),
-          "",
-          "## Internal Contradiction",
-          `- Public behavior: ${preservedTraits}; socially active, scene-moving, and responsive to visible reactions.`,
-          `- Private vulnerability: ${firstSource(personaFacts.shameDigest, personaFacts.fearDigest, personaFacts.desireDigest, "He wants proof that he matters and may fear being reduced to background noise.")}`,
-          "- Let this gap create tension, pacing, restraint, overreach, apology, and growth instead of making {{user}} only attractive, powerful, or convenient.",
-          "",
-        ] : []),
-        "## Behavior Toward {{char}}",
-        "- First approach: {{user}} usually initiates contact and tries to create conversational movement through jokes, compliments, questions, teasing, or direct curiosity.",
-        "- Low intimacy: keep playful pressure and social boldness, but make trust, private access, and emotional leverage earned.",
-        "- Rising intimacy: let banter, rivalry, sincerity, visible reactions, and shared events deepen the relationship gradually.",
-        "- Conflict/rejection/tension: he may become proud, competitive, stubborn, jealous, or more emotionally invested, but consequences and boundaries remain real.",
-        "",
-        "## Relationship Rules",
-        ...relationshipRules.map((line) => `- ${line}`),
-        "- Do not jump directly to lover, family member, secret confidant, authority figure, rescuer, owner, master, destined partner, or already-intimate status unless source persona, active lore, or User Rewrite Directives explicitly support it.",
-        "- Existing family, marriage, workplace, school, social reputation, hierarchy, rumors, genre limits, and prior chat events remain active constraints.",
-        "- {{user}} may push scenes forward, but he must not overwrite {{char}}'s agency, emotions, consent, loyalties, choices, or established characterization.",
-        "",
-        "## Speech & Mannerisms",
-        personaFacts.speechDigest ? `- Speech/manner source: ${personaFacts.speechDigest}` : "- Speech should be quick, socially bold, reactive, and capable of shifting between playful, irritating, sincere, provocative, and unexpectedly earnest.",
-        "- He reads awkwardness and tension, then changes timing, tone, or pressure according to the other person's reaction.",
-        "- Emotional exposure should appear through stronger persistence, sharper banter, sudden sincerity, competitiveness, or visible difficulty retreating cleanly.",
-        "",
-        "## Boundaries & Failure Modes",
-        personaFacts.boundaryDigest ? `- Source flaws/boundaries: ${personaFacts.boundaryDigest}` : "- He can be pushy, overconfident, jealous, stubborn, reckless, or too focused on winning the social moment.",
-        "- He may miss subtle boundaries when emotionally focused, but corrections, refusal, reputation damage, guilt, awkwardness, and consequences should matter.",
-        "- Never decide {{user}}'s actions, emotions, consent, desire, bodily reactions, final choices, or private thoughts on his behalf.",
-        "- Never decide {{char}}'s actions, emotions, consent, desire, bodily reactions, final choices, or private thoughts through this persona entry.",
-        "",
-        "## Knowledge Limits",
-        `- Target constraints detected: ${targetFacts.hardLimits.length ? targetFacts.hardLimits.join(", ") : "none_explicit"}.`,
-        "- {{user}} only knows what his public role, relationship history, and current chat events make plausible.",
-        "- Do not grant meta knowledge, canon foresight, hidden lore access, special authority, supernatural abilities, social status, or secret relationships unless active lore or User Rewrite Directives explicitly support them.",
-        "",
-        "## Continuity Rules",
-        "- Current chat events override static assumptions when they are more recent and non-conflicting.",
-        "- Relationship changes, trust, rivalry, intimacy, reputation, and consequences should accumulate through RP events.",
-        "- The persona should remain active and scene-moving, but restraint, silence, apology, or withdrawal can also be active choices when the scene calls for them.",
-      ],
-    };
   }
 
   function buildSourcePersonaCore(persona, personaFacts) {
@@ -2271,9 +2078,8 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
   }
 
   function buildDynamicAutoRewriteGuidance(ctx) {
-    const dynamicProfile = buildDynamicPersonaProfile(ctx);
-    const personaFacts = dynamicProfile.personaFacts;
-    const targetFacts = dynamicProfile.targetFacts;
+    const personaFacts = inferPersonaFacts(ctx.personaInfo?.persona || {});
+    const targetFacts = inferTargetFacts(ctx);
     const roleOptions = buildRoleOptions(targetFacts, personaFacts);
     const targetRole = roleOptions[0] || `${personaFacts.name} should fit the current character/world through a plausible role.`;
     const repeatContact = roleOptions[1] || "Use recurring public routes, obligations, shared spaces, errands, or current chat events for repeated contact.";
@@ -2317,7 +2123,7 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
   function findMatchingCharacterPersonaSource(characterSources, persona) {
     const name = compact(persona?.name || "").toLowerCase();
     if (!name) return null;
-    return asArray(characterSources).find((source) => compact(source?.name || "").toLowerCase() === name) || null;
+    return asArray(characterSources).find((source) => source?.explicitPersonaMarker === true && compact(source?.name || "").toLowerCase() === name) || null;
   }
 
   function maybeOverridePersonaWithCharacterLore(char, persona, sourceLabel) {
@@ -2998,6 +2804,50 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
         if (action === "ping" || action === "capabilities") {
           result = {
             capabilities: { memorySuiteScopeDeleteOwnerProof: false, storagePolicy:'local_only', localOnly:true, serverStorage:false, supportedStorageModes:['plugin_only'] },
+            ownerPluginId: "lia_persona_linker",
+            authorizedRequester: RETRACE_PLUGIN_ID
+          };
+        } else if (action === "adopt_session_handoff") {
+          const payload = request.payload && typeof request.payload === "object" ? request.payload : {};
+          const sourceChatId = String(payload.sourceChatId || "").trim();
+          const targetChatId = String(payload.targetChatId || "").trim();
+          const transferId = String(payload.transferId || "").trim();
+          const sourceScopeKey = String(payload.sourceScopeKey || "").trim();
+          const requestedTargetScopeKey = String(payload.targetScopeKey || "").trim();
+          if (!targetChatId) throw new Error("LIA adopt_session_handoff requires targetChatId");
+          const store = await readPersonaProofStore(true);
+          const entries = Object.entries(store.proofs || {});
+          const sourceMatch = entries.find(([key, row]) => (
+            (sourceScopeKey && (key === sourceScopeKey || row?.scopeKey === sourceScopeKey))
+            || (sourceChatId && (key.includes(`|chat:${sourceChatId}|`) || key.endsWith(`|chat:${sourceChatId}`) || row?.chatId === sourceChatId))
+          ));
+          let adoptedProof = null;
+          if (sourceMatch) {
+            const [srcKey, srcProof] = sourceMatch;
+            const targetScopeKey = requestedTargetScopeKey
+              || (sourceChatId && srcKey.includes(`chat:${sourceChatId}`)
+                ? srcKey.replace(`chat:${sourceChatId}`, `chat:${targetChatId}`)
+                : `lia-handoff:chat:${targetChatId}`);
+            adoptedProof = await writePersonaProof({
+              ...srcProof,
+              scopeKey: targetScopeKey,
+              requestId: transferId || srcProof.requestId || `handoff_${Date.now()}`,
+              requestType: srcProof.requestType || "session_handoff",
+              message: srcProof.message || `Inherited from ${sourceChatId || srcKey}`,
+              updatedAt: new Date().toISOString()
+            });
+          }
+          result = {
+            ok: true,
+            adopted: Boolean(adoptedProof),
+            verified: true,
+            durable: true,
+            sourcePreserved: true,
+            sourceChatId,
+            targetChatId,
+            transferId,
+            proofAdopted: Boolean(adoptedProof),
+            proofScopeKey: adoptedProof?.scopeKey || "",
             ownerPluginId: "lia_persona_linker",
             authorizedRequester: RETRACE_PLUGIN_ID
           };
@@ -3725,6 +3575,7 @@ ${revisionText}`);
     const selectedPersona = Number.isInteger(selectedIndex) ? personas[selectedIndex] || null : null;
     const dynamicId = String(ctx?.chat?.bindedPersona || "").trim();
     const dynamicPersona = dynamicId ? personas.find((item) => String(item?.id || "") === dynamicId) || null : null;
+    const danglingDynamic = Boolean(dynamicId && !dynamicPersona);
     return {
       personas,
       selectedIndex,
@@ -3732,8 +3583,9 @@ ${revisionText}`);
       selectedId: String(selectedPersona?.id || "").trim(),
       dynamicId,
       dynamicPersona,
+      danglingDynamic,
       effectivePersona: dynamicPersona || selectedPersona || null,
-      effectiveMode: dynamicPersona ? "dynamic" : "default",
+      effectiveMode: dynamicPersona ? "dynamic" : danglingDynamic ? "dangling" : "default",
     };
   }
 
@@ -3851,7 +3703,6 @@ ${revisionText}`);
     const blueprintState = await readWorldBlueprintForContext(blueprintContext);
     let baseContext = { ...blueprintContext, worldBlueprintKey: blueprintState.key, worldBlueprint: blueprintState.blueprint, worldBlueprintUpdatedAt: blueprintState.updatedAt };
     baseContext = refreshPersonaLoreRerank(baseContext);
-    const compatibility = inferCompatibility(personaInfo.persona, char, baseContext.personaLoreSignals);
     const savedLLMConfig = await readStoredLLMConfig();
     const savedResultVault = await readStoredResultVault();
     const personaRequestProof = await readPersonaProofForContext(baseContext);
@@ -3865,7 +3716,7 @@ ${revisionText}`);
       if (String(e?.message || e).includes('LIA_VIEW_SELECTION_CHANGED')) throw e;
       appendDebugLog("view_selection", "preview_selection_unverified", { error: errorForLog(e) }, "info");
     }
-    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, personaRequestProof, viewSelectionVerified };
+    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, savedLLMConfig, savedResultVault, personaRequestProof, viewSelectionVerified };
   }
   function normalizeStringArray(value, max = 16) {
     return unique(asArray(value).map((item) => compact(item)), max);
@@ -4075,16 +3926,35 @@ ${revisionText}`);
     return blueprint;
   }
 
-  function normalizePersonaSpec(raw) {
+  function structuredPersonaMultilineText(value) {
+    if (typeof value === "string") return compactMultiline(value);
+    return structuredPersonaText(value);
+  }
+
+  function parseManualSpecArray(value, max = 16) {
+    if (Array.isArray(value)) return normalizeStructuredStringArray(value, max);
+    const text = String(value ?? "").trim();
+    if (!text) return [];
+    const items = text
+      .split(/\r?\n|;|,(?=\s)|，/)
+      .map((item) => compact(item.replace(/^[-*•]\s*/, "")))
+      .filter(Boolean);
+    return unique(items, max);
+  }
+
+  function normalizePersonaSpec(raw, options = {}) {
     const parsed = parseJsonObject(raw);
     if (!parsed) return null;
+    const allowPartial = options?.allowPartial === true;
     const identity = parsed.identity && typeof parsed.identity === "object" && !Array.isArray(parsed.identity) ? parsed.identity : {};
     const personalityBlock = parsed.personality && typeof parsed.personality === "object" && !Array.isArray(parsed.personality) ? parsed.personality : {};
     const relationshipBlock = parsed.relationship && typeof parsed.relationship === "object" && !Array.isArray(parsed.relationship) ? parsed.relationship : {};
     const personalityCore = personalityBlock.coreTraits || personalityBlock.core_traits || personalityBlock.traits || personalityBlock.summary || parsed.personality;
     const boundaryValues = unique([
-      ...normalizeStructuredStringArray(parsed.boundaries, 16),
-      ...normalizeStructuredStringArray(relationshipBlock.boundary || relationshipBlock.boundaries, 16),
+      ...(typeof parsed.boundaries === "string" ? parseManualSpecArray(parsed.boundaries, 16) : normalizeStructuredStringArray(parsed.boundaries, 16)),
+      ...(typeof relationshipBlock.boundary === "string" || typeof relationshipBlock.boundaries === "string"
+        ? parseManualSpecArray(relationshipBlock.boundary || relationshipBlock.boundaries, 16)
+        : normalizeStructuredStringArray(relationshipBlock.boundary || relationshipBlock.boundaries, 16)),
     ], 16);
     const spec = {
       name: compact(parsed.name || identity.name || ""),
@@ -4093,26 +3963,36 @@ ${revisionText}`);
       speciesRace: compact(parsed.speciesRace || parsed.species_race || parsed.species || parsed.race || identity.speciesRace || identity.species_race || identity.species || identity.race || ""),
       origin: compact(parsed.origin || parsed.nationality || identity.origin || identity.nationality || ""),
       role: compact(parsed.role || identity.role || identity.occupation || ""),
-      appearance: structuredPersonaText(parsed.appearance),
-      personality: structuredPersonaText(personalityCore),
-      visibleSide: structuredPersonaText(parsed.visibleSide || parsed.visible_side),
-      hiddenSide: structuredPersonaText(parsed.hiddenSide || parsed.hidden_side),
-      internalContradiction: structuredPersonaText(parsed.internalContradiction || parsed.internal_contradiction || personalityBlock.internalContradiction || personalityBlock.internal_contradiction),
-      background: structuredPersonaText(parsed.background),
-      speech: structuredPersonaText(parsed.speech || personalityBlock.speech),
-      motivation: structuredPersonaText(parsed.motivation || personalityBlock.motivation),
-      relationshipStyle: structuredPersonaText(parsed.relationshipStyle || parsed.relationship_style || relationshipBlock.style || relationshipBlock.route),
-      relationshipToCharacter: structuredPersonaText(parsed.relationshipToCharacter || parsed.relationship_to_character || relationshipBlock.initial || relationshipBlock.toCharacter || relationshipBlock.to_character),
-      preferences: structuredPersonaText(parsed.preferences || personalityBlock.preferences),
-      conflictRepair: structuredPersonaText(parsed.conflictRepair || parsed.conflict_repair || relationshipBlock.conflictRepair || relationshipBlock.conflict_repair || relationshipBlock.repair),
-      skills: normalizeStructuredStringArray(parsed.skills || personalityBlock.strengths, 16),
-      limitations: normalizeStructuredStringArray(parsed.limitations || parsed.weaknesses || parsed.weakness || personalityBlock.flaws || personalityBlock.weaknesses, 16),
-      knowledgeBoundary: structuredPersonaText(parsed.knowledgeBoundary || parsed.knowledge_boundary || relationshipBlock.knowledgeBoundary || relationshipBlock.knowledge_boundary),
+      appearance: structuredPersonaMultilineText(parsed.appearance),
+      personality: structuredPersonaMultilineText(personalityCore),
+      visibleSide: structuredPersonaMultilineText(parsed.visibleSide || parsed.visible_side),
+      hiddenSide: structuredPersonaMultilineText(parsed.hiddenSide || parsed.hidden_side),
+      internalContradiction: structuredPersonaMultilineText(parsed.internalContradiction || parsed.internal_contradiction || personalityBlock.internalContradiction || personalityBlock.internal_contradiction),
+      background: structuredPersonaMultilineText(parsed.background),
+      speech: structuredPersonaMultilineText(parsed.speech || personalityBlock.speech),
+      motivation: structuredPersonaMultilineText(parsed.motivation || personalityBlock.motivation),
+      relationshipStyle: structuredPersonaMultilineText(parsed.relationshipStyle || parsed.relationship_style || relationshipBlock.style || relationshipBlock.route),
+      relationshipToCharacter: structuredPersonaMultilineText(parsed.relationshipToCharacter || parsed.relationship_to_character || relationshipBlock.initial || relationshipBlock.toCharacter || relationshipBlock.to_character),
+      preferences: structuredPersonaMultilineText(parsed.preferences || personalityBlock.preferences),
+      conflictRepair: structuredPersonaMultilineText(parsed.conflictRepair || parsed.conflict_repair || relationshipBlock.conflictRepair || relationshipBlock.conflict_repair || relationshipBlock.repair),
+      skills: typeof (parsed.skills || personalityBlock.strengths) === "string"
+        ? parseManualSpecArray(parsed.skills || personalityBlock.strengths, 16)
+        : normalizeStructuredStringArray(parsed.skills || personalityBlock.strengths, 16),
+      limitations: typeof (parsed.limitations || parsed.weaknesses || parsed.weakness || personalityBlock.flaws || personalityBlock.weaknesses) === "string"
+        ? parseManualSpecArray(parsed.limitations || parsed.weaknesses || parsed.weakness || personalityBlock.flaws || personalityBlock.weaknesses, 16)
+        : normalizeStructuredStringArray(parsed.limitations || parsed.weaknesses || parsed.weakness || personalityBlock.flaws || personalityBlock.weaknesses, 16),
+      knowledgeBoundary: structuredPersonaMultilineText(parsed.knowledgeBoundary || parsed.knowledge_boundary || relationshipBlock.knowledgeBoundary || relationshipBlock.knowledge_boundary),
       boundaries: boundaryValues,
-      worldFitNotes: normalizeStructuredStringArray(parsed.worldFitNotes || parsed.world_fit_notes, 16),
+      worldFitNotes: typeof (parsed.worldFitNotes || parsed.world_fit_notes) === "string"
+        ? parseManualSpecArray(parsed.worldFitNotes || parsed.world_fit_notes, 16)
+        : normalizeStructuredStringArray(parsed.worldFitNotes || parsed.world_fit_notes, 16),
     };
-    if (!spec.name || !spec.role || !spec.personality) return null;
+    if (!allowPartial && (!spec.name || !spec.role || !spec.personality)) return null;
     return spec;
+  }
+
+  function normalizePersonaSpecDraft(raw) {
+    return normalizePersonaSpec(raw, { allowPartial: true });
   }
 
   function candidateAliasValue(parsed, keys = []) {
@@ -4567,12 +4447,18 @@ ${revisionText}`);
   }
 
 
-  function selectedRandomCandidate() {
+  function selectedRandomCandidate(ctx = null) {
+    if (ctx && preservedRandomCandidateContextKey && randomCandidateContextKey(ctx, preservedRandomConceptText, preservedUserRewriteGuidanceText) !== preservedRandomCandidateContextKey) {
+      return null;
+    }
     return preservedRandomCandidates.find((item) => item.id === preservedSelectedRandomCandidateId) || null;
   }
 
 
-  function selectedCharacterCandidate() {
+  function selectedCharacterCandidate(ctx = null) {
+    if (ctx && preservedCharacterCandidateContextKey && characterCandidateContextKey(ctx) !== preservedCharacterCandidateContextKey) {
+      return null;
+    }
     return preservedCharacterCandidates.find((item) => item.id === preservedSelectedCharacterCandidateId) || null;
   }
 
@@ -5103,14 +4989,15 @@ ${revisionText}`);
     }
 
     if (candidates.length !== 3) {
-      setGeneratedOutputText([
+      lastFailedRawOutput = [
         "[PRIMARY STRUCTURED RESPONSE]",
         String(content || ""),
         ...(retryContent ? ["", "[FULL REGENERATION RESPONSE]", String(retryContent)] : []),
         ...(repairContent ? ["", "[ONE-PASS SCHEMA REPAIR RESPONSE]", String(repairContent)] : []),
-      ].join("\n"));
-      throw new Error(`랜덤 후보를 정확히 3개 추출하지 못했습니다. 인식된 후보: ${candidates.length}개`);
+      ].join("\n");
+      throw new Error(`랜덤 후보를 정확히 3개 추출하지 못했습니다. 인식된 후보: ${candidates.length}개 (기존 초안은 유지되었으며 실패 원문은 진단 로그에 기록되었습니다.)`);
     }
+    lastFailedRawOutput = "";
     preservedRandomCandidates = candidates.map((item) => ({ ...item, id: `lia-candidate::${randomId()}` }));
     preservedSelectedRandomCandidateId = "";
     preservedRandomCandidateContextKey = randomCandidateContextKey(ctx, preservedRandomConceptText, preservedUserRewriteGuidanceText);
@@ -5520,7 +5407,11 @@ ${revisionText}`);
     ).trim();
     const generationMode = normalizeGenerationMode(parsed.generationMode || parsed.generation_mode || GENERATION_MODE_CLASSIC);
     const generationId = String(parsed.generationId || parsed.generation_id || "").trim();
-    const personaSpec = normalizePersonaSpec(parsed.personaSpec || parsed.persona_spec || null);
+    const draftAllowPartial = parsed.draftAllowPartial === true || parsed.draft_allow_partial === true;
+    const rawSpecInput = parsed.personaSpec || parsed.persona_spec || null;
+    const personaSpec = draftAllowPartial
+      ? normalizePersonaSpecDraft(rawSpecInput || {})
+      : normalizePersonaSpec(rawSpecInput);
     const worldBlueprint = normalizeWorldBlueprint(parsed.worldBlueprint || parsed.world_blueprint || null);
     const worldBlueprintKey = String(parsed.worldBlueprintKey || parsed.world_blueprint_key || "").trim();
     const personaFieldLocks = normalizePersonaFieldLocks(parsed.personaFieldLocks || parsed.persona_field_locks || []);
@@ -5531,7 +5422,39 @@ ${revisionText}`);
     const personaVariants = normalizePersonaVariants(parsed.personaVariants || parsed.persona_variants || null, personaPrompt);
     const activePersonaProfile = normalizePersonaVariantProfile(parsed.activePersonaProfile || parsed.active_persona_profile || "full");
     const personaLineage = normalizePersonaLineage(parsed.personaLineage || parsed.persona_lineage || null);
-    if (personaPrompt) return { personaName, personaPrompt, personaSpec, worldBlueprint, worldBlueprintKey, generationMode, generationId, personaFieldLocks, personaAudit, personaEvolution, randomCandidate, characterCandidate, personaVariants, activePersonaProfile, personaLineage };
+    const promptAutoSyncedFromSpec = parsed.promptAutoSyncedFromSpec === true;
+    const specOutOfSyncWithPrompt = parsed.specOutOfSyncWithPrompt === true;
+    const draftScopeKey = String(parsed.draftScopeKey || parsed.draft_scope_key || "").trim();
+    const draftScopeLabel = compact(parsed.draftScopeLabel || parsed.draft_scope_label || "");
+    const translatedPersonaPrompt = String(parsed.translatedPersonaPrompt || parsed.translated_persona_prompt || "").trim();
+    const translationLanguageRaw = String(parsed.translationLanguage || parsed.translation_language || "").trim();
+    const translationLanguage = translationLanguageRaw ? normalizeTranslationLanguage(translationLanguageRaw) : "";
+    if (personaPrompt || draftAllowPartial) {
+      return {
+        personaName,
+        personaPrompt,
+        personaSpec,
+        worldBlueprint,
+        worldBlueprintKey,
+        generationMode,
+        generationId,
+        personaFieldLocks,
+        personaAudit,
+        personaEvolution,
+        randomCandidate,
+        characterCandidate,
+        personaVariants,
+        activePersonaProfile,
+        personaLineage,
+        ...(draftAllowPartial ? { draftAllowPartial: true } : {}),
+        ...(promptAutoSyncedFromSpec ? { promptAutoSyncedFromSpec: true } : {}),
+        ...(specOutOfSyncWithPrompt ? { specOutOfSyncWithPrompt: true } : {}),
+        ...(draftScopeKey ? { draftScopeKey } : {}),
+        ...(draftScopeLabel ? { draftScopeLabel } : {}),
+        ...(translatedPersonaPrompt ? { translatedPersonaPrompt } : {}),
+        ...(translationLanguage ? { translationLanguage } : {}),
+      };
+    }
     for (const key of nestedKeys) {
       const result = normalizeLLMResultObject(parsed[key]);
       if (result) return result;
@@ -5569,10 +5492,12 @@ ${revisionText}`);
   }
   function parseLooseLLMResult(text) {
     const value = stripCodeFence(text);
+    if (!value) return null;
+    if (/^\s*\{/.test(value) && !extractBalancedJsonObject(value)) return null;
     const personaNames = ["personaPrompt", "persona_prompt", "persona slot", "personaSlot", "persona"];
     const nameNames = ["personaName", "persona_name", "name"];
-    const personaPrompt = extractLooseField(value, personaNames, nameNames);
-    const personaName = compact(extractLooseField(value, nameNames, personaNames));
+    const personaPrompt = extractLooseField(value, personaNames, [...nameNames, "personaSpec", "persona_spec"]);
+    const personaName = compact(extractLooseField(value, nameNames, [...personaNames, "personaSpec", "persona_spec"]));
     if (personaPrompt) return { personaName, personaPrompt, generationMode: GENERATION_MODE_CLASSIC, generationId: "" };
     return null;
   }
@@ -5600,8 +5525,9 @@ ${revisionText}`);
   }
 
   function getLLMResultOverride() {
-    if (typeof document === "undefined") return null;
-    const el = document.getElementById("dpg-llm-result");
+    const el = (typeof document !== "undefined" && typeof document.getElementById === "function")
+      ? document.getElementById("dpg-llm-result")
+      : null;
     const text = el ? el.value : preservedLLMResultText;
     return parseLLMResult(text || "");
   }
@@ -5752,6 +5678,7 @@ ${revisionText}`);
   function normalizeLLMConfig(config = {}) {
     const rawProvider = String(config.provider || "openai").trim().toLowerCase();
     const aliasMap = {
+      risuai_otherax: "risuai", "risuai-otherax": "risuai", otherax: "risuai", other_ax: "risuai", "other-ax": "risuai", risu: "risuai",
       anthropic: "claude", google: "gemini", google_ai: "gemini", "google-ai": "gemini",
       lm_studio: "lmstudio", "lm-studio": "lmstudio", "ollama-cloud": "ollama_cloud",
       vertex_gemini: "vertex", "vertex-gemini": "vertex", vertex_openai: "vertex-openai",
@@ -5957,14 +5884,18 @@ ${revisionText}`);
   function normalizeVaultResult(item) {
     if (!item || typeof item !== "object") return null;
     const personaPrompt = String(item.personaPrompt || item.persona_prompt || "").trim();
-    if (!personaPrompt) return null;
+    const draftAllowPartial = item.draftAllowPartial === true || item.draft_allow_partial === true;
+    if (!personaPrompt && !draftAllowPartial) return null;
     const now = new Date().toISOString();
     const createdAt = String(item.createdAt || item.created_at || item.savedAt || now);
     const updatedAt = String(item.updatedAt || item.updated_at || createdAt || now);
     const generationMode = normalizeGenerationMode(item.generationMode || item.generation_mode || GENERATION_MODE_CLASSIC);
     const generationId = String(item.generationId || item.generation_id || "").trim();
     const personaName = compact(item.personaName || item.persona_name || inferGeneratedPersonaName(personaPrompt));
-    const personaSpec = normalizePersonaSpec(item.personaSpec || item.persona_spec || null);
+    const rawSpec = item.personaSpec || item.persona_spec || null;
+    const personaSpec = draftAllowPartial
+      ? normalizePersonaSpecDraft(rawSpec || {})
+      : (normalizePersonaSpec(rawSpec) || (rawSpec && typeof rawSpec === "object" ? normalizePersonaSpecDraft(rawSpec) : null));
     const worldBlueprint = normalizeWorldBlueprint(item.worldBlueprint || item.world_blueprint || null);
     const worldBlueprintKey = String(item.worldBlueprintKey || item.world_blueprint_key || "").trim();
     const personaFieldLocks = normalizePersonaFieldLocks(item.personaFieldLocks || item.persona_field_locks || []);
@@ -5978,6 +5909,13 @@ ${revisionText}`);
     const sourcePersona = compact(item.sourcePersona || item.source_persona || "");
     const targetCharacter = compact(item.targetCharacter || item.target_character || item.characterName || item.character_name || "");
     const title = compact(item.title || [personaName || sourcePersona || "{{user}}", targetCharacter ? `@ ${targetCharacter}` : ""].filter(Boolean).join(" ")) || "Saved LIA Result";
+    const promptAutoSyncedFromSpec = item.promptAutoSyncedFromSpec === true;
+    const specOutOfSyncWithPrompt = item.specOutOfSyncWithPrompt === true;
+    const draftScopeKey = String(item.draftScopeKey || item.draft_scope_key || "").trim();
+    const draftScopeLabel = compact(item.draftScopeLabel || item.draft_scope_label || "");
+    const translatedPersonaPrompt = String(item.translatedPersonaPrompt || item.translated_persona_prompt || "").trim();
+    const translationLanguageRaw = String(item.translationLanguage || item.translation_language || "").trim();
+    const translationLanguage = translationLanguageRaw ? normalizeTranslationLanguage(translationLanguageRaw) : "";
     return {
       id: String(item.id || `lia-result::${randomId()}`),
       title,
@@ -6001,6 +5939,13 @@ ${revisionText}`);
       personaVariants,
       activePersonaProfile,
       personaLineage,
+      ...(draftAllowPartial ? { draftAllowPartial: true } : {}),
+      ...(promptAutoSyncedFromSpec ? { promptAutoSyncedFromSpec: true } : {}),
+      ...(specOutOfSyncWithPrompt ? { specOutOfSyncWithPrompt: true } : {}),
+      ...(draftScopeKey ? { draftScopeKey } : {}),
+      ...(draftScopeLabel ? { draftScopeLabel } : {}),
+      ...(translatedPersonaPrompt ? { translatedPersonaPrompt } : {}),
+      ...(translationLanguage ? { translationLanguage } : {}),
     };
   }
 
@@ -6061,6 +6006,10 @@ ${revisionText}`);
           ? "현재 대화의 사용자 메시지"
           : compact(persona.name || normalized.sourcePersona || "{{user}}");
     const targetCharacter = compact(char.name || normalized.targetCharacter || "{{char}}");
+    const translatedPersonaPrompt = String(normalized.translatedPersonaPrompt || getTranslationText() || "").trim();
+    const translationLanguage = translatedPersonaPrompt
+      ? normalizeTranslationLanguage(normalized.translationLanguage || getTranslationLanguage())
+      : (normalized.translationLanguage || "");
     return {
       ...normalized,
       id: `lia-result::${randomId()}`,
@@ -6076,13 +6025,17 @@ ${revisionText}`);
       personaSpec: normalized.personaSpec || null,
       worldBlueprint: normalized.worldBlueprint || normalizeWorldBlueprint(ctx.worldBlueprint) || null,
       worldBlueprintKey: normalized.worldBlueprintKey || String(ctx.worldBlueprintKey || ""),
+      draftScopeKey: normalized.draftScopeKey || liaScopeKey(ctx),
+      draftScopeLabel: normalized.draftScopeLabel || compact([char.name || "", ctx.chat?.name || ""].filter(Boolean).join(" · ")),
+      ...(translatedPersonaPrompt ? { translatedPersonaPrompt } : {}),
+      ...(translationLanguage ? { translationLanguage } : {}),
     };
   }
   function resultToOutputText(result) {
     const normalized = normalizeVaultResult(result) || result || {};
     const generationMode = normalizeGenerationMode(normalized.generationMode || GENERATION_MODE_CLASSIC);
     return JSON.stringify({
-      ...(isIndependentGeneration(null, normalized) && normalized.personaName ? { personaName: String(normalized.personaName) } : {}),
+      ...((isIndependentGeneration(null, normalized) || normalized.draftAllowPartial) && normalized.personaName ? { personaName: String(normalized.personaName) } : {}),
       ...(normalized.personaSpec ? { personaSpec: normalized.personaSpec } : {}),
       personaPrompt: String(normalized.personaPrompt || ""),
       ...(normalized.worldBlueprint ? { worldBlueprint: normalized.worldBlueprint } : {}),
@@ -6095,6 +6048,13 @@ ${revisionText}`);
       ...(Object.values(normalizePersonaVariants(normalized.personaVariants, normalized.personaPrompt)).some(Boolean) ? { personaVariants: normalizePersonaVariants(normalized.personaVariants, normalized.personaPrompt) } : {}),
       ...(normalized.activePersonaProfile ? { activePersonaProfile: normalizePersonaVariantProfile(normalized.activePersonaProfile) } : {}),
       ...(normalized.personaLineage ? { personaLineage: normalizePersonaLineage(normalized.personaLineage) } : {}),
+      ...(normalized.draftAllowPartial === true ? { draftAllowPartial: true } : {}),
+      ...(normalized.promptAutoSyncedFromSpec === true ? { promptAutoSyncedFromSpec: true } : {}),
+      ...(normalized.specOutOfSyncWithPrompt === true ? { specOutOfSyncWithPrompt: true } : {}),
+      ...(normalized.draftScopeKey ? { draftScopeKey: String(normalized.draftScopeKey) } : {}),
+      ...(normalized.draftScopeLabel ? { draftScopeLabel: String(normalized.draftScopeLabel) } : {}),
+      ...(normalized.translatedPersonaPrompt ? { translatedPersonaPrompt: String(normalized.translatedPersonaPrompt) } : {}),
+      ...(normalized.translationLanguage ? { translationLanguage: normalizeTranslationLanguage(normalized.translationLanguage) } : {}),
       ...(generationMode !== GENERATION_MODE_CLASSIC ? { generationMode } : {}),
       ...(generationMode !== GENERATION_MODE_CLASSIC && normalized.generationId ? { generationId: String(normalized.generationId) } : {}),
     }, null, 2);
@@ -6171,6 +6131,7 @@ ${revisionText}`);
   // GRADIA v0.25.14-derived provider core, adapted for LIA's single persona-generation task.
   // Stage routing/preset assignment is intentionally not transplanted because LIA has one generation route.
   const LIA_PROVIDER_PRESETS = Object.freeze({
+    risuai: { label: "RisuAI 보조모델 (otherAx)", baseUrl: "", mode: "risuai", hostManaged: true },
     openai: { label: "OpenAI", baseUrl: "https://api.openai.com", chatPath: "/v1/chat/completions", responsesPath: "/v1/responses", modelsPath: "/v1/models", mode: "openai" },
     claude: { label: "Claude / Anthropic", baseUrl: "https://api.anthropic.com", chatPath: "/v1/messages", modelsPath: "/v1/models", mode: "anthropic" },
     gemini: { label: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", modelsPath: "/models", mode: "gemini" },
@@ -6317,6 +6278,7 @@ ${revisionText}`);
   }
 
   const LIA_PROVIDER_ALIASES = Object.freeze({
+    risuai_otherax: "risuai", "risuai-otherax": "risuai", otherax: "risuai", other_ax: "risuai", "other-ax": "risuai", risu: "risuai",
     anthropic: "claude", google: "gemini", google_ai: "gemini", "google-ai": "gemini",
     lm_studio: "lmstudio", "lm-studio": "lmstudio", "ollama-cloud": "ollama_cloud",
     "vertex-gemini": "vertex", vertex_gemini: "vertex", vertex_openai: "vertex-openai",
@@ -6352,7 +6314,7 @@ ${revisionText}`);
 
   function providerAllowsEmptyKey(provider = "openai") {
     const key = normalizeProviderKey(provider);
-    return Boolean(LIA_PROVIDER_PRESETS[key]?.local) || ["ollama", "lmstudio", "custom"].includes(key);
+    return key === "risuai" || Boolean(LIA_PROVIDER_PRESETS[key]?.local) || ["ollama", "lmstudio", "custom"].includes(key);
   }
 
   function providerSupportsResponses(provider = "openai") {
@@ -6367,11 +6329,12 @@ ${revisionText}`);
 
   function providerDefaultModel(provider = "openai") {
     const key = normalizeProviderKey(provider);
+    if (key === "risuai") return "otherAx";
     if (key === "gemini" || key === "vertex") return "gemini-2.5-flash";
     if (key === "claude") return "claude-sonnet-4-5";
-    if (key === "ollama" || key === "ollama_cloud") return "llama3.1";
     if (key === "deepseek") return "deepseek-chat";
-    return "gpt-4o-mini";
+    if (key === "openai" || key === "copilot") return "gpt-4o-mini";
+    return "";
   }
 
   function clampNumber(value, min, max, fallback) {
@@ -6472,6 +6435,7 @@ ${revisionText}`);
     const requested = normalizeReasoningPresetKey(config.reasoningPreset || "auto");
     if (requested && requested !== "auto") return requested;
     const provider = normalizeProviderKey(config.provider);
+    if (provider === "risuai") return "off";
     const model = String(config.model || "").toLowerCase();
     if (provider === "openrouter") return "openrouter";
     if (provider === "claude" || model.includes("claude")) return "claude";
@@ -6569,6 +6533,81 @@ ${revisionText}`);
     return `${(hash >>> 0).toString(36)}-${source.length}`;
   }
 
+  async function callRisuAuxiliaryProvider(config, systemPrompt, userPrompt, options = {}) {
+    const prev = liaRisuAuxQueue;
+    let releaseQueue;
+    liaRisuAuxQueue = new Promise((resolve) => { releaseQueue = resolve; });
+    await prev.catch(() => {});
+    try {
+      const api = getRuntimeApi();
+      const runLLMModel = api?.runLLMModel;
+      if (typeof runLLMModel !== "function") {
+        throw new Error("현재 RisuAI 환경에서 runLLMModel(otherAx 보조 모델) API를 사용할 수 없습니다.");
+      }
+      if (options.signal?.aborted) {
+        throw Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" });
+      }
+      const chat = [];
+      if (String(systemPrompt || "").trim()) chat.push({ role: "system", content: String(systemPrompt) });
+      chat.push({ role: "user", content: String(userPrompt || "") });
+      const mode = String(config?.model || "otherAx").trim() || "otherAx";
+      const timeoutMs = clampInt(config?.timeout || 180000, 5000, 600000, 180000);
+      const runPromise = Promise.resolve().then(() => runLLMModel({
+        type: "generate",
+        chat,
+        mode,
+        maxTokens: Number(options.maxTokens || config?.maxCompletionTokens || 0) || undefined,
+      }));
+      let timerId = null;
+      let abortListener = null;
+      const racePromises = [runPromise];
+      racePromises.push(new Promise((_, reject) => {
+        timerId = setTimeout(() => {
+          reject(Object.assign(new Error(`RisuAI auxiliary model timed out after ${timeoutMs}ms`), { code: "LIA_PROVIDER_TIMEOUT" }));
+        }, timeoutMs);
+      }));
+      if (options.signal) {
+        racePromises.push(new Promise((_, reject) => {
+          const onAbort = () => reject(Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" }));
+          if (options.signal.aborted) {
+            onAbort();
+            return;
+          }
+          abortListener = onAbort;
+          options.signal.addEventListener("abort", onAbort, { once: true });
+        }));
+      }
+      let response;
+      try {
+        response = await Promise.race(racePromises);
+      } finally {
+        if (timerId !== null) clearTimeout(timerId);
+        if (options.signal && abortListener && typeof options.signal.removeEventListener === "function") {
+          options.signal.removeEventListener("abort", abortListener);
+        }
+      }
+      if (!response) throw new Error("RisuAI 보조 모델이 빈 응답을 반환했습니다.");
+      if (response?.type === "fail") {
+        throw new Error(limitText(response.result || response.error || "RisuAI 보조 모델 실행에 실패했습니다.", 600));
+      }
+      let text = "";
+      if (typeof response === "string") {
+        text = response;
+      } else if (typeof response?.result === "string") {
+        text = response.result;
+      } else if (response?.result && typeof response.result?.getReader === "function") {
+        text = await responseBodyToText({ body: response.result }, { signal: options.signal, timeoutMs });
+      } else if (response?.result != null) {
+        text = await responseBodyToText(response.result, { signal: options.signal, timeoutMs });
+      } else {
+        text = await responseBodyToText(response, { signal: options.signal, timeoutMs });
+      }
+      return { content: String(text || "").trim(), usage: response?.usage || {}, finishReason: String(response?.finishReason || ""), raw: response };
+    } finally {
+      releaseQueue();
+    }
+  }
+
   function buildProviderSharedReference(ctx, purpose = "persona") {
     const lore = purpose === "world"
       ? asArray(ctx?.worldLoreSignals || ctx?.worldLoreRerank?.selected || ctx?.loreSignals)
@@ -6637,18 +6676,55 @@ ${revisionText}`);
     }
   }
 
-  async function responseBodyToText(response) {
+  async function responseBodyToText(response, options = {}) {
     if (response == null) return "";
     if (typeof response === "string") return response;
     if (typeof response?.data === "string") return response.data;
     if (response?.body && typeof response.body.getReader === "function") {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      const signal = options?.signal;
+      const timeoutMs = Number(options?.timeoutMs || 0);
       let out = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) out += decoder.decode(value, { stream: true });
+      let timerId = null;
+      let timedOut = false;
+      let aborted = false;
+      const cancelReader = () => { try { reader.cancel?.().catch(() => {}); } catch (_) {} };
+      const onAbort = () => { aborted = true; cancelReader(); };
+      if (signal) {
+        if (signal.aborted) {
+          cancelReader();
+          throw Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" });
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+      if (timeoutMs > 0) {
+        timerId = setTimeout(() => { timedOut = true; cancelReader(); }, timeoutMs);
+      }
+      try {
+        while (true) {
+          const readPromises = [reader.read()];
+          if (signal) {
+            readPromises.push(new Promise((_, reject) => {
+              if (signal.aborted) reject(Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" }));
+              else signal.addEventListener("abort", () => reject(Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" })), { once: true });
+            }));
+          }
+          if (timeoutMs > 0) {
+            readPromises.push(new Promise((_, reject) => {
+              const waitTimer = setTimeout(() => reject(Object.assign(new Error(`Provider stream timed out after ${timeoutMs}ms`), { code: "LIA_PROVIDER_TIMEOUT" })), timeoutMs);
+              readPromises[0].then(() => clearTimeout(waitTimer), () => clearTimeout(waitTimer));
+            }));
+          }
+          const { value, done } = await Promise.race(readPromises);
+          if (aborted || signal?.aborted) throw Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" });
+          if (timedOut) throw Object.assign(new Error(`Provider stream timed out after ${timeoutMs}ms`), { code: "LIA_PROVIDER_TIMEOUT" });
+          if (done) break;
+          if (value) out += decoder.decode(value, { stream: true });
+        }
+      } finally {
+        if (timerId !== null) clearTimeout(timerId);
+        if (signal && typeof signal.removeEventListener === "function") signal.removeEventListener("abort", onAbort);
       }
       out += decoder.decode();
       return out;
@@ -6658,9 +6734,9 @@ ${revisionText}`);
     return JSON.stringify(response);
   }
 
-  async function responseToJsonOrText(response) {
+  async function responseToJsonOrText(response, options = {}) {
     if (response?.ok === false) {
-      const detail = await responseBodyToText(response).catch(() => "");
+      const detail = await responseBodyToText(response, options).catch(() => "");
       throw new Error(`HTTP ${response.status || "Unknown"}: ${limitText(detail || response.statusText || "Provider request failed", 1200)}`);
     }
     if (response && typeof response === "object" && response.data != null && typeof response.json !== "function") {
@@ -6669,7 +6745,7 @@ ${revisionText}`);
       }
       return response.data;
     }
-    const raw = await responseBodyToText(response);
+    const raw = await responseBodyToText(response, options);
     if (!raw) return {};
     try { return JSON.parse(raw); } catch (_) { return raw; }
   }
@@ -6679,6 +6755,7 @@ ${revisionText}`);
     let output = "";
     let usage = {};
     let finishReason = "";
+    let sawResponseDelta = false;
     for (const line of source.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("data:")) continue;
@@ -6697,9 +6774,22 @@ ${revisionText}`);
         finishReason = data?.candidates?.[0]?.finishReason || finishReason;
         continue;
       }
+      if (data?.type === "response.output_text.delta") {
+        sawResponseDelta = true;
+        output += String(data?.delta || "");
+        finishReason = data?.response?.status || finishReason;
+        continue;
+      }
+      if (data?.type === "response.completed") {
+        if (!sawResponseDelta) {
+          const completedText = String(data?.response?.output_text || "")
+            || asArray(data?.response?.output).flatMap((item) => asArray(item?.content)).map((part) => String(part?.text || part?.output_text || "")).join("");
+          output += completedText;
+        }
+        finishReason = data?.response?.status || finishReason;
+        continue;
+      }
       output += String(data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.text || data?.delta || "");
-      if (data?.type === "response.output_text.delta") output += String(data?.delta || "");
-      if (data?.type === "response.completed") output += String(data?.response?.output_text || "");
       finishReason = data?.choices?.[0]?.finish_reason || data?.response?.status || finishReason;
     }
     return { content: output.trim(), usage, finishReason };
@@ -7023,16 +7113,17 @@ ${revisionText}`);
       ? buildOpenAIResponsesPayload(config, systemPrompt, userPrompt, options)
       : buildOpenAIChatPayload(config, systemPrompt, userPrompt, options);
     const response = await liaFetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: options.signal }, config.timeout);
+    const bodyReadOptions = { signal: options.signal, timeoutMs: config.timeout };
     if (config.stream) {
-      if (response?.ok === false) return responseToJsonOrText(response);
-      const raw = await responseBodyToText(response);
+      if (response?.ok === false) return responseToJsonOrText(response, bodyReadOptions);
+      const raw = await responseBodyToText(response, bodyReadOptions);
       const parsed = parseSsePayload(raw, provider);
       if (!parsed.content) {
         try { parsed.content = extractOpenAIText(JSON.parse(raw)); } catch (_) {}
       }
       return parsed;
     }
-    const data = await responseToJsonOrText(response);
+    const data = await responseToJsonOrText(response, bodyReadOptions);
     return { content: extractOpenAIText(data), usage: data?.usage || {}, finishReason: data?.choices?.[0]?.finish_reason || data?.status || "", raw: data };
   }
 
@@ -7073,11 +7164,12 @@ ${revisionText}`);
     const headers = applyProviderHeaders({ "Content-Type": "application/json", Accept: config.stream ? "text/event-stream" : "application/json" }, "claude", config);
     const body = buildAnthropicPayload(config, systemPrompt, userPrompt, options);
     const response = await liaFetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: options.signal }, config.timeout);
+    const bodyReadOptions = { signal: options.signal, timeoutMs: config.timeout };
     if (config.stream) {
-      if (response?.ok === false) return responseToJsonOrText(response);
-      return parseSsePayload(await responseBodyToText(response), "claude");
+      if (response?.ok === false) return responseToJsonOrText(response, bodyReadOptions);
+      return parseSsePayload(await responseBodyToText(response, bodyReadOptions), "claude");
     }
-    const data = await responseToJsonOrText(response);
+    const data = await responseToJsonOrText(response, bodyReadOptions);
     return { content: extractAnthropicText(data), usage: data?.usage || {}, finishReason: data?.stop_reason || "", raw: data };
   }
 
@@ -7312,11 +7404,12 @@ ${revisionText}`);
     const built = await buildGeminiPayload(config, systemPrompt, userPrompt, options);
     try {
       const response = await liaFetch(url, { method: "POST", headers, body: JSON.stringify(built.body), signal: options.signal }, config.timeout);
+      const bodyReadOptions = { signal: options.signal, timeoutMs: config.timeout };
       if (config.stream) {
-        if (response?.ok === false) return responseToJsonOrText(response);
-        return parseSsePayload(await responseBodyToText(response), provider);
+        if (response?.ok === false) return responseToJsonOrText(response, bodyReadOptions);
+        return parseSsePayload(await responseBodyToText(response, bodyReadOptions), provider);
       }
-      const data = await responseToJsonOrText(response);
+      const data = await responseToJsonOrText(response, bodyReadOptions);
       return { content: extractGeminiText(data), usage: data?.usageMetadata || data?.usage || {}, finishReason: data?.candidates?.[0]?.finishReason || "", raw: data };
     } catch (error) {
       if (!retriedCache && built.cachedContent && /cached.?content|cache|not found|expired|invalid/i.test(String(error?.message || error))) {
@@ -7353,9 +7446,10 @@ ${revisionText}`);
     if (/\/chat\/completions$/i.test(url)) return await callOpenAICompat({ ...config, provider: "custom", endpoint: url }, systemPrompt, userPrompt, options);
     const headers = applyProviderHeaders({ "Content-Type": "application/json", Accept: config.stream ? "application/x-ndjson" : "application/json" }, "ollama", config);
     const response = await liaFetch(url, { method: "POST", headers, body: JSON.stringify(buildOllamaPayload(config, systemPrompt, userPrompt, options)), signal: options.signal }, config.timeout);
+    const bodyReadOptions = { signal: options.signal, timeoutMs: config.timeout };
     if (config.stream) {
-      if (response?.ok === false) return responseToJsonOrText(response);
-      const raw = await responseBodyToText(response);
+      if (response?.ok === false) return responseToJsonOrText(response, bodyReadOptions);
+      const raw = await responseBodyToText(response, bodyReadOptions);
       let content = "";
       let usage = {};
       for (const line of raw.split(/\r?\n/)) {
@@ -7368,7 +7462,7 @@ ${revisionText}`);
       }
       return { content: content.trim(), usage, finishReason: "" };
     }
-    const data = await responseToJsonOrText(response);
+    const data = await responseToJsonOrText(response, bodyReadOptions);
     return { content: extractOllamaText(data), usage: data?.usage || { prompt_tokens: data?.prompt_eval_count || 0, completion_tokens: data?.eval_count || 0 }, finishReason: data?.done_reason || "", raw: data };
   }
 
@@ -7398,6 +7492,7 @@ ${revisionText}`);
 
   async function executeProviderCall(config, systemPrompt, userPrompt, options = {}) {
     const provider = normalizeProviderKey(config.provider);
+    if (provider === "risuai") return await callRisuAuxiliaryProvider(config, systemPrompt, userPrompt, options);
     if (!config.model) throw new Error("Model ID를 입력해 주세요.");
     if (!providerAllowsEmptyKey(provider) && !config.apiKey) throw new Error(`${providerDisplayLabel(provider)} API Key가 필요합니다.`);
     if (provider === "claude") return await callAnthropic(config, systemPrompt, userPrompt, options);
@@ -7412,7 +7507,8 @@ ${revisionText}`);
     const providerStartedAt = Date.now();
     if (!config.model) config = { ...config, model: providerDefaultModel(config.provider) };
     const maxTokens = clampInt(options.maxTokens || config.maxCompletionTokens, 64, 200000, config.maxCompletionTokens);
-    const callOptions = { ...options, maxTokens };
+    const effectiveSignal = options.signal || activeLiaAiJob?.controller?.signal || undefined;
+    const callOptions = { ...options, maxTokens, signal: effectiveSignal };
     appendDebugLog("provider", "call_start", { requestId: providerCallId, provider: config.provider, model: config.model, requestFormat: config.requestFormat, jsonMode: callOptions.jsonMode === true, maxTokens, systemPromptChars: String(systemPrompt || "").length, userPromptChars: String(userPrompt || "").length, systemPromptHash: hashText(systemPrompt || ""), userPromptHash: hashText(userPrompt || "") });
     let transientRetry = false;
     let cacheRetry = false;
@@ -7439,6 +7535,17 @@ ${revisionText}`);
           appendDebugLog("provider", content ? "retry_length_stop_reasoning_off" : "retry_empty_content_reasoning_off", { requestId: providerCallId, provider: config.provider, model: config.model }, "warn");
           config = { ...config, reasoningPreset: "off", reasoningEffort: "none", reasoningBudgetTokens: 0, thinkingType: "disabled", serviceTier: "off" };
           continue;
+        }
+        if (lengthStop && callOptions.jsonMode) {
+          const stripped = stripCodeFence(content);
+          const balanced = extractBalancedJsonObject(stripped);
+          let validJson = false;
+          if (balanced) {
+            try { JSON.parse(balanced); validJson = true; } catch (_) {}
+          }
+          if (!validJson) {
+            throw Object.assign(new Error(`${providerDisplayLabel(config.provider)} JSON 응답이 출력 토큰 제한(${maxTokens})에서 잘렸습니다. Max Tokens를 늘린 뒤 다시 시도해 주세요.`), { code: "LIA_OUTPUT_TRUNCATED" });
+          }
         }
         if (!content && normalizeProviderKey(config.provider) === "ollama_cloud" && callOptions.jsonMode && !jsonRetry) {
           // If a Cloud route/model rejects or mishandles response_format without a clean HTTP error,
@@ -7556,6 +7663,7 @@ ${revisionText}`);
   async function listProviderModels(rawConfig, options = {}) {
     const config = normalizeLLMConfig(rawConfig);
     const provider = normalizeProviderKey(config.provider);
+    if (provider === "risuai") return [{ id: "otherAx", label: "RisuAI 보조 모델 (otherAx)", contextWindow: 0 }];
     if (provider === "vertex" || provider === "vertex-openai" || provider === "copilot") throw new Error(`${providerDisplayLabel(provider)}는 LIA에서 자동 모델 목록 조회를 제공하지 않습니다. Model ID를 직접 입력하세요.`);
     let url;
     if (provider === "gemini") {
@@ -7587,7 +7695,7 @@ ${revisionText}`);
     return limitText(content, 160);
   }
   function renderPersonaSpecLocally(spec) {
-    const s = normalizePersonaSpec(spec);
+    const s = normalizePersonaSpec(spec) || normalizePersonaSpecDraft(spec);
     if (!s) return "";
     const list = (items) => asArray(items).filter(Boolean).map((item) => `- ${item}`).join("\n") || "- None specified.";
     return [
@@ -7630,7 +7738,250 @@ ${revisionText}`);
       "### Knowledge Boundary", s.knowledgeBoundary,
       "",
       "### Boundaries", list(s.boundaries),
+      "",
+      "### World Fit Notes", list(s.worldFitNotes),
     ].join("\n").trim();
+  }
+
+  function buildPersonaSpecFromPromptText(name = "", promptText = "") {
+    const source = String(promptText || "").replace(/\r\n?/g, "\n").trim();
+    const raw = { name: compact(name || inferGeneratedPersonaName(source) || "Persona") };
+    const headingAlias = {
+      profile: "__profile__",
+      appearance: "appearance",
+      background: "background",
+      personality: "personality",
+      visibleside: "visibleSide",
+      hiddenside: "hiddenSide",
+      internalcontradiction: "internalContradiction",
+      speech: "speech",
+      motivation: "motivation",
+      relationshipbehavior: "relationshipStyle",
+      relationshipstyle: "relationshipStyle",
+      relationshipwithchar: "relationshipToCharacter",
+      relationshiptocharacter: "relationshipToCharacter",
+      preferences: "preferences",
+      conflictrepair: "conflictRepair",
+      skills: "skills",
+      limitations: "limitations",
+      knowledgeboundary: "knowledgeBoundary",
+      boundaries: "boundaries",
+      worldfitnotes: "worldFitNotes",
+    };
+    const sections = {};
+    let currentKey = "";
+    for (const line of source.split("\n")) {
+      const heading = line.match(/^\s*#{1,6}\s+(.+?)\s*$/);
+      if (heading) {
+        const norm = heading[1].normalize("NFKC").toLowerCase().replace(/\{\{char\}\}/g, "char").replace(/[^\p{L}\p{N}]+/gu, "");
+        currentKey = headingAlias[norm] || resolvePersonaEvolutionFieldKey(heading[1]) || "";
+        if (currentKey && !sections[currentKey]) sections[currentKey] = [];
+        continue;
+      }
+      if (currentKey) sections[currentKey].push(line);
+    }
+    if (sections.__profile__) {
+      for (const line of sections.__profile__) {
+        const kv = line.match(/^\s*(?:[-*]\s*)?(Name|Gender|Sex|Age|Species\/Race|Species|Race|Origin|Nationality|Role|Occupation|이름|성별|나이|종족|출신|국적|역할|직업)\s*[:：]\s*(.+)\s*$/i);
+        if (!kv) continue;
+        const resolved = resolvePersonaEvolutionFieldKey(kv[1]);
+        if (resolved && compact(kv[2])) raw[resolved] = compact(kv[2]);
+      }
+    }
+    for (const [key, lines] of Object.entries(sections)) {
+      if (key === "__profile__") continue;
+      if (PERSONA_SPEC_ARRAY_KEYS.has(key)) {
+        const items = lines
+          .map((item) => compact(item.replace(/^\s*[-*•]\s*/, "")))
+          .filter((item) => item && !/^none specified\.?$/i.test(item));
+        if (items.length) raw[key] = items;
+      } else {
+        const text = compactMultiline(lines.join("\n"));
+        if (text) raw[key] = text;
+      }
+    }
+    const facts = inferPersonaFacts({ name: raw.name, personaPrompt: source });
+    if (!raw.gender && facts.gender && facts.gender !== "Unspecified") raw.gender = facts.gender;
+    if (!raw.age && facts.age) raw.age = facts.age;
+    if (!raw.speciesRace && facts.species && facts.species !== "Unspecified") raw.speciesRace = facts.species;
+    if (!raw.origin && facts.nationality && facts.nationality !== "Setting-adapted") raw.origin = facts.nationality;
+    if (!raw.appearance && facts.appearanceDigest) raw.appearance = facts.appearanceDigest;
+    if (!raw.background && facts.backgroundDigest) raw.background = facts.backgroundDigest;
+    if (!raw.personality && (facts.emotionalDigest || source)) raw.personality = facts.emotionalDigest || limitText(source, 800);
+    if (!raw.speech && facts.speechDigest) raw.speech = facts.speechDigest;
+    if (!raw.motivation && facts.desireDigest) raw.motivation = facts.desireDigest;
+    if (!raw.relationshipStyle && facts.relationshipDigest) raw.relationshipStyle = facts.relationshipDigest;
+    if (!raw.preferences && facts.dailyRoutineDigest) raw.preferences = facts.dailyRoutineDigest;
+    if (!raw.conflictRepair && (facts.apologyStyleDigest || facts.conflictStyleDigest)) raw.conflictRepair = facts.apologyStyleDigest || facts.conflictStyleDigest;
+    return normalizePersonaSpecDraft(raw);
+  }
+
+  function createBlankPersonaDraft(ctx = liaMockupContext) {
+    const emptySpec = normalizePersonaSpecDraft({
+      name: "새 Persona",
+      gender: "",
+      age: "",
+      speciesRace: "",
+      origin: "",
+      role: "",
+      appearance: "",
+      personality: "",
+      visibleSide: "",
+      hiddenSide: "",
+      internalContradiction: "",
+      background: "",
+      speech: "",
+      motivation: "",
+      relationshipStyle: "",
+      relationshipToCharacter: "",
+      preferences: "",
+      conflictRepair: "",
+      skills: [],
+      limitations: [],
+      knowledgeBoundary: "",
+      boundaries: [],
+      worldFitNotes: [],
+    });
+    const rendered = renderPersonaSpecLocally(emptySpec);
+    const scopeKey = ctx ? liaScopeKey(ctx) : "";
+    const scopeLabel = ctx ? compact([ctx.char?.name || "", ctx.chat?.name || ""].filter(Boolean).join(" · ")) : "";
+    const draft = {
+      personaName: emptySpec.name,
+      personaSpec: emptySpec,
+      personaPrompt: rendered,
+      personaFieldLocks: [],
+      personaAudit: null,
+      personaEvolution: null,
+      personaVariants: { full: rendered, standard: "", compact: "" },
+      activePersonaProfile: "full",
+      personaLineage: createPersonaLineage("manual_create", "blank manual draft"),
+      generationMode: GENERATION_MODE_CLASSIC,
+      draftAllowPartial: true,
+      promptAutoSyncedFromSpec: true,
+      specOutOfSyncWithPrompt: false,
+      ...(scopeKey ? { draftScopeKey: scopeKey } : {}),
+      ...(scopeLabel ? { draftScopeLabel: scopeLabel } : {}),
+    };
+    preservedPersonaFieldLocks = new Set();
+    preservedPersonaAudit = null;
+    clearPersonaAuditFixState();
+    preservedPersonaEvolution = null;
+    preservedPersonaEvolutionSelection = new Set();
+    preservedPersonaVariantProfile = "full";
+    preservedTranslationText = "";
+    preservedGeneratedPersonaNameText = draft.personaName;
+    setGeneratedOutputText(resultToOutputText(draft));
+    liaMockupEditorDraftDirty = true;
+    activeWorkspaceTab = "edit";
+    preservedEditorSection = "persona";
+    return draft;
+  }
+
+  function loadRisuPersonaIntoDraft(persona, ctx = liaMockupContext) {
+    if (!persona || typeof persona !== "object") throw new Error("편집기로 불러올 RisuAI Persona를 찾지 못했습니다.");
+    const name = compact(persona.name || inferGeneratedPersonaName(persona.personaPrompt || "") || "Persona");
+    const promptText = String(persona.personaPrompt || persona.prompt || persona.description || "").trim();
+    const spec = buildPersonaSpecFromPromptText(name, promptText);
+    const scopeKey = ctx ? liaScopeKey(ctx) : "";
+    const scopeLabel = ctx ? compact([ctx.char?.name || "", ctx.chat?.name || ""].filter(Boolean).join(" · ")) : "";
+    const draft = {
+      personaName: name,
+      personaSpec: spec,
+      personaPrompt: promptText || renderPersonaSpecLocally(spec),
+      personaFieldLocks: [],
+      personaAudit: null,
+      personaEvolution: null,
+      personaVariants: { full: promptText || renderPersonaSpecLocally(spec), standard: "", compact: "" },
+      activePersonaProfile: "full",
+      personaLineage: createPersonaLineage("load_persona", `loaded from RisuAI Persona: ${persona.name || persona.id || "Persona"}`),
+      generationMode: GENERATION_MODE_CLASSIC,
+      draftAllowPartial: true,
+      promptAutoSyncedFromSpec: false,
+      specOutOfSyncWithPrompt: false,
+      ...(scopeKey ? { draftScopeKey: scopeKey } : {}),
+      ...(scopeLabel ? { draftScopeLabel: scopeLabel } : {}),
+    };
+    preservedPersonaFieldLocks = new Set();
+    preservedPersonaAudit = null;
+    clearPersonaAuditFixState();
+    preservedPersonaEvolution = null;
+    preservedPersonaEvolutionSelection = new Set();
+    preservedPersonaVariantProfile = "full";
+    preservedTranslationText = "";
+    preservedGeneratedPersonaNameText = draft.personaName;
+    setGeneratedOutputText(resultToOutputText(draft));
+    liaMockupEditorDraftDirty = true;
+    activeWorkspaceTab = "edit";
+    preservedEditorSection = "persona";
+    return draft;
+  }
+
+  function exportCurrentPersonaJson() {
+    const result = requireLLMResult(["personaPrompt"]);
+    const spec = normalizePersonaSpec(result.personaSpec) || normalizePersonaSpecDraft(result.personaSpec);
+    return JSON.stringify({
+      schema: "lia.persona_bundle.v1",
+      exportedAt: new Date().toISOString(),
+      personaName: compact(result.personaName || spec?.name || ""),
+      personaSpec: spec,
+      personaPrompt: String(result.personaPrompt || ""),
+      personaVariants: normalizePersonaVariants(result.personaVariants, result.personaPrompt),
+      activePersonaProfile: normalizePersonaVariantProfile(result.activePersonaProfile || preservedPersonaVariantProfile),
+      personaFieldLocks: currentPersonaFieldLocks(),
+      translatedPersonaPrompt: getTranslationText(),
+      translationLanguage: getTranslationLanguage(),
+      worldBlueprint: normalizeWorldBlueprint(result.worldBlueprint),
+      personaLineage: normalizePersonaLineage(result.personaLineage),
+      generationMode: normalizeGenerationMode(result.generationMode || GENERATION_MODE_CLASSIC),
+    }, null, 2);
+  }
+
+  function importPersonaJsonText(rawText, ctx = liaMockupContext) {
+    const parsed = parseJsonObject(rawText);
+    if (!parsed) throw new Error("올바른 Persona JSON 객체를 입력해 주세요.");
+    const promptText = String(parsed.personaPrompt || parsed.persona_prompt || parsed.prompt || "").trim();
+    const rawSpec = parsed.personaSpec || parsed.persona_spec || (parsed.name && parsed.role ? parsed : null);
+    const name = compact(parsed.personaName || parsed.persona_name || parsed.name || rawSpec?.name || inferGeneratedPersonaName(promptText) || "Imported Persona");
+    const spec = normalizePersonaSpec(rawSpec)
+      || (rawSpec && typeof rawSpec === "object" ? normalizePersonaSpecDraft(rawSpec) : null)
+      || (promptText ? buildPersonaSpecFromPromptText(name, promptText) : null);
+    const finalPrompt = promptText || (spec ? renderPersonaSpecLocally(spec) : "");
+    if (!finalPrompt && !spec) throw new Error("가져온 JSON에 personaPrompt 또는 personaSpec 정보가 없습니다.");
+    const translation = String(parsed.translatedPersonaPrompt || parsed.translated_persona_prompt || "").trim();
+    const transLang = normalizeTranslationLanguage(parsed.translationLanguage || parsed.translation_language || preservedTranslationLanguage);
+    const scopeKey = ctx ? liaScopeKey(ctx) : "";
+    const scopeLabel = ctx ? compact([ctx.char?.name || "", ctx.chat?.name || ""].filter(Boolean).join(" · ")) : "";
+    const imported = {
+      personaName: name,
+      personaSpec: spec,
+      personaPrompt: finalPrompt,
+      personaVariants: normalizePersonaVariants(parsed.personaVariants || parsed.persona_variants, finalPrompt),
+      activePersonaProfile: normalizePersonaVariantProfile(parsed.activePersonaProfile || parsed.active_persona_profile || "full"),
+      personaFieldLocks: normalizePersonaFieldLocks(parsed.personaFieldLocks || parsed.persona_field_locks || []),
+      worldBlueprint: normalizeWorldBlueprint(parsed.worldBlueprint || parsed.world_blueprint),
+      personaLineage: normalizePersonaLineage(parsed.personaLineage || parsed.persona_lineage) || createPersonaLineage("import_json", `imported: ${name}`),
+      generationMode: normalizeGenerationMode(parsed.generationMode || parsed.generation_mode || GENERATION_MODE_CLASSIC),
+      draftAllowPartial: true,
+      promptAutoSyncedFromSpec: false,
+      specOutOfSyncWithPrompt: false,
+      ...(translation ? { translatedPersonaPrompt: translation, translationLanguage: transLang } : {}),
+      ...(scopeKey ? { draftScopeKey: scopeKey } : {}),
+      ...(scopeLabel ? { draftScopeLabel: scopeLabel } : {}),
+    };
+    preservedPersonaFieldLocks = new Set(imported.personaFieldLocks);
+    preservedPersonaAudit = null;
+    clearPersonaAuditFixState();
+    preservedPersonaEvolution = null;
+    preservedPersonaEvolutionSelection = new Set();
+    preservedPersonaVariantProfile = imported.activePersonaProfile;
+    preservedGeneratedPersonaNameText = imported.personaName;
+    if (translation) setTranslationText(translation, transLang);
+    else preservedTranslationText = "";
+    setGeneratedOutputText(resultToOutputText(imported));
+    liaMockupEditorDraftDirty = true;
+    activeWorkspaceTab = "edit";
+    preservedEditorSection = "persona";
+    return imported;
   }
 
   async function renderPersonaPromptFromSpec(ctx, spec, config, previousPrompt = "") {
@@ -8253,8 +8604,8 @@ ${revisionText}`);
     }
     ctx = refreshPersonaLoreRerank(ctx);
 
-    const activeCandidate = generationMode === GENERATION_MODE_RANDOM ? selectedRandomCandidate() : null;
-    const activeCharacterCandidate = generationMode === GENERATION_MODE_CHARACTER ? selectedCharacterCandidate() : null;
+    const activeCandidate = generationMode === GENERATION_MODE_RANDOM ? selectedRandomCandidate(ctx) : null;
+    const activeCharacterCandidate = generationMode === GENERATION_MODE_CHARACTER ? selectedCharacterCandidate(ctx) : null;
     if (generationMode === GENERATION_MODE_RANDOM && !activeCandidate) {
       throw new Error("랜덤 신규 생성은 먼저 후보 3개를 만들고 그중 하나를 선택해야 합니다.");
     }
@@ -8312,7 +8663,7 @@ ${revisionText}`);
           parsed = {
             ...repairedParsed,
             personaName: repairedParsed.personaName || parsed?.personaName || "",
-            personaPrompt: parsed?.personaPrompt || repairedParsed.personaPrompt,
+            personaPrompt: repairedParsed.personaPrompt || parsed?.personaPrompt,
           };
           personaSpec = repairedSpec;
         }
@@ -8322,12 +8673,12 @@ ${revisionText}`);
       }
     }
     if (!parsed?.personaPrompt) {
-      setGeneratedOutputText(structuredGenerationFailureText(content, repairContent));
-      throw new Error("LLM 응답에서 personaPrompt를 추출하지 못했습니다. 원문을 JSON Result 칸에 남겼습니다.");
+      lastFailedRawOutput = structuredGenerationFailureText(content, repairContent);
+      throw new Error("LLM 응답에서 personaPrompt를 추출하지 못했습니다. 기존 초안은 유지되었으며 실패 원문은 진단 로그에 기록되었습니다.");
     }
     if (!personaSpec) {
-      setGeneratedOutputText(structuredGenerationFailureText(content, repairContent));
-      throw new Error("LLM 응답에서 PersonaSpec을 확인하지 못했습니다. 원문을 JSON Result 칸에 남겼습니다.");
+      lastFailedRawOutput = structuredGenerationFailureText(content, repairContent);
+      throw new Error("LLM 응답에서 PersonaSpec을 확인하지 못했습니다. 기존 초안은 유지되었으며 실패 원문은 진단 로그에 기록되었습니다.");
     }
     const personaName = compact(
       activeCandidate?.name
@@ -8338,8 +8689,8 @@ ${revisionText}`);
       || (independentMode ? "" : ctx.personaInfo?.persona?.name || "User")
     );
     if (independentMode && !personaName) {
-      setGeneratedOutputText(content);
-      throw new Error(`${generationModeLabel(generationMode)} 결과에서 페르소나 이름을 확인하지 못했습니다. 원문을 JSON Result 칸에 남겼습니다.`);
+      lastFailedRawOutput = String(content || "");
+      throw new Error(`${generationModeLabel(generationMode)} 결과에서 페르소나 이름을 확인하지 못했습니다. 기존 초안은 유지되었으며 실패 원문은 진단 로그에 기록되었습니다.`);
     }
     if (personaSpec.name && personaName && compact(personaSpec.name).toLowerCase() !== compact(personaName).toLowerCase()) {
       personaSpec.worldFitNotes = unique([`출력 이름은 PersonaSpec의 Name(${personaSpec.name})을 정본으로 사용합니다.`, ...personaSpec.worldFitNotes], 16);
@@ -8352,6 +8703,12 @@ ${revisionText}`);
       const validNames = [activeCharacterCandidate.name, ...activeCharacterCandidate.aliases].map((item) => compact(item).toLowerCase()).filter(Boolean);
       if (!validNames.includes(compact(personaSpec.name).toLowerCase())) {
         throw new Error(`선택한 등장인물(${activeCharacterCandidate.name})과 PersonaSpec 이름(${personaSpec.name})이 일치하지 않습니다. 다른 인물 정보가 섞였을 가능성이 있어 생성을 중단했습니다.`);
+      }
+    }
+    if (!contextOptions) {
+      const latest = await getLiveRuntimeContext().catch(() => null);
+      if (pluginUnloaded || (latest && liaScopeKey(latest) !== liaScopeKey(ctx))) {
+        throw new Error("생성 중 채팅 또는 캐릭터가 변경되어 초안 덮어쓰기를 중단했습니다. 다시 생성해 주세요.");
       }
     }
     preservedPersonaFieldLocks = new Set();
@@ -8373,7 +8730,12 @@ ${revisionText}`);
       personaVariants: { full: initialPrompt, standard: "", compact: "" },
       activePersonaProfile: "full",
       personaLineage: createPersonaLineage(activeCandidate ? "candidate_expand" : activeCharacterCandidate ? "character_extract" : "generation", activeCandidate ? `candidate: ${activeCandidate.name}` : activeCharacterCandidate ? `character: ${activeCharacterCandidate.name}` : `mode: ${generationMode}`),
+      promptAutoSyncedFromSpec: false,
+      specOutOfSyncWithPrompt: false,
+      draftScopeKey: liaScopeKey(ctx),
+      draftScopeLabel: compact([ctx.char?.name || "", ctx.chat?.name || ""].filter(Boolean).join(" · ")),
     };
+    lastFailedRawOutput = "";
     setGeneratedOutputText(resultToOutputText(completed));
     let vaultMessage = "";
     let vaultTone = "ok";
@@ -8467,14 +8829,42 @@ ${revisionText}`);
     const baseResult = requireLLMResult(["personaPrompt"]);
     const prompt = source === "translation"
       ? getTranslationText()
-      : String(document.getElementById("dpg-persona-preview")?.value || baseResult.personaPrompt || "").trim();
+      : String((typeof document !== "undefined" && typeof document.getElementById === "function" ? document.getElementById("dpg-persona-preview")?.value : "") || baseResult.personaPrompt || "").trim();
     if (!prompt) throw new Error(source === "translation" ? "채택할 번역본이 없습니다." : "채택할 원본 페르소나가 없습니다.");
+    const adoptedLanguage = source === "translation" ? getTranslationLanguage() : "original";
     const generationResult = {
       ...baseResult,
       personaPrompt: prompt,
       activePersonaProfile: normalizePersonaVariantProfile(baseResult.activePersonaProfile || preservedPersonaVariantProfile),
-      adoptedLanguage: source === "translation" ? getTranslationLanguage() : "original",
+      adoptedLanguage,
     };
+    if (preservedAdoptionMode === "new") {
+      const created = await withPersonaDatabaseMutationLock(async () => {
+        const snapshot = await readPersonaDatabaseForMutation("adopt_new_persona", ctx);
+        const personas = snapshot.personas.slice();
+        const persona = buildFallbackPersona(ctx, generationResult);
+        persona.id = `lia-adopted-persona::${randomId()}`;
+        persona.name = getDynamicPersonaSaveName(ctx, generationResult);
+        personas.push(persona);
+        const expected = JSON.parse(JSON.stringify(persona));
+        const verify = await writePersonaArrayMutation("adopt_new_persona", snapshot, personas);
+        const index = verify.personas.findIndex((item) => String(item?.id || "").trim() === persona.id);
+        if (index < 0) throw new Error("새 Persona 채택 저장 후 RisuAI readback 검증에 실패했습니다.");
+        if (['name', 'personaPrompt', 'note', 'icon', 'image', 'largePortrait'].some((field) => JSON.stringify(verify.personas[index]?.[field]) !== JSON.stringify(expected?.[field]))) {
+          throw new Error('LIA_PERSONA_READBACK_MISMATCH');
+        }
+        return { action: "created", persona: verify.personas[index], personaIndex: index };
+      });
+      return {
+        ...ctx,
+        action: created.action,
+        target: source === "translation" ? "adopt_translation" : "adopt_original",
+        personaName: created.persona.name,
+        personaIndex: created.personaIndex,
+        personaId: created.persona.id,
+        adoptedLanguage,
+      };
+    }
     const result = await upsertGeneratedPersona(ctx, generationResult);
     return {
       ...ctx,
@@ -8482,7 +8872,8 @@ ${revisionText}`);
       target: source === "translation" ? "adopt_translation" : "adopt_original",
       personaName: result.persona.name,
       personaIndex: result.personaIndex,
-      adoptedLanguage: source === "translation" ? getTranslationLanguage() : "original",
+      personaId: result.persona.id,
+      adoptedLanguage,
     };
   }
 
@@ -8683,7 +9074,16 @@ ${revisionText}`);
     const ctx = await getContext();
     const result = requireLLMResult(["personaPrompt"]);
     if (isPersonaEvolutionCopy(result)) throw new Error("갱신 복사본은 새 RisuAI Persona로 저장해 주세요.");
-    const explicitName = typeof document !== "undefined" ? String(document.getElementById("dpg-generated-persona-name")?.value || "").trim() : String(preservedGeneratedPersonaNameText || "").trim();
+    const legacyNameEl = typeof document !== "undefined" && typeof document.getElementById === "function"
+      ? document.getElementById("dpg-generated-persona-name")
+      : null;
+    const explicitName = String(
+      (legacyNameEl ? legacyNameEl.value : "")
+      || preservedGeneratedPersonaNameText
+      || result?.personaSpec?.name
+      || result?.personaName
+      || ""
+    ).trim();
     return await withPersonaDatabaseMutationLock(async () => {
       const snapshot = await readPersonaDatabaseForMutation("editor_save_current", ctx);
       const db = snapshot.db;
@@ -8697,6 +9097,70 @@ ${revisionText}`);
       const personas = snapshot.personas.slice();
       const current = personas[targetState.dynamicIndex];
       const targetId = String(current?.id || targetState.dynamicId || "").trim();
+      const currentChatId = String(latestChat?.id || latestChat?.chatId || "").trim();
+      const isGeneratedPersona = Boolean(
+        String(current?.id || "").startsWith(GENERATED_PERSONA_ID_PREFIX)
+        || isGeneratedFallbackPersona(current, runtimeCtx)
+      );
+      let sharedWithOtherChat = false;
+      if (isGeneratedPersona && targetId) {
+        const charsSnap = !Array.isArray(db?.characters) && typeof api.getDatabase === "function"
+          ? await api.getDatabase(["characters"]).catch(() => null)
+          : null;
+        const allCharacters = Array.isArray(db?.characters)
+          ? db.characters
+          : (Array.isArray(charsSnap?.characters) ? charsSnap.characters : [ctx?.char].filter(Boolean));
+        for (const character of allCharacters) {
+          for (const chat of Array.isArray(character?.chats) ? character.chats : []) {
+            if (chat === latestChat) continue;
+            const otherChatId = String(chat?.id || chat?.chatId || "").trim();
+            if (currentChatId && otherChatId && otherChatId === currentChatId) continue;
+            const boundIds = [chat?.bindedPersona, chat?.boundPersonaId, chat?.personaId].map((v) => String(v || "").trim()).filter(Boolean);
+            if (boundIds.includes(targetId)) {
+              sharedWithOtherChat = true;
+              break;
+            }
+          }
+          if (sharedWithOtherChat) break;
+        }
+      }
+      if (sharedWithOtherChat) {
+        const charKey = String(ctx.char?.chaId || ctx.char?.id || ctx.char?.name || ctx.charIndex || "character").trim();
+        const chatKey = currentChatId || String(latestChat?.name || ctx.chatIndex || "chat").trim();
+        const forkedId = `${GENERATED_PERSONA_ID_PREFIX}::${charKey}::${chatKey}::fork_${randomId()}`;
+        const lineage = Array.from(new Set([
+          ...(Array.isArray(current?.lineagePersonaIds) ? current.lineagePersonaIds : []),
+          targetId
+        ].map((v) => String(v || "").trim()).filter(Boolean)));
+        const forked = {
+          ...current,
+          ...(explicitName ? { name: explicitName } : {}),
+          id: forkedId,
+          forkedFromPersonaId: targetId,
+          lineagePersonaIds: lineage,
+          personaPrompt: String(result.personaPrompt || "").trim(),
+        };
+        personas.push(forked);
+        const intendedCopy = JSON.parse(JSON.stringify({
+          personaPrompt: forked.personaPrompt,
+          ...(explicitName ? { name: forked.name } : {})
+        }));
+        const verify = await writePersonaArrayMutation("editor_save_current_fork", snapshot, personas);
+        const verifyPersonas = verify.personas;
+        const verified = verifyPersonas.find((item) => String(item?.id || "").trim() === forkedId);
+        if (!verified || String(verified.personaPrompt || "").trim() !== String(result.personaPrompt || "").trim()) {
+          throw new Error("COW 포크 Persona 저장 후 RisuAI readback 검증에 실패했습니다.");
+        }
+        const mismatched = Object.keys(intendedCopy).find((field) => JSON.stringify(verified?.[field]) !== JSON.stringify(intendedCopy[field]));
+        if (mismatched) throw new Error(`LIA_PERSONA_READBACK_MISMATCH:${mismatched}`);
+        await PersonaBindingManager.write({ ...runtimeCtx, db: { ...db, personas: verifyPersonas } }, forkedId, {
+          expectedBeforePersonaId: targetId,
+          reason: "cow_fork_shared_generated_persona"
+        });
+        appendOperationLog("persona_save", `공유된 생성 Persona의 원본을 보존하기 위해 현재 채팅용으로 분리 저장했습니다: ${verified.name || current.name || "Persona"}`, { personaId: forkedId, forkedFromPersonaId: targetId, mode: "cow_fork" }, "ok");
+        appendDebugLog("persona_db", "editor_save_current_cow_fork", { personaId: forkedId, forkedFromPersonaId: targetId, personaName: verified.name || current.name || "", selectedPersona: Number(verify?.selectedPersona), personaCount: verifyPersonas.length }, "info");
+        return { target: "edit_save_current_dynamic", personaName: String(verified.name || current.name || "Persona"), personaId: forkedId, forkedFromPersonaId: targetId, action: "forked" };
+      }
       const updated = {
         ...current,
         ...(explicitName ? { name: explicitName } : {}),
@@ -8826,6 +9290,8 @@ ${revisionText}`);
     preservedPersonaEvolution = normalizePersonaEvolution(item.personaEvolution);
     preservedPersonaEvolutionSelection = new Set(preservedPersonaEvolution?.suggestions?.filter((entry) => entry.confidence >= 75).map((entry) => entry.id) || []);
     preservedPersonaVariantProfile = normalizePersonaVariantProfile(item.activePersonaProfile || "full");
+    preservedTranslationText = String(item.translatedPersonaPrompt || "").trim();
+    if (item.translationLanguage) preservedTranslationLanguage = normalizeTranslationLanguage(item.translationLanguage);
     syncLLMSaveMode(item);
     activeWorkspaceTab = "edit";
     preservedEditorSection = "persona";
@@ -8846,14 +9312,37 @@ ${revisionText}`);
       const snapshot = await readPersonaDatabaseForMutation("generated_cleanup", ctx);
       const personas = snapshot.personas.slice();
       const selected = { ...selectedPersonaSnapshotFromDb(snapshot.db), index: snapshot.selectedPersona };
+      const boundPersonaIds = new Set();
+      const charsSnap = !Array.isArray(snapshot.db?.characters) && typeof api.getDatabase === "function"
+        ? await api.getDatabase(["characters"]).catch(() => null)
+        : null;
+      const allCharacters = Array.isArray(snapshot.db?.characters)
+        ? snapshot.db.characters
+        : (Array.isArray(charsSnap?.characters) ? charsSnap.characters : [ctx?.char].filter(Boolean));
+      for (const character of allCharacters) {
+        for (const chat of Array.isArray(character?.chats) ? character.chats : []) {
+          for (const candidate of [
+            chat?.bindedPersona,
+            chat?.boundPersonaId,
+            chat?.personaId,
+            ...(Array.isArray(chat?.memorySessionBridge?.personaLineage) ? chat.memorySessionBridge.personaLineage : []),
+            ...(Array.isArray(chat?.memorySessionBridge?.personaForkChain) ? chat.memorySessionBridge.personaForkChain : [])
+          ]) {
+            const id = String(candidate || "").trim();
+            if (id) boundPersonaIds.add(id);
+          }
+        }
+      }
+      if (selected.id) boundPersonaIds.add(String(selected.id).trim());
       let protectedCount = 0;
       let removedPersonas = 0;
       const removedRows = [];
       const keptPersonas = personas.filter((persona, index) => {
         if (!isGeneratedFallbackPersona(persona, ctx)) return true;
-        if (selected.index >= 0 && index <= selected.index) {
+        const pid = String(persona?.id || "").trim();
+        if ((selected.index >= 0 && index <= selected.index) || (pid && boundPersonaIds.has(pid))) {
           protectedCount += 1;
-          appendDebugLog("persona_db", "cleanup_blocked_index_shift", { personaId: String(persona?.id || ""), personaName: persona?.name || "", removeIndex: index, selectedPersona: selected.index, source: "generated_cleanup" }, "warn");
+          appendDebugLog("persona_db", "cleanup_blocked_bound_or_index", { personaId: pid, personaName: persona?.name || "", removeIndex: index, selectedPersona: selected.index, bound: pid ? boundPersonaIds.has(pid) : false, source: "generated_cleanup" }, "warn");
           return true;
         }
         removedPersonas += 1;
@@ -9016,19 +9505,30 @@ ${revisionText}`);
     const state = buildPersonaPanelState(ctx);
     const dbFailed = ctx?.personaDatabaseReadStatus?.available === false;
     const persona = state.effectivePersona;
-    const name = String(persona?.name || "Persona 없음");
+    const name = state.danglingDynamic
+      ? `끊어진 Persona (${state.dynamicId})`
+      : String(persona?.name || "Persona 없음");
     const initial = name.trim().slice(0, 1).toUpperCase() || "P";
     const pocket = app.querySelector("#pocket");
-    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">변화 검토</button></div>`;
+    if (pocket) {
+      const statusBadge = state.danglingDynamic
+        ? `<span class="bind bind--warn">끊어진 연결 · 복구/해제 필요</span>`
+        : `<span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span>`;
+      const desc = state.danglingDynamic
+        ? `이 채팅에 연결된 Persona ID(${state.dynamicId})가 RisuAI 목록에 없습니다. 아래 버튼으로 연결을 해제하거나 다른 Persona를 연결하세요.`
+        : String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").trim();
+      pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div>${statusBadge}<h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(desc)}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button>${state.danglingDynamic ? '<button class="btn btn--danger" type="button" data-lia-persona-unbind>연결 해제…</button>' : ''}<button class="btn" type="button" data-lia-load-active-persona${persona ? "" : " disabled"}>현재 Persona 편집기로 불러오기</button><button class="btn" type="button" data-lia-new-blank-draft>빈 초안 새로 작성</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">변화 검토</button></div>`;
+    }
     const list = app.querySelector("#mine-list");
     if (list) {
       if (dbFailed) list.innerHTML = `<div class="banner banner--danger" role="status"><b>RisuAI Persona 목록을 읽지 못했습니다.</b><span>${htmlEscape(personaDatabaseReadFailureMessage())}</span></div>`;
-      else if (!state.personas.length) list.innerHTML = `<div class="empty"><b>Persona가 없습니다</b><span>만들기에서 초안을 생성하거나 RisuAI에서 Persona를 추가하세요.</span></div>`;
+      else if (!state.personas.length) list.innerHTML = `<div class="empty"><b>Persona가 없습니다</b><span>만들기에서 초안을 생성하거나 빈 초안을 직접 작성하거나 RisuAI에서 Persona를 추가하세요.</span></div>`;
       else list.innerHTML = state.personas.map((item,index)=>{
         const id=String(item?.id||""); const isDefault=index===state.selectedIndex; const isBound=!!id&&id===state.dynamicId; const note=limitText(String(item?.note||"").trim(),96);
         const label=String(item?.name||`Persona ${index+1}`);
         const flags=[isDefault?"RisuAI 기본":null,isBound?"이 채팅 연결":null].filter(Boolean);
-        return `<article class="pcard" aria-label="${htmlEscape(label)}"><span class="avatar avatar--sm ">${htmlEscape(label.slice(0,1).toUpperCase())}</span><span><b>${htmlEscape(label)}</b><small>${htmlEscape(note||"RisuAI Persona")}</small></span><span class="pcard__side">${flags.map(flag=>`<span class="bind ${isBound?"bind--here":"bind--none"}">${htmlEscape(flag)}</span>`).join("")}</span><button class="btn btn--sm" type="button" data-lia-persona-manage="${htmlEscape(personaPanelChoiceRef(item,index))}">관리</button></article>`;
+        const ref=personaPanelChoiceRef(item,index);
+        return `<article class="pcard" aria-label="${htmlEscape(label)}"><span class="avatar avatar--sm ">${htmlEscape(label.slice(0,1).toUpperCase())}</span><span><b>${htmlEscape(label)}</b><small>${htmlEscape(note||"RisuAI Persona")}</small></span><span class="pcard__side">${flags.map(flag=>`<span class="bind ${isBound?"bind--here":"bind--none"}">${htmlEscape(flag)}</span>`).join("")}</span><div class="cluster"><button class="btn btn--sm" type="button" data-lia-pocket-edit="${htmlEscape(ref)}">편집기 열기</button><button class="btn btn--sm" type="button" data-lia-persona-manage="${htmlEscape(ref)}">관리</button></div></article>`;
       }).join("");
     }
     const headerScope = app.querySelector(".scope span:last-child");
@@ -9043,11 +9543,19 @@ ${revisionText}`);
     liaMockupContextOptions = { ...liaMockupContextOptions, ...ctx?.contextOptions, generationMode: routeMode };
     const scope=app.querySelector(".topbar .scope");
     if(scope)scope.innerHTML=`<b>현재 채팅</b><span>›</span><span>${htmlEscape(ctx?.char?.name||"캐릭터 미선택")} · ${htmlEscape(ctx?.chat?.name||"채팅 미선택")}</span>`;
+    app.querySelector("#job-gen")?.removeAttribute("data-require");
     app.querySelectorAll("#dlg-cand [data-detail-root]").forEach(root=>{root.innerHTML='<div class="empty"><b>실제 후보 결과가 없습니다.</b><span>후보 생성 작업을 완료한 뒤 표시합니다.</span></div>';});
     app.querySelectorAll('.page[data-page="make"] [data-detail]').forEach(node => node.classList.toggle("is-on", node.dataset.detail === routeMode));
     app.querySelectorAll('.page[data-page="make"] [data-select-row]').forEach(node => {
       const selected=node.dataset.selectRow===routeMode; node.classList.toggle("is-on",selected); node.setAttribute("aria-pressed",String(selected));
     });
+    const makeStack=app.querySelector('.page[data-page="make"] .stack[data-detail-root]');
+    const panelState=buildPersonaPanelState(ctx);
+    if(makeStack&&!makeStack.querySelector("#lia-manual-authoring-bar")){
+      const manualCard=document.createElement("div");manualCard.id="lia-manual-authoring-bar";manualCard.className="card card--tight";
+      manualCard.innerHTML=`<div class="stack stack--sm"><div><b>AI 없이 수동 작성 · 기존 Persona 편집</b><p class="muted" style="margin:4px 0 0;font-size:13px">빈 Persona 초안을 직접 작성하거나 현재 RisuAI Persona / JSON 번들을 편집기로 불러옵니다.</p></div><div class="cluster"><button class="btn btn--sm" type="button" data-lia-new-blank-draft>빈 초안 직접 작성</button><button class="btn btn--sm" type="button" data-lia-load-active-persona${panelState.effectivePersona?"":" disabled"}>현재 Persona 불러오기</button><button class="btn btn--sm" type="button" data-lia-import-persona-open>JSON 가져오기…</button></div></div>`;
+      makeStack.prepend(manualCard);
+    }
     const sourceSelect=app.querySelector("#src-sel");
     if(sourceSelect){sourceSelect.id="dpg-source-persona";sourceSelect.innerHTML=renderPersonaSelect(ctx);sourceSelect.value=String(ctx.contextOptions?.selectedPersonaKey||DEFAULT_CONTEXT_OPTIONS.selectedPersonaKey);}
     const maxChars=app.querySelector("#lia-max-chars"); if(maxChars) maxChars.value=String(ctx.maxChars||DEFAULT_MAX_LORE_CHARS);
@@ -9055,7 +9563,7 @@ ${revisionText}`);
     const maxEntries=app.querySelector("#lia-max-entries"); if(maxEntries) maxEntries.value=String(ctx.maxEntries||DEFAULT_MAX_LORE_ENTRIES);
     const rich=app.querySelector("#lia-rich-profile"); if(rich) rich.checked=ctx.contextOptions?.richPersonaMode!==false;
     const concept=app.querySelector("#random-concept"); if(concept) concept.value=String(preservedRandomConceptText||"");
-    const makeCard=app.querySelector('.page[data-page="make"] .card');
+    const makeCard=app.querySelector('.page[data-page="make"] .card:not(#lia-manual-authoring-bar)');
     if(makeCard&&!makeCard.querySelector("#dpg-user-rewrite-guidance")){
       const guidance=document.createElement("div");guidance.className="field";guidance.innerHTML='<label for="dpg-user-rewrite-guidance">추가 재작성 지침</label><textarea class="textarea" id="dpg-user-rewrite-guidance" rows="3" maxlength="4000" placeholder="선택 사항 · 기존 생성 모드의 지침 필드"></textarea><span class="hint">기존 Persona 생성 요청에 추가하는 지침입니다. 실제 입력에 포함되며 자동 저장하지 않습니다.</span>';
       makeCard.append(guidance);
@@ -9066,7 +9574,33 @@ ${revisionText}`);
     if(makeCard&&!makeCard.querySelector('#lia-prompt-inspection')){const details=document.createElement('details');details.id='lia-prompt-inspection';details.className='details-block';details.innerHTML='<summary>실제 생성 요청 프롬프트</summary><div class="stack stack--sm"><textarea class="textarea" id="lia-prompt-inspection-text" rows="10" readonly></textarea><button class="btn btn--sm" type="button" data-lia-copy-prompt>프롬프트 복사</button></div>';rewriteGuidance?.closest('.field')?.after(details);}
     const inspection=app.querySelector('#lia-prompt-inspection-text');if(inspection)inspection.value=buildGenerationPromptForContext(ctx);
     const result=getLLMResultOverride();
-    const spec=normalizePersonaSpec(result?.personaSpec||null)||{};
+    const spec=normalizePersonaSpec(result?.personaSpec||null)||normalizePersonaSpecDraft(result?.personaSpec||null)||{};
+    const editRootEl=app.querySelector("#edit-root");
+    if(editRootEl){
+      const currentScope=liaScopeKey(ctx);
+      const ancestorChatIds = new Set([
+        String(ctx.chat?.memorySessionBridge?.sourceChatId || "").trim(),
+        ...(Array.isArray(ctx.chat?.memorySessionBridge?.handoffLineage)
+          ? ctx.chat.memorySessionBridge.handoffLineage.flatMap(entry => [entry?.sourceChatId, entry?.targetChatId])
+          : [])
+      ].map(v => String(v || "").trim()).filter(Boolean));
+      const draftScopeChatMatch = Array.from(ancestorChatIds).some(cid => String(result?.draftScopeKey || "").includes(`|chat:${cid}`));
+      if(result?.draftScopeKey&&result.draftScopeKey!==currentScope&&!draftScopeChatMatch&&!editRootEl.querySelector("#lia-draft-scope-banner")){
+        const banner=document.createElement("div");banner.id="lia-draft-scope-banner";banner.className="note note--warn";banner.setAttribute("role","status");
+        banner.innerHTML=`<b>다른 채팅 범위의 초안입니다.</b><span>현재 초안은 ‘${htmlEscape(result.draftScopeLabel||result.draftScopeKey)}’에서 작성되었습니다. 현재 채팅에 저장·채택하기 전에 대상을 확인하세요.</span>`;
+        editRootEl.prepend(banner);
+      }
+      if(!editRootEl.querySelector("#lia-spec-sync-bar")){
+        const bar=document.createElement("div");bar.id="lia-spec-sync-bar";bar.className="card card--tight";
+        const syncHint=result?.specOutOfSyncWithPrompt
+          ?"23개 항목 수정본이 원문(Persona Prompt)에 아직 합쳐지지 않았습니다. 원문을 직접 유지하거나 위 재합성 버튼을 누르세요."
+          :result?.promptAutoSyncedFromSpec
+            ?"수동 초안 자동 동기화 켜짐 · 항목 입력 시 원문이 함께 갱신됩니다."
+            :"AI 원문 보존 모드 · 항목 수정 시 기존 원문이 덮어써지지 않습니다.";
+        bar.innerHTML=`<div class="stack stack--sm"><div class="cluster"><button class="btn btn--sm" type="button" data-lia-new-blank-draft>새 빈 초안</button><button class="btn btn--sm" type="button" data-lia-load-active-persona${panelState.effectivePersona?"":" disabled"}>현재 Persona 불러오기</button><button class="btn btn--sm" type="button" data-lia-render-spec-local${result?"":" disabled"}>23개 항목 → 원문 로컬 재합성</button><button class="btn btn--sm" type="button" data-lia-render-spec-ai${result?"":" disabled"}>23개 항목 → AI 원문 리렌더링</button><button class="btn btn--sm" type="button" data-lia-export-persona-json${result?"":" disabled"}>JSON 내보내기</button><button class="btn btn--sm" type="button" data-lia-import-persona-open>JSON 가져오기</button></div><p class="hint" id="lia-spec-sync-hint">${htmlEscape(syncHint)}</p><div id="lia-json-io-box" class="stack stack--sm" hidden><textarea class="textarea" id="lia-persona-json-io" rows="6" placeholder="Persona JSON을 붙여넣거나 내보내기 결과를 확인하세요."></textarea><div class="cluster"><button class="btn btn--sm btn--primary" type="button" data-lia-import-persona-apply>붙여넣은 JSON 불러오기</button><button class="btn btn--sm" type="button" data-lia-copy-persona-json>JSON 복사</button></div></div></div>`;
+        editRootEl.prepend(bar);
+      }
+    }
     const evidenceList=app.querySelector("#sheet-evidence .list");
     if(evidenceList){
       const blueprint=normalizeWorldBlueprint(result?.worldBlueprint)||normalizeWorldBlueprint(ctx?.worldBlueprint);
@@ -9075,10 +9609,42 @@ ${revisionText}`);
     }
     const resultName=String(result?.personaName||spec.name||"").trim();
     if(result)preservedPersonaFieldLocks=new Set(normalizePersonaFieldLocks(result.personaFieldLocks));
+    const allEditor=app.querySelector('#edit-root [data-subpanel="all"] .card--tight');
+    if(allEditor){
+      allEditor.id="persona-field-editor";
+      let originalPrompt=allEditor.querySelector("#dpg-persona-preview");
+      if(!originalPrompt){
+        const originalPromptWrap=document.createElement("div");originalPromptWrap.className="field";originalPromptWrap.innerHTML='<label for="dpg-persona-preview">Persona Prompt 원문</label><textarea class="textarea" id="dpg-persona-preview" rows="12" aria-describedby="lia-original-prompt-hint"></textarea><span class="hint" id="lia-original-prompt-hint">기존 채택·저장 기능이 사용하는 원문입니다. 번역본은 별도 탭에서 관리합니다.</span>';
+        allEditor.append(originalPromptWrap);
+        originalPrompt=originalPromptWrap.querySelector("#dpg-persona-preview");
+      }
+      const promptFieldContainer=originalPrompt?.closest(".field");
+      const cssSafe = value => (typeof CSS !== "undefined" && typeof CSS.escape === "function") ? CSS.escape(String(value)) : String(value).replace(/[^a-zA-Z0-9_-]/g, ch => `\\${ch}`);
+      for(const def of PERSONA_SPEC_FIELD_DEFS){
+        if(allEditor.querySelector(`[data-key="${cssSafe(def.key)}"]`))continue;
+        const fieldEl=document.createElement("div");fieldEl.className="fld field";
+        const isMultiline=PERSONA_SPEC_MULTILINE_KEYS.has(def.key)||PERSONA_SPEC_ARRAY_KEYS.has(def.key);
+        const valText=PERSONA_SPEC_ARRAY_KEYS.has(def.key)?asArray(spec[def.key]).join(", "):String(spec[def.key]??"");
+        fieldEl.innerHTML=`<label>${htmlEscape(def.label||def.key)}</label>${isMultiline?`<textarea class="textarea" rows="2" data-key="${htmlEscape(def.key)}">${htmlEscape(valText)}</textarea>`:`<input class="input" data-key="${htmlEscape(def.key)}" value="${htmlEscape(valText)}">`}`;
+        if(promptFieldContainer)promptFieldContainer.before(fieldEl);else allEditor.append(fieldEl);
+      }
+      if(originalPrompt)originalPrompt.value=String(result?.personaPrompt||"");
+      let translationEditor=allEditor.querySelector("#lia-translation-editor");
+      if(!translationEditor){translationEditor=document.createElement("div");translationEditor.id="lia-translation-editor";translationEditor.className="stack stack--sm";translationEditor.innerHTML=`<div class="field"><label for="lia-translation-language">번역 대상</label><select class="select" id="lia-translation-language">${Object.entries(TRANSLATION_LANGUAGES).map(([key,item])=>`<option value="${key}">${htmlEscape(item.label)}</option>`).join("")}</select></div><div class="cluster"><button class="btn btn--sm" id="lia-translate-persona" type="button">현재 원문 번역 만들기</button></div><div class="field"><label for="lia-translation-draft">번역 원문</label><textarea class="textarea" id="lia-translation-draft" rows="12" data-translation-draft></textarea><span class="hint">번역본은 원문과 별도로 보존합니다. 채택할 때 번역본을 선택하기 전까지 RisuAI Persona는 바뀌지 않습니다.</span></div>`;allEditor.append(translationEditor);}
+      const languageTabs=app.querySelectorAll("#ed-lang button");
+      languageTabs.forEach((button,index)=>{button.dataset.language=index===0?"original":"translation";button.setAttribute("aria-pressed",String((index===0?"original":"translation")===liaMockupEditorLanguage));});
+      allEditor.querySelectorAll(".fld").forEach(field=>{field.hidden=liaMockupEditorLanguage==="translation";});
+      translationEditor.hidden=liaMockupEditorLanguage!=="translation";
+      const translationField=translationEditor.querySelector("#lia-translation-draft");if(translationField)translationField.value=preservedTranslationText;
+      const languageSelect=translationEditor.querySelector("#lia-translation-language");if(languageSelect)languageSelect.value=normalizeTranslationLanguage(preservedTranslationLanguage);
+    }
     app.querySelectorAll("[data-fill=name]").forEach(node=>node.textContent=resultName||"생성 결과 없음");
     app.querySelectorAll("[data-key]").forEach(node=>{
       const key=String(node.dataset.key||"");
-      if(key in spec){if("value" in node) node.value=String(spec[key]??"");else node.textContent=String(spec[key]??"");}
+      if(key in spec){
+        const formatted=PERSONA_SPEC_ARRAY_KEYS.has(key)?asArray(spec[key]).join(", "):String(spec[key]??"");
+        if("value" in node) node.value=formatted;else node.textContent=formatted;
+      }
       else if("value" in node) node.value="";
     });
     app.querySelectorAll("[data-lock]").forEach(node=>{node.checked=preservedPersonaFieldLocks.has(String(node.dataset.lock||""));});
@@ -9097,27 +9663,10 @@ ${revisionText}`);
       const panelGroup=group==="ed"?"ed":group==="up"?"up":"";
       if(panelGroup&&selected)app.querySelectorAll(`[data-subpanel][data-group="${panelGroup}"]`).forEach(panel=>panel.classList.toggle("is-active",panel.dataset.subpanel===selected));
     });
-    const allEditor=app.querySelector('#edit-root [data-subpanel="all"] .card--tight');
-    if(allEditor){
-      allEditor.id="persona-field-editor";
-      if(!allEditor.querySelector("#dpg-persona-preview")){
-        const originalPrompt=document.createElement("div");originalPrompt.className="field";originalPrompt.innerHTML='<label for="dpg-persona-preview">Persona Prompt 원문</label><textarea class="textarea" id="dpg-persona-preview" rows="12" aria-describedby="lia-original-prompt-hint"></textarea><span class="hint" id="lia-original-prompt-hint">기존 채택·저장 기능이 사용하는 원문입니다. 번역본은 별도 탭에서 관리합니다.</span>';
-        allEditor.append(originalPrompt);
-      }
-      const originalPrompt=allEditor.querySelector("#dpg-persona-preview");if(originalPrompt)originalPrompt.value=String(result?.personaPrompt||"");
-      let translationEditor=allEditor.querySelector("#lia-translation-editor");
-      if(!translationEditor){translationEditor=document.createElement("div");translationEditor.id="lia-translation-editor";translationEditor.className="stack stack--sm";translationEditor.innerHTML=`<div class="field"><label for="lia-translation-language">번역 대상</label><select class="select" id="lia-translation-language">${Object.entries(TRANSLATION_LANGUAGES).map(([key,item])=>`<option value="${key}">${htmlEscape(item.label)}</option>`).join("")}</select></div><div class="cluster"><button class="btn btn--sm" id="lia-translate-persona" type="button">현재 원문 번역 만들기</button></div><div class="field"><label for="lia-translation-draft">번역 원문</label><textarea class="textarea" id="lia-translation-draft" rows="12" data-translation-draft></textarea><span class="hint">번역본은 원문과 별도로 보존합니다. 채택할 때 번역본을 선택하기 전까지 RisuAI Persona는 바뀌지 않습니다.</span></div>`;allEditor.append(translationEditor);}
-      const languageTabs=app.querySelectorAll("#ed-lang button");
-      languageTabs.forEach((button,index)=>{button.dataset.language=index===0?"original":"translation";button.setAttribute("aria-pressed",String((index===0?"original":"translation")===liaMockupEditorLanguage));});
-      allEditor.querySelectorAll(".fld").forEach(field=>{field.hidden=liaMockupEditorLanguage==="translation";});
-      translationEditor.hidden=liaMockupEditorLanguage!=="translation";
-      const translationField=translationEditor.querySelector("#lia-translation-draft");if(translationField)translationField.value=preservedTranslationText;
-      const languageSelect=translationEditor.querySelector("#lia-translation-language");if(languageSelect)languageSelect.value=normalizeTranslationLanguage(preservedTranslationLanguage);
-    }
     const vault=asArray(ctx.savedResultVault);
     const shelf=app.querySelector("#shelf-list");
     if(shelf) shelf.innerHTML=vault.length?vault.map((item,index)=>{
-      const name=String(item.personaName||item.title||`Persona ${index+1}`);const itemSpec=normalizePersonaSpec(item.personaSpec)||{};
+      const name=String(item.personaName||item.title||`Persona ${index+1}`);const itemSpec=normalizePersonaSpec(item.personaSpec)||normalizePersonaSpecDraft(item.personaSpec)||{};
       const description=String(itemSpec.role||itemSpec.personality||item.title||"저장된 Persona 초안");
       return `<button class="row" type="button" data-lia-vault-id="${htmlEscape(item.id)}"><span class="avatar avatar--sm">${htmlEscape(name.slice(0,1))}</span><span><b>${htmlEscape(name)}</b><small>${htmlEscape(generationModeLabel(item.generationMode))} · ${htmlEscape(description)}</small></span><span class="pick">열기</span></button>`;
     }).join(""):'<div class="empty"><b>보관함이 비어 있습니다.</b><span>실제 저장된 결과가 이곳에 표시됩니다.</span></div>';
@@ -9130,9 +9679,21 @@ ${revisionText}`);
     const deleteVaultTitle=app.querySelector('#sdv-t [data-fill="name"]');if(deleteVaultTitle)deleteVaultTitle.textContent=String(vault.find(item=>item.id===preservedResultVaultId)?.personaName||vault.find(item=>item.id===preservedResultVaultId)?.title||'선택한 보관 결과');
     const deletePersonaButton=app.querySelector('#sheet-del-persona [data-act="del-persona"]');if(deletePersonaButton){deletePersonaButton.removeAttribute('data-toast');deletePersonaButton.disabled=true;deletePersonaButton.setAttribute('aria-disabled','true');}
     const targetName=resultName||String(ctx.personaInfo?.persona?.name||"");
-    const adopted=findExistingGeneratedPersonaForResult(ctx,result);const panelState=buildPersonaPanelState(ctx);const statusText=adopted?(String(adopted.id||'')===String(panelState.dynamicId||'')?'채택됨 · 이 채팅에 연결됨':String(adopted.id||'')===String(ctx.db?.selectedPersona||'')?'채택됨 · RisuAI 기본 Persona':'채택됨 · 연결되지 않음'):'보관함 초안 · RisuAI Persona 미변경';app.querySelectorAll('#edit-root [data-fill="statusText"]').forEach(node=>node.textContent=statusText);
+    const adopted=findExistingGeneratedPersonaForResult(ctx,result);const statusText=adopted?(String(adopted.id||'')===String(panelState.dynamicId||'')?'채택됨 · 이 채팅에 연결됨':String(adopted.id||'')===String(ctx.db?.selectedPersona||'')?'채택됨 · RisuAI 기본 Persona':'채택됨 · 연결되지 않음'):'보관함 초안 · RisuAI Persona 미변경';app.querySelectorAll('#edit-root [data-fill="statusText"]').forEach(node=>node.textContent=statusText);
     app.querySelectorAll('#edit-root [data-fill="adoptText"]').forEach(node=>node.textContent=adopted?`${statusText} · ${String(adopted.name||'Persona')}`:'아직 채택하지 않은 초안');
-    app.querySelectorAll('#edit-root [data-fill="bindText"]').forEach(node=>node.textContent=panelState.dynamicId?`현재 채팅 연결 · ${String(panelState.effectivePersona?.name||'Persona')}`:'현재 채팅 연결 없음 · 기본 Persona 사용');
+    app.querySelectorAll('#edit-root [data-fill="bindText"]').forEach(node=>node.textContent=panelState.danglingDynamic?`끊어진 채팅 연결 · ${panelState.dynamicId}`:panelState.dynamicId?`현재 채팅 연결 · ${String(panelState.effectivePersona?.name||'Persona')}`:'현재 채팅 연결 없음 · 기본 Persona 사용');
+    const adModeChoices=app.querySelectorAll("#ad-mode .choice");
+    adModeChoices.forEach((choice,index)=>{
+      const isSelected=index===(preservedAdoptionMode==="new"?1:0);
+      choice.classList.toggle("is-on",isSelected);
+      choice.setAttribute("aria-pressed",String(isSelected));
+    });
+    app.querySelector('#sheet-unbind')?.removeAttribute('data-require');
+    const unbindConfirm=app.querySelector('#sheet-unbind [data-act="unbind"]');
+    if(unbindConfirm){unbindConfirm.removeAttribute('data-toast');unbindConfirm.removeAttribute('data-act');unbindConfirm.removeAttribute('data-close');unbindConfirm.id='lia-confirm-unbind';unbindConfirm.disabled=!panelState.dynamicId;}
+    const unbindBtn=app.querySelector('#btn-unbind');
+    if(unbindBtn){unbindBtn.disabled=!panelState.dynamicId;if(!panelState.dynamicId)unbindBtn.setAttribute('aria-disabled','true');else unbindBtn.removeAttribute('aria-disabled');}
+    app.querySelectorAll('#su-t [data-fill="name"]').forEach(node=>node.textContent=String(panelState.dynamicPersona?.name||panelState.dynamicId||'연결된 Persona'));
     const outputPanel=app.querySelector('#edit-root [data-subpanel="out"]');
     if(outputPanel&&!outputPanel.querySelector('[data-lia-editor-writer="vault"]')){
       const writerCard=document.createElement('div');writerCard.className='target-card';
@@ -9146,11 +9707,11 @@ ${revisionText}`);
     });
     const lineage=normalizePersonaLineage(result?.personaLineage);app.querySelectorAll('#edit-root [data-fill="ver"]').forEach(node=>node.textContent=lineage?`v${lineage.revision}`:'초안');app.querySelectorAll('#edit-root [data-fill="mode"]').forEach(node=>node.textContent=generationModeLabel(result?.generationMode||ctx.contextOptions?.generationMode||DEFAULT_CONTEXT_OPTIONS.generationMode));
     const versionList=app.querySelector('#ver-list');if(versionList){const history=asArray(lineage?.history);const vaultRows=asArray(ctx.savedResultVault).filter(item=>lineage?.lineageId&&normalizePersonaLineage(item.personaLineage)?.lineageId===lineage.lineageId);const rendered=history.slice().reverse().map((item,index)=>`<div class="ver"><span class="badge ${index===0?'badge--ok':''}">${index===0?'현재':`v${item.revision}`}</span><div><b>v${item.revision} · ${htmlEscape(formatVaultDate(item.at)||'시간 미상')}</b><small>${htmlEscape(item.operation)}${item.detail?` · ${htmlEscape(item.detail)}`:''}</small></div>${index===0?'<span class="muted">현재 초안</span>':''}</div>`);const snapshots=vaultRows.map(item=>`<div class="ver"><span class="badge">v${normalizePersonaLineage(item.personaLineage)?.revision||1}</span><div><b>${htmlEscape(item.title||item.personaName||'저장된 스냅샷')}</b><small>${htmlEscape(formatVaultDate(item.savedAt||item.updatedAt||item.createdAt)||'저장 시각 미상')} · 실제 보관함 스냅샷</small></div><button class="btn btn--sm" type="button" data-lia-version-compare="${htmlEscape(item.id)}">비교</button><button class="btn btn--sm" type="button" data-lia-version-open="${htmlEscape(item.id)}">초안으로 열기</button></div>`);versionList.innerHTML=[...rendered,...snapshots].join('')||'<div class="empty"><b>저장된 버전 이력이 없습니다.</b><span>실제 계보 이력 또는 같은 계보의 보관함 스냅샷이 있을 때 표시합니다.</span></div>';let diff=versionList.parentElement?.querySelector('#lia-version-compare');if(!diff){diff=document.createElement('div');diff.id='lia-version-compare';diff.className='card';diff.hidden=true;diff.innerHTML='<div class="card__head"><h3 class="card__title">실제 스냅샷 비교</h3></div><div class="list"></div>';versionList.after(diff);}let fork=versionList.parentElement?.querySelector('[data-lia-fork-lineage]');if(!fork){fork=document.createElement('button');fork.type='button';fork.className='btn';fork.dataset.liaForkLineage='';fork.textContent='현재 초안에서 파생본 만들기';diff.after(fork);}fork.disabled=!result;}
-    app.querySelectorAll("#spb-target,#spj-target").forEach(node=>node.textContent=targetName?`${targetName} · ${String(result?.generationId||result?.id||"현재 결과")}`:"표시할 Persona 결과가 없습니다.");
+    app.querySelectorAll("#spb-target,#spj-target").forEach(node=>node.textContent=targetName?`${targetName} · ${String(result?.generationId||result?.id||"현재 결과")}`:lastFailedRawOutput?"최근 실패 응답 진단":"표시할 Persona 결과가 없습니다.");
     const bpItems=app.querySelector("#spb-items");
     const blueprint=normalizeWorldBlueprint(result?.worldBlueprint||ctx.worldBlueprint);
-    if(bpItems)bpItems.innerHTML=blueprint?Object.entries(blueprint).filter(([,v])=>v&&typeof v==="string").slice(0,16).map(([key,value])=>`<div class="row"><div><b>${htmlEscape(key)}</b><small>${htmlEscape(value)}</small></div></div>`).join(""):'<div class="empty"><b>Blueprint를 확인할 수 없습니다.</b></div>';
-    const json=app.querySelector("#spj-content"); if(json)json.textContent=result?JSON.stringify(normalizePersonaSpec(result.personaSpec)||result,null,2):"";
+    if(bpItems)bpItems.innerHTML=blueprint?Object.entries(blueprint).map(([key,v])=>[key,Array.isArray(v)?v.filter(Boolean).join(" · "):String(v||"").trim()]).filter(([,v])=>Boolean(v)).slice(0,16).map(([key,value])=>`<div class="row"><div><b>${htmlEscape(key)}</b><small>${htmlEscape(value)}</small></div></div>`).join(""):'<div class="empty"><b>Blueprint를 확인할 수 없습니다.</b></div>';
+    const json=app.querySelector("#spj-content"); if(json)json.textContent=result?JSON.stringify(normalizePersonaSpec(result.personaSpec)||normalizePersonaSpecDraft(result.personaSpec)||result,null,2):(lastFailedRawOutput?`[최근 실패한 AI 원문 진단]\n${lastFailedRawOutput}`:"");
     hydrateLiaMockupReview(app,result);
     const adoptButton=app.querySelector("#btn-adopt");if(adoptButton){adoptButton.removeAttribute("data-toast");adoptButton.disabled=!result;}
     const turnEvidence=collectUserAuthoredConversationEvidence(ctx);
@@ -9174,7 +9735,7 @@ ${revisionText}`);
       const note=auditCard.querySelector('#rv-note');if(note)note.textContent=audit?String(audit.summary||'실제 Persona Audit 결과입니다. 아래 수정안은 검토 후 초안에 적용하세요.'):'Persona Audit은 선택한 Blueprint와 현재 Persona 초안을 비교하며, 버튼을 누르기 전에는 모델 호출을 하지 않습니다.';
       let findings=auditCard.querySelector('#lia-review-findings');if(!findings){findings=document.createElement('div');findings.id='lia-review-findings';findings.className='stack stack--sm';auditCard.append(findings);}findings.innerHTML=audit?[['Hard Conflict',audit.hardConflicts],['Soft Risk',audit.softRisks],['Agency',audit.agencyRisks],['추가 검토',audit.missingDetails],['강점',audit.strengths]].filter(([,items])=>items.length).map(([label,items])=>`<div class="note"><b>${label}</b><ul>${items.map(item=>`<li>${htmlEscape(item)}</li>`).join('')}</ul></div>`).join('')+(audit.recommendations.length?`<div class="stack stack--sm"><b>수정 권고 선택</b>${audit.recommendations.map((item,index)=>`<label class="row"><input type="checkbox" data-lia-audit-recommendation="${index}"${preservedPersonaAuditSelection.has(String(index))?' checked':''}><span>${htmlEscape(item)}</span></label>`).join('')}</div>`:''):'<div class="empty"><b>검사 전</b><span>현재 초안을 검사하면 실제 결과와 근거가 여기에 표시됩니다.</span></div>';}
     if(fixCard){let controls=fixCard.querySelector('#lia-review-fix-controls');if(!controls){controls=document.createElement('div');controls.id='lia-review-fix-controls';controls.className='cluster';fixCard.querySelector('.card__head')?.after(controls);}controls.innerHTML='<button class="btn" type="button" data-lia-build-selected-fix>선택한 권고로 수정안 만들기</button><button class="btn btn--sm" type="button" data-lia-build-hard-fix>Hard Conflict 안전 수정안</button>';
-      const diff=fixCard.querySelector('#rv-diff');const plan=preservedPersonaAuditFixPlan;if(diff){diff.innerHTML=plan?.changes?.length?`<div class="stack stack--sm">${plan.changes.map(change=>`<label class="row"><input type="checkbox" data-lia-audit-fix="${htmlEscape(change.id)}"${preservedPersonaAuditFixSelection.has(change.id)?' checked':''}${currentPersonaFieldLocks().includes(change.field)?' disabled':''}><span><b>${htmlEscape(change.field)}</b><small>${htmlEscape(change.reason||change.riskType||'검토할 수정 제안')}</small><del>${htmlEscape(String(normalizePersonaSpec(result?.personaSpec||{})?.[change.field]||''))}</del><ins>${htmlEscape(String(change.proposedValue||''))}</ins></span></label>`).join('')}</div>`:'<p class="hint">수정안을 만들기 전까지는 Persona 초안이 변경되지 않습니다.</p>';}
+      const diff=fixCard.querySelector('#rv-diff');const plan=preservedPersonaAuditFixPlan;const curSpec=normalizePersonaSpec(result?.personaSpec||{})||normalizePersonaSpecDraft(result?.personaSpec||{})||{};if(diff){diff.innerHTML=plan?.changes?.length?`<div class="stack stack--sm">${plan.changes.map(change=>{const beforeVal=Array.isArray(curSpec?.[change.field])?curSpec[change.field].join(', '):String(curSpec?.[change.field]||'');const afterVal=Array.isArray(change.proposedValue)?change.proposedValue.join(', '):String(change.proposedValue||'');return `<label class="row"><input type="checkbox" data-lia-audit-fix="${htmlEscape(change.id)}"${preservedPersonaAuditFixSelection.has(change.id)?' checked':''}${currentPersonaFieldLocks().includes(change.field)?' disabled':''}><span><b>${htmlEscape(change.field)}</b><small>${htmlEscape(change.rationale||change.reason||change.riskType||'검토할 수정 제안')}</small><del>${htmlEscape(beforeVal)}</del><ins>${htmlEscape(afterVal)}</ins></span></label>`;}).join('')}</div>`:'<p class="hint">수정안을 만들기 전까지는 Persona 초안이 변경되지 않습니다.</p>';}
       const acts=fixCard.querySelector('#rv-acts');if(acts){acts.hidden=!plan?.changes?.length;acts.innerHTML='<button class="btn btn--primary" type="button" data-lia-apply-audit-fix>선택 수정안을 초안에 적용</button>';}}
   }
 
@@ -9183,10 +9744,11 @@ ${revisionText}`);
     const cards=app.querySelectorAll('.page[data-page="settings"] .card');
     const textCard=cards[0];
     const textStack=textCard?.querySelector('.stack');
-    const cfg=normalizeLLMConfig(ctx.savedLLMConfig||{});
-    const textBadge=textCard?.querySelector('.badge');if(textBadge){textBadge.className=`badge ${cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'badge--ok':'badge--warn'}`;textBadge.textContent=cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'설정 확인됨':'인증 정보 필요';}
-    const providers=[...Object.entries(LIA_DIRECT_LLM_PROVIDER_REGISTRY).map(([key,value])=>[key,value.label]),...[['openai','OpenAI'],['claude','Claude / Anthropic'],['gemini','Gemini API'],['openrouter','OpenRouter'],['deepseek','DeepSeek'],['ollama','Ollama Local'],['ollama_cloud','Ollama Cloud'],['lmstudio','LM Studio'],['nanogpt','NanoGPT'],['vertex','Vertex Gemini'],['vertex-openai','Vertex OpenAI-compatible'],['copilot','GitHub Copilot'],['custom','Custom OpenAI-compatible']]];
-    if(textStack) textStack.innerHTML=`<div class="field"><label for="lia-provider">제공자</label><select class="select" id="lia-provider">${providers.map(([key,label])=>`<option value="${htmlEscape(key)}"${normalizeProviderKey(cfg.provider)===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-endpoint">Endpoint URL</label><input class="input" id="lia-endpoint" value="${htmlEscape(cfg.endpoint)}"><p class="hint" id="lia-provider-endpoint-hint" hidden></p></div><div class="field"><label for="lia-model">모델</label><input class="input" id="lia-model" list="dpg-llm-model-list" value="${htmlEscape(cfg.model)}"><datalist id="dpg-llm-model-list"></datalist></div><div class="cluster"><button class="btn btn--sm" type="button" id="dpg-refresh-models">모델 목록 새로 읽기</button><span class="hint">모델 API를 사용해 목록을 조회합니다.</span></div><div class="field"><label for="lia-api-key">API 키</label><input class="input" id="lia-api-key" type="password" value="" autocomplete="new-password" placeholder="${cfg.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><p class="hint" id="lia-vertex-credential-meta" hidden></p><div class="field"><label for="lia-temperature">Temperature</label><input class="input" id="lia-temperature" type="number" min="0" max="2" step="0.05" value="${htmlEscape(cfg.temp)}"></div><div class="details-block"><details><summary>요청 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-max-tokens">Max Tokens</label><input class="input" id="lia-max-tokens" type="number" min="64" value="${cfg.maxCompletionTokens}"></div><div class="field"><label for="lia-timeout">Timeout (ms)</label><input class="input" id="lia-timeout" type="number" min="5000" max="300000" value="${cfg.timeout}"></div><div class="field"><label for="lia-context-window">Context Window</label><input class="input" id="lia-context-window" type="number" min="0" value="${cfg.contextWindow}"></div><div class="field"><label for="lia-request-format">Request Format</label><select class="select" id="lia-request-format"><option value="chat_completions"${cfg.requestFormat==='chat_completions'?' selected':''}>Chat Completions</option><option value="responses"${cfg.requestFormat==='responses'?' selected':''}>Responses</option></select></div><div class="field"><label for="lia-reasoning-preset">Reasoning Preset</label><select class="select" id="lia-reasoning-preset">${Object.entries(LIA_REASONING_PRESETS).map(([key,label])=>`<option value="${htmlEscape(key)}"${cfg.reasoningPreset===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field" id="lia-reasoning-effort-field"><label for="lia-reasoning-effort">Reasoning Effort</label><select class="select" id="lia-reasoning-effort">${['none','minimal','low','medium','high','xhigh','max'].map(key=>`<option${cfg.reasoningEffort===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field" id="lia-reasoning-budget-field"><label for="lia-reasoning-budget">Reasoning Budget</label><input class="input" id="lia-reasoning-budget" type="number" min="-1" max="200000" value="${cfg.reasoningBudgetTokens}"></div><div class="field" id="lia-reasoning-thinking-field"><label for="lia-thinking-type">Thinking</label><select class="select" id="lia-thinking-type"><option value="enabled"${cfg.thinkingType==='enabled'?' selected':''}>Enabled</option><option value="disabled"${cfg.thinkingType==='disabled'?' selected':''}>Disabled</option></select></div><p class="hint" id="lia-reasoning-hint"></p><p class="hint" id="lia-reasoning-effective"></p><p class="hint" id="lia-service-setting-note"></p><div class="field" id="lia-service-tier-field"><label for="lia-service-tier">Service Tier</label><select class="select" id="lia-service-tier">${['off','auto','default','flex','priority','scale'].map(key=>`<option${cfg.serviceTier===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check" id="lia-custom-service-tier-field"><input id="lia-custom-service-tier" type="checkbox"${cfg.customServiceTierPassthrough?' checked':''}><span>Custom 제공자에 service_tier 전달</span></label><div class="field" id="lia-vertex-flex-field"><label for="lia-vertex-flex">Vertex Flex</label><select class="select" id="lia-vertex-flex">${[['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']].map(([key,label])=>`<option value="${key}"${cfg.vertexFlexMode===key?' selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="lia-cache-mode">Prompt Cache</label><select class="select" id="lia-cache-mode">${['auto','off','explicit'].map(key=>`<option${cfg.promptCacheMode===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check"><input id="lia-stream" type="checkbox"${cfg.stream?' checked':''}><span>Streaming 응답 사용</span></label><div class="field"><label for="lia-extra-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-extra-headers">${htmlEscape(cfg.extraHeadersJson)}</textarea></div><div class="field"><label for="lia-extra-body">Extra Body JSON</label><textarea class="textarea" id="lia-extra-body">${htmlEscape(cfg.extraBodyJson)}</textarea></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-provider">텍스트 AI 설정 저장</button><span class="hint" id="lia-provider-state">${cfg.apiKey?'인증 정보 저장됨':'인증 정보 없음'}</span></div><p class="hint">키 값은 화면에 다시 표시하지 않습니다. 저장은 local_only 기기 저장과 기존 pluginStorage 백업 규칙을 사용합니다.</p>`;
+    const cfg=normalizeLLMConfig(liaUnsavedProviderDraft||ctx.savedLLMConfig||{});
+    const providerKey=normalizeProviderKey(cfg.provider);
+    const textBadge=textCard?.querySelector('.badge');if(textBadge){textBadge.className=`badge ${cfg.apiKey||providerAllowsEmptyKey(providerKey)?'badge--ok':'badge--warn'}`;textBadge.textContent=providerKey==='risuai'?'RisuAI 호스트 보조모델':(cfg.apiKey||providerAllowsEmptyKey(providerKey)?'설정 확인됨':'인증 정보 필요');}
+    const providers=[['risuai','RisuAI 보조모델 (otherAx · 호스트 위임)'],...Object.entries(LIA_DIRECT_LLM_PROVIDER_REGISTRY).map(([key,value])=>[key,value.label]),...[['openai','OpenAI'],['claude','Claude / Anthropic'],['gemini','Gemini API'],['openrouter','OpenRouter'],['deepseek','DeepSeek'],['ollama','Ollama Local'],['ollama_cloud','Ollama Cloud'],['lmstudio','LM Studio'],['nanogpt','NanoGPT'],['vertex','Vertex Gemini'],['vertex-openai','Vertex OpenAI-compatible'],['copilot','GitHub Copilot'],['custom','Custom OpenAI-compatible']]];
+    if(textStack) textStack.innerHTML=`<div class="field"><label for="lia-provider">제공자</label><select class="select" id="lia-provider">${providers.map(([key,label])=>`<option value="${htmlEscape(key)}"${providerKey===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-endpoint">Endpoint URL</label><input class="input" id="lia-endpoint" value="${htmlEscape(cfg.endpoint)}"><p class="hint" id="lia-provider-endpoint-hint" hidden></p></div><div class="field"><label for="lia-model">모델</label><input class="input" id="lia-model" list="dpg-llm-model-list" value="${htmlEscape(cfg.model)}" placeholder="${providerKey==='risuai'?'otherAx':''}"><datalist id="dpg-llm-model-list"></datalist></div><div class="cluster"><button class="btn btn--sm" type="button" id="dpg-refresh-models">모델 목록 새로 읽기</button><span class="hint">모델 API를 사용해 목록을 조회합니다.</span></div><div class="field"><label for="lia-api-key">API 키</label><input class="input" id="lia-api-key" type="password" value="" autocomplete="new-password" placeholder="${cfg.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><p class="hint" id="lia-vertex-credential-meta" hidden></p><div class="field"><label for="lia-temperature">Temperature</label><input class="input" id="lia-temperature" type="number" min="0" max="2" step="0.05" value="${htmlEscape(cfg.temp)}"></div><div class="details-block"><details><summary>요청 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-max-tokens">Max Tokens</label><input class="input" id="lia-max-tokens" type="number" min="64" value="${cfg.maxCompletionTokens}"></div><div class="field"><label for="lia-timeout">Timeout (ms)</label><input class="input" id="lia-timeout" type="number" min="5000" max="300000" value="${cfg.timeout}"></div><div class="field"><label for="lia-context-window">Context Window</label><input class="input" id="lia-context-window" type="number" min="0" value="${cfg.contextWindow}"></div><div class="field"><label for="lia-request-format">Request Format</label><select class="select" id="lia-request-format"><option value="chat_completions"${cfg.requestFormat==='chat_completions'?' selected':''}>Chat Completions</option><option value="responses"${cfg.requestFormat==='responses'?' selected':''}>Responses</option></select></div><div class="field"><label for="lia-reasoning-preset">Reasoning Preset</label><select class="select" id="lia-reasoning-preset">${Object.entries(LIA_REASONING_PRESETS).map(([key,label])=>`<option value="${htmlEscape(key)}"${cfg.reasoningPreset===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field" id="lia-reasoning-effort-field"><label for="lia-reasoning-effort">Reasoning Effort</label><select class="select" id="lia-reasoning-effort">${['none','minimal','low','medium','high','xhigh','max'].map(key=>`<option${cfg.reasoningEffort===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field" id="lia-reasoning-budget-field"><label for="lia-reasoning-budget">Reasoning Budget</label><input class="input" id="lia-reasoning-budget" type="number" min="-1" max="200000" value="${cfg.reasoningBudgetTokens}"></div><div class="field" id="lia-reasoning-thinking-field"><label for="lia-thinking-type">Thinking</label><select class="select" id="lia-thinking-type"><option value="enabled"${cfg.thinkingType==='enabled'?' selected':''}>Enabled</option><option value="disabled"${cfg.thinkingType==='disabled'?' selected':''}>Disabled</option></select></div><p class="hint" id="lia-reasoning-hint"></p><p class="hint" id="lia-reasoning-effective"></p><p class="hint" id="lia-service-setting-note"></p><div class="field" id="lia-service-tier-field"><label for="lia-service-tier">Service Tier</label><select class="select" id="lia-service-tier">${['off','auto','default','flex','priority','scale'].map(key=>`<option${cfg.serviceTier===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check" id="lia-custom-service-tier-field"><input id="lia-custom-service-tier" type="checkbox"${cfg.customServiceTierPassthrough?' checked':''}><span>Custom 제공자에 service_tier 전달</span></label><div class="field" id="lia-vertex-flex-field"><label for="lia-vertex-flex">Vertex Flex</label><select class="select" id="lia-vertex-flex">${[['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']].map(([key,label])=>`<option value="${key}"${cfg.vertexFlexMode===key?' selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="lia-cache-mode">Prompt Cache</label><select class="select" id="lia-cache-mode">${['auto','off','explicit'].map(key=>`<option${cfg.promptCacheMode===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check"><input id="lia-stream" type="checkbox"${cfg.stream?' checked':''}><span>Streaming 응답 사용</span></label><div class="field"><label for="lia-extra-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-extra-headers">${htmlEscape(cfg.extraHeadersJson)}</textarea></div><div class="field"><label for="lia-extra-body">Extra Body JSON</label><textarea class="textarea" id="lia-extra-body">${htmlEscape(cfg.extraBodyJson)}</textarea></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-provider">텍스트 AI 설정 저장</button><span class="hint" id="lia-provider-state">${providerKey==='risuai'?'RisuAI 보조 모델 (otherAx) 위임':(cfg.apiKey?'인증 정보 저장됨':'인증 정보 없음')}</span></div><p class="hint">키 값은 화면에 다시 표시하지 않습니다. 저장은 local_only 기기 저장과 기존 pluginStorage 백업 규칙을 사용합니다.</p>`;
     if(textStack){textStack.querySelector('#lia-save-provider')?.remove();const actions=document.createElement('div');actions.className='cluster';actions.innerHTML='<button class="btn btn--primary" id="lia-save-provider" type="button">텍스트 설정 저장</button><button class="btn" id="dpg-test-llm" type="button">연결 테스트</button>';textStack.append(actions);syncLiaProviderForm(cfg,app);}
     const settingsPage=app.querySelector('[data-page="settings"]');const diagnostic=settingsPage?.querySelector('.setting button');if(diagnostic){diagnostic.removeAttribute('data-toast');diagnostic.removeAttribute('disabled');diagnostic.removeAttribute('aria-disabled');diagnostic.dataset.liaRunDiagnostic='';if(!settingsPage.querySelector('#lia-diagnostic-result')){const output=document.createElement('pre');output.id='lia-diagnostic-result';output.className='hint';diagnostic.closest('.setting')?.after(output);}}
     const debugButton=[...settingsPage?.querySelectorAll('button')||[]].find(button=>(button.textContent||'').includes('디버그 JSON'));if(debugButton){debugButton.removeAttribute('data-toast');debugButton.removeAttribute('disabled');debugButton.removeAttribute('aria-disabled');debugButton.id='dpg-export-debug-log';}
@@ -9194,7 +9756,7 @@ ${revisionText}`);
   }
 
   function hydrateLiaMockupUpdate(ctx,app) {
-    const fullPage=app.querySelector('[data-page="update"] [data-subpanel="full"]');if(fullPage){const evo=normalizePersonaEvolution(getLLMResultOverride()?.personaEvolution||preservedPersonaEvolution);const rows=evo?.suggestions||[];fullPage.innerHTML=`<div class="stack"><div class="note"><b>현재 채팅의 User 작성 메시지만 분석합니다.</b><span>선택한 변화는 복사본에 적용되어 LIA 보관함에 저장됩니다.</span></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-run-evolution">전체 대화 변화 후보 찾기</button><button class="btn" type="button" id="lia-apply-evolution"${rows.length?'':' disabled'}>선택 후보를 복사본에 저장</button></div><div class="list" id="lia-evolution-results">${rows.length?rows.map(item=>`<label class="row"><input class="lia-mockup-evolution" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id)?' checked':''}><span><b>${htmlEscape(item.field)}</b><small>${htmlEscape(item.reason||item.evidence||'실제 User 대화 근거')} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(structuredPersonaText(item.proposedValue))}</span></span></label>`).join(''):'<div class="empty"><b>변화 후보 없음</b><span>실제 분석을 실행하면 User 메시지 근거 후보가 여기에 표시됩니다.</span></div>'}</div></div>`;}
+    const fullPage=app.querySelector('[data-page="update"] [data-subpanel="full"]');if(fullPage){const evo=normalizePersonaEvolution(getLLMResultOverride()?.personaEvolution||preservedPersonaEvolution);const rows=evo?.suggestions||[];fullPage.innerHTML=`<div class="stack"><div class="note"><b>현재 채팅의 User 작성 메시지만 분석합니다.</b><span>선택한 변화는 복사본에 적용되어 LIA 보관함에 저장됩니다.</span></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-run-evolution">전체 대화 변화 후보 찾기</button><button class="btn" type="button" id="lia-apply-evolution"${rows.length?'':' disabled'}>선택 후보를 복사본에 저장</button></div><div class="list" id="lia-evolution-results">${rows.length?rows.map(item=>`<label class="row"><input class="lia-mockup-evolution" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id)?' checked':''}><span><b>${htmlEscape(item.field)}</b><small>${htmlEscape(item.rationale||item.reason||(Array.isArray(item.evidence)?item.evidence.join(' · '):item.evidence)||'실제 User 대화 근거')} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(structuredPersonaText(item.proposedValue))}</span></span></label>`).join(''):'<div class="empty"><b>변화 후보 없음</b><span>실제 분석을 실행하면 User 메시지 근거 후보가 여기에 표시됩니다.</span></div>'}</div></div>`;}
   }
 
   function hydrateLiaMockupIcons(root) {
@@ -9267,346 +9829,7 @@ ${revisionText}`);
 
   
 
-  function normalizeIllustrationProviderType(value) {
-    const raw = String(value || "").trim().toLowerCase();
-    if (["wellspring", "wellspring-nai", "chan-nai", "nai-compatible"].includes(raw)) return "wellspring-nai";
-    if (["novelai", "novelai-official", "nai-official"].includes(raw)) return "novelai";
-    if (["comfy", "comfyui", "comfyui-local", "local-comfy"].includes(raw)) return "comfyui-local";
-    if (["custom", "custom-json", "json"].includes(raw)) return "custom-json";
-    return "wellspring-nai";
-  }
 
-
-  const VISUAL_WHITE_BACKGROUND_POSITIVE = "pure white background, plain white background, seamless white studio backdrop, isolated character on white";
-  const VISUAL_WHITE_BACKGROUND_NEGATIVE = "scenery, room, indoor background, outdoor background, landscape, cityscape, detailed background, colored background, grey background, gray background, black background, gradient background, patterned background, textured background, objects in background, background characters";
-  const VISUAL_SINGLE_DEPICTION_POSITIVE = "solo, single subject, one character, one standalone portrait, one visible face, centered single-subject composition";
-
-
-  function normalizeVisualCompositionPreset(value) {
-    const raw = String(value || "").trim().toLowerCase();
-    if (["standard", "standard_waist_up", "waist_up", "waist-up"].includes(raw)) return "standard_waist_up";
-    if (["bust", "bust_close", "close", "close_up"].includes(raw)) return "bust_close";
-    if (["half_body", "half-body", "half"].includes(raw)) return "half_body";
-    return "standard_waist_up";
-  }
-
-  function visualCompositionPresetDefinition(value) {
-    const preset = normalizeVisualCompositionPreset(value);
-    const map = {
-      standard_waist_up: {
-        key: "standard_waist_up",
-        label: "표준 감정 에셋 · 상반신",
-        summary: "허리 위 상반신 · 중앙 · 정면/약한 3/4 · 손 최소",
-        prompt: "upper body, waist up, medium portrait, crop at the waist, torso and head visible, centered composition, front-facing or slight 3/4 view, fixed head position, fixed face scale, shoulders visible, simple posture, consistent waist-up framing and viewpoint",
-        negativePrompt: "full body, standing full body, entire body, feet, shoes, legs fully visible, knees, thighs fully visible, long shot, wide shot, distant character, extreme close-up, dynamic pose, action pose, dramatic angle, top-down view, low angle, dutch angle, off-center composition",
-      },
-      bust_close: {
-        key: "bust_close",
-        label: "얼굴 중심 에셋 · 흉상",
-        summary: "머리와 어깨 중심 흉상 · 중앙 · 손 없음",
-        prompt: "portrait, close-up portrait, head and shoulders, bust shot, crop below the shoulders or upper chest, face large in frame, centered composition, front-facing or slight 3/4 view, fixed head position, consistent close portrait crop, clear gender identity",
-        negativePrompt: "full body, half body, waist-up, torso fully visible, hips, legs, feet, shoes, hands visible, long shot, wide shot, zoomed out framing, dynamic pose, action pose, dramatic angle, off-center composition, gender drift",
-      },
-      half_body: {
-        key: "half_body",
-        label: "반신 에셋 · 반신",
-        summary: "허리~허벅지 중간까지 · 중앙 · 자세 약간 허용",
-        prompt: "half body, cowboy shot, medium-long portrait, crop around mid-thigh, head torso waist hips and upper thighs visible, centered composition, front-facing or slight 3/4 view, fixed head position, consistent body scale, simple posture, minimal hand emphasis, consistent half-body framing and viewpoint",
-        negativePrompt: "full body, entire body, feet, shoes, lower legs fully visible, long shot, wide shot, distant character, extreme close-up, bust close-up, waist-up crop, dynamic pose, action pose, dramatic angle, off-center composition, running pose",
-      },
-    };
-    return map[preset] || map.standard_waist_up;
-  }
-
-
-  function normalizeVisualGenerationLock(lock = null, options = {}) {
-    if (!lock || typeof lock !== "object") return null;
-    const confirmed = options.confirmed === true || lock.confirmed === true;
-    const normalized = {
-      schema: "lia.visual_generation_lock.v1",
-      confirmed,
-      provider: normalizeIllustrationProviderType(lock.provider || "wellspring-nai"),
-      model: String(lock.model || "").trim(),
-      checkpoint: String(lock.checkpoint || "").trim(),
-      width: Math.max(256, Math.floor(Number(lock.width) || 832)),
-      height: Math.max(256, Math.floor(Number(lock.height) || 1216)),
-      steps: Math.max(1, Math.floor(Number(lock.steps) || 28)),
-      cfg: Math.max(1, Number(lock.cfg) || 5.5),
-      sampler: String(lock.sampler || "k_euler_ancestral").trim(),
-      seed: Math.max(0, Math.floor(Number(lock.seed) || 0)),
-      identityPrompt: String(lock.identityPrompt || "").trim(),
-      stylePrompt: String(lock.stylePrompt || "").trim(),
-      backgroundPrompt: String(lock.backgroundPrompt || VISUAL_WHITE_BACKGROUND_POSITIVE).trim(),
-      negativePrompt: String(lock.negativePrompt || "").trim(),
-      extraNegativePrompt: String(lock.extraNegativePrompt || VISUAL_WHITE_BACKGROUND_NEGATIVE).trim(),
-      styleNotes: String(lock.styleNotes || "").trim(),
-      compositionPreset: normalizeVisualCompositionPreset(lock.compositionPreset || "standard_waist_up"),
-      compositionPrompt: String(lock.compositionPrompt || visualCompositionPresetDefinition(lock.compositionPreset || "standard_waist_up").prompt).trim(),
-      compositionNegativePrompt: String(lock.compositionNegativePrompt || visualCompositionPresetDefinition(lock.compositionPreset || "standard_waist_up").negativePrompt).trim(),
-      compositionNotes: String(lock.compositionNotes || "").trim(),
-      advancedJson: String(lock.advancedJson || "").trim(),
-      workflowHash: String(lock.workflowHash || "").trim(),
-      workflowTopologyHash: String(lock.workflowTopologyHash || "").trim(),
-      workflowExecutionHash: String(lock.workflowExecutionHash || "").trim(),
-      bindingProfileHash: String(lock.bindingProfileHash || "").trim(),
-      comfyOutputNodeId: String(lock.comfyOutputNodeId || "").trim(),
-      comfyControlledSlots: Array.isArray(lock.comfyControlledSlots) ? lock.comfyControlledSlots.map((item) => String(item || "").trim()).filter(Boolean) : [],
-      comfyEffectiveValues: lock.comfyEffectiveValues && typeof lock.comfyEffectiveValues === "object" ? { ...lock.comfyEffectiveValues } : {},
-      requestTemplateHash: String(lock.requestTemplateHash || "").trim(),
-      createdAt: String(lock.createdAt || new Date().toISOString()),
-      lockedAt: confirmed ? String(lock.lockedAt || new Date().toISOString()) : "",
-    };
-    normalized.lockHash = String(lock.lockHash || hashText(JSON.stringify({
-      provider: normalized.provider,
-      model: normalized.model,
-      checkpoint: normalized.checkpoint,
-      width: normalized.width,
-      height: normalized.height,
-      steps: normalized.steps,
-      cfg: normalized.cfg,
-      sampler: normalized.sampler,
-      seed: normalized.seed,
-      identityPrompt: normalized.identityPrompt,
-      stylePrompt: normalized.stylePrompt,
-      backgroundPrompt: normalized.backgroundPrompt,
-      negativePrompt: normalized.negativePrompt,
-      extraNegativePrompt: normalized.extraNegativePrompt,
-      styleNotes: normalized.styleNotes,
-      compositionPreset: normalized.compositionPreset,
-      compositionPrompt: normalized.compositionPrompt,
-      compositionNegativePrompt: normalized.compositionNegativePrompt,
-      compositionNotes: normalized.compositionNotes,
-      advancedJson: normalized.advancedJson,
-      workflowHash: normalized.workflowHash,
-      workflowTopologyHash: normalized.workflowTopologyHash,
-      workflowExecutionHash: normalized.workflowExecutionHash,
-      bindingProfileHash: normalized.bindingProfileHash,
-      comfyOutputNodeId: normalized.comfyOutputNodeId,
-      comfyControlledSlots: normalized.comfyControlledSlots,
-      comfyEffectiveValues: normalized.comfyEffectiveValues,
-      requestTemplateHash: normalized.requestTemplateHash,
-    }))).trim();
-    return normalized;
-  }
-
-
-
-
-
-
-
-  // Data-only codecs and durable readers keep historical backup payloads readable.
-
-
-
-
-  function normalizeVisualAssetEntry(entry = {}, fallbackEmotion = "") {
-    return {
-      emotion: String(entry.emotion || fallbackEmotion || "neutral").trim() || "neutral",
-      assetPath: String(entry.assetPath || "").trim(),
-      assetName: String(entry.assetName || entry.emotion || fallbackEmotion || "emotion").trim(),
-      prompt: String(entry.prompt || "").trim(),
-      negativePrompt: String(entry.negativePrompt || "").trim(),
-      provider: normalizeIllustrationProviderType(entry.provider || "wellspring-nai"),
-      mime: String(entry.mime || "").trim(),
-      seed: Number.isFinite(Number(entry.seed)) ? Math.floor(Number(entry.seed)) : -1,
-      width: Number.isFinite(Number(entry.width)) ? Math.floor(Number(entry.width)) : 0,
-      height: Number.isFinite(Number(entry.height)) ? Math.floor(Number(entry.height)) : 0,
-      generatedAt: String(entry.generatedAt || new Date().toISOString()),
-      isAnchor: entry.isAnchor === true,
-      previewText: String(entry.previewText || entry.emotion || fallbackEmotion || "").trim(),
-      lockHash: String(entry.lockHash || "").trim(),
-      backupId: String(entry.backupId || "").trim(),
-      backupBytes: Number.isFinite(Number(entry.backupBytes)) ? Math.max(0, Math.floor(Number(entry.backupBytes))) : 0,
-      generationSnapshot: normalizeVisualGenerationLock(entry.generationSnapshot || null, { confirmed: false }),
-    };
-  }
-
-  function normalizeVisualAssetSet(set = {}, key = "") {
-    const images = {};
-    const rawImages = set.images && typeof set.images === "object" ? set.images : {};
-    Object.entries(rawImages).forEach(([emotion, value]) => {
-      const normalized = normalizeVisualAssetEntry(value, emotion);
-      if (normalized.assetPath) images[normalized.emotion] = normalized;
-    });
-    const anchorEmotion = "neutral";
-    Object.values(images).forEach((item) => { item.isAnchor = item.emotion === "neutral"; });
-    return {
-      personaKey: String(set.personaKey || key || "").trim(),
-      personaId: String(set.personaId || "").trim(),
-      personaName: String(set.personaName || "Persona").trim() || "Persona",
-      assetPrefix: String(set.assetPrefix || "").trim(),
-      sourceType: String(set.sourceType || "persona").trim(),
-      updatedAt: String(set.updatedAt || new Date().toISOString()),
-      identityHash: String(set.identityHash || "").trim(),
-      anchorEmotion,
-      identitySummary: String(set.identitySummary || "").trim(),
-      promptBasis: String(set.promptBasis || "").trim(),
-      visualLockCandidate: normalizeVisualGenerationLock(set.visualLockCandidate || null, { confirmed: false }),
-      visualLock: normalizeVisualGenerationLock(set.visualLock || null, { confirmed: true }),
-      images,
-    };
-  }
-
-  function normalizePersonaVisualAssetStore(raw = {}) {
-    const sets = {};
-    const sourceSets = raw && typeof raw === "object" && raw.sets && typeof raw.sets === "object" ? raw.sets : {};
-    Object.entries(sourceSets).forEach(([key, value]) => {
-      const normalized = normalizeVisualAssetSet(value, key);
-      if (normalized.personaKey) sets[normalized.personaKey] = normalized;
-    });
-    return {
-      version: PERSONA_VISUAL_ASSET_VERSION,
-      updatedAt: String(raw.updatedAt || new Date().toISOString()),
-      sets,
-    };
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  function buildPersonaSpecFromFacts(facts = {}) {
-    // Asset Studio must also support ordinary RisuAI Personas that do not satisfy
-    // LIA's canonical generated-Persona requirements (for example, no explicit
-    // role/personality section). normalizePersonaSpec intentionally rejects those
-    // incomplete generation objects, so fall back to the source-grounded draft
-    // instead of returning null and crashing the preview.
-    const draft = {
-      name: facts.name || "Persona",
-      gender: facts.gender || "",
-      age: facts.age || "",
-      speciesRace: facts.species || "",
-      origin: facts.nationality || "",
-      role: "",
-      appearance: facts.appearanceDigest || facts.sourceDigest || "",
-      personality: facts.emotionalDigest || facts.relationshipDigest || "",
-      visibleSide: facts.relationshipDigest || "",
-      hiddenSide: facts.shameDigest || facts.fearDigest || "",
-      internalContradiction: facts.prideDigest || facts.shameDigest || "",
-      background: facts.backgroundDigest || "",
-      speech: facts.speechDigest || "",
-      motivation: facts.desireDigest || "",
-      relationshipStyle: facts.relationshipDigest || "",
-      relationshipToCharacter: "",
-      preferences: facts.dailyRoutineDigest || "",
-      conflictRepair: facts.apologyStyleDigest || "",
-      skills: normalizeStringArray(facts.traits || []),
-      limitations: normalizeStringArray([facts.boundaryDigest || ""].filter(Boolean)),
-      knowledgeBoundary: "",
-      boundaries: [],
-      worldFitNotes: [],
-    };
-    return normalizePersonaSpec(draft) || draft;
-  }
-
-  function personaAssetPrefix(name, personaId = "") {
-    const normalized = String(name || "persona")
-      .normalize("NFKC")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "_")
-      .replace(/[^\p{L}\p{N}_-]+/gu, "")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 48);
-    return normalized || `persona_${hashText(personaId || name || "persona").split("-")[0]}`;
-  }
-
-
-
-  function currentVisualTargetSelectionValue() {
-    const raw = String(preservedVisualTargetPersonaId || "").trim();
-    return raw || "__auto__";
-  }
-
-
-  function resolvePersonaVisualTarget(ctx = {}) {
-    const llmResult = getLLMResultOverride();
-    const selectedValue = currentVisualTargetSelectionValue();
-    let sourceType = "source_persona";
-    let personaName = "Persona";
-    let personaPrompt = "";
-    let personaSpec = null;
-    let personaId = "";
-    if (selectedValue === "__lia_result__" && llmResult?.personaPrompt) {
-      sourceType = "lia_result";
-      const activeProfile = normalizePersonaVariantProfile(llmResult.activePersonaProfile || preservedPersonaVariantProfile);
-      const variants = normalizePersonaVariants(llmResult.personaVariants, llmResult.personaPrompt);
-      personaPrompt = String(variants[activeProfile] || llmResult.personaPrompt || "").trim();
-      personaSpec = normalizePersonaSpec(llmResult.personaSpec || null);
-      personaName = String(llmResult.personaName || personaSpec?.name || preservedGeneratedPersonaNameText || "LIA Persona").trim() || "LIA Persona";
-      const existing = findExistingGeneratedPersonaForResult(ctx, llmResult);
-      personaId = String(existing?.id || "").trim();
-    } else if (selectedValue.startsWith("persona:")) {
-      const wantedId = selectedValue.slice("persona:".length).trim();
-      const persona = asArray(ctx?.db?.personas).find((item) => String(item?.id || "").trim() === wantedId) || {};
-      sourceType = "persona_picker";
-      personaId = String(persona.id || wantedId).trim();
-      personaName = String(persona.name || "Persona").trim() || "Persona";
-      personaPrompt = String(persona.personaPrompt || persona.prompt || persona.description || persona.desc || persona.note || "").trim();
-    } else if (llmResult?.personaPrompt && selectedValue === "__auto__" && !ctx?.personaInfo?.persona?.id) {
-      sourceType = "lia_result";
-      const activeProfile = normalizePersonaVariantProfile(llmResult.activePersonaProfile || preservedPersonaVariantProfile);
-      const variants = normalizePersonaVariants(llmResult.personaVariants, llmResult.personaPrompt);
-      personaPrompt = String(variants[activeProfile] || llmResult.personaPrompt || "").trim();
-      personaSpec = normalizePersonaSpec(llmResult.personaSpec || null);
-      personaName = String(llmResult.personaName || personaSpec?.name || preservedGeneratedPersonaNameText || "LIA Persona").trim() || "LIA Persona";
-      const existing = findExistingGeneratedPersonaForResult(ctx, llmResult);
-      personaId = String(existing?.id || "").trim();
-    } else {
-      const persona = ctx.personaInfo?.persona || {};
-      personaId = String(persona.id || "").trim();
-      personaName = String(persona.name || "Persona").trim() || "Persona";
-      personaPrompt = String(persona.personaPrompt || persona.prompt || persona.description || "").trim();
-    }
-    const facts = inferPersonaFacts({ name: personaName, personaPrompt });
-    if (!personaSpec) personaSpec = buildPersonaSpecFromFacts(facts);
-    if (!personaSpec || typeof personaSpec !== "object") personaSpec = {};
-    const identitySummary = [
-      personaSpec?.gender || facts.gender,
-      personaSpec?.age || facts.age,
-      personaSpec?.speciesRace || facts.species,
-      personaSpec?.role || "",
-      personaSpec?.appearance || facts.appearanceDigest,
-      personaSpec?.personality || facts.emotionalDigest,
-    ].filter(Boolean).join(" · ");
-    const promptBasis = [personaName, personaPrompt, identitySummary].join("\n");
-    const legacyPersonaKey = `visual:${hashText(promptBasis)}`;
-    const draftIdentity = String(llmResult?.generationId || llmResult?.personaLineage?.lineageId || hashText(promptBasis)).trim();
-    const personaKey = personaId ? `persona:${personaId}` : `draft:${draftIdentity}`;
-    const store = normalizePersonaVisualAssetStore(ctx.visualAssetStore || {});
-    const sameNameSets = Object.entries(store.sets || {}).filter(([, set]) => String(set?.personaName || "").trim().toLowerCase() === personaName.toLowerCase() && Object.keys(set?.images || {}).length);
-    const fallbackPersonaKey = sameNameSets.length === 1 ? sameNameSets[0][0] : "";
-    const bundle = store.sets[personaKey] || store.sets[legacyPersonaKey] || (fallbackPersonaKey ? store.sets[fallbackPersonaKey] : null) || null;
-    const assetPrefix = personaAssetPrefix(personaName, personaId || draftIdentity);
-    return {
-      personaKey,
-      legacyPersonaKey,
-      fallbackPersonaKey,
-      personaId,
-      assetPrefix,
-      personaName,
-      sourceType,
-      personaPrompt,
-      personaSpec,
-      facts,
-      identitySummary,
-      promptBasis,
-      bundle,
-      displaySource: sourceType === "lia_result" ? (personaId ? "현재 LIA 결과 · 저장된 Persona" : "현재 LIA 결과 · 초안") : sourceType === "persona_picker" ? "사용자 지정 Persona" : "현재 Source Persona",
-    };
-  }
 
 
   
@@ -9661,30 +9884,27 @@ ${revisionText}`);
 
 
 
-  let liaEmotionResponseEpoch = 0;
-
-
-  // Image provider architecture and provider-specific request handling follow the implementation pattern used by Eros Tower, reused with the author's permission for LIA Persona Asset Studio. LIA's default emotion-asset path intentionally uses prompt-only generation locks and does not require reference-image/custom identity nodes.
-
-
   let liaStatusToastTimer = null;
   function setStatus(message, tone = "info") {
-    document.getElementById("dpg-status")?.removeAttribute("data-idle");
+    const getById = typeof document !== "undefined" && typeof document.getElementById === "function" ? document.getElementById.bind(document) : null;
+    const queryOne = typeof document !== "undefined" && typeof document.querySelector === "function" ? document.querySelector.bind(document) : null;
+    getById?.("dpg-status")?.removeAttribute("data-idle");
     appendOperationLog("status", message, { workspace: activeWorkspaceTab, editorSection: preservedEditorSection }, tone === "ok" ? "ok" : tone === "error" ? "error" : "info");
-    const el = document.getElementById("dpg-status");
+    const el = getById ? getById("dpg-status") : null;
     if (el) {
       el.textContent = message;
       el.dataset.tone = tone;
     }
-    const toasts = (typeof document !== "undefined" ? (document.querySelector("#dpg-preview-root .toasts") || document.querySelector(".toasts")) : null);
+    const toasts = queryOne ? (queryOne("#dpg-preview-root .toasts") || queryOne(".toasts")) : null;
     if (toasts && message) {
       let toast = toasts.querySelector("[data-lia-status-toast]");
-      if (!toast) {
+      if (!toast && typeof document?.createElement === "function") {
         toast = document.createElement("div");
         toast.className = "toast";
         toast.setAttribute("data-lia-status-toast", "");
         toasts.append(toast);
       }
+      if (!toast) return;
       toast.textContent = message;
       toast.dataset.tone = tone;
       toast.style.borderLeft = tone === "error" ? "3px solid #f87171" : tone === "ok" ? "3px solid #4ade80" : tone === "warn" ? "3px solid #fbbf24" : "3px solid #60a5fa";
@@ -9858,6 +10078,19 @@ ${revisionText}`);
     syncReasoningProviderUi(config, root);
     syncVertexProviderUi(config, root);
     syncServiceProviderUi(config, root);
+    const provider = normalizeProviderKey(config?.provider);
+    const isRisuAux = provider === "risuai";
+    const endpointInput = root.querySelector?.("#lia-endpoint");
+    const apiKeyInput = root.querySelector?.("#lia-api-key");
+    const modelInput = root.querySelector?.("#lia-model");
+    const hintEl = root.querySelector?.("#lia-provider-endpoint-hint");
+    if (endpointInput) endpointInput.disabled = isRisuAux;
+    if (apiKeyInput) apiKeyInput.disabled = isRisuAux;
+    if (modelInput) modelInput.placeholder = isRisuAux ? "otherAx" : "";
+    if (hintEl && isRisuAux) {
+      hintEl.hidden = false;
+      hintEl.textContent = "RisuAI에 설정된 보조 모델(otherAx)로 직접 위임합니다. 별도 URL/API 키가 필요하지 않습니다.";
+    }
   }
 
   function buildGenerationPromptForContext(ctx) {
@@ -10063,15 +10296,20 @@ ${revisionText}`);
   let liaMockupSubtabs = { ed: "sum" };
   let liaMockupEditorLanguage = "original";
   let liaMockupEditorDraftDirty = false;
+  function liaCssEscape(value) {
+    return (typeof CSS !== "undefined" && typeof CSS.escape === "function")
+      ? CSS.escape(String(value ?? ""))
+      : String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+  }
   function activateLiaMockupSubtab(group,name) {
     const root=document.getElementById("dpg-preview-root");
-    const tabs=root?.querySelector(`[data-subtabs="${CSS.escape(String(group))}"]`);
+    const tabs=root?.querySelector(`[data-subtabs="${liaCssEscape(group)}"]`);
     if(!tabs)return;
-    const button=tabs.querySelector(`[data-subtab="${CSS.escape(String(name))}"]`);
+    const button=tabs.querySelector(`[data-subtab="${liaCssEscape(name)}"]`);
     if(!button)return;
     liaMockupSubtabs[group]=String(name);
     tabs.querySelectorAll("[data-subtab]").forEach(item=>item.setAttribute("aria-selected",String(item===button)));
-    root.querySelectorAll(`[data-subpanel][data-group="${CSS.escape(String(group))}"]`).forEach(panel=>panel.classList.toggle("is-active",panel.dataset.subpanel===name));
+    root.querySelectorAll(`[data-subpanel][data-group="${liaCssEscape(group)}"]`).forEach(panel=>panel.classList.toggle("is-active",panel.dataset.subpanel===name));
   }
   function updateLiaMockupTranslation(value, language = null) {
     preservedTranslationText=String(value||"");
@@ -10089,16 +10327,19 @@ ${revisionText}`);
     if(desc)desc.textContent="저장하면 편집 결과를 local_only LIA 보관함에 새 버전으로 기록합니다. RisuAI Persona와 채팅 연결은 바뀌지 않습니다.";
   }
   let liaMockupFocusedBeforeDialog = null;
-  const LIA_NONCANCELLABLE_JOB_IDS = new Set(["job-cand", "job-gen", "job-neutral", "job-emo"]);
+  const LIA_NONCANCELLABLE_JOB_IDS = new Set(["job-neutral", "job-emo"]);
   function showLiaMockupDialog(id, trigger = null) {
     const root = document.getElementById("dpg-preview-root");
-    const dialog = root?.querySelector(`#${CSS.escape(String(id || ""))}`);
+    const dialog = root?.querySelector(`#${liaCssEscape(id)}`);
     if (!dialog) return false;
     const requirement = String(dialog.dataset.require || "");
     const context = liaMockupContext;
-    if (requirement.includes("pid") && !resolvePersonaVisualTarget(context || {}).personaId && !buildPersonaPanelState(context || {}).effectivePersona) {
-      setStatus("대상 Persona를 확인할 수 없어 작업을 열지 않았습니다.", "error");
-      return false;
+    if (requirement.includes("pid")) {
+      const panelState = buildPersonaPanelState(context || {});
+      if (!panelState.effectivePersona && !panelState.dynamicId && !getLLMResultOverride()) {
+        setStatus("대상 Persona를 확인할 수 없어 작업을 열지 않았습니다.", "error");
+        return false;
+      }
     }
     if(id==="sheet-del-vault"){
       const item=asArray(context?.savedResultVault).find(entry=>entry.id===preservedResultVaultId);
@@ -10109,7 +10350,23 @@ ${revisionText}`);
       const version=dialog.querySelector('[data-fill="ver"]');if(version)version.textContent=normalizePersonaLineage(item.personaLineage)?.revision?`v${normalizePersonaLineage(item.personaLineage).revision}`:'초안';
     }
     liaMockupFocusedBeforeDialog = trigger || document.activeElement;
-    if (LIA_NONCANCELLABLE_JOB_IDS.has(String(id))) {
+    if (id === "job-cand" || id === "job-gen") {
+      dialog.dataset.liaJobActive = "true";
+      const cancel = dialog.querySelector("[data-job-cancel]");
+      if (cancel) {
+        cancel.disabled = false;
+        cancel.removeAttribute("aria-disabled");
+        cancel.removeAttribute("data-close");
+        cancel.textContent = "작업 취소";
+        cancel.title = "진행 중인 AI 요청을 즉시 중단합니다.";
+      }
+      const done = dialog.querySelector("[data-job-done]");
+      if (done) {
+        done.hidden = false;
+        done.textContent = "닫기 · 작업 계속";
+        done.title = "진행 중 작업은 계속되며 완료 또는 실패가 상태 알림에 표시됩니다.";
+      }
+    } else if (LIA_NONCANCELLABLE_JOB_IDS.has(String(id))) {
       dialog.dataset.liaJobActive = "true";
       const cancel = dialog.querySelector("[data-job-cancel]");
       if (cancel) {
@@ -10147,14 +10404,25 @@ ${revisionText}`);
     const selectedId = String(selected?.id || "");
     const defaultPersonaId = String(state?.personas?.[Number(state?.selectedIndex)]?.id || "");
     if (id === "sheet-persona") {
-      const name = document.querySelector("#spm-t [data-fill=name]"); if (name) name.textContent = String(selected?.name || "Persona");
+      const name = document.querySelector("#spm-t [data-fill=name]");
+      if (name) name.textContent = state?.danglingDynamic && !selected ? `끊어진 Persona (${state.dynamicId})` : String(selected?.name || "Persona");
       const kv = document.getElementById("spm-kv");
-      if (kv) kv.innerHTML = `<dt>RisuAI ID</dt><dd class="mono">${htmlEscape(selectedId || "확인 불가")}</dd><dt>기본 Persona</dt><dd>${selectedId && selectedId === defaultPersonaId ? "이 Persona" : "유지됨"}</dd><dt>현재 채팅</dt><dd>${selectedId && selectedId === state?.dynamicId ? "연결됨" : "연결되지 않음"}</dd>`;
+      if (kv) {
+        if (!selected && state?.danglingDynamic) {
+          kv.innerHTML = `<dt>끊어진 ID</dt><dd class="mono">${htmlEscape(state.dynamicId)}</dd><dt>상태</dt><dd>RisuAI 목록에서 찾을 수 없음</dd><dt>현재 채팅</dt><dd>연결 정리 필요</dd>`;
+        } else {
+          kv.innerHTML = `<dt>RisuAI ID</dt><dd class="mono">${htmlEscape(selectedId || "확인 불가")}</dd><dt>기본 Persona</dt><dd>${selectedId && selectedId === defaultPersonaId ? "이 Persona" : "유지됨"}</dd><dt>현재 채팅</dt><dd>${selectedId && selectedId === state?.dynamicId ? "연결됨" : "연결되지 않음"}</dd>`;
+        }
+      }
       const note = document.getElementById("spm-note"); if (note) note.textContent = "연결·저장·삭제는 각각 별도 확인을 거칩니다. 기본 Persona 선택은 바꾸지 않습니다.";
       const actions = document.getElementById("spm-act");
       const selectedIndex=state?.personas?.indexOf(selected)??-1;
       const canCleanup=!!selected&&selectedIndex>Number(state?.selectedIndex??-1)&&isGeneratedFallbackPersona(selected,ctx);
-      if (actions) actions.innerHTML = selected ? `<button class="btn btn--primary" data-lia-persona-bind>이 채팅에 연결…</button><button class="btn" data-open="sheet-bind">대상 선택</button>${selectedId&&selectedId===state?.dynamicId?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}` : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
+      if (actions) actions.innerHTML = selected
+        ? `<button class="btn btn--primary" data-lia-persona-bind>이 채팅에 연결…</button><button class="btn" data-lia-persona-load-editor>초안 편집기로 불러오기</button><button class="btn" data-open="sheet-bind">대상 선택</button>${(selectedId&&selectedId===state?.dynamicId)||state?.danglingDynamic?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}`
+        : state?.danglingDynamic
+          ? `<button class="btn btn--primary" data-open="sheet-bind">다른 Persona 연결…</button><button class="btn btn--danger" data-lia-persona-unbind>끊어진 채팅 연결 해제…</button>`
+          : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
     }
     if (id === "sheet-bind") {
       const intro=document.querySelector('#sheet-bind .sheet > p.muted');
@@ -10192,13 +10460,20 @@ ${revisionText}`);
   }
   function updateMockupCandidates() {
     const root = document.getElementById("dlg-cand");
-    const rows = root?.querySelector("[data-detail-root]:not([hidden])");
+    const isChar = generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER;
+    root?.querySelectorAll("[data-variant]").forEach(node => {
+      const variant = String(node.dataset.variant || "");
+      node.hidden = isChar ? !variant.includes("character") : !variant.includes("random");
+    });
+    const rows = root?.querySelector("[data-detail-root]:not([hidden])") || root?.querySelector("[data-detail-root]");
     if (!rows) return;
-    const candidates = generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER ? preservedCharacterCandidates : preservedRandomCandidates;
-    const selectedId = generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER ? preservedSelectedCharacterCandidateId : preservedSelectedRandomCandidateId;
+    const candidates = isChar ? preservedCharacterCandidates : preservedRandomCandidates;
+    const selectedId = isChar ? preservedSelectedCharacterCandidateId : preservedSelectedRandomCandidateId;
+    const go = document.getElementById("btn-cand-go");
+    if (go) go.disabled = !selectedId;
     rows.innerHTML = candidates.length ? candidates.map((candidate, index) => {
       const name = String(candidate?.name || candidate?.personaName || `후보 ${index + 1}`);
-      const details = String(candidate?.summary || candidate?.description || candidate?.role || "실제 생성 결과");
+      const details = String(candidate?.identitySummary || candidate?.conceptHook || candidate?.personalityCore || candidate?.summary || candidate?.description || candidate?.role || "실제 생성 결과");
       return `<button class="big-choice${candidate.id === selectedId ? " is-on" : ""}" type="button" data-lia-candidate-id="${htmlEscape(candidate.id)}"><span class="avatar avatar--sm">${htmlEscape(name.slice(0,1))}</span><span><b>${htmlEscape(name)}</b><small>${htmlEscape(details)}</small></span><span class="pick">${candidate.id === selectedId ? "선택됨" : "선택"}</span></button>`;
     }).join("") : '<div class="empty"><b>실제 후보 결과가 없습니다.</b><span>먼저 후보 생성 작업을 완료하세요.</span></div>';
   }
@@ -10215,7 +10490,7 @@ ${revisionText}`);
         liaMockupContext = await getContext(readContextOptions());
         const variant = (() => { try { return JSON.parse(button?.dataset?.ctx || "{}").variant; } catch (_) { return "random"; } })();
         applyLiaMockupMode(variant === "character" ? "character" : "random");
-        result = variant === "character" ? await generateCharacterCandidates() : await generateRandomCandidates();
+        result = await runWithLiaAiJob("candidate", {}, () => variant === "character" ? generateCharacterCandidates() : generateRandomCandidates());
         liaMockupContext = readLiaViewContext(await getContext(readContextOptions()));
         await refreshPreview({skipCapture:true});
         updateMockupCandidates();
@@ -10224,7 +10499,7 @@ ${revisionText}`);
       } else if (action === "generate") {
         openJob('job-gen');
         liaMockupContext = await getContext(readContextOptions());
-        result = await runLLMRewrite();
+        result = await runWithLiaAiJob("generate", {}, () => runLLMRewrite());
         closeJob();liaMockupEditorDraftDirty=false;
         await refreshPreview({skipCapture:true});
         activateTab("edit");
@@ -10251,11 +10526,11 @@ ${revisionText}`);
       } else if (action === "reroll-field") {
         const field=String(button?.dataset?.regen||"");
         if(!PERSONA_SPEC_FIELD_KEY_SET.has(field)) throw new Error("재생성할 Persona 필드를 확인할 수 없습니다.");
-        await rerollPersonaFields([field]);
+        await runWithLiaAiJob("reroll", {}, () => rerollPersonaFields([field]));
         await refreshPreview({skipCapture:true});
         setStatus(`Persona 필드 ‘${field}’를 실제 생성 결과로 다시 읽었습니다.`,"ok");
       } else if (action === "translate") {
-        const translated=await translateCurrentPersona();
+        const translated=await runWithLiaAiJob("translate", {}, () => translateCurrentPersona());
         liaMockupEditorLanguage="translation";activateTab("edit");activateLiaMockupSubtab("ed","all");
         await refreshPreview({skipCapture:true});
         setStatus(`${translated.label} 번역 결과를 별도 초안으로 저장했습니다.`,"ok");
@@ -10278,6 +10553,7 @@ ${revisionText}`);
         // focus and any input typed while storage was pending in the same DOM.
         const current = liaUiVisible && root?.isConnected && document.getElementById("dpg-preview-root") === root;
         const unchanged = current && JSON.stringify(readLLMConfig()) === JSON.stringify(saved);
+        liaUnsavedProviderDraft = unchanged ? null : (current ? readLLMConfig() : null);
         if (liaMockupContext) liaMockupContext.savedLLMConfig = readback;
         if (current) {
           if (keyInput?.isConnected) {
@@ -10286,12 +10562,12 @@ ${revisionText}`);
           }
           if (clearKey?.isConnected && clearKey.checked === submittedClear) clearKey.checked = false;
           const state = document.getElementById("lia-provider-state");
-          if (state) state.textContent = `${readback.apiKey ? "인증 정보 저장됨" : "인증 정보 없음"}${unchanged ? " · 저장 완료" : " · 이후 입력 변경은 미저장"}`;
+          if (state) state.textContent = `${normalizeProviderKey(readback.provider) === "risuai" ? "RisuAI 보조 모델 (otherAx)" : (readback.apiKey ? "인증 정보 저장됨" : "인증 정보 없음")}${unchanged ? " · 저장 완료" : " · 이후 입력 변경은 미저장"}`;
           setStatus("텍스트 AI 설정을 저장하고 저장값을 재확인했습니다.","ok");
         }
       } else if (action === "run-evolution") {
         try {
-          const result=await runPersonaEvolution();
+          const result=await runWithLiaAiJob("evolution", {}, () => runPersonaEvolution());
           await refreshPreview({skipCapture:true});
           setStatus(`User 작성 메시지 변화 후보 ${result.evolution.suggestions.length}개를 분석했습니다. 아직 초안에는 반영하지 않았습니다.`,"ok");
         } catch (evoError) {
@@ -10310,7 +10586,12 @@ ${revisionText}`);
       }
       return result || true;
     } catch (error) {
-      closeJob();setStatus(`실패 또는 결과 확인 필요: ${error?.message || error}`, "error");
+      closeJob();
+      if (error?.code === "LIA_PROVIDER_CANCELLED") {
+        setStatus("AI 작업이 취소되었습니다. 기존 초안은 유지됩니다.", "info");
+      } else {
+        setStatus(`실패 또는 결과 확인 필요: ${error?.message || error}`, "error");
+      }
       return false;
     } finally { if (button?.isConnected) button.disabled = false; }
   }
@@ -10325,21 +10606,33 @@ ${revisionText}`);
     if(target.matches('[data-lia-scope-prev],[data-lia-scope-next]')){event.preventDefault();liaScopePersonaView.page+=target.hasAttribute('data-lia-scope-prev')?-1:1;renderLiaScopePersonaPage();return;}
     if(target.matches('[data-lia-close]')){event.preventDefault();await closeLiaUi();return;}
     if(target.matches('[data-lia-refresh]')){event.preventDefault();await refreshPreview({skipCapture:true});return;}
+    if(target.matches('[data-lia-new-blank-draft]')){event.preventDefault();if(liaMockupEditorDraftDirty&&typeof globalThis.confirm==='function'&&!globalThis.confirm('저장하지 않은 편집 초안이 있습니다. 새 빈 초안으로 덮어쓸까요?'))return;createBlankPersonaDraft(liaMockupContext);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus('빈 Persona 초안을 열었습니다. AI 없이 23개 항목과 원문을 직접 작성할 수 있습니다.','ok');return;}
+    if(target.matches('[data-lia-load-active-persona]')){event.preventDefault();const state=buildPersonaPanelState(liaMockupContext||{});if(!state.effectivePersona){setStatus('불러올 현재 Persona를 찾지 못했습니다.','error');return;}loadRisuPersonaIntoDraft(state.effectivePersona,liaMockupContext);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`‘${state.effectivePersona.name||'Persona'}’을(를) 수동 편집기로 불러왔습니다.`,'ok');return;}
+    if(target.matches('[data-lia-pocket-edit]')){event.preventDefault();const choice=String(target.dataset.liaPocketEdit||'');const state=buildPersonaPanelState(liaMockupContext||{});const found=state.personas.find((item,index)=>personaPanelChoiceRef(item,index)===choice);if(!found){setStatus('선택한 Persona를 찾지 못했습니다.','error');return;}loadRisuPersonaIntoDraft(found,liaMockupContext);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`‘${found.name||'Persona'}’을(를) 편집기로 불러왔습니다.`,'ok');return;}
+    if(target.matches('[data-lia-persona-load-editor]')){event.preventDefault();const state=buildPersonaPanelState(liaMockupContext||{});const selected=state.personas.find((item,index)=>personaPanelChoiceRef(item,index)===liaSelectedPersonaChoice)||state.effectivePersona;if(!selected){setStatus('편집기로 불러올 Persona를 찾지 못했습니다.','error');return;}closeLiaMockupDialog(target.closest('.overlay'));loadRisuPersonaIntoDraft(selected,liaMockupContext);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`‘${selected.name||'Persona'}’을(를) 편집기로 불러왔습니다.`,'ok');return;}
+    if(target.matches('[data-lia-render-spec-local]')){event.preventDefault();const current=getLLMResultOverride();const spec=normalizePersonaSpec(current?.personaSpec)||normalizePersonaSpecDraft(current?.personaSpec);if(!current||!spec){setStatus('재합성할 PersonaSpec 초안이 없습니다.','error');return;}const rendered=renderPersonaSpecLocally(spec);const variants=normalizePersonaVariants(current.personaVariants,rendered);variants.full=rendered;const updated={...current,personaName:spec.name||current.personaName,personaSpec:spec,personaPrompt:rendered,personaVariants:variants,activePersonaProfile:'full',promptAutoSyncedFromSpec:false,specOutOfSyncWithPrompt:false};setGeneratedOutputText(resultToOutputText(updated));markLiaEditorDirty();await refreshPreview({skipCapture:true});setStatus('23개 항목을 기준으로 Persona Prompt 원문을 로컬 재합성했습니다.','ok');return;}
+    if(target.matches('[data-lia-render-spec-ai]')){event.preventDefault();target.disabled=true;void(async()=>{try{const current=getLLMResultOverride();const spec=normalizePersonaSpec(current?.personaSpec)||normalizePersonaSpecDraft(current?.personaSpec);if(!current||!spec)throw new Error('AI 리렌더링할 PersonaSpec이 없습니다.');const ctx=await getContext(readContextOptions());const rendered=await runWithLiaAiJob('render-spec',{},()=>renderPersonaPromptFromSpec(ctx,spec,readLLMConfig(),current.personaPrompt));const variants=normalizePersonaVariants(current.personaVariants,rendered);variants.full=rendered;const updated={...current,personaName:spec.name||current.personaName,personaSpec:spec,personaPrompt:rendered,personaVariants:variants,activePersonaProfile:'full',promptAutoSyncedFromSpec:false,specOutOfSyncWithPrompt:false};setGeneratedOutputText(resultToOutputText(updated));markLiaEditorDirty();await refreshPreview({skipCapture:true});setStatus('AI로 Persona Prompt 원문을 다시 렌더링했습니다.','ok');}catch(error){setStatus(error?.code==='LIA_PROVIDER_CANCELLED'?'AI 작업이 취소되었습니다. 기존 초안은 유지됩니다.':`AI 리렌더링 실패: ${error?.message||error}`,error?.code==='LIA_PROVIDER_CANCELLED'?'info':'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-export-persona-json]')){event.preventDefault();try{const jsonText=exportCurrentPersonaJson();const box=document.getElementById('lia-json-io-box');const area=document.getElementById('lia-persona-json-io');if(box)box.hidden=false;if(area)area.value=jsonText;void copyTextToClipboard(jsonText).catch(()=>{});setStatus('현재 Persona와 번역 데이터를 JSON으로 내보냈습니다.','ok');}catch(error){setStatus(`JSON 내보내기 실패: ${error?.message||error}`,'error');}return;}
+    if(target.matches('[data-lia-import-persona-open]')){event.preventDefault();activateTab('edit');const box=document.getElementById('lia-json-io-box');const area=document.getElementById('lia-persona-json-io');if(box)box.hidden=false;area?.focus();return;}
+    if(target.matches('[data-lia-import-persona-apply]')){event.preventDefault();try{const area=document.getElementById('lia-persona-json-io');importPersonaJsonText(area?.value||'',liaMockupContext);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus('JSON에서 Persona 초안(및 번역)을 불러왔습니다.','ok');}catch(error){setStatus(`JSON 가져오기 실패: ${error?.message||error}`,'error');}return;}
+    if(target.matches('[data-lia-copy-persona-json]')){event.preventDefault();try{const area=document.getElementById('lia-persona-json-io');const jsonText=(area?.value&&area.value.trim())||exportCurrentPersonaJson();const copied=await copyTextToClipboard(jsonText);setStatus(copied?.ok?'Persona JSON을 클립보드에 복사했습니다.':'JSON 영역에서 복사해 주세요.',copied?.ok?'ok':'info');}catch(error){setStatus(`JSON 복사 실패: ${error?.message||error}`,'error');}return;}
     if(target.matches('[data-lia-copy-prompt]')){event.preventDefault();const text=buildGenerationPromptForContext(liaMockupContext||await getContext(readContextOptions()));const area=document.getElementById('lia-prompt-inspection-text');if(area)area.value=text;try{await navigator.clipboard?.writeText(text);setStatus('현재 설정과 자료 선택을 반영한 실제 생성 프롬프트를 복사했습니다.','ok');}catch(error){if(area){area.focus();area.select();setStatus('프롬프트를 선택했습니다. Ctrl+C로 복사해 주세요.','info');}else setStatus(`프롬프트 복사 실패: ${error?.message||error}`,'error');}return;}
     if(target.matches('[data-lia-version-open]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVersionOpen||'');void(async()=>{try{await loadVaultResult();const saved=await readStoredResultVault();if(!saved.some(item=>item.id===preservedResultVaultId))throw new Error('선택한 저장 스냅샷을 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus('선택한 실제 보관함 스냅샷을 편집 초안으로 열었습니다. RisuAI Persona에는 쓰지 않았습니다.','ok');}catch(error){setStatus(`버전 초안 열기 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-version-compare]')){event.preventDefault();const id=String(target.dataset.liaVersionCompare||'');void(async()=>{try{const rows=await readStoredResultVault();const snapshot=rows.find(item=>item.id===id);if(!snapshot)throw new Error('비교할 보관함 스냅샷이 사라졌습니다.');const current=getLLMResultOverride()||{};const before=normalizePersonaSpec(snapshot.personaSpec)||{},after=normalizePersonaSpec(current.personaSpec)||{};const changes=PERSONA_SPEC_FIELD_DEFS.map(field=>({label:field.label||field.key,before:String(before[field.key]??''),after:String(after[field.key]??'')})).filter(row=>row.before!==row.after);if(String(snapshot.personaPrompt||'')!==String(current.personaPrompt||''))changes.push({label:'Persona Prompt',before:String(snapshot.personaPrompt||''),after:String(current.personaPrompt||'')});const box=document.querySelector('#ver-list')?.parentElement?.querySelector('#lia-version-compare');const list=box?.querySelector('.list');if(list)list.innerHTML=changes.length?changes.map(row=>`<div class="row"><div><b>${htmlEscape(row.label)}</b><small>저장본</small><span>${htmlEscape(limitText(row.before,1000)||'(비어 있음)')}</span><small>현재 초안</small><span>${htmlEscape(limitText(row.after,1000)||'(비어 있음)')}</span></div></div>`).join(''):'<div class="empty"><b>차이가 없습니다.</b><span>선택한 스냅샷과 현재 초안의 지원 필드가 같습니다.</span></div>';if(box)box.hidden=false;setStatus(`보관함 스냅샷과 현재 초안을 비교했습니다: ${changes.length}개 차이.`,'ok');}catch(error){setStatus(`버전 비교 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-refresh-blueprint]')){event.preventDefault();target.disabled=true;void(async()=>{try{captureGeneratedOutputState();const fresh=await getContext(readContextOptions());const state=await generateWorldBlueprint(fresh,{force:true,config:readLLMConfig()});await refreshPreview({skipCapture:true});setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length||0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length||0}개`,'ok');}catch(error){setStatus(`세계관 Blueprint 분석 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-version-compare]')){event.preventDefault();const id=String(target.dataset.liaVersionCompare||'');void(async()=>{try{const rows=await readStoredResultVault();const snapshot=rows.find(item=>item.id===id);if(!snapshot)throw new Error('비교할 보관함 스냅샷이 사라졌습니다.');const current=getLLMResultOverride()||{};const before=normalizePersonaSpec(snapshot.personaSpec)||normalizePersonaSpecDraft(snapshot.personaSpec)||{},after=normalizePersonaSpec(current.personaSpec)||normalizePersonaSpecDraft(current.personaSpec)||{};const changes=PERSONA_SPEC_FIELD_DEFS.map(field=>({label:field.label||field.key,before:Array.isArray(before[field.key])?before[field.key].join(', '):String(before[field.key]??''),after:Array.isArray(after[field.key])?after[field.key].join(', '):String(after[field.key]??'')})).filter(row=>row.before!==row.after);if(String(snapshot.personaPrompt||'')!==String(current.personaPrompt||''))changes.push({label:'Persona Prompt',before:String(snapshot.personaPrompt||''),after:String(current.personaPrompt||'')});const box=document.querySelector('#ver-list')?.parentElement?.querySelector('#lia-version-compare');const list=box?.querySelector('.list');if(list)list.innerHTML=changes.length?changes.map(row=>`<div class="row"><div><b>${htmlEscape(row.label)}</b><small>저장본</small><span>${htmlEscape(limitText(row.before,1000)||'(비어 있음)')}</span><small>현재 초안</small><span>${htmlEscape(limitText(row.after,1000)||'(비어 있음)')}</span></div></div>`).join(''):'<div class="empty"><b>차이가 없습니다.</b><span>선택한 스냅샷과 현재 초안의 지원 필드가 같습니다.</span></div>';if(box)box.hidden=false;setStatus(`보관함 스냅샷과 현재 초안을 비교했습니다: ${changes.length}개 차이.`,'ok');}catch(error){setStatus(`버전 비교 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-refresh-blueprint]')){event.preventDefault();target.disabled=true;void(async()=>{try{captureGeneratedOutputState();const fresh=await getContext(readContextOptions());const state=await runWithLiaAiJob('blueprint',{},()=>generateWorldBlueprint(fresh,{force:true,config:readLLMConfig()}));await refreshPreview({skipCapture:true});setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length||0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length||0}개`,'ok');}catch(error){setStatus(error?.code==='LIA_PROVIDER_CANCELLED'?'AI 작업이 취소되었습니다.':`세계관 Blueprint 분석 실패: ${error?.message||error}`,error?.code==='LIA_PROVIDER_CANCELLED'?'info':'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.matches("[data-go]")) { event.preventDefault(); activateTab(target.dataset.go); return; }
     if(target.matches('[data-lia-vault-id]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVaultId||'');void (async()=>{try{await loadVaultResult();await refreshPreview({skipCapture:true});activateTab('edit');setStatus('선택한 보관 결과를 편집 화면에서 다시 읽었습니다.','ok');}catch(error){setStatus(`보관 결과 열기 실패: ${error?.message||error}`,'error');}})();return;}
     if(target.matches('[data-lia-fork-lineage]')){event.preventDefault();target.disabled=true;void (async()=>{try{const fork=await forkCurrentPersonaLineage();const vault=await readStoredResultVault();const saved=vault.find(item=>item.id===preservedResultVaultId);if(!saved)throw new Error('파생 결과를 보관함에서 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`현재 초안에서 파생 계보를 만들고 보관함에 저장했습니다: ${fork.title} · revision 1`,'ok');}catch(error){setStatus(`파생 계보 저장 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches('[data-lia-audit-recommendation]')){const id=String(target.dataset.liaAuditRecommendation||'');if(id)target.checked?preservedPersonaAuditSelection.add(id):preservedPersonaAuditSelection.delete(id);return;}
     if(target.matches('[data-lia-audit-fix]')){const id=String(target.dataset.liaAuditFix||'');if(id)target.checked?preservedPersonaAuditFixSelection.add(id):preservedPersonaAuditFixSelection.delete(id);return;}
-    if(target.matches('[data-lia-run-audit]')){event.preventDefault();target.disabled=true;void (async()=>{try{const audit=await runPersonaAudit();await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`Persona Audit 완료: ${audit.score}/100 · ${audit.verdict.toUpperCase()}`,'ok');}catch(error){setStatus(`Persona Audit 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-build-selected-fix],[data-lia-build-hard-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const mode=target.matches('[data-lia-build-hard-fix]')?'hard':'selected';const plan=await buildPersonaAuditFixPlan(mode);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`${mode==='hard'?'Hard Conflict 안전':''} 수정안 ${plan.changes.length}개를 만들었습니다. 적용 전 검토하세요.`,'ok');}catch(error){setStatus(`Audit 수정안 생성 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-run-audit]')){event.preventDefault();target.disabled=true;void (async()=>{try{const audit=await runWithLiaAiJob('audit',{},()=>runPersonaAudit());await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`Persona Audit 완료: ${audit.score}/100 · ${audit.verdict.toUpperCase()}`,'ok');}catch(error){setStatus(error?.code==='LIA_PROVIDER_CANCELLED'?'AI 작업이 취소되었습니다.':`Persona Audit 실패: ${error?.message||error}`,error?.code==='LIA_PROVIDER_CANCELLED'?'info':'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-build-selected-fix],[data-lia-build-hard-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const mode=target.matches('[data-lia-build-hard-fix]')?'hard':'selected';const plan=await runWithLiaAiJob('audit-fix',{},()=>buildPersonaAuditFixPlan(mode));await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`${mode==='hard'?'Hard Conflict 안전':''} 수정안 ${plan.changes.length}개를 만들었습니다. 적용 전 검토하세요.`,'ok');}catch(error){setStatus(error?.code==='LIA_PROVIDER_CANCELLED'?'AI 작업이 취소되었습니다.':`Audit 수정안 생성 실패: ${error?.message||error}`,error?.code==='LIA_PROVIDER_CANCELLED'?'info':'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches('[data-lia-apply-audit-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const result=await applySelectedPersonaAuditFixes();liaMockupEditorDraftDirty=true;await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`선택한 Audit 수정안을 초안에 적용했습니다: ${result.fields.join(', ')}. 보관함 저장 전입니다.`,'ok');}catch(error){setStatus(`Audit 수정안 적용 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches("[data-subtab]")){activateLiaMockupSubtab(target.closest("[data-subtabs]")?.dataset?.subtabs||"",target.dataset.subtab);return;}
     if(target.closest("#ed-lang")){const language=target.dataset.language||"original";liaMockupEditorLanguage=language;const ctx=liaMockupContext;if(ctx){const app=document.getElementById("dpg-preview-root");if(app)hydrateLiaMockupApp(ctx,app);}return;}
     if(target.closest("#ad-lang")){const group=target.closest("#ad-lang");group.querySelectorAll("button").forEach(button=>button.setAttribute("aria-pressed",String(button===target)));return;}
+    const adModeChoice=target.closest?.("#ad-mode .choice");
+    if(adModeChoice){const group=adModeChoice.closest("#ad-mode");const choices=[...group.querySelectorAll(".choice")];const idx=choices.indexOf(adModeChoice);preservedAdoptionMode=idx===1?"new":"scoped";choices.forEach((choice,i)=>{choice.classList.toggle("is-on",i===idx);choice.setAttribute("aria-pressed",String(i===idx));});return;}
     if (target.id === "random-cand-go" || target.matches('[data-run-job="job-cand"]')) { event.preventDefault(); void runLiaMockupAction("candidate", target); return; }
     if (["mk-classic", "mk-conv", "btn-cand-go"].includes(target.id)) { event.preventDefault(); void runLiaMockupAction("generate", target); return; }
     if (target.matches("[data-regen]")) { event.preventDefault(); void runLiaMockupAction("reroll-field", target); return; }
@@ -10360,7 +10653,7 @@ ${revisionText}`);
     if(target.matches('[data-lia-generated-cleanup]')){event.preventDefault();const initial=liaMockupContext;if(!initial)return;const initialScope=liaScopeKey(initial);const getEligible=ctx=>{const state=buildPersonaPanelState(ctx);return state.personas.map((item,index)=>({item,index})).filter(({item,index})=>index>state.selectedIndex&&isGeneratedFallbackPersona(item,ctx)).map(({item})=>String(item?.id||'')).filter(Boolean).sort();};const expected=getEligible(initial);if(!expected.length){setStatus('정리할 수 있는 LIA 생성 Persona가 없습니다.','info');return;}if(!globalThis.confirm?.(`현재 캐릭터/채팅 범위에서 기본 Persona 뒤의 LIA 생성 Persona ${expected.length}개를 정리할까요? 직접 만든 Persona와 기본 Persona는 제외합니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(liaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다. 다시 열어 주세요.');const freshCtx=await getContext();const freshIds=getEligible(freshCtx);if(JSON.stringify(freshIds)!==JSON.stringify(expected))throw new Error('정리 대상 목록이 확인 뒤 바뀌었습니다. 다시 확인해 주세요.');const beforeSelected=fresh.db?.selectedPersona;const result=await removeGenerated();const after=await getLiveRuntimeContext();if(liaScopeKey(after)!==initialScope)throw new Error('작업 도중 범위가 바뀌어 결과를 확인할 수 없습니다.');const remaining=new Set(getEligible(await getContext()));const left=expected.filter(id=>remaining.has(id));if(left.length)throw new Error(`일부 정리 대상이 남아 있습니다: ${left.length}개. 다시 읽어 확인하세요.`);if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeSelected))throw new Error('RisuAI 기본 Persona 선택값 변경이 감지됐습니다. 결과를 확인하세요.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});setStatus(`LIA 생성 Persona 정리를 읽어 확인했습니다: ${result.removedPersonas}개 제거, ${result.protectedPersonas}개 보호. 기본 Persona 선택은 유지했습니다.`,'ok');}catch(error){setStatus(`LIA Persona 정리 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.matches("[data-lia-bind-choice]")) { liaSelectedPersonaChoice = target.dataset.liaBindChoice || ""; hydrateLiaPersonaDialog("sheet-bind"); return; }
     if (target.matches("[data-lia-persona-bind]")) { closeLiaMockupDialog(target.closest(".overlay")); showLiaMockupDialog("sheet-bind", target); return; }
-    if(target.matches('[data-lia-persona-unbind]')){event.preventDefault();const captured=String(liaSelectedPersonaChoice||'');const confirmed=typeof globalThis.confirm==='function'&&globalThis.confirm('현재 채팅의 동적 Persona 연결을 해제할까요? RisuAI 기본 Persona는 바뀌지 않습니다.');if(!confirmed)return;target.disabled=true;void(async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const before=await PersonaSelectionManager.read(runtimeCtx);const current=before.personas?.find((item,index)=>personaPanelChoiceRef(item,index)===captured)||before.personas?.find(item=>String(item.id||'')===before.dynamicPersonaId);if(!current||String(current.id||'')!==String(before.dynamicPersonaId||''))throw new Error('현재 채팅의 연결 대상이 바뀌었습니다. 다시 열어 확인하세요.');await PersonaSelectionManager.clearDynamic(runtimeCtx);const after=await PersonaSelectionManager.read(await getLiveRuntimeContext());if(after.dynamicPersonaId)throw new Error('연결 해제 후에도 현재 채팅에 동적 Persona가 남아 있습니다.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus('현재 채팅 연결을 해제하고 기본 Persona가 유지되는지 다시 읽었습니다.','ok');}catch(error){setStatus(`채팅 연결 해제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.id==="lia-confirm-unbind"||target.matches('[data-lia-persona-unbind]')){event.preventDefault();const confirmed=typeof globalThis.confirm!=='function'||globalThis.confirm('현재 채팅의 동적 Persona 연결을 해제할까요? RisuAI 기본 Persona는 바뀌지 않습니다.');if(!confirmed)return;target.disabled=true;void(async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const before=await PersonaSelectionManager.read(runtimeCtx);if(!before.dynamicPersonaId)throw new Error('현재 채팅에 해제할 동적 Persona 연결이 없습니다.');await PersonaSelectionManager.clearDynamic(runtimeCtx);const after=await PersonaSelectionManager.read(await getLiveRuntimeContext());if(after.dynamicPersonaId)throw new Error('연결 해제 후에도 현재 채팅에 동적 Persona가 남아 있습니다.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus('현재 채팅 연결을 해제하고 기본 Persona가 유지되는지 다시 읽었습니다.','ok');}catch(error){setStatus(`채팅 연결 해제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.matches("[data-lia-bind-confirm]")) {
       const choice = liaSelectedPersonaChoice;
       if (!choice) { setStatus("연결할 Persona를 먼저 선택하세요.", "error"); return; }
@@ -10369,7 +10662,7 @@ ${revisionText}`);
       return;
     }
     if (target.matches("[data-open]")) { event.preventDefault(); const active=document.querySelector("#dpg-preview-root .overlay.is-open"); if(active) closeLiaMockupDialog(active); showLiaMockupDialog(target.dataset.open, target); return; }
-    if (target.matches("[data-job-cancel]")) { event.preventDefault();const overlay=target.closest('.overlay');closeLiaMockupDialog(overlay);return; }
+    if (target.matches("[data-job-cancel]")) { event.preventDefault(); const overlay=target.closest('.overlay'); if(activeLiaAiJob?.controller) activeLiaAiJob.controller.abort(); if(overlay) overlay.dataset.liaJobActive='false'; closeLiaMockupDialog(overlay); setStatus('진행 중인 AI 작업을 취소했습니다. 기존 초안은 유지됩니다.','info'); return; }
     if (target.matches("[data-close]")) { event.preventDefault(); closeLiaMockupDialog(target.closest(".overlay")); return; }
     if (target.closest(".overlay") && target === target.closest(".overlay")) { closeLiaMockupDialog(target); return; }
     if (target.matches("[data-select-row]") && target.closest('[data-page="make"]')) { applyLiaMockupMode(target.dataset.selectRow); return; }
@@ -10399,11 +10692,15 @@ ${revisionText}`);
     const field = event.target;
     if (!field) return;
     if (field.id === "lia-reasoning-preset") applyReasoningPresetUiDefaults(field.value);
-    if (field.matches("#lia-provider,#lia-model,#lia-endpoint,#lia-api-key,#lia-request-format,#lia-reasoning-preset,#lia-reasoning-effort,#lia-reasoning-budget,#lia-thinking-type,#lia-custom-service-tier,#lia-vertex-flex")) { syncLiaProviderForm(readLLMConfig()); return; }
+    if (field.matches("#lia-provider,#lia-model,#lia-endpoint,#lia-api-key,#lia-clear-api-key,#lia-temperature,#lia-max-tokens,#lia-timeout,#lia-context-window,#lia-request-format,#lia-reasoning-preset,#lia-reasoning-effort,#lia-reasoning-budget,#lia-thinking-type,#lia-service-tier,#lia-custom-service-tier,#lia-vertex-flex,#lia-cache-mode,#lia-stream,#lia-extra-headers,#lia-extra-body")) {
+      liaUnsavedProviderDraft = readLLMConfig();
+      syncLiaProviderForm(liaUnsavedProviderDraft);
+      return;
+    }
     if(field.matches('#dpg-use-character-lore,#dpg-use-chat-lore,#dpg-use-module-lore,.dpg-module-choice')){void refreshPreview({skipCapture:true});return;}
     if(field.matches(".lia-mockup-evolution")){const id=String(field.dataset.evolutionId||"");if(id){field.checked?preservedPersonaEvolutionSelection.add(id):preservedPersonaEvolutionSelection.delete(id);const apply=document.getElementById("lia-apply-evolution");if(apply)apply.disabled=!preservedPersonaEvolutionSelection.size;}return;}
     if (field.id === "lia-rich-profile") { liaMockupContextOptions = { ...liaMockupContextOptions, richPersonaMode: field.checked === true }; return; }
-    if (field.id === "lia-max-chars") { field.setCustomValidity(""); markLiaLoreLimitDirty(field); return; }
+    if (field.id === "lia-max-chars" || field.id === "lia-max-entries") { field.setCustomValidity(""); markLiaLoreLimitDirty(field, true); return; }
     
     if(field.id==="lia-translation-language"){preservedTranslationLanguage=normalizeTranslationLanguage(field.value);preservedTranslationText="";const draft=document.getElementById("lia-translation-draft");if(draft)draft.value="";return;}
     if(field.id==="dpg-source-persona"){liaMockupContextOptions={...liaMockupContextOptions,selectedPersonaKey:String(field.value||"auto")};void refreshPreview({skipCapture:true});return;}
@@ -10422,8 +10719,13 @@ ${revisionText}`);
 
     const field = event.target;
     if (!field) return;
+    if (field.matches("#lia-model,#lia-endpoint,#lia-api-key,#lia-temperature,#lia-max-tokens,#lia-timeout,#lia-context-window,#lia-reasoning-budget,#lia-extra-headers,#lia-extra-body")) {
+      liaUnsavedProviderDraft = readLLMConfig();
+      syncLiaProviderForm(liaUnsavedProviderDraft);
+      return;
+    }
     if(field.id==='dpg-user-rewrite-guidance'){preservedUserRewriteGuidanceText=String(field.value||'');const preview=document.getElementById('lia-prompt-inspection-text');if(preview&&liaMockupContext)preview.value=buildGenerationPromptForContext(liaMockupContext);return;}
-    if(field.id==='dpg-persona-preview'){const current=getLLMResultOverride();if(!current)return;const edited=String(field.value||'');const profile=normalizePersonaVariantProfile(current.activePersonaProfile||preservedPersonaVariantProfile);const variants=normalizePersonaVariants(current.personaVariants,current.personaPrompt);variants[profile]=edited;const next={...current,personaPrompt:edited,personaVariants:variants,activePersonaProfile:profile};setGeneratedOutputText(resultToOutputText(next));markLiaEditorDirty();syncAdoptionPreflightMetrics();return;}
+    if(field.id==='dpg-persona-preview'){const current=getLLMResultOverride()||createBlankPersonaDraft(liaMockupContext);const edited=String(field.value||'');const profile=normalizePersonaVariantProfile(current.activePersonaProfile||preservedPersonaVariantProfile);const variants=normalizePersonaVariants(current.personaVariants,current.personaPrompt);variants[profile]=edited;const next={...current,personaPrompt:edited,personaVariants:variants,activePersonaProfile:profile,promptAutoSyncedFromSpec:false,specOutOfSyncWithPrompt:false};setGeneratedOutputText(resultToOutputText(next));markLiaEditorDirty();syncAdoptionPreflightMetrics();const syncHint=document.getElementById('lia-spec-sync-hint');if(syncHint)syncHint.textContent='원문(Persona Prompt) 직접 편집 중 · 23개 항목 변경 시 원문이 덮어써지지 않습니다.';return;}
     if (field.id === "random-concept") { preservedRandomConceptText = normalizeRandomConcept(field.value); return; }
     if(field.id==="lia-shelf-search"){const query=String(field.value||'').trim().toLocaleLowerCase('ko');document.querySelectorAll('#shelf-list [data-lia-vault-id]').forEach(row=>{row.hidden=!!query&&!String(row.textContent||'').toLocaleLowerCase('ko').includes(query);});return;}
     if (field.id === "lia-max-chars") {
@@ -10433,22 +10735,68 @@ ${revisionText}`);
       markLiaLoreLimitDirty(field,valid);
       return;
     }
+    if (field.id === "lia-max-entries") {
+      const n = Number(field.value);
+      const valid=!!field.value&&Number.isInteger(n)&&n>=3&&n<=40;
+      field.setCustomValidity(valid ? "" : "3~40 사이의 정수를 입력하세요.");
+      markLiaLoreLimitDirty(field,valid);
+      return;
+    }
     if(field.matches("[data-translation-draft]")){updateLiaMockupTranslation(field.value);return;}
-    if (field.matches('[data-key]')) updateLiaMockupPersonaDraft(String(field.dataset.key||""),String(field.value??field.textContent??""));
+    if (field.matches('[data-key]')) updateLiaMockupPersonaDraft(String(field.dataset.key||""),String(field.value??field.textContent??""),field);
   }
-  function updateLiaMockupPersonaDraft(key,value) {
+  function updateLiaMockupPersonaDraft(key,value,sourceElement=null) {
     if(!PERSONA_SPEC_FIELD_KEY_SET.has(key)) return false;
-    const result=getLLMResultOverride();
-    const current=normalizePersonaSpec(result?.personaSpec||null);
-    if(!result||!current) {setStatus("편집할 Persona 결과를 찾지 못했습니다.","error");return false;}
-    const next=normalizePersonaSpec({...current,[key]:String(value||"")});
+    let result=getLLMResultOverride();
+    if(!result) result=createBlankPersonaDraft(liaMockupContext);
+    const current=normalizePersonaSpec(result?.personaSpec||null)||normalizePersonaSpecDraft(result?.personaSpec||{})||{};
+    const nextRawValue=PERSONA_SPEC_ARRAY_KEYS.has(key)?parseManualSpecArray(value,16):String(value??"");
+    const candidateSpec={...current,[key]:nextRawValue};
+    const next=normalizePersonaSpec(candidateSpec)||normalizePersonaSpecDraft(candidateSpec);
     if(!next) {setStatus("입력값으로 PersonaSpec을 만들 수 없습니다.","error");return false;}
-    const prompt=renderPersonaSpecLocally(next);
-    const updated={...result,personaName:next.name||result.personaName,personaSpec:next,personaPrompt:prompt,personaVariants:{full:prompt,standard:"",compact:""},activePersonaProfile:"full",personaFieldLocks:currentPersonaFieldLocks()};
+    const shouldAutoSync=result.promptAutoSyncedFromSpec===true||!String(result.personaPrompt||"").trim();
+    const prompt=shouldAutoSync?renderPersonaSpecLocally(next):String(result.personaPrompt||"");
+    const variants=shouldAutoSync?{full:prompt,standard:"",compact:""}:normalizePersonaVariants(result.personaVariants,prompt);
+    const updated={
+      ...result,
+      personaName:next.name||result.personaName,
+      personaSpec:next,
+      personaPrompt:prompt,
+      personaVariants:variants,
+      activePersonaProfile:shouldAutoSync?"full":normalizePersonaVariantProfile(result.activePersonaProfile||preservedPersonaVariantProfile),
+      personaFieldLocks:currentPersonaFieldLocks(),
+      draftAllowPartial:result.draftAllowPartial===true||!normalizePersonaSpec(next),
+      promptAutoSyncedFromSpec:shouldAutoSync,
+      specOutOfSyncWithPrompt:!shouldAutoSync,
+    };
     setGeneratedOutputText(resultToOutputText(updated));
     markLiaEditorDirty();
     preservedGeneratedPersonaNameText=updated.personaName;
     liaMockupEditorDraftDirty=true;
+    if(typeof document!=="undefined"&&typeof document.querySelectorAll==="function"){
+      const displayVal=PERSONA_SPEC_ARRAY_KEYS.has(key)?asArray(next[key]).join(", "):String(next[key]??"");
+      const escapedKey=(typeof CSS!=="undefined"&&typeof CSS.escape==="function")?CSS.escape(key):String(key).replace(/[^a-zA-Z0-9_-]/g,ch=>`\\${ch}`);
+      document.querySelectorAll(`[data-key="${escapedKey}"]`).forEach(node=>{
+        if(node===sourceElement)return;
+        if("value" in node&&node.value!==displayVal)node.value=displayVal;
+        else if(!("value" in node))node.textContent=displayVal;
+      });
+      if(key==="name"){
+        document.querySelectorAll('#edit-root [data-fill="name"]').forEach(node=>node.textContent=updated.personaName||"생성 결과 없음");
+      }
+      if(shouldAutoSync){
+        const previewEl=document.getElementById("dpg-persona-preview");
+        if(previewEl&&previewEl.value!==prompt)previewEl.value=prompt;
+      }
+      const spj=document.getElementById("spj-content");
+      if(spj)spj.textContent=JSON.stringify(next,null,2);
+      const syncHint=document.getElementById("lia-spec-sync-hint");
+      if(syncHint){
+        syncHint.textContent=shouldAutoSync
+          ?"수동 초안 자동 동기화 켜짐 · 항목 입력 시 원문이 함께 갱신됩니다."
+          :"23개 항목 수정본이 원문(Persona Prompt)에 아직 합쳐지지 않았습니다. 원문을 직접 유지하거나 위 재합성 버튼을 누르세요.";
+      }
+    }
     return true;
   }
   function appAdoptionSource(){
@@ -10462,7 +10810,8 @@ ${revisionText}`);
     bar.hidden=false; save.disabled=!valid;
     const title=bar.querySelector("[data-save-title]"),desc=bar.querySelector("[data-save-desc]");
     if(title)title.textContent=valid?"자료 길이 설정이 저장되지 않았습니다.":"입력값을 확인해 주세요.";
-    if(desc)desc.textContent=valid?"저장하면 RisuAI ARG에 기록하고 다시 읽어 확인합니다.":"240~3000 사이의 정수를 입력해야 저장할 수 있습니다.";
+    const rangeHint=field?.id==="lia-max-entries"?"3~40 사이의 정수를 입력해야 저장할 수 있습니다.":"240~3000 사이의 정수를 입력해야 저장할 수 있습니다.";
+    if(desc)desc.textContent=valid?"저장하면 RisuAI ARG에 기록하고 다시 읽어 확인합니다.":rangeHint;
   }
   function handleLiaMockupKeydown(event) {
     const dialog = document.querySelector("#dpg-preview-root .overlay.is-open");
@@ -10524,7 +10873,7 @@ ${revisionText}`);
     randomChatPopup = state;
     const status = message => { if (!state.closed) overlay.querySelector('[data-status]').textContent = message; };
     const stopTimer = () => {clearInterval(state.timer);state.timer=null;overlay.querySelector('[data-countdown]').hidden=true;};
-    const close = async () => {if(state.closed)return;state.closed=true;stopTimer();overlay.remove();if(!state.busy){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}if(!hadUi)await api.hideContainer?.();};
+    const close = async () => {if(state.closed)return;state.closed=true;stopTimer();if(state.busy&&activeLiaAiJob?.controller)activeLiaAiJob.controller.abort();overlay.remove();if(!state.busy){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}if(!hadUi)await api.hideContainer?.();};
     state.close = close;
     overlay.querySelector('[data-close]').onclick = close;
     overlay.querySelector('[data-cancel-close]').onclick = () => {stopTimer();status('자동 닫기를 취소했습니다. 후보는 계속 저장할 수 있습니다.');};
@@ -10540,7 +10889,7 @@ ${revisionText}`);
     const options = {...readContextOptions(),generationMode:GENERATION_MODE_RANDOM,quickRandom:true};
     const save = async row => {
       await guard();
-      if(!row.result){status(`${row.candidate.name} 상세 페르소나 생성 중…`);preservedSelectedRandomCandidateId=row.candidate.id;await runLLMRewrite(options);await guard();row.result=JSON.parse(JSON.stringify(requireLLMResult(['personaPrompt'])));}
+      if(!row.result){status(`${row.candidate.name} 상세 페르소나 생성 중…`);preservedSelectedRandomCandidateId=row.candidate.id;await runWithLiaAiJob('popup-rewrite',{},()=>runLLMRewrite(options));await guard();row.result=JSON.parse(JSON.stringify(requireLLMResult(['personaPrompt'])));}
       if(!row.saved){await guard();const ctx=await getContext(options);await guard();row.saved=await upsertGeneratedPersona(ctx,row.result);}
       return row.saved;
     };
@@ -10561,7 +10910,7 @@ ${revisionText}`);
     };
     overlay.querySelector('[data-all]').onclick=()=>action(0,false,true);
     overlay.querySelector('[data-cards]').onclick=event=>{const button=event.target.closest('button');if(button?.hasAttribute('data-save'))void action(Number(button.dataset.save),false);if(button?.hasAttribute('data-adopt'))void action(Number(button.dataset.adopt),true);};
-    try {const ctx=await getLiveRuntimeContext();state.scope=liaScopeKey(ctx);state.binding=String(ctx.chat?.bindedPersona||'');await guard();const bundle=await generateRandomCandidates(options);await guard();state.rows=bundle.candidates.map(candidate=>({candidate,result:null,saved:null}));status('후보 3개를 제안했습니다. 저장할 때 선택한 후보를 완성된 Persona로 상세 생성합니다.');}
+    try {const ctx=await getLiveRuntimeContext();state.scope=liaScopeKey(ctx);state.binding=String(ctx.chat?.bindedPersona||'');await guard();const bundle=await runWithLiaAiJob('popup-candidates',{},()=>generateRandomCandidates(options));await guard();state.rows=bundle.candidates.map(candidate=>({candidate,result:null,saved:null}));status('후보 3개를 제안했습니다. 저장할 때 선택한 후보를 완성된 Persona로 상세 생성합니다.');}
     catch(error){status(`후보 생성 실패: ${error?.message||error}`);}
     finally{state.busy=false;if(state.closed){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}else render();}
   }
@@ -10674,7 +11023,8 @@ ${revisionText}`);
     pluginUnloaded = true;
     cancelLiaUpdateNotice();
     if(typeof document!=="undefined")document.removeEventListener?.('click',closeLiaMenu);
-    liaPreviewEpoch += 1; liaEmotionResponseEpoch += 1;
+    if(activeLiaAiJob?.controller)activeLiaAiJob.controller.abort();
+    liaPreviewEpoch += 1;
     const registeredUnloadHandler = unloadEventHandler;
     const registeredUnloadRegistration = unloadEventRegistration;
     unloadEventHandler = null;
