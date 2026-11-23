@@ -29,7 +29,7 @@ test('real lens records participate in direct recall and Classic delivery withou
   await f.add('열쇠 관점');
   const result = await f.api.executeStateMemoryQuery(options);
   assert.ok(result.bundle.items.some(row => row.family === 'lens' && row.semanticRole === 'perspective_note'));
-  assert.equal(result.diagnostics.familyAllocation.lens.weight, 40);
+  assert.equal(result.diagnostics.familyAllocation.lens.weight, 30);
   // Lens notes sit in their own section below the present and the records, marked as interpretations.
   const rendered = result.packet.renderedText;
   assert.match(rendered, /\n\[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records\]\n- .*민아는 은빛 열쇠의 반환을 유난히 신경 썼다\./);
@@ -85,7 +85,7 @@ for (const mode of ['plugin_only', 'server_only', 'mirror']) test(`${mode}: exis
   assert.ok(viewer.sourceTurnAccounting.lanes.some(lane => lane.lane === 'micro'));
   assert.ok(Number.isFinite(viewer.recallDiagnostics.timings.snapshotMs));
   assert.ok(Number.isFinite(viewer.recallDiagnostics.timings.verificationMs));
-  assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight,40);
+  assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight,30);
 });
 test('GRADIA owner receipts bind direct selections and reject a changed native Micro source', async t => {
   const bus = createBus(), x = await fixture({ mode: 'server_only', pauseAutomaticAnalysis: true, hostOverrides: bus.api('libra') });

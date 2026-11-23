@@ -447,6 +447,108 @@
           rawHead, stateAuthority, stateProofs, stateKey: key.continuityState(scope), settings: await loadMemorySettings(), review, cutoff,
           semanticAllowed: options.semantic !== false };
       };
+      const buildCanonicalRecallRows = (memory, review) => {
+        const artifact = memory?.canonicalArtifact && typeof memory.canonicalArtifact === 'object' ? memory.canonicalArtifact : {};
+        const facts = canonicalEvidenceArtifactRows(artifact);
+        if (!facts.length) return [];
+        const isUnified = unifiedArtifactSchemaReadable(artifact.schema);
+        const prefix = 'canonical:' + memory.memoryId + ':' + memory.revision + ':';
+        const kept = facts.flatMap((fact, index) => {
+          if (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected'
+            || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') return [];
+          const id = string(fact.tempFactId || fact.assertionId || index);
+          const rowText = string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {}));
+          return [{ fact, id, key: prefix + string(fact.assertionId || id), text: rowText }];
+        });
+        if (!isUnified || kept.length < 2) {
+          return kept.map(item => ({ domain: item.fact.domain, text: item.text, evidenceKeys: [item.key] }));
+        }
+        const kindOf = fact => string(fact?.claimKind || fact?.domain || '').toLowerCase();
+        const entityList = asArray(artifact.entities).map(ent => ({
+          id: string(ent?.tempId || ent?.tempRef || ''),
+          name: string(ent?.name || ent?.canonicalName || '')
+        })).filter(ent => ent.id);
+        const entityRefSet = new Set(entityList.map(ent => ent.id));
+        const isLinkable = fact => {
+          if (string(fact.certainty || 'confirmed') !== 'confirmed') return false;
+          if (string(fact.temporalRole || 'current_sequence') !== 'current_sequence') return false;
+          if (kindOf(fact) === 'thread' && string(fact.values?.thread?.linkStatus || '').toLowerCase() === 'pending') return false;
+          return true;
+        };
+        const collectRefs = (val, out, keyName = '', depth = 0) => {
+          if (depth > 4 || val == null) return;
+          if (typeof val === 'string') {
+            if (/Ref$/i.test(keyName) || entityRefSet.has(val)) out.add(val);
+            return;
+          }
+          if (Array.isArray(val)) { for (const entry of val) collectRefs(entry, out, keyName, depth + 1); return; }
+          if (typeof val === 'object') { for (const [k, v] of Object.entries(val)) collectRefs(v, out, k, depth + 1); }
+        };
+        const linkableItems = kept.filter(item => isLinkable(item.fact));
+        const byId = new Map(linkableItems.map(item => [item.id, item]));
+        const metaById = new Map(linkableItems.map(item => {
+          const spans = new Set(asArray(item.fact.evidenceSpans).map(s => string(s?.ref || '')).filter(Boolean));
+          const refs = new Set();
+          if (item.fact.subjectTempRef) refs.add(string(item.fact.subjectTempRef));
+          if (item.fact.targetTempRef) refs.add(string(item.fact.targetTempRef));
+          collectRefs(item.fact.values, refs);
+          for (const ent of entityList) {
+            if (ent.name.length >= 2 && item.text.includes(ent.name)) refs.add(ent.id);
+          }
+          return [item.id, { spans, refs }];
+        }));
+        const neighborsById = new Map(linkableItems.map(item => [item.id, new Map()]));
+        const addEdge = (fromId, targetItem, relation, priority) => {
+          if (!targetItem || fromId === targetItem.id || targetItem.text === byId.get(fromId)?.text) return;
+          const bucket = neighborsById.get(fromId);
+          if (!bucket) return;
+          const prev = bucket.get(targetItem.id);
+          if (!prev || priority < prev.priority) bucket.set(targetItem.id, { key: targetItem.key, relation, text: targetItem.text, priority });
+        };
+        for (const item of linkableItems) {
+          for (const depRef of asArray(item.fact.dependsOn)) {
+            const target = byId.get(string(depRef));
+            if (!target) continue;
+            addEdge(item.id, target, 'cause', 0);
+            addEdge(target.id, item, 'effect', 0);
+          }
+        }
+        const anchors = linkableItems.filter(item => ['event', 'turning_point'].includes(kindOf(item.fact)));
+        for (const item of linkableItems) {
+          if (['event', 'turning_point'].includes(kindOf(item.fact))) continue;
+          const existing = [...(neighborsById.get(item.id)?.values() || [])];
+          if (existing.some(edge => edge.relation === 'cause' && edge.priority === 0)) continue;
+          const meta = metaById.get(item.id);
+          if (!meta || !meta.spans.size || !meta.refs.size) continue;
+          for (const anchor of anchors) {
+            const aMeta = metaById.get(anchor.id);
+            if (!aMeta) continue;
+            const sharedSpan = [...meta.spans].some(refId => aMeta.spans.has(refId));
+            const sharedRef = [...meta.refs].some(refId => aMeta.refs.has(refId));
+            if (sharedSpan && sharedRef) {
+              addEdge(item.id, anchor, 'cause', 1);
+              addEdge(anchor.id, item, 'effect', 1);
+            }
+          }
+        }
+        return kept.map(item => {
+          const rawEdges = [...(neighborsById.get(item.id)?.values() || [])];
+          if (!rawEdges.length) return { domain: item.fact.domain, text: item.text, evidenceKeys: [item.key] };
+          const isEventLike = ['event', 'turning_point'].includes(kindOf(item.fact));
+          rawEdges.sort((a, b) => a.priority - b.priority
+            || Number(isEventLike ? b.relation === 'effect' : b.relation === 'cause') - Number(isEventLike ? a.relation === 'effect' : a.relation === 'cause')
+            || a.key.localeCompare(b.key));
+          const linkedNeighbors = rawEdges.slice(0, 2).map(({ key, relation, text }) => ({ key, relation, text }));
+          const linkedSearchText = rawEdges.slice(0, 4).map(edge => edge.text).join(' · ');
+          return {
+            domain: item.fact.domain,
+            text: item.text,
+            evidenceKeys: [item.key],
+            linkedNeighbors,
+            ...(linkedSearchText ? { linkedSearchText } : {})
+          };
+        });
+      };
       const capture = createLibraStateMemoryCapture({
         async context(options = {}) {
           const resolved = await resolveContext(), context = { ...resolved, scope: { ...resolved.scope } };
@@ -481,12 +583,7 @@
         async canonical(context, ref, source, semantic) {
           const memory = await loadWorldManagerHistoryCanonicalMemory(ref, context.scope);
           if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
-          const review = source.review;
-          const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
-          const rows = facts.flatMap((fact, index) => (memoryReviewDecision(review, 'canonical', memory, fact.tempFactId ?? fact.assertionId ?? index) === 'rejected' || memoryReviewDecision(review, 'canonical', memory, index) === 'rejected') ? [] : [{
-            domain: fact.domain, text: string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {})),
-            evidenceKeys: ['canonical:' + memory.memoryId + ':' + memory.revision + ':' + fact.assertionId]
-          }]);
+          const rows = buildCanonicalRecallRows(memory, source.review);
           const match = semantic?.matches?.get(ref.key), proofs = [getConsumedCanonicalProof(memory)].filter(Boolean);
           let assertCurrent;
           if (match && memory.embedding?.vectorKey === match.key && memory.embedding?.profileId === match.record.profileId) {

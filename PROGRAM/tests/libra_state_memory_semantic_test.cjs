@@ -42,7 +42,7 @@ test('English and Japanese query vectors find Korean canonical evidence beyond t
   assert.equal(warm.diagnostics.semantic.queryCached, true);
   assert.equal(warm.diagnostics.semantic.queryRequests, 0);
   assert.equal(counts.query, 2);
-  assert.equal(warm.bundle.budget.familyAllocation.lens.weight, 40);
+  assert.equal(warm.bundle.budget.familyAllocation.lens.weight, 30);
 });
 
 test('without embeddings the same corpus remains searchable and makes no embedding request', async t => {

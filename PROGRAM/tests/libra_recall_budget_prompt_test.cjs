@@ -38,7 +38,7 @@ test('maximum recall is not clipped by an old hidden 4000-character lens setting
  const wide=await f.api.executeStateMemoryQuery(options);
  assert.equal(wide.lensRecall.budgetChars,16000);
  assert.ok(wide.lensRecall.usedChars>4000,JSON.stringify({chars:wide.lensRecall.usedChars,count:wide.lensRecall.injectedItems.length}));
- assert.ok(wide.packet.characterLength<=16000);assert.equal(wide.bundle.budget.familyAllocation.lens.weight,40);
+ assert.ok(wide.packet.characterLength<=16000);assert.equal(wide.bundle.budget.familyAllocation.lens.weight,30);
  await f.api.saveLibraMemorySettings({...await f.api.getLibraMemorySettings(),recallLensBudgetMode:'custom',recallLensMaxChars:1800});
  const narrow=await f.api.executeStateMemoryQuery(options);
  assert.equal(narrow.lensRecall.budgetChars,1800);assert.ok(narrow.lensRecall.usedChars<=1800);
@@ -74,11 +74,11 @@ test('visible budget controls execute the production preset handler and show len
  const a=source.indexOf('      const budgetPresets ='),b=source.indexOf('      const advanced=',a);
  const panel=vm.runInContext('(function(){'+source.slice(a,b)+';return budgetPresetButtons;})()',context);document.body.append(panel);
  const buttons=[...panel.querySelectorAll('button')];assert.equal(buttons.length,4);
- assert.match(panel.querySelector('[data-recall-budget-summary]').textContent,/렌즈 목표 40%/);
+ assert.match(panel.querySelector('[data-recall-budget-summary]').textContent,/렌즈 목표 30%/);
  buttons.find(button=>button.textContent.includes('최대')).click();
  assert.equal(context.settings.recallMaxChars,16000);assert.equal(context.settings.recallLensMaxChars,16000);
  assert.equal(context.settings.recallLensBudgetMode,'shared');
- assert.match(buttons[3].title,/6,400자/);
+ assert.match(buttons[3].title,/4,800자/);
  const layout=source.slice(b,source.indexOf("    if(groupId==='ai')",b));
  assert.ok(layout.includes("card('리콜 예산'"));assert.equal(layout.slice(0,layout.indexOf("return guiEl('div'")).includes('budgetPresetButtons,'),false);
  assert.equal(source.includes("lensField('렌즈 회상 최대 글자 수'"),false);

@@ -21,15 +21,17 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // The recent scene is a second, weighted query: a short input ("then?") is searched with the
     // scene it continues. The current input stays the primary query. A weight of 0 (topic shift,
     // no scene) leaves the search exactly as the single-query path.
-    const sceneText = String(options.queryInput?.sceneText || '').trim();
-    const sceneWeight = Math.max(0, Math.min(1, Number(options.queryInput?.sceneWeight) || 0));
+    const sceneText = String(options.queryInput?.sceneText ?? options.sceneText ?? '').trim();
+    const sceneWeight = Math.max(0, Math.min(1, Number(options.queryInput?.sceneWeight ?? options.sceneWeight) || 0));
     const scene = queryText.trim() && sceneText && sceneWeight > 0 && sceneText !== queryText.trim()
       ? { text: sceneText, weight: sceneWeight } : null;
+    const peerStateActive = Boolean(options.queryInput?.peerStateActive ?? options.peerStateActive);
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
     const maxItems = Math.floor(Number(policy.maxUnits ?? frame.settings.stateMaxItems ?? 24));
-    const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40, { maxItems,
-      canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12 });
+    const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 30, { maxItems,
+      canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12,
+      peerStateActive });
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
     const stateAsOfTurn = frame.head?.throughTurn ?? null;
     // Turns whose raw text is already visible in the current request are omitted from
@@ -79,7 +81,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       const dense = Number(semantic.stateScores?.get(String(row.text || '').trim())) || 0;
       if (dense > 0) row.semanticScore = Math.max(Number(row.semanticScore) || 0, Math.min(1, dense));
     }
-    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
+    const anchors = engine.select({ rows: stateRows, query: queryText, scene, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
     const relevantAnchors = queryText
       ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
@@ -90,7 +92,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     const ranked = engine.rankMicroTurns({ turns: eligibleMicroTurns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
-      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
+      limit: plan.microCandidates, intent: plan.intent, scene: scene ? { query: scene.text, weight: scene.weight } : null,
       semanticScores: semantic.microScores || null });
     const turns = ranked.turns;
     const keep = item => {
@@ -124,7 +126,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       catch (error) { failures.push({ family: 'micro', turn, code: error.code || error.message }); }
     }
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
-    const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
+    const selected = engine.select({ rows, query: queryText, scene, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
     const latestTurn = frame.turns.at(-1) || 0;
     const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
@@ -134,10 +136,33 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.promptText || item.text, score: item.score,
       turn: item.turn || 0, ...(Number(item.turnStart) > 0 && Number(item.turnStart) < Number(item.turn) ? { turnStart: Number(item.turnStart) } : {}),
       sourceKey: item.sourceKey || frame.stateKey });
-    // One document in order of authority: the present first, then what happened, then how a lens read
-    // it, then the source observations. The model gets no chat-turn numbers: the order is settled here.
-    // A record newer than the State (the State has not caught up with it yet) goes right after it as a
-    // recent change; every other record is an earlier moment. Within a section, oldest first.
+    const rawById = new Map(selected.items.map(r => [r.id, r]));
+    const axisRank = { characters: 0, relationships: 1, world: 2, narrative: 3 };
+    const isConstraintOrMomentum = item => {
+      const raw = rawById.get(item.id);
+      if (raw?.stateGroup === 'constraint' || raw?.stateGroup === 'momentum') return true;
+      if (raw?.stateField === 'locks' || raw?.stateField === 'momentum') return true;
+      return /^[^—]+ — (?:제약|서사 흐름):/.test(String(item.text || ''));
+    };
+    const constraintKind = item => {
+      const raw = rawById.get(item.id);
+      if (raw?.stateGroup === 'constraint' || raw?.stateField === 'locks' || /^[^—]+ — 제약:/.test(String(item.text || ''))) return 'LOCK';
+      return 'MOMENTUM';
+    };
+    const groupStateContiguously = list => {
+      const buckets = new Map();
+      list.forEach((item, idx) => {
+        const raw = rawById.get(item.id);
+        const gKey = raw?.entityGroupKey || `${item.axis}:${String(item.text || '').split(' — ')[0]}`;
+        if (!buckets.has(gKey)) buckets.set(gKey, { axis: axisRank[item.axis] ?? 9, firstIdx: idx, items: [] });
+        buckets.get(gKey).items.push(item);
+      });
+      return [...buckets.values()]
+        .sort((a, b) => a.axis - b.axis || a.firstIdx - b.firstIdx)
+        .flatMap(b => b.items);
+    };
+    // One document in order of authority: CURRENT STATE (grouped by entity) -> ACTIVE CONSTRAINTS ->
+    // RECENT CHANGES -> RECORDED HISTORY & SCENE DETAILS -> PERSPECTIVE NOTES at the bottom.
     const render = items => {
       if (!items.length) return '';
       const oldestFirst = list => list.slice().sort((a, b) => Number(a.turnStart || a.turn || 0) - Number(b.turnStart || b.turn || 0)
@@ -145,11 +170,18 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       const family = name => items.filter(item => item.family === name);
       const state = family('state'), lines = [];
       const lastKnown = state.some(item => item.stateStatus === 'last_known');
+      const hasRegular = state.some(item => !isConstraintOrMomentum(item));
+      const regularState = groupStateContiguously(hasRegular ? state.filter(item => !isConstraintOrMomentum(item)) : state);
+      const constraints = hasRegular ? state.filter(isConstraintOrMomentum) : [];
       const newerThanState = item => state.length > 0 && stateAsOfTurn != null && Number(item.turn || 0) > Number(stateAsOfTurn);
       const recent = oldestFirst(items.filter(item => (item.family === 'canonical' || item.family === 'micro') && newerThanState(item)));
       if (state.length) {
         lines.push(`[CURRENT STATE${lastKnown ? ' · includes last_known' : ''} — how things stand now]`);
-        for (const item of state) lines.push(`- ${item.text}${item.stateStatus === 'last_known' ? ' (last_known)' : ''}`);
+        for (const item of regularState) lines.push(`- ${item.text}${item.stateStatus === 'last_known' ? ' (last_known)' : ''}`);
+        if (constraints.length) {
+          lines.push('[ACTIVE CONSTRAINTS & MOMENTUM — scene conditions that must hold]');
+          for (const item of constraints) lines.push(`- [${constraintKind(item)}] ${item.text}${item.stateStatus === 'last_known' ? ' (last_known)' : ''}`);
+        }
         if (recent.length) {
           lines.push('[RECENT CHANGES · newer than CURRENT STATE — where they differ from it, these are the present]');
           for (const item of recent) lines.push(`- ${item.text}`);
@@ -160,6 +192,11 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
         lines.push('[RECORDED HISTORY · canonical · oldest first — true when it happened, not necessarily now]');
         for (const item of canonical) lines.push(`- ${item.text}`);
       }
+      const micro = oldestFirst(family('micro').filter(item => !newerThanState(item)));
+      if (micro.length) {
+        lines.push('[SCENE DETAILS · Micro source observations · oldest first]');
+        for (const item of micro) lines.push(`- ${item.text}`);
+      }
       const lens = oldestFirst(family('lens'));
       if (lens.length) {
         lines.push('[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records]');
@@ -168,18 +205,20 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
           lines.push(text.startsWith('- ') ? text : `- ${text}`);
         }
       }
-      const micro = oldestFirst(family('micro').filter(item => !newerThanState(item)));
-      if (micro.length) {
-        lines.push('[SCENE DETAILS · Micro source observations · oldest first]');
-        for (const item of micro) lines.push(`- ${item.text}`);
-      }
       return lines.join('\n');
     };
     // The selection charges each line, not the section headings. When the headings tip the document
-    // over the hard cap, the lines chosen last (the lowest priority) give way, State last of all.
+    // over the hard cap, irrelevant axis fillers, lens notes, and secondary State drop before
+    // relevant past memories (canonical and Micro).
+    const pickDrop = list =>
+      list.filter(item => rawById.get(item.id)?.axisFloorFiller).at(-1)
+      || list.filter(item => item.family === 'lens').at(-1)
+      || list.filter(item => item.family === 'state' && !rawById.get(item.id)?.leadingState).at(-1)
+      || list.filter(item => item.family !== 'state').at(-1)
+      || list.at(-1);
     let kept = selected.items.map(toPublic), renderedText = render(kept);
     while (renderedText.length > maxCharacters && kept.length) {
-      const drop = kept.filter(item => item.family !== 'state').at(-1) || kept.at(-1);
+      const drop = pickDrop(kept);
       kept = kept.filter(item => item !== drop);
       renderedText = render(kept);
     }

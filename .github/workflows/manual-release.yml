@@ -309,6 +309,11 @@ jobs:
             PROGRAM/tests/libra_receipt_recovery_desk_contract_test.cjs \
             PROGRAM/tests/libra_lens_slot_preservation_and_reanalysis_test.cjs \
             PROGRAM/tests/libra_lens_viewer_grouping_test.cjs \
+            PROGRAM/tests/libra_lens_consolidation_runtime_test.cjs \
+            PROGRAM/tests/libra_canonical_cohesion_runtime_test.cjs \
+            PROGRAM/tests/libra_search_and_prompt_composition_test.cjs \
+            PROGRAM/tests/libra_past_recall_priority_test.cjs \
+            PROGRAM/tests/libra_micro_viewer_grid_test.cjs \
             PROGRAM/tests/libra_micro_overlap_settled_state_projection_test.cjs \
             PROGRAM/tests/libra_micro_settled_state_projection_test.cjs \
             PROGRAM/tests/libra_micro_source_change_reanalysis_test.cjs \
