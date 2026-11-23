@@ -73166,8 +73166,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           return { rows, proofs, assertCurrent };
         },
         async micro(context, source, turn) {
-          const pairs = Array.isArray(source?.pairs) ? source.pairs : buildPairs(context.chat, context.scope.scopeKey);
-          const worldline = hostWorldlineIdForScope(context.scope);
+          const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
           // The enclosing selection validates its captured context and source proofs
           // again before delivery; avoid another host context read for every candidate.
           const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true });

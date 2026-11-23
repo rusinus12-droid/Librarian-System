@@ -111,7 +111,8 @@ function applyReleaseVersion(packageRoot, targetVersion) {
       const outgoing = provenance.currentRelease;
       const isPublishedOutgoing = Boolean(outgoing.archiveSha256) || outgoing.sourceState === 'published';
       if (isPublishedOutgoing && outgoing.packageVersion && outgoing.packageVersion !== target && Array.isArray(provenance.releases)) {
-        if (!provenance.releases.some(row => row?.packageVersion === outgoing.packageVersion)) {
+        const existing = provenance.releases.find(row => row?.packageVersion === outgoing.packageVersion);
+        if (!existing) {
           provenance.releases.push({
             packageVersion: outgoing.packageVersion,
             artifact: outgoing.artifact || `Librarian-System-${outgoing.packageVersion}-Source.zip`,
@@ -125,6 +126,8 @@ function applyReleaseVersion(packageRoot, targetVersion) {
               0
             );
           }
+        } else if (outgoing.archiveSha256 && !existing.archiveSha256) {
+          existing.archiveSha256 = outgoing.archiveSha256;
         }
         delete outgoing.archiveSha256;
         outgoing.sourceState = 'unpublished-source-candidate';

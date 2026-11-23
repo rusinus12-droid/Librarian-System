@@ -591,9 +591,9 @@ async function verifyStorageTransitionContract(options = {}) {
   }
 }
 
-const H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS = new Set(['H06-02']);
-const H06_HOST_CONTRACT_SCENARIOS = new Set(['H06-01', 'H06-04', 'H06-06']);
-const H06_CONTRACT_FIXTURE_SCENARIOS = new Set(['H06-03', 'H06-05', 'H06-07', 'H06-08']);
+const H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS = new Set(['H06-02', 'H06-03', 'H06-04', 'H06-06']);
+const H06_HOST_CONTRACT_SCENARIOS = new Set(['H06-01']);
+const H06_CONTRACT_FIXTURE_SCENARIOS = new Set(['H06-05', 'H06-07', 'H06-08']);
 const H06_PRODUCT_PATH_SCENARIOS = new Set([...H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS, ...H06_HOST_CONTRACT_SCENARIOS]);
 
 async function runH06CompatibilityReplay(options = {}) {
@@ -723,7 +723,7 @@ async function runH06CompatibilityReplay(options = {}) {
         restoreGlobals();
       }
     } else if (spec.scenarioId === 'H06-03') {
-      // H06-03: Bidirectional IPC A->B->C handoff and ancestor immutability
+      // H06-03: Bidirectional IPC A->B->C handoff & ancestor immutability via real Librarian storage bridge
       const retraceHost = cluster.createHostForPlugin({
         name: 'flashback_hayaku_bridge',
         allowedIPC: spec.fixture.ownerPlugins
@@ -732,58 +732,134 @@ async function runH06CompatibilityReplay(options = {}) {
         name: 'libra',
         allowedIPC: ['flashback_hayaku_bridge']
       });
-      const sessionStore = new Map([
-        ['session-A', { t0: spec.fixture.deltasBySession['session-A'].t0Seed, deltas: [spec.fixture.deltasBySession['session-A'].t5Delta] }]
-      ]);
-      await libraHost.api.addPluginChannelListener('retrace_handoff_req', async (msg, meta) => {
-        assert.equal(meta.sender, 'flashback_hayaku_bridge');
-        assert.equal(meta.channel, 'retrace_handoff_req');
-        const sourceSnapshot = JSON.parse(JSON.stringify(sessionStore.get(msg.fromSession)));
-        sessionStore.set(msg.toSession, {
-          t0: sourceSnapshot.t0,
-          deltas: [...sourceSnapshot.deltas, msg.newDelta]
+      const scopeA = { scopeId: 'session-A', scopeKey: 'session-A', characterId: 'c1', chatId: 'session-A', label: 'Session A' };
+      const scopeB = { scopeId: 'session-B', scopeKey: 'session-B', characterId: 'c1', chatId: 'session-B', label: 'Session B' };
+      const scopeC = { scopeId: 'session-C', scopeKey: 'session-C', characterId: 'c1', chatId: 'session-C', label: 'Session C' };
+      const scopeBySession = new Map([['session-A', scopeA], ['session-B', scopeB], ['session-C', scopeC]]);
+      let activeSession = 'session-A';
+      const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
+        namespace: 'libra',
+        pluginId: 'libra',
+        cluster,
+        hostHandle: libraHost,
+        currentScopeProvider: async () => scopeBySession.get(activeSession) || scopeA,
+        resolveKeyScope: async ({ key }) => {
+          const match = String(key || '').match(/^scope:(session-[ABC]):/);
+          const matchedScope = (match && scopeBySession.get(match[1])) || scopeA;
+          return { kind: 'scope', ...matchedScope, scopedContainer: true };
+        }
+      });
+      try {
+        const proxy = bridge.createPluginStorageProxy(cluster.pluginStorage);
+        await proxy.setItem('scope:session-A:state', {
+          t0: spec.fixture.deltasBySession['session-A'].t0Seed,
+          deltas: [spec.fixture.deltasBySession['session-A'].t5Delta]
         });
-        await libraHost.api.postPluginChannelMessage(meta.sender, 'retrace_handoff_res', {
-          ok: true,
-          toSession: msg.toSession
+        await libraHost.api.addPluginChannelListener('retrace_handoff_req', async (msg, meta) => {
+          assert.equal(meta.sender, 'flashback_hayaku_bridge');
+          assert.equal(meta.channel, 'retrace_handoff_req');
+          activeSession = msg.fromSession;
+          const sourceSnapshot = JSON.parse(JSON.stringify(await proxy.getItem(`scope:${msg.fromSession}:state`)));
+          activeSession = msg.toSession;
+          await proxy.setItem(`scope:${msg.toSession}:state`, {
+            t0: sourceSnapshot.t0,
+            deltas: [...sourceSnapshot.deltas, msg.newDelta]
+          });
+          await libraHost.api.postPluginChannelMessage(meta.sender, 'retrace_handoff_res', {
+            ok: true,
+            toSession: msg.toSession
+          });
         });
-      });
-      const responses = [];
-      await retraceHost.api.addPluginChannelListener('retrace_handoff_res', async (msg) => {
-        responses.push(msg);
-      });
-      const beforeA = JSON.stringify(sessionStore.get('session-A'));
-      await retraceHost.api.postPluginChannelMessage('libra', 'retrace_handoff_req', {
-        fromSession: 'session-A',
-        toSession: 'session-B',
-        newDelta: spec.fixture.deltasBySession['session-B'].t5Delta
-      });
-      const beforeB = JSON.stringify(sessionStore.get('session-B'));
-      await retraceHost.api.postPluginChannelMessage('libra', 'retrace_handoff_req', {
-        fromSession: 'session-B',
-        toSession: 'session-C',
-        newDelta: spec.fixture.deltasBySession['session-C'].t5Delta
-      });
-      assert.equal(responses.length, 2);
-      assert.equal(JSON.stringify(sessionStore.get('session-A')), beforeA, 'session-A ancestor must remain immutable');
-      assert.equal(JSON.stringify(sessionStore.get('session-B')), beforeB, 'session-B ancestor must remain immutable');
-      assert.deepEqual(sessionStore.get('session-C').deltas, [
-        'synthetic-delta-A-t5',
-        'synthetic-delta-B-t5',
-        'synthetic-delta-C-t5'
-      ]);
+        const responses = [];
+        await retraceHost.api.addPluginChannelListener('retrace_handoff_res', async (msg) => {
+          responses.push(msg);
+        });
+        activeSession = 'session-A';
+        const beforeA = JSON.stringify(await proxy.getItem('scope:session-A:state'));
+        await retraceHost.api.postPluginChannelMessage('libra', 'retrace_handoff_req', {
+          fromSession: 'session-A',
+          toSession: 'session-B',
+          newDelta: spec.fixture.deltasBySession['session-B'].t5Delta
+        });
+        activeSession = 'session-B';
+        const beforeB = JSON.stringify(await proxy.getItem('scope:session-B:state'));
+        await retraceHost.api.postPluginChannelMessage('libra', 'retrace_handoff_req', {
+          fromSession: 'session-B',
+          toSession: 'session-C',
+          newDelta: spec.fixture.deltasBySession['session-C'].t5Delta
+        });
+        assert.equal(responses.length, 2);
+        activeSession = 'session-A';
+        assert.equal(JSON.stringify(await proxy.getItem('scope:session-A:state')), beforeA, 'session-A ancestor must remain immutable');
+        activeSession = 'session-B';
+        assert.equal(JSON.stringify(await proxy.getItem('scope:session-B:state')), beforeB, 'session-B ancestor must remain immutable');
+        activeSession = 'session-C';
+        assert.deepEqual((await proxy.getItem('scope:session-C:state')).deltas, [
+          'synthetic-delta-A-t5',
+          'synthetic-delta-B-t5',
+          'synthetic-delta-C-t5'
+        ]);
+      } finally {
+        try { await bridge.dispose?.(); } catch (_) {}
+        restoreGlobals();
+      }
     } else if (spec.scenarioId === 'H06-04') {
-      // H06-04: Portable archive fresh install without source session
-      const host = cluster.createHostForPlugin({ name: 'libra' });
-      const bundleJson = JSON.stringify(spec.fixture.bundleRecords);
-      const digest = crypto.createHash('sha256').update(bundleJson).digest('hex');
-      await host.api.pluginStorage.setItem(
-        `portable:${spec.fixture.freshTargetScopeId}:manifest`,
-        { originScopeId: spec.fixture.archiveOriginScopeId, targetScopeId: spec.fixture.freshTargetScopeId, digest, records: spec.fixture.bundleRecords }
-      );
-      const restored = await host.api.pluginStorage.getItem(`portable:${spec.fixture.freshTargetScopeId}:manifest`);
-      assert.equal(restored.targetScopeId, spec.fixture.freshTargetScopeId);
-      assert.equal(restored.digest, digest);
+      // H06-04: Portable archive fresh install against isolated Librarian server + SDK bridge without origin session
+      const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-compat-h06-04-'));
+      const serverHandle = await startLibrarianServerForGate({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
+      const { baseUrl, fetchServer } = serverHandle;
+      const freshCluster = createContractBackedHostCluster({
+        contractsDir,
+        fetchImpl: async (url, init) => await fetchServer(url, init)
+      });
+      const targetScope = {
+        scopeId: spec.fixture.freshTargetScopeId,
+        scopeKey: spec.fixture.freshTargetScopeId,
+        characterId: 'fresh-char',
+        chatId: spec.fixture.freshTargetScopeId,
+        label: 'H06-04 Fresh Target Scope'
+      };
+      const host = freshCluster.createHostForPlugin({
+        name: 'libra',
+        argumentOverrides: {
+          memory_suite_server_mode: 'server_only',
+          memory_suite_server_url: baseUrl
+        }
+      });
+      const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
+        namespace: 'libra',
+        pluginId: 'libra',
+        cluster: freshCluster,
+        hostHandle: host,
+        defaultUrl: baseUrl,
+        currentScopeProvider: async () => targetScope,
+        resolveKeyScope: async () => ({ kind: 'scope', ...targetScope })
+      });
+      try {
+        const proxy = bridge.createPluginStorageProxy(freshCluster.pluginStorage);
+        assert.equal(await bridge.getMode(), 'server_only');
+        assert.equal(await proxy.getItem(`scope:${spec.fixture.archiveOriginScopeId}:portable:manifest`), null, 'fresh install must not contain origin session');
+        const bundleJson = JSON.stringify(spec.fixture.bundleRecords);
+        const digest = crypto.createHash('sha256').update(bundleJson).digest('hex');
+        const manifestKey = `scope:${spec.fixture.freshTargetScopeId}:portable:manifest`;
+        await proxy.setItem(manifestKey, {
+          originScopeId: spec.fixture.archiveOriginScopeId,
+          targetScopeId: spec.fixture.freshTargetScopeId,
+          digest,
+          records: spec.fixture.bundleRecords
+        });
+        const restored = await proxy.getItem(manifestKey);
+        assert.equal(restored.targetScopeId, spec.fixture.freshTargetScopeId);
+        assert.equal(restored.digest, digest);
+        const serverRecord = await bridge.serverGet('plugin', manifestKey);
+        assert.equal(serverRecord.exists, true);
+        assert.equal(serverRecord.value.digest, digest);
+      } finally {
+        try { await bridge.dispose?.(); } catch (_) {}
+        restoreGlobals();
+        await serverHandle.close().catch(() => {});
+        fs.rmSync(dataDir, { recursive: true, force: true });
+      }
     } else if (spec.scenarioId === 'H06-05') {
       // H06-05: Entity split -> transcript edit -> correction abort on basis mismatch
       const host = cluster.createHostForPlugin({ name: 'libra' });
@@ -796,7 +872,7 @@ async function runH06CompatibilityReplay(options = {}) {
       assert.equal(aborted, true, 'stale basis split patch must be aborted when transcript digest changed');
       assert.deepEqual(await host.api.pluginStorage.getItem(`canonical:${spec.fixture.scopeId}`), spec.fixture.canonicalBefore);
     } else if (spec.scenarioId === 'H06-06') {
-      // H06-06: Selective range reanalysis & mid-execution chat switch fencing
+      // H06-06: Selective range reanalysis & mid-execution chat switch fencing via real Librarian SDK capability/scope view
       const chat0 = { id: 'chat-0', message: [] };
       const chat1 = { id: 'chat-1', message: [] };
       for (let i = 1; i <= spec.fixture.totalTurns; i++) {
@@ -806,20 +882,97 @@ async function runH06CompatibilityReplay(options = {}) {
       cluster.dbState.characters[0].chats = [chat0, chat1];
       cluster.dbState.characters[0].chatPage = spec.fixture.initialChatIndex;
 
-      let dispatchedTurns = [];
+      const scopeChat0 = { scopeId: 'char:char-0|chat:chat-0', scopeKey: 'char:char-0|chat:chat-0', characterId: 'char-0', chatId: 'chat-0' };
+      const scopeChat1 = { scopeId: 'char:char-0|chat:chat-1', scopeKey: 'char:char-0|chat:chat-1', characterId: 'char-0', chatId: 'chat-1' };
       const host = cluster.createHostForPlugin({ name: 'libra' });
-      const startChatIdx = await host.api.getCurrentChatIndex();
-      const [rangeStart, rangeEnd] = spec.fixture.selectedTurnRange;
-      const selectedSlice = chat0.message.slice((rangeStart - 1) * 2, rangeEnd * 2);
-      dispatchedTurns = selectedSlice;
-      await host.api.runLLMModel({ mode: 'otherAx', messages: [{ role: 'user', content: JSON.stringify(selectedSlice) }] });
+      const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
+        namespace: 'libra',
+        pluginId: 'libra',
+        cluster,
+        hostHandle: host,
+        currentScopeProvider: async () => (cluster.dbState.characters[0].chatPage === 0 ? scopeChat0 : scopeChat1),
+        resolveKeyScope: async ({ key }) => ({
+          kind: 'scope',
+          ...(String(key || '').includes('chat-1') ? scopeChat1 : scopeChat0),
+          scopedContainer: true
+        })
+      });
+      try {
+        bridge.createPluginStorageProxy(cluster.pluginStorage);
+        const startChatIdx = await host.api.getCurrentChatIndex();
+        const createScope0Capability = () => bridge.createNativeBranchScopeCapability({
+          owner: 'libra',
+          lineage: {
+            schema: 'librarian.host_lineage.v1',
+            hostVersion: '2026.8.250',
+            characterId: 'char-0',
+            hostChatId: 'chat-0',
+            kind: 'native_branch',
+            status: 'verified',
+            reason: 'exact_host_branch_prefix',
+            parentChatId: 'chat-parent',
+            parentName: 'Parent',
+            forkMessageId: 'a-1',
+            markerIndex: 2,
+            forkMessageIndex: 1,
+            commonPrefixMessages: 2,
+            commonPrefixPairs: 1,
+            canonicalPrefixEnd: 1,
+            partialCanonicalPairs: 0,
+            prefixDigest: 'h06-06-prefix',
+            path: ['chat-parent', 'chat-0'],
+            pathVerified: true,
+            pathReason: '',
+            inheritanceEligible: true
+          },
+          sourceScope: { scopeId: 'char:char-0|chat:chat-parent', scopeKey: 'char:char-0|chat:chat-parent', characterId: 'char-0', chatId: 'chat-parent' },
+          targetScope: scopeChat0,
+          verifier: async ({ meta }) => {
+            if (cluster.dbState.characters[0].chatPage !== startChatIdx) {
+              throw new Error('LIBRA_REANALYSIS_SCOPE_SWITCHED');
+            }
+            return {
+              parentAvailable: true,
+              targetChatId: scopeChat0.chatId,
+              sourceRevision: meta.sourceRevision,
+              lineageDigest: meta.lineageDigest
+            };
+          }
+        });
 
-      // Simulate user switching chat mid-execution
-      cluster.dbState.characters[0].chatPage = spec.fixture.switchedChatIndex;
-      const afterChatIdx = await host.api.getCurrentChatIndex();
-      const fenceBlocked = afterChatIdx !== startChatIdx;
-      assert.equal(dispatchedTurns.length, (rangeEnd - rangeStart + 1) * 2);
-      assert.equal(fenceBlocked, true, 'cross-scope commit after chat switch must be fenced');
+        // While on the original chat, cross-scope key writes are blocked by key ownership
+        const ownershipCapability = createScope0Capability();
+        const ownershipView = bridge.openScopeView(scopeChat0, { capability: ownershipCapability, access: 'readwrite' });
+        await assert.rejects(
+          () => ownershipView.setItem('scope:chat-1:cross-write', { invalid: true }),
+          err => err.code === 'MEMORY_SUITE_NATIVE_BRANCH_KEY_OWNERSHIP_DENIED'
+        );
+
+        const grantCapability = createScope0Capability();
+        const scope0View = bridge.openScopeView(scopeChat0, { capability: grantCapability, access: 'readwrite' });
+        const [rangeStart, rangeEnd] = spec.fixture.selectedTurnRange;
+        const selectedSlice = chat0.message.slice((rangeStart - 1) * 2, rangeEnd * 2);
+        await host.api.runLLMModel({ mode: 'otherAx', messages: [{ role: 'user', content: JSON.stringify(selectedSlice) }] });
+
+        // Simulate user switching chat mid-execution
+        cluster.dbState.characters[0].chatPage = spec.fixture.switchedChatIndex;
+        const afterChatIdx = await host.api.getCurrentChatIndex();
+        assert.notEqual(afterChatIdx, startChatIdx, 'host chat index must reflect mid-execution switch');
+        assert.equal(selectedSlice.length, (rangeEnd - rangeStart + 1) * 2);
+
+        // Librarian scope view rejects stale-grant write after switch
+        await assert.rejects(
+          () => scope0View.setItem('scope:chat-0:reanalysis', { turns: spec.fixture.selectedTurnRange }),
+          /LIBRA_REANALYSIS_SCOPE_SWITCHED/
+        );
+        await assert.rejects(
+          () => bridge.revalidateNativeBranchScopeCapability(grantCapability),
+          /LIBRA_REANALYSIS_SCOPE_SWITCHED/
+        );
+      } finally {
+        try { await bridge.dispose?.(); } catch (_) {}
+        restoreGlobals();
+      }
     } else if (spec.scenarioId === 'H06-07') {
       // H06-07: Reload with incomplete job & durable pin protection during GC
       const host = cluster.createHostForPlugin({ name: 'libra' });

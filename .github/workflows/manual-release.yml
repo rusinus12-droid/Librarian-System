@@ -111,6 +111,9 @@ jobs:
           fi
           echo "Tag v${NEXT_VERSION} is unique and available."
 
+      - name: Verify published git tags recorded in plugin provenance
+        run: node PROGRAM/tools/plugin_version_provenance.cjs --sync-tags --check
+
       - name: Run release builder with publication gate
         run: |
           mkdir -p "$RUNNER_TEMP/librarian-release"
@@ -326,7 +329,16 @@ jobs:
             PROGRAM/tests/libra_state_projection_currentness_test.cjs \
             PROGRAM/tests/libra_state_replay_error_resolution_test.cjs \
             PROGRAM/tests/libra_story_clock_ui_anchor_test.cjs \
-            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs
+            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs \
+            PROGRAM/tests/audit_p0a_cache_ai_embedding_fixes_test.cjs \
+            PROGRAM/tests/audit_p0b_tag_filter_and_scope_fixes_test.cjs \
+            PROGRAM/tests/audit_p1_server_security_and_updater_fixes_test.cjs \
+            PROGRAM/tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs \
+            PROGRAM/tests/audit_stage5_residual_hardening_test.cjs \
+            PROGRAM/tests/audit_stage6_plugins_cache_perf_ai_tags_test.cjs \
+            PROGRAM/tests/audit_stage7_updater_remote_and_large_transfer_test.cjs \
+            PROGRAM/tests/libra_retained_request_local_recall_runtime_test.cjs \
+            PROGRAM/tests/unified_release_gate_v1_test.cjs
 
       - name: Verify packaged plugins against the reviewed RisuAI contract
         run: |

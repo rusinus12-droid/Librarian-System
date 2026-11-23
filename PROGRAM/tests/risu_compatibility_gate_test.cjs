@@ -265,33 +265,33 @@ test('10. Storage authority owner matrix covers server-backed owners (libra, hay
   assert.equal(liaResult.serverOnlyRejectedWithLocalOnlyPolicy, true);
 });
 
-test('11. H06 scenarios clearly distinguish Librarian Product-path (1), Host Contract (3), and Contract Fixture (4)', async () => {
+test('11. H06 scenarios clearly distinguish Librarian Product-path (4), Host Contract (1), and Contract Fixture (3)', async () => {
   const replay = await runH06CompatibilityReplay({ contractsDir });
   assert.equal(replay.ok, true);
   assert.equal(replay.scenarioCount, 8);
 
-  // 1. Librarian Product-path replay (H06-02: executes actual Librarian Native Branch Scope capability & view protection)
-  assert.equal(replay.librarianProductPathReplay.total, 1);
-  assert.equal(replay.librarianProductPathReplay.passed, 1);
-  assert.deepEqual(replay.librarianProductPathReplay.scenarios, ['H06-02']);
+  // 1. Librarian Product-path replay (H06-02, H06-03, H06-04, H06-06: executes actual Librarian SDK bridge / scope / portable / server paths)
+  assert.equal(replay.librarianProductPathReplay.total, 4);
+  assert.equal(replay.librarianProductPathReplay.passed, 4);
+  assert.deepEqual(replay.librarianProductPathReplay.scenarios, ['H06-02', 'H06-03', 'H06-04', 'H06-06']);
 
-  // 2. Host Contract replay (H06-01, H06-04, H06-06: executes RisuAI host listener, manifest storage, chat switch/runLLMModel)
-  assert.equal(replay.hostContractReplay.total, 3);
-  assert.equal(replay.hostContractReplay.passed, 3);
-  assert.deepEqual(replay.hostContractReplay.scenarios, ['H06-01', 'H06-04', 'H06-06']);
+  // 2. Host Contract replay (H06-01: executes RisuAI host output listener snapshot isolation & supersession)
+  assert.equal(replay.hostContractReplay.total, 1);
+  assert.equal(replay.hostContractReplay.passed, 1);
+  assert.deepEqual(replay.hostContractReplay.scenarios, ['H06-01']);
 
-  // 3. Contract fixture validation (H06-03, H06-05, H06-07, H06-08: synthetic fixture invariant checks)
-  assert.equal(replay.contractFixtureValidation.total, 4);
-  assert.equal(replay.contractFixtureValidation.passed, 4);
-  assert.deepEqual(replay.contractFixtureValidation.scenarios, ['H06-03', 'H06-05', 'H06-07', 'H06-08']);
+  // 3. Contract fixture validation (H06-05, H06-07, H06-08: synthetic fixture invariant checks)
+  assert.equal(replay.contractFixtureValidation.total, 3);
+  assert.equal(replay.contractFixtureValidation.passed, 3);
+  assert.deepEqual(replay.contractFixtureValidation.scenarios, ['H06-05', 'H06-07', 'H06-08']);
 
   for (const s of replay.scenarios) {
-    if (s.scenarioId === 'H06-02') {
+    if (['H06-02', 'H06-03', 'H06-04', 'H06-06'].includes(s.scenarioId)) {
       assert.equal(s.kind, 'librarian_product_path_replay');
       assert.equal(s.actualLibrarianProductPathReplay, true);
       assert.equal(s.hostContractReplay, false);
       assert.equal(s.contractFixtureValidation, false);
-    } else if (['H06-01', 'H06-04', 'H06-06'].includes(s.scenarioId)) {
+    } else if (s.scenarioId === 'H06-01') {
       assert.equal(s.kind, 'host_contract_replay');
       assert.equal(s.actualLibrarianProductPathReplay, false);
       assert.equal(s.hostContractReplay, true);

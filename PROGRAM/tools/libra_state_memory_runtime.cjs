@@ -321,8 +321,23 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
             .map(row => row.reason).filter(Boolean))] } : {}) }])) },
       guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
-    authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
-      scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turnStart || item.turn, end: item.turn } })) });
+    authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => {
+      const raw = rawById.get(item.id);
+      return {
+        ...item,
+        memoryKey: item.sourceKey,
+        ...(raw?.memoryId ? {
+          memoryId: raw.memoryId,
+          revision: Number(raw.revision || 0),
+          sessionEpoch: Number(raw.sessionEpoch || 0),
+          ...(raw.sourceDigest ? { sourceDigest: raw.sourceDigest } : {}),
+          ...(raw.artifactDigest ? { artifactDigest: raw.artifactDigest } : {})
+        } : {}),
+        scopeKey: frame.scope.scopeKey,
+        worldlineId: frame.worldlineId,
+        turnRange: { start: item.turnStart || item.turn, end: item.turn }
+      };
+    }) });
     try {
       await validatePacket(packet);
       // A frame that saw a concurrent change is closed by settle; prove once more without it.
