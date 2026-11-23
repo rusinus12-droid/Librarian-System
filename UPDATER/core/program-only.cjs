@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { createDataCheckpoint, verifyDataCheckpoint, hashManifest } = require('./checkpoint.cjs');
 const { readJournal, writeJournal, isTerminal, syncDirectory } = require('./journal.cjs');
 const identity = require('./data-identity.cjs');
+const { refreshRootFilesFromCandidate } = require('./updater-bootstrap.cjs');
 
 const { withUpdateLock } = require('./lock.cjs');
 
@@ -239,7 +240,7 @@ function assertProgramDataAuthorities(root, journal) {
 // These are forward-only finalization paths. They NEVER restore a checkpoint.
 // A server may have accepted user writes after the durable decision, even when
 // startup/health reporting or the final journal write subsequently failed.
-async function finalizeDecision({root, journalPath, journal, start = startServer, logger = () => {}}) {
+async function finalizeDecision({root, journalPath, journal, start = startServer, logger = () => {}, receipt = null}) {
   identity.assertJournal(journal);
   const {program, data} = operationPaths(root, journal);
   const committed = isCommitted(journal);
@@ -260,6 +261,7 @@ async function finalizeDecision({root, journalPath, journal, start = startServer
       ? {status:'complete',phase:'complete',completedAt:now}
       : {status:'rolled_back',phase:'rolled_back',rolledBackAt:now,rollbackOk:true});
     if (committed) {
+      try { await refreshRootFilesFromCandidate(root, receipt, { logger }); } catch (_) {}
       try {
         const rbDir = path.join(root, '.rollback');
         if (fs.existsSync(rbDir)) {
@@ -472,7 +474,7 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
       status:'committed', phase:'committed', decision:'commit',
       committedAt:new Date().toISOString(), flags:journal.flags
     });
-    return await finalizeDecision({root,journalPath,journal,start,logger});
+    return await finalizeDecision({root,journalPath,journal,start,logger,receipt});
   } catch (error) {
     logger(`업데이트 실패: ${String(error?.message || error)}`);
     journal = readJournal(journalPath) || journal;

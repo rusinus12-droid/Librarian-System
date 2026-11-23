@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const ACTIVE_NAMESPACES=Object.freeze(['flashback','hayaku','libra','lia','retrace']);
-const PRIVATE_DATA_PATTERN=/(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
+const PRIVATE_DATA_PATTERN=/(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-(?:access|admin)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 
 function listFiles(rootDir){const root=path.resolve(rootDir),rows=[];if(!fs.existsSync(root))return rows;const walk=current=>{for(const entry of fs.readdirSync(current,{withFileTypes:true})){const full=path.join(current,entry.name);if(entry.isSymbolicLink())throw new Error(`distribution_symbolic_link_is_not_allowed:${full}`);if(entry.isDirectory())walk(full);else if(entry.isFile())rows.push(full);else throw new Error(`distribution_unsupported_file_type:${full}`)}};walk(root);return rows.sort((a,b)=>path.relative(root,a).localeCompare(path.relative(root,b),'en'));}
 

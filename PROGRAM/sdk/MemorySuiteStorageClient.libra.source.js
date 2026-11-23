@@ -1802,6 +1802,74 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
+  const transferChunkToBase64 = u8 => {
+    if (typeof Buffer !== 'undefined') return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64');
+    let binary = '';
+    for (let off = 0; off < u8.length; off += 0x8000) {
+      binary += String.fromCharCode.apply(null, u8.subarray(off, Math.min(u8.length, off + 0x8000)));
+    }
+    return btoa(binary);
+  };
+  const transferBytesSha256 = async bytes => {
+    if (!globalThis?.crypto?.subtle) throw new Error('memory_suite_digest_unavailable');
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  };
+  const remoteTransferSet = (space, key, value, mutateOptions = {}) => withOwnerOperation(
+    { kind: 'storage_operation', operation: 'remoteTransferSet' },
+    async () => {
+      const writerAlias = typeof flashbackWriterAlias === 'function' ? flashbackWriterAlias(key) : '';
+      if (writerAlias && mutateOptions.writerSession !== true) {
+        return await withFlashbackWriter(key, () => remoteTransferSet(space, key, value, { ...mutateOptions, writerSession: true }), { forceServer: true });
+      }
+      const fence = writerAlias && typeof usableFlashbackFence === 'function' ? await usableFlashbackFence(key) : null;
+      const rawJson = JSON.stringify(value);
+      const bytes = typeof TextEncoder !== 'undefined'
+        ? new TextEncoder().encode(rawJson)
+        : Buffer.from(rawJson, 'utf8');
+      const sha256 = await transferBytesSha256(bytes);
+      const id = operationId('set');
+      const expectedRevision = Number.isInteger(Number(mutateOptions.expectedRevision))
+        ? Math.max(0, Number(mutateOptions.expectedRevision))
+        : null;
+      const reqOpts = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope: mutateOptions.scope, storageMode: mutateOptions.storageMode };
+      const initPayload = await request('POST', '/v1/kv/transfer-set/init', {
+        namespace,
+        space,
+        key,
+        operationId: id,
+        totalBytes: bytes.length,
+        sha256,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const uploadId = String(initPayload?.result?.uploadId || '');
+      const chunkBytes = Math.max(256 * 1024, Math.min(2 * 1024 * 1024, Number(initPayload?.result?.chunkBytes || 2 * 1024 * 1024)));
+      if (!uploadId) throw new Error('memory_suite_transfer_upload_init_failed');
+      let index = 0;
+      for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+        const slice = bytes.subarray(offset, Math.min(bytes.length, offset + chunkBytes));
+        await request('POST', '/v1/kv/transfer-set/chunk', {
+          namespace,
+          uploadId,
+          index,
+          encoding: 'base64',
+          data: transferChunkToBase64(slice)
+        }, reqOpts);
+        index += 1;
+      }
+      const commitPayload = await request('POST', '/v1/kv/transfer-set/commit', {
+        namespace,
+        uploadId,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const receipt = verifyReceipt(commitPayload, id, space, key);
+      setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
+      return { ...receipt, endToEndVerified: true };
+    }
+  );
+
   const serializeMutation = async (space, key, factory) => {
     const lockKey = `${space}\n${key}`;
     const previous = mutationTails.get(lockKey) || Promise.resolve();
@@ -5623,8 +5691,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const single = async item => {
       try {
-        const receipt = await fastRetry(() => remoteMutate('set',item.space,item.key,item.value,
-          {allowPluginOnly:true,expectedRevision:item.revision}));
+        const useChunkedTransfer = item.bytes > interactiveSetValueBudgetBytes
+          && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true;
+        const receipt = await fastRetry(() => useChunkedTransfer
+          ? remoteTransferSet(item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision })
+          : remoteMutate('set', item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision }));
         if (receipt.superseded || (item.digest && receipt.digest !== item.digest)) throw fastDestinationConflict(item,'server');
         settle(item,receipt);
       } catch (error) {
@@ -7582,6 +7653,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const value = args[3];
       const bytes = args[0] === 'set' ? storageValueBytes(value) : 0;
       recordScopedSyncMetric(metrics, 'remote_write', { remoteWriteCount: 1, remoteWriteBytes: bytes, remoteBytes: bytes });
+      if (args[0] === 'set' && bytes > interactiveSetValueBudgetBytes && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true) {
+        return await remoteTransferSet(args[1], args[2], value, args[4]);
+      }
       return await remoteMutate(...args);
     };
     const integrityBefore = await remoteIntegrity({ allowPluginOnly: true });

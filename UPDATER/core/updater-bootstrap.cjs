@@ -154,8 +154,84 @@ async function installUpdaterIntoTarget({ sourceUpdaterDir, targetRoot, logger =
   return { installed: true, alreadyCurrent: false, files: sourceFiles.length, rollbackUpdater };
 }
 
+async function refreshRootFilesFromCandidate(rootDir, receipt = null, { logger = () => {} } = {}) {
+  const root = path.resolve(rootDir);
+  const updateDir = path.join(root, '.update');
+  let candidateRaw = String(receipt?.candidateRoot || '').trim();
+  if (!candidateRaw) {
+    try {
+      const candidateJson = path.join(updateDir, 'candidate.json');
+      if (fs.existsSync(candidateJson) && !fs.lstatSync(candidateJson).isSymbolicLink()) {
+        const parsed = JSON.parse(fs.readFileSync(candidateJson, 'utf8'));
+        if (!receipt?.targetVersion || String(parsed?.targetVersion || '') === String(receipt.targetVersion)) {
+          candidateRaw = String(parsed?.candidateRoot || '').trim();
+        }
+      }
+    } catch (_) {}
+  }
+  if (!candidateRaw) return { refreshed: [], skipped: ['no_candidate_root'] };
+  const candidate = path.resolve(candidateRaw);
+  const relCandidate = path.relative(updateDir, candidate);
+  if (!relCandidate || relCandidate.startsWith('..') || path.isAbsolute(relCandidate)
+    || !fs.existsSync(candidate) || fs.lstatSync(candidate).isSymbolicLink() || !fs.statSync(candidate).isDirectory()) {
+    return { refreshed: [], skipped: ['invalid_candidate_root'] };
+  }
+  let runningSelfRoot = false;
+  try {
+    runningSelfRoot = process.platform === 'win32'
+      && fs.realpathSync.native(root) === fs.realpathSync.native(path.resolve(__dirname, '..', '..'));
+  } catch (_) {}
+  const targets = ['update-manifest.json', 'SHA256SUMS.txt', '0_설치_안내.txt', '업데이트.sh', '업데이트.command', '업데이트.bat'];
+  const refreshed = [];
+  const skipped = [];
+  await fsp.mkdir(updateDir, { recursive: true, mode: 0o700 }).catch(() => {});
+  for (const name of targets) {
+    if (name === '업데이트.bat' && runningSelfRoot) {
+      skipped.push(name);
+      continue;
+    }
+    const src = path.join(candidate, name);
+    const dst = path.join(root, name);
+    if (!fs.existsSync(src) || fs.lstatSync(src).isSymbolicLink() || !fs.statSync(src).isFile()) {
+      skipped.push(name);
+      continue;
+    }
+    if (fs.existsSync(dst) && fs.lstatSync(dst).isSymbolicLink()) {
+      skipped.push(name);
+      continue;
+    }
+    const tmp = path.join(updateDir, `.root-refresh-${process.pid}-${crypto.randomUUID()}.tmp`);
+    let handle = null;
+    try {
+      const bytes = await fsp.readFile(src);
+      const mode = (name === '업데이트.sh' || name === '업데이트.command')
+        ? 0o755
+        : ((fs.statSync(src).mode & 0o777) || 0o644);
+      handle = await fsp.open(tmp, 'wx', mode);
+      await handle.writeFile(bytes);
+      if (process.platform !== 'win32') await handle.chmod(mode).catch(() => {});
+      await handle.sync().catch(() => {});
+      await handle.close();
+      handle = null;
+      await renameWithRetry(tmp, dst);
+      refreshed.push(name);
+    } catch (_) {
+      skipped.push(name);
+    } finally {
+      if (handle) await handle.close().catch(() => {});
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+    }
+  }
+  if (refreshed.length) {
+    await syncDirectory(root).catch(() => {});
+    logger(`[root-refresh] ${refreshed.join(', ')}`);
+  }
+  return { refreshed, skipped };
+}
+
 module.exports = {
   isRuntimeRelative,
   listStaticFiles,
-  installUpdaterIntoTarget
+  installUpdaterIntoTarget,
+  refreshRootFilesFromCandidate
 };

@@ -266,11 +266,21 @@ function httpHost(value) {
 // reach it through a tunnel (tailscale serve, Cloudflare Tunnel), which arrives from loopback too,
 // so every /bootstrap needs the key, whatever its source. The key lives beside the DATA it protects.
 const REMOTE_ACCESS_KEY_FILE = 'remote-access-key.txt';
+const REMOTE_ADMIN_KEY_FILE = 'remote-admin-key.txt';
 function remoteAccessKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ACCESS_KEY_FILE); }
+function remoteAdminKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ADMIN_KEY_FILE); }
 function loadRemoteAccessKey(dataDir) {
   let key = '';
   try { key = fs.readFileSync(remoteAccessKeyPath(dataDir), 'utf8').trim(); } catch (_) {}
   if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_access_key_missing_or_invalid');
+  return key;
+}
+function loadRemoteAdminKey(dataDir) {
+  let key = '';
+  const target = remoteAdminKeyPath(dataDir);
+  if (!fs.existsSync(target)) return '';
+  try { key = fs.readFileSync(target, 'utf8').trim(); } catch (_) {}
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_admin_key_invalid');
   return key;
 }
 // A container's own heartbeat. A tool started in another container (docker compose run) shares
@@ -2274,6 +2284,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const container = options.container === true;
   const remoteAccess = container || options.remoteAccess === true;
   const remoteAccessKey = remoteAccess ? loadRemoteAccessKey(dataDir) : '';
+  const remoteAdminKey = remoteAccess ? loadRemoteAdminKey(dataDir) : '';
   const listenHost = container ? '0.0.0.0' : host;
   if (!authorityRuntime && fs.existsSync(dataDir)) preflightDataCompatibility(dataDir);
   if (!authorityRuntime) fs.mkdirSync(dataDir, { recursive: true });
@@ -2312,6 +2323,21 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   let lastSuccessfulAutoBackupAt = 0;
   let scopeCatalogDegraded = false;
   const managerPlans = new Map();
+  const transferUploadSessions = new Map();
+  const TRANSFER_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+  const TRANSFER_UPLOAD_MAX_SESSIONS = 16;
+  const TRANSFER_UPLOAD_TTL_MS = 5 * 60 * 1000;
+  const pruneTransferUploadSessions = () => {
+    const cutoff = now() - TRANSFER_UPLOAD_TTL_MS;
+    for (const [id, sess] of transferUploadSessions) {
+      if (Number(sess.updatedAt || 0) < cutoff) transferUploadSessions.delete(id);
+    }
+  };
+  const transferUploadBufferedBytes = () => {
+    let sum = 0;
+    for (const sess of transferUploadSessions.values()) sum += Number(sess.receivedBytes || 0);
+    return sum;
+  };
   const scopeCatalogPath = path.join(dataDir, 'config', 'scope-catalog.json');
   scopeCatalogDegraded = readScopeCatalogFromDisk(dataDir).degraded === true;
 
@@ -2319,7 +2345,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   // key rotation, a mode change or a restart revokes every token issued before it.
   const remoteCapabilityKey = remoteAccess
     ? crypto.createHmac('sha256', token).update('memory-suite.remote-capability.v2\0')
-      .update(crypto.randomBytes(32)).update('\0').update(remoteAccessKey).digest('base64url')
+      .update(crypto.randomBytes(32)).update('\0').update(remoteAccessKey).update('\0').update(remoteAdminKey).digest('base64url')
     : '';
   const capabilityKeyFor = () => remoteAccess ? remoteCapabilityKey : token;
   const authenticate = request => {
@@ -3435,7 +3461,24 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       // tunnel delivers other devices' requests from loopback as well.
       if (url.pathname === '/bootstrap' && remoteAccess) {
         if (isAuthRateLimited(request)) return sendJson(request, response, 429, { ok: false, error: 'auth_rate_limited' });
-        if (!safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
+        const providedAccessKey = String(request.headers['x-memory-suite-access-key'] || '').trim();
+        const candidatePlugin = String(request.headers['x-memory-suite-plugin'] || '').trim().toLowerCase();
+        if (remoteAdminKey) {
+          if (candidatePlugin === RETRACE_PLUGIN_ID) {
+            if (!safeEqual(providedAccessKey, remoteAdminKey)) {
+              recordAuthFailure(request);
+              return sendJson(request, response, 403, { ok: false, error: 'remote_admin_key_required' });
+            }
+          } else if (candidatePlugin.startsWith(RETRACE_PEER_PREFIX) || LEGACY_STORAGE_NAMESPACES.includes(namespaceForPluginId(candidatePlugin))) {
+            if (!safeEqual(providedAccessKey, remoteAdminKey) && !safeEqual(providedAccessKey, remoteAccessKey)) {
+              recordAuthFailure(request);
+              return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+            }
+          } else if (!safeEqual(providedAccessKey, remoteAccessKey)) {
+            recordAuthFailure(request);
+            return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+          }
+        } else if (!safeEqual(providedAccessKey, remoteAccessKey)) {
           recordAuthFailure(request);
           return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
         }
@@ -3491,6 +3534,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
             'libra-read-session.v1',
             'gradia-memory-read-session.v1',
             'flashback-physical-repair-protocol.v2',
+            'chunked-transfer-upload.v1',
             ...REQUIRED_CAPABILITIES
           ]).map(capability => [capability, true])),
           storageModeContract: authorityRuntime ? null : {schema:'memory-suite.storage-mode-contract.v2', operationalModes:['plugin_only','server_only'], transitionPhase:'mirror', mirrorSelectable:false, legacyMirrorReadable:true}
@@ -3891,6 +3935,116 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           scopeId:decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])});
         scheduleChangeSettledBackup();
         return sendJson(request,response,200,result);
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/init') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, 64 * 1024, 'transfer_upload_init_too_large');
+        const namespace = validateNamespace(body.namespace);
+        if (!namespaceReset.allows(namespace, request.headers['x-memory-suite-reset-epochs'])) return sendJson(request, response, 409, { ok: false, error: 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' });
+        assertNamespaceAccess(principal, namespace, 'write');
+        const space = validateSpace(body.space);
+        const key = validateKey(body.key);
+        assertNonSensitive(namespace, key);
+        const operationId = validateOperationId(body.operationId);
+        const totalBytes = Number(body.totalBytes);
+        if (!Number.isSafeInteger(totalBytes) || totalBytes < 1 || totalBytes > MAX_BODY_BYTES) {
+          throw Object.assign(new Error('invalid_transfer_total_bytes'), { statusCode: 400 });
+        }
+        const sha256 = String(body.sha256 || '').trim().toLowerCase();
+        if (!/^[a-f0-9]{64}$/.test(sha256)) {
+          throw Object.assign(new Error('invalid_transfer_sha256'), { statusCode: 400 });
+        }
+        const expectedRevision = body.expectedRevision == null ? null : Number(body.expectedRevision);
+        if (expectedRevision != null && (!Number.isInteger(expectedRevision) || expectedRevision < 0)) {
+          throw Object.assign(new Error('invalid_expected_revision'), { statusCode: 400 });
+        }
+        if (transferUploadSessions.size >= TRANSFER_UPLOAD_MAX_SESSIONS || transferUploadBufferedBytes() + totalBytes > MAX_BODY_BYTES * 2) {
+          return sendJson(request, response, 429, { ok: false, error: 'transfer_upload_capacity_exceeded' });
+        }
+        const uploadId = crypto.randomBytes(16).toString('hex');
+        transferUploadSessions.set(uploadId, {
+          uploadId,
+          pluginId: principal.pluginId,
+          namespace,
+          space,
+          key,
+          operationId,
+          totalBytes,
+          sha256,
+          expectedRevision,
+          chunks: [],
+          receivedBytes: 0,
+          nextIndex: 0,
+          scopeId: decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']),
+          updatedAt: now()
+        });
+        return sendJson(request, response, 200, { ok: true, result: { uploadId, chunkBytes: TRANSFER_UPLOAD_CHUNK_BYTES } });
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/chunk') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, KV_INTERACTIVE_SET_BODY_BYTES, 'transfer_upload_chunk_too_large');
+        const namespace = validateNamespace(body.namespace);
+        assertNamespaceAccess(principal, namespace, 'write');
+        const uploadId = String(body.uploadId || '').trim();
+        const session = transferUploadSessions.get(uploadId);
+        if (!session || session.pluginId !== principal.pluginId || session.namespace !== namespace) {
+          return sendJson(request, response, 404, { ok: false, error: 'transfer_upload_session_not_found' });
+        }
+        if (!Number.isInteger(body.index) || body.index !== session.nextIndex) {
+          transferUploadSessions.delete(uploadId);
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_chunk_order_invalid' });
+        }
+        const chunkBuf = body.encoding === 'base64'
+          ? Buffer.from(String(body.data || ''), 'base64')
+          : Buffer.from(String(body.data || ''), 'utf8');
+        if (!chunkBuf.length || session.receivedBytes + chunkBuf.length > session.totalBytes) {
+          transferUploadSessions.delete(uploadId);
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_size_mismatch' });
+        }
+        session.chunks.push(chunkBuf);
+        session.receivedBytes += chunkBuf.length;
+        session.nextIndex += 1;
+        session.updatedAt = now();
+        return sendJson(request, response, 200, { ok: true, result: { uploadId, index: session.nextIndex - 1, receivedBytes: session.receivedBytes } });
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/commit') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, 64 * 1024, 'transfer_upload_commit_too_large');
+        const namespace = validateNamespace(body.namespace);
+        if (!namespaceReset.allows(namespace, request.headers['x-memory-suite-reset-epochs'])) return sendJson(request, response, 409, { ok: false, error: 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' });
+        assertNamespaceAccess(principal, namespace, 'write');
+        const uploadId = String(body.uploadId || '').trim();
+        const session = transferUploadSessions.get(uploadId);
+        if (!session || session.pluginId !== principal.pluginId || session.namespace !== namespace) {
+          return sendJson(request, response, 404, { ok: false, error: 'transfer_upload_session_not_found' });
+        }
+        transferUploadSessions.delete(uploadId);
+        if (session.receivedBytes !== session.totalBytes) {
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_incomplete' });
+        }
+        const assembled = Buffer.concat(session.chunks, session.totalBytes);
+        if (crypto.createHash('sha256').update(assembled).digest('hex') !== session.sha256) {
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_digest_mismatch' });
+        }
+        let parsedValue;
+        try { parsedValue = JSON.parse(assembled.toString('utf8')); }
+        catch (_) { return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_invalid_json' }); }
+        const expectedRevision = body.expectedRevision == null ? session.expectedRevision : Number(body.expectedRevision);
+        if (expectedRevision != null && (!Number.isInteger(expectedRevision) || expectedRevision < 0)) {
+          throw Object.assign(new Error('invalid_expected_revision'), { statusCode: 400 });
+        }
+        const result = repositories[namespace].mutate({
+          kind: 'set',
+          space: session.space,
+          key: session.key,
+          value: parsedValue,
+          operationId: session.operationId,
+          expectedRevision,
+          fence: body.fence,
+          scopeId: decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']) || session.scopeId
+        });
+        scheduleChangeSettledBackup();
+        return sendJson(request, response, 200, result);
       }
       if (request.method === 'POST' && (url.pathname === '/v1/kv/set' || url.pathname === '/v1/kv/remove')) {
         const kind = url.pathname.endsWith('/set') ? 'set' : 'remove';

@@ -8,6 +8,7 @@ const { hashManifest } = require('./checkpoint.cjs');
 const { readJournal, writeJournal, isTerminal, syncDirectory } = require('./journal.cjs');
 const { withUpdateLock } = require('./lock.cjs');
 const identity = require('./data-identity.cjs');
+const { refreshRootFilesFromCandidate } = require('./updater-bootstrap.cjs');
 const {
   dataInstanceId,
   assertFreshDataInputs,
@@ -61,8 +62,8 @@ async function copyIdentityAndEndpoint(sourceData, dataNext) {
   // physical authority at DATA.next and again at the promoted DATA path.
   identity.readDataInstanceIdentity(sourceData);
   await fsp.copyFile(identity.identityPath(sourceData), identity.identityPath(dataNext));
-  // remote-access-key.txt: plugins on other hosts (Docker) keep connecting with the same key.
-  for (const name of ['compute-signing-key.txt', 'compute-pairing-key.txt', 'remote-access-key.txt']) {
+  // remote-access-key.txt / remote-admin-key.txt: plugins on other hosts keep connecting with the same keys.
+  for (const name of ['compute-signing-key.txt', 'compute-pairing-key.txt', 'remote-access-key.txt', 'remote-admin-key.txt']) {
     const source = path.join(sourceData, 'config', name);
     if (!fs.existsSync(source)) continue;
     const value = fs.readFileSync(source, 'utf8').trim();
@@ -261,7 +262,7 @@ function assertMigrationAuthorities(paths,journal) {
   if(fs.existsSync(failedData)) identity.assertBinding(failedData,journal.dataMoves?.quarantine?.target);
 }
 
-async function finalizeMigrationDecision({ root, journalPath, journal, hooks = {}, logger = () => {} }) {
+async function finalizeMigrationDecision({ root, journalPath, journal, hooks = {}, logger = () => {}, receipt = null }) {
   identity.assertJournal(journal);
   const { program, data } = migrationPaths(root, journal);
   const health = hooks.fetchHealth || fetchHealth;
@@ -274,6 +275,7 @@ async function finalizeMigrationDecision({ root, journalPath, journal, hooks = {
       identity.assertHealth(current,journal.dataIdentity,journal.toVersion,false);
     }
     const done = await writeJournal(journalPath, journal, { status: 'complete', phase: 'complete', completedAt: new Date().toISOString() });
+    try { await refreshRootFilesFromCandidate(root, receipt, { logger }); } catch (_) {}
     try {
       const rbDir = path.join(root, '.rollback');
       if (fs.existsSync(rbDir)) {
@@ -495,7 +497,7 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
     logger('[9/9] PROGRAM/DATA pair commit');
     journal = await writeJournal(journalPath, journal, { status: 'committed', phase: 'committed', decision: 'commit', committedAt: new Date().toISOString(), flags: journal.flags });
     triggerFailpoint('after_migration_commit', failpointEnv);
-    return finalizeMigrationDecision({ root, journalPath, journal, hooks, logger });
+    return finalizeMigrationDecision({ root, journalPath, journal, hooks, logger, receipt });
   } catch (error) {
     logger(`migration_required 업데이트 실패: ${String(error?.message || error)}`);
     journal = readJournal(journalPath) || journal;
