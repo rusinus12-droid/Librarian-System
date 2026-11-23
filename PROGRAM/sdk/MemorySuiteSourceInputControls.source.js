@@ -583,7 +583,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill(memorySuiteDefaultSourceRules(owner),false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     const applyDraft=async()=>{
       if(!loaded||applying||disposed())return {ok:false,skipped:true};
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}

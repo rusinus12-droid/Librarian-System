@@ -8178,7 +8178,20 @@ ${BIANCA_PERSONA_TEXT}`;
 
   const extractInputAssistTerminalTail = (content, maxChars = INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS) => {
     const limit = clampInt(maxChars, 600, 6000, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
-    const visible = deriveNarrativeContinuityCopy(content)
+    let projectedSource = String(content ?? '');
+    try {
+      const rawRules = gradiaEffectiveSourceRules();
+      const safeRules = {
+        version: 1,
+        ignoredTags: (Array.isArray(rawRules?.ignoredTags) ? rawRules.ignoredTags : GRADIA_PRESENTATION_TAGS)
+          .filter(entry => typeof entry !== 'string' || (entry !== 'turn' && entry !== 'initial_assistant_scene')),
+        unwrapTags: Array.isArray(rawRules?.unwrapTags) ? rawRules.unwrapTags : [],
+        sourceTags: Array.isArray(rawRules?.sourceTags) ? rawRules.sourceTags : [],
+        controls: Array.isArray(rawRules?.controls) ? rawRules.controls : ['html-comment', 'lbdata']
+      };
+      projectedSource = memorySuiteProjectSourceRules(memorySuiteStripInternalSource(projectedSource), safeRules).text;
+    } catch (_) {}
+    const visible = deriveNarrativeContinuityCopy(projectedSource)
       .replace(/<GT-(?:CTRL|SEP)\b[^>]*\/?>/gi, ' ')
       .replace(/^\s*<img\b[^>]*>\s*$/gim, ' ')
       .replace(/^\s*#{1,6}\s+[^\n]*$/gm, ' ')
@@ -34638,10 +34651,11 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -34842,6 +34856,7 @@ function memorySuiteProjectSourceRules(value,rules) {
     if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
     if(control==='suite-blocks')body=body
       .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*?(?:\[\/HAYAKU SIDE-WRITE FINAL REMINDER\]|$)/gi,'')
       .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
   }
   return {text:body,warnings};
@@ -34850,7 +34865,7 @@ function memorySuiteProjectSourceRules(value,rules) {
 function memorySuiteIsInternalSourceRule(entry) {
   if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
   if(!entry||typeof entry.open!=='string')return false;
-  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE|SIDE-WRITE FINAL REMINDER)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
     || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
 }
 function memorySuiteExternalSourceRules(rules, migrate=false) {
@@ -35664,7 +35679,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill(memorySuiteDefaultSourceRules(owner),false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     const applyDraft=async()=>{
       if(!loaded||applying||disposed())return {ok:false,skipped:true};
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -35897,7 +35912,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     owner: 'gradia',
     busy: () => Runtime.pipelineWorkStatus?.phase === 'running',
     read: async () => await RisuCompat.getItem(STORAGE_SOURCE_INPUT_PREFS_KEY),
-    write: async body => { await RisuCompat.setItem(STORAGE_SOURCE_INPUT_PREFS_KEY, body); return true; },
+    write: async body => { await RisuCompat.setItem(STORAGE_SOURCE_INPUT_PREFS_KEY, body); clearRequestReuseCache(); return true; },
     readSample: async () => {
       const samples = await gradiaReadChatSamples();
       return samples.length ? samples[samples.length - 1] : null;
@@ -40132,7 +40147,9 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
   const draftCheckpointModeSignature = settings => [
     normalizeWritingMode(settings?.writingMode, writingModeFromDraftMode(settings?.shadowDraftMode)),
-    normalizeInternalDraftLanguage(settings?.internalDraftLanguage)
+    normalizeInternalDraftLanguage(settings?.internalDraftLanguage),
+    typeof memorySuiteSourceTagKey === 'function' ? memorySuiteSourceTagKey('gradia') : '',
+    typeof gradiaEffectiveSourceRules === 'function' ? JSON.stringify(gradiaEffectiveSourceRules(settings)) : ''
   ].join(':');
   const draftCheckpointMatchFingerprint = (messages = [], type = '', settings = {}, currentTurnResolution = null) => {
     const current = currentTurnResolution?.text ? currentTurnResolution : resolveSgaCurrentTurn(messages);
@@ -40460,6 +40477,10 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       beforeExtraPrompts: settings?.beforeExtraPrompts,
     };
     hasher.update(text(simple));
+    try {
+      if (typeof memorySuiteSourceTagKey === 'function') hasher.update(memorySuiteSourceTagKey('gradia'));
+      if (typeof gradiaEffectiveSourceRules === 'function') hasher.update(text(gradiaEffectiveSourceRules(settings)));
+    } catch (_) {}
     for (const [name, preset] of Object.entries(settings?.presets || {}).sort((a, b) => a[0].localeCompare(b[0]))) {
       hasher.update(name).update(text({ ...preset, key: undefined }));
       if (preset?.key) hasher.update(`secret:${stableDraftHash(preset.key)}`);

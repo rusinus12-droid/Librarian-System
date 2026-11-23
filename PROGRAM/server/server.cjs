@@ -2554,7 +2554,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const flashbackServerRepair = require('./core/flashback-server-repair.cjs')({getRepository:()=>repositories.flashback,dataInstanceId,epochs:()=>namespaceReset.epochs(),canWrite:()=>!maintenanceMode&&!namespaceReset.active(),strongProofProvider:flashbackVectorProof});
   const ownerScopeHealth = require('./core/owner-scope-health.cjs')({getRepository:()=>repositories.libra,dataInstanceId,epochs:()=>namespaceReset.epochs(),canRead:()=>!maintenanceMode&&!namespaceReset.active()});
   const legacyOwnerScopeDelete = require('./core/owner-scope-delete.cjs')({repositories,backup:createBackup,canStart:()=>!maintenanceMode,
-    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces)});
+    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces),
+    getProtection:scopeKey=>{readScopeCatalog();if(scopeCatalogDegraded)throw Object.assign(new Error('owner_scope_delete_catalog_unverified'),{statusCode:409});return findCatalogScope('libra',scopeKey);},
+    onDeleted:scopeKey=>removeCatalogScope('libra',scopeKey)});
   const ownerScopeDelete = async (...args) => { assertLegacyAuthorityUnavailable({dataDir}); return legacyOwnerScopeDelete(...args); };
   let libraNativeArchiveRepairBinding = null;
   const getLibraNativeArchiveRepair = () => {

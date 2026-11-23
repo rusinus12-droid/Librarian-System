@@ -40592,6 +40592,19 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const contextId = (value, fallback) => string(value?.id || value?.chatId || value?.chaId || value?.characterId || value?.uuid || value?.name || fallback);
+    const lastKnownExplicitChatIdByChar = new Map();
+    const rememberExplicitChatId = (charId, explicitId) => {
+      const c = string(charId || '');
+      const id = string(explicitId || '');
+      if (!c || !id) return;
+      if (lastKnownExplicitChatIdByChar.has(c)) lastKnownExplicitChatIdByChar.delete(c);
+      lastKnownExplicitChatIdByChar.set(c, id);
+      while (lastKnownExplicitChatIdByChar.size > 64) {
+        const oldest = lastKnownExplicitChatIdByChar.keys().next().value;
+        if (!oldest) break;
+        lastKnownExplicitChatIdByChar.delete(oldest);
+      }
+    };
     const resolveContext = async (force = false) => {
       if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
       const characterInfo = await loadCurrentCharacterForRisuContext(force);
@@ -40601,6 +40614,12 @@ function createLibraReadonlySourceContext(owner) {
       if (!character || !chat) throw new Error('현재 캐릭터와 채팅을 읽을 수 없습니다.');
       const identity = chatInfo.identity || await loadCurrentChatIdentity(force) || `${contextId(character, 'character')}:${contextId(chat, 'chat')}`;
       const characterId = contextId(character, 'character');
+      const explicitChatId = string(chat?.id || chat?.chatId || chat?.uuid || chat?.key || '');
+      if (explicitChatId) rememberExplicitChatId(characterId, explicitChatId);
+      const hasChatsWithExplicitIds = Array.isArray(character?.chats)
+        && character.chats.some(item => Boolean(string(item?.id || item?.chatId || item?.uuid || item?.key || '')));
+      const transientUnstableChatIdentity = !explicitChatId
+        && (lastKnownExplicitChatIdByChar.has(characterId) || hasChatsWithExplicitIds);
       const chatId = contextId(chat, identity || 'chat');
       if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
       const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
@@ -40616,7 +40635,7 @@ function createLibraReadonlySourceContext(owner) {
           hostLineage
         );
       }
-      const context = { character, chat, identity, hostLineage, hostWorldlineMeta, scope };
+      const context = { character, chat, identity, hostLineage, hostWorldlineMeta, scope, transientUnstableChatIdentity };
       const previous = state.lastResolvedContext;
       if (previous?.scope?.chatId && string(previous.scope.chatId) !== string(chatId)) {
         state.previousResolvedContext = previous;
@@ -40916,8 +40935,11 @@ function createLibraReadonlySourceContext(owner) {
       : `${role}\u0001index:${Math.max(0, Number(index || 0))}`;
     const pairRevisionMetaKey = (raw, role, identity) => {
       const item = raw?.msg && typeof raw.msg === 'object' ? raw.msg : raw;
+      const swipeId = item?.swipeId !== undefined && item?.swipeId !== null && item?.swipeId !== '' ? string(item.swipeId) : '';
+      const genId = string(item?.generationInfo?.generationId || item?.generationId || '');
       return [
         role, identity?.source || '', identity?.id || '',
+        swipeId, genId,
         string(item?.saying || ''), string(item?.time || item?.updatedAt || item?.createdAt || ''),
         item?.isUser === true || item?.is_user === true ? 'u1' : 'u0',
         item?.disabled === true ? 'd1' : 'd0', item?.isComment === true ? 'c1' : 'c0'
@@ -40989,6 +41011,8 @@ function createLibraReadonlySourceContext(owner) {
         && item?.createdAt === indexedEntry.fCreatedAt && item?.isUser === indexedEntry.fIsUser
         && item?.is_user === indexedEntry.fIsUserSnake && item?.disabled === indexedEntry.fDisabled
         && item?.isComment === indexedEntry.fIsComment
+        && item?.swipeId === indexedEntry.fSwipeId
+        && item?.generationId === indexedEntry.fGenTopId
         && item?.generationInfo === indexedEntry.fGenInfo
         && (!item?.generationInfo || item.generationInfo.generationId === indexedEntry.fGenId)
         && cache.entries.get(indexedEntry.key) === indexedEntry) {
@@ -41040,8 +41064,10 @@ function createLibraReadonlySourceContext(owner) {
       const signature = branchContentHash([role, identity.source, identity.id, body].join('\u0000'));
       const rawPayloadDigest = digest({ type: rawComparable.type, value: rawComparable.value });
       const sanitizedTextDigest = digest({ role, body });
+      const swipeId = item?.swipeId !== undefined && item?.swipeId !== null && item?.swipeId !== '' ? string(item.swipeId) : '';
+      const generationId = string(item?.generationInfo?.generationId || item?.generationId || '');
       entry = {
-        key: keyValue, index, role, identity, body,
+        key: keyValue, index, role, identity, body, swipeId, generationId,
         rawType: rawComparable.type, rawValue: rawComparable.value, rawBodyBytes, metaKey,
         rawPayloadDigest,
         sanitizedTextDigest,
@@ -41055,6 +41081,7 @@ function createLibraReadonlySourceContext(owner) {
         fChatId: item?.chatId, fId: item?.id, fMessageId: item?.messageId,
         fSaying: item?.saying, fTime: item?.time, fUpdatedAt: item?.updatedAt, fCreatedAt: item?.createdAt,
         fIsUser: item?.isUser, fIsUserSnake: item?.is_user, fDisabled: item?.disabled, fIsComment: item?.isComment,
+        fSwipeId: item?.swipeId, fGenTopId: item?.generationId,
         fGenInfo: item?.generationInfo, fGenId: item?.generationInfo?.generationId,
         retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
       };
@@ -41149,6 +41176,8 @@ function createLibraReadonlySourceContext(owner) {
         identitySource: projection?.identity?.source || '',
         identityStable: projection?.identity?.stable === true,
         identityCanonical: projection?.identity?.canonical === true,
+        swipeId: string(projection?.swipeId || ''),
+        generationId: string(projection?.generationId || ''),
         text: body,
         index,
         endIndex: index,
@@ -41163,6 +41192,8 @@ function createLibraReadonlySourceContext(owner) {
         chatId: [target?.chatId, chatId].filter(Boolean).join('|'),
         chatIds: [...asArray(target?.chatIds), chatId].filter(Boolean),
         identityStable: target?.identityStable === true && projection?.identity?.stable === true,
+        swipeId: [target?.swipeId, string(projection?.swipeId || '')].filter(Boolean).join('|'),
+        generationId: [target?.generationId, string(projection?.generationId || '')].filter(Boolean).join('|'),
         text: [target?.text, body].filter(Boolean).join('\n\n'),
         index: Number.isInteger(target?.index) ? target.index : index,
         endIndex: index,
@@ -41174,7 +41205,10 @@ function createLibraReadonlySourceContext(owner) {
       });
       for (const projection of projections) {
         const { role, body, identity, index } = projection;
-        if (!role || !body) continue;
+        if (!role || !body) {
+          if (role === 'assistant' && string(projection?.rawValue || '').trim().length > 0) pendingUser = null;
+          continue;
+        }
         const chatId = identity.id;
         if (role === 'user') {
           pendingUser = pendingUser
@@ -41256,6 +41290,7 @@ function createLibraReadonlySourceContext(owner) {
         };
         options.onProjection?.(index + 1);
         if (!input.role || !body) {
+          if (input.role === 'assistant' && string(input.rawComparable?.value || '').trim().length > 0) pendingUser = false;
           if ((index + 1) % CHUNK === 0) await checkpoint();
           continue;
         }
@@ -41294,6 +41329,12 @@ function createLibraReadonlySourceContext(owner) {
     const batchForStart = (pairs, startTurn) => pairs.slice(startTurn - 1, startTurn - 1 + BATCH_SIZE);
     const completeBatchStarts = pairs => Array.from({ length: Math.floor(pairs.length / BATCH_SIZE) }, (_, index) => index * BATCH_SIZE + 1);
     const sourcePairs = batch => batch.map(pair => ({ turn: pair.turn, userChatId: pair.user.chatId, assistantChatId: pair.assistant.chatId }));
+    const sourceVariantPairs = batch => batch.map(pair => ({
+      turn: pair.turn,
+      ...(pair.user?.swipeId ? { userSwipeId: pair.user.swipeId } : {}),
+      ...(pair.assistant?.swipeId ? { assistantSwipeId: pair.assistant.swipeId } : {}),
+      ...(pair.assistant?.generationId ? { assistantGenerationId: pair.assistant.generationId } : {})
+    }));
     // A printed date with a time is the only story clock taken from source text; a bare time or a mentioned date is not.
     const STORY_CLOCK_PATTERN = /\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}[^\S\n]*(?:\([^)\n]{1,6}\))?[^\S\n]*(?:오전|오후|AM|PM)?[^\S\n]*\d{1,2}:\d{2}(?:[^\S\n]*(?:AM|PM))?|\b\d{1,2}\/\d{1,2}\|[^|\n]{1,12}\|[^\S\n]*(?:AM|PM)?[^\S\n]*\d{1,2}:\d{2}|(?:\d{4}년[^\S\n]*)?\d{1,2}월[^\S\n]*\d{1,2}일[^\S\n]*(?:\([^)\n]{1,6}\))?[^\S\n]*(?:오전|오후)?[^\S\n]*\d{1,2}(?::\d{2}|시(?:[^\S\n]*\d{1,2}분)?)/i;
     // The clock must be printed as a header: at the start of its line or in a bracketed status field.
@@ -47107,13 +47148,27 @@ function createLibraReadonlySourceContext(owner) {
         || Number(memory?.turnRange?.start || 0) !== Number(batch[0]?.turn || 0)
         || Number(memory?.turnRange?.end || 0) !== Number(batch.at(-1)?.turn || 0)) return false;
       const storedPairs = asArray(memory.sourcePairs);
+      const storedVariants = asArray(memory.sourceVariantPairs);
       // The slot is the same U+A messages. Message IDs do not depend on the source tag filter, so a
-      // filter change alone always passes here; a reroll or branch (different IDs) never does.
+      // filter change alone always passes here; a reroll or branch (different IDs or swipe/gen IDs) never does.
+      const swipeOrGenChanged = (variant, livePair) => {
+        const storedUserSwipe = variant?.userSwipeId !== undefined && variant?.userSwipeId !== null ? string(variant.userSwipeId) : '';
+        const liveUserSwipe = livePair?.user?.swipeId !== undefined && livePair?.user?.swipeId !== null ? string(livePair.user.swipeId) : '';
+        if (storedUserSwipe && liveUserSwipe && storedUserSwipe !== liveUserSwipe) return true;
+        const storedAsstSwipe = variant?.assistantSwipeId !== undefined && variant?.assistantSwipeId !== null ? string(variant.assistantSwipeId) : '';
+        const liveAsstSwipe = livePair?.assistant?.swipeId !== undefined && livePair?.assistant?.swipeId !== null ? string(livePair.assistant.swipeId) : '';
+        if (storedAsstSwipe && liveAsstSwipe && storedAsstSwipe !== liveAsstSwipe) return true;
+        const storedAsstGen = string(variant?.assistantGenerationId || '');
+        const liveAsstGen = string(livePair?.assistant?.generationId || '');
+        if (storedAsstGen && liveAsstGen && storedAsstGen !== liveAsstGen) return true;
+        return false;
+      };
       if (storedPairs.length !== BATCH_SIZE || storedPairs.some((pair, index) => (
         Number(pair?.turn || 0) !== Number(batch[index]?.turn || 0)
         || !string(pair?.userChatId || '') || !string(pair?.assistantChatId || '')
         || string(pair.userChatId) !== string(batch[index]?.user?.chatId || '')
         || string(pair.assistantChatId) !== string(batch[index]?.assistant?.chatId || '')
+        || swipeOrGenChanged(storedVariants[index] || pair, batch[index])
       ))) return false;
       if (ref.artifactDigest && (string(memory.artifactDigest || '') !== string(ref.artifactDigest)
         || digest(memory.canonicalArtifact || null) !== string(ref.artifactDigest))) return false;
@@ -52365,10 +52420,11 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -52569,6 +52625,7 @@ function memorySuiteProjectSourceRules(value,rules) {
     if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
     if(control==='suite-blocks')body=body
       .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*?(?:\[\/HAYAKU SIDE-WRITE FINAL REMINDER\]|$)/gi,'')
       .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
   }
   return {text:body,warnings};
@@ -52577,7 +52634,7 @@ function memorySuiteProjectSourceRules(value,rules) {
 function memorySuiteIsInternalSourceRule(entry) {
   if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
   if(!entry||typeof entry.open!=='string')return false;
-  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE|SIDE-WRITE FINAL REMINDER)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
     || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
 }
 function memorySuiteExternalSourceRules(rules, migrate=false) {
@@ -53391,7 +53448,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill(memorySuiteDefaultSourceRules(owner),false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     const applyDraft=async()=>{
       if(!loaded||applying||disposed())return {ok:false,skipped:true};
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -62788,6 +62845,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           branchId: sourceHash,
           turnRange: { start: startTurn, end: startTurn + BATCH_SIZE - 1 },
           sourcePairs: sourcePairs(batch),
+          sourceVariantPairs: sourceVariantPairs(batch),
           turnClocks: turnClocksOf(batch),
           sourceEvidenceRef: await getLibraSourceEvidence().put(context.scope.scopeKey,libraSourceUnitForBatch(context.scope.scopeKey,batch,{worldlineId:'main'}),reviewSourceRows,{normalizationVersion:memorySuiteSourceRules('libra')?'libra-comparison:source-rules-v1:'+digest(memorySuiteSourceTagKey('libra')):'libra-comparison:illustration-v1'}),
           sourceDigest: sourceHash,
@@ -63343,6 +63401,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }catch(error){return {...base,eligible:false,atomicity:'unsupported',summary:'이 저장 구성에서는 새 통합 쓰기를 보류합니다.',blocked:[string(error.code||error.message||error)]};}
     };
 
+    const unifiedVectorLiveBatchMatchesCanonical = async (live, livePairs, activeRef, memory) => {
+      if (!(await unifiedLiveBatchMatchesCanonical(live, livePairs, activeRef, memory))) return false;
+      const liveBatch = batchForStart(livePairs, memory.turnRange.start);
+      if (sourceDigest(liveBatch) === memory.sourceDigest) return true;
+      if (asArray(memory.rawPacketRefs).length === BATCH_SIZE) {
+        try { await readCanonicalRawBatch(liveBatch, memory.rawPacketRefs, live); return true; }
+        catch (_) { return false; }
+      }
+      return true;
+    };
+
     const retryUnifiedServerEmbedding = async (context,manifest,ref,memory,force=false) => {
       const configBefore=embeddingConfigSignature(await loadEmbeddingSettings()),envelope=buildCanonicalCommitEnvelope({context,memory,memoryKey:ref.key,worldlineId:'main'});
       const txKey=`${key.entityRegistry(context.scope)}:unified-vector-tx:${memory.memoryId}:${memory.revision}:${configBefore}`;
@@ -63351,7 +63420,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_VECTOR_SCOPE_CHANGED');
         const valid=await verifyCanonicalCommitEnvelope({context:live,envelope});unifiedAssert(valid.ok,'UNIFIED_VECTOR_CANONICAL_CHANGED');
         const livePairs=buildPairs(live.chat,live.scope.scopeKey);
-        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
+        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedVectorLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
         await assertLibraStateCanonicalSlot(memory);
         unifiedAssert(embeddingConfigSignature(await loadEmbeddingSettings())===configBefore,'UNIFIED_VECTOR_MODEL_CHANGED');
         return valid.manifest;
@@ -63426,7 +63495,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_VECTOR_SCOPE_CHANGED');
         const valid=await verifyCanonicalCommitEnvelope({context:live,envelope});unifiedAssert(valid.ok,'UNIFIED_VECTOR_CANONICAL_CHANGED');
         const livePairs=buildPairs(live.chat,live.scope.scopeKey);
-        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
+        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedVectorLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
         await assertLibraStateCanonicalSlot(memory);
         unifiedAssert(embeddingConfigSignature(await loadEmbeddingSettings())===configBefore,'UNIFIED_VECTOR_MODEL_CHANGED');
         return valid.manifest;
@@ -63951,6 +64020,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return { ok: true, skipped: true, reason: 'scope_changed_before_scan' };
       }
       if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
+      if (context?.transientUnstableChatIdentity === true) return { ok: true, skipped: true, reason: 'transient_missing_chat_id' };
       if (state.deletingScopes.has(context.scope.scopeKey)) return { ok: true, skipped: true, reason: 'scope_deleting' };
       await ensureNativeChatCopyAdopted(context);
       if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
@@ -69710,8 +69780,10 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       lensWriteGeneration++;for(const run of lensActiveRuns)run.controller.abort();
       lensQueue.splice(0,lensQueue.length,...lensQueue.filter(job=>job.scopeKey!==context.scope.scopeKey));
       await (lensScopeLocks.get(context.scope.scopeKey)||Promise.resolve());
-      const localStore = await getLocalCorpusStore();
-      if (localStore) await localStore.discardScope(string(context.scope.scopeKey));
+      if (typeof getLocalCorpusStore === 'function') {
+        const localStore = await getLocalCorpusStore();
+        if (localStore) await localStore.discardScope(string(context.scope.scopeKey));
+      }
 
 
 

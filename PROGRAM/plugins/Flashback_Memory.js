@@ -21016,6 +21016,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const rawContent = own ? '' : rawMessageContentUnfiltered(message);
     const content = own ? '' : rawMessageContent(message);
     const stableMessageId = identity.id;
+    const rawSwipe = message?.swipeId ?? message?.swipe_id ?? message?.msg?.swipeId;
+    const swipeId = rawSwipe !== undefined && rawSwipe !== null && rawSwipe !== '' ? String(rawSwipe) : '';
+    const generationId = text(message?.generationInfo?.generationId || message?.generationId || '');
     const normalized = own ? null : {
       role,
       content: text(content).replace(/\r\n/g, '\n').trim(),
@@ -21025,6 +21028,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       stableMessageIdHash: stableMessageId ? stableHash(stableMessageId) : '',
       stableMessageIdSource: identity.source,
       stableMessageIdCanonical: identity.canonical === true,
+      ...(swipeId ? { swipeId } : {}),
+      ...(generationId ? { generationId } : {}),
       sourceMessageIds: uniqueTextList([
         message,
         `live:${index}:${role}:${stableHash(`${role}|${content}`)}`
@@ -21531,7 +21536,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const writeRegistry = async (registry) => {
-    const scopes = (Array.isArray(registry?.scopes) ? registry.scopes : []).filter(item => item?.scopeKey).slice(0, 240).map(compactRegistryScope);
+    const scopes = (Array.isArray(registry?.scopes) ? registry.scopes : []).filter(item => item?.scopeKey).slice(0, 4096).map(compactRegistryScope);
     await requireStorageWrite(STORAGE.registry, safeStringify({ version: 2, updatedAt: Date.now(), scopes }), 'registry save');
     return { version: 2, updatedAt: Date.now(), scopes };
   };
@@ -21604,9 +21609,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       'characterId', 'chatId', 'canonicalCharacterId', 'canonicalChatId', 'canonicalScopeId', 'legacyPersonaScopeKey', 'personaId', 'characterName', 'chatTitle', 'personaName',
       'chatFingerprint', 'chatTailHash', 'copiedFromChatId', 'copiedFromScopeKey',
       'copiedFromScopeId', 'sourceChatId', 'sourceScopeId', 'copySourceChatId',
-      'copySourceScopeId', 'copiedFromChatTitle', 'commitId'
+      'copySourceScopeId', 'copiedFromChatTitle', 'archiveScopeKey', 'commitId'
     ];
-    for (const field of textFields) merged[field] = registryTextValue(scope[field] ?? extra[field], existing[field]);
+    for (const field of textFields) {
+      const incoming = field === 'archiveScopeKey'
+        ? (scope[field] ?? extra[field] ?? extra.archiveRef?.archiveScopeKey ?? scope.archiveRef?.archiveScopeKey)
+        : (scope[field] ?? extra[field]);
+      merged[field] = registryTextValue(incoming, existing[field]);
+    }
     for (const field of ['charIndex', 'chatIndex']) {
       const incoming = Number(scope[field]);
       const prior = Number(existing[field]);
@@ -21682,10 +21692,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const registry = await readRegistry();
       const existing = registry.scopes.find(item => item.scopeKey === scope.scopeKey) || {};
       const meta = mergeScopeRegistryMeta(existing, scope, extra);
-      registry.scopes = [meta, ...registry.scopes.filter(item => item?.scopeKey !== scope.scopeKey)].slice(0, 240);
+      registry.scopes = [meta, ...registry.scopes.filter(item => item?.scopeKey !== scope.scopeKey)].slice(0, 4096);
       await writeRegistry(registry);
       Runtime.scopeRegistryRememberCache.set(rememberCacheKey, { at: Date.now(), meta });
-      if (Runtime.scopeRegistryRememberCache.size > 320) Runtime.scopeRegistryRememberCache.delete(Runtime.scopeRegistryRememberCache.keys().next().value);
+      if (Runtime.scopeRegistryRememberCache.size > 4096) Runtime.scopeRegistryRememberCache.delete(Runtime.scopeRegistryRememberCache.keys().next().value);
       return meta;
     });
   };
@@ -30653,6 +30663,15 @@ const MemorySuiteSnapshotCache = (() => {
         userRawText:current.user?.rawContent??current.user?.content??'',
         assistantRawText:(current.assistants||[]).map(item=>item?.rawContent??item?.content??'').join('\n\n')
       });
+      const userSwipeRaw = current.user?.swipeId ?? current.user?.msg?.swipeId;
+      if (userSwipeRaw !== undefined && userSwipeRaw !== null && userSwipeRaw !== '') memoryMetadata.userSwipeId = String(userSwipeRaw);
+      const asstSwipes = (current.assistants || []).map(item => {
+        const sw = item?.swipeId ?? item?.msg?.swipeId;
+        return sw !== undefined && sw !== null && sw !== '' ? String(sw) : '';
+      }).filter(Boolean);
+      if (asstSwipes.length) memoryMetadata.assistantSwipeIds = asstSwipes;
+      const asstGenIds = (current.assistants || []).map(item => text(item?.generationInfo?.generationId || item?.generationId || '')).filter(Boolean);
+      if (asstGenIds.length) memoryMetadata.assistantGenerationIds = asstGenIds;
       sources.push({
         sourceType: 'response',
         title: `채팅 응답: ${chatTitle} #${turnNo}`,
@@ -30733,6 +30752,9 @@ const MemorySuiteSnapshotCache = (() => {
         assistantMessageIdHash: assistantFragments.at(-1)?.stableMessageIdHash || '',
         userMessageAt: pendingUser.createdAt || '',
         assistantMessageAt: assistantFragments.at(-1)?.createdAt || '',
+        userSwipeId: pendingUser.swipeId || '',
+        assistantSwipeIds: assistantFragments.map(fragment => fragment.swipeId || '').filter(Boolean),
+        assistantGenerationIds: assistantFragments.map(fragment => fragment.generationId || '').filter(Boolean),
         userText: pendingUser.text,
         assistantText: assistantFragments.map(fragment => fragment.text).join('\n\n'),
         userRawText: pendingUser.rawText,
@@ -30744,6 +30766,9 @@ const MemorySuiteSnapshotCache = (() => {
       const position = Number(message?.index || 0) + 1;
       const role = message?.role;
       const body = message?.contentText || message?.content || '';
+      const rawSwipe = message?.swipeId ?? message?.msg?.swipeId;
+      const swipeId = rawSwipe !== undefined && rawSwipe !== null && rawSwipe !== '' ? String(rawSwipe) : '';
+      const generationId = text(message?.generationInfo?.generationId || message?.generationId || '');
       if (role === 'user') {
         flushPair();
         const userText = canonicalChatUserText(body);
@@ -30754,7 +30779,8 @@ const MemorySuiteSnapshotCache = (() => {
           stableMessageId: text(message?.stableMessageId || ''),
           stableMessageIdHash: text(message?.stableMessageIdHash || ''),
           stableMessageIdSource:stableChatMessageSourceIdentity(message).source,
-          createdAt: message?.createdAt || ''
+          createdAt: message?.createdAt || '',
+          swipeId
         } : null;
         continue;
       }
@@ -30766,7 +30792,9 @@ const MemorySuiteSnapshotCache = (() => {
         rawText:text(message?.rawContent??body).replace(/\r\n/g,'\n').trim(),
         stableMessageId: text(message?.stableMessageId || ''),
         stableMessageIdHash: text(message?.stableMessageIdHash || ''),
-        createdAt: message?.createdAt || ''
+        createdAt: message?.createdAt || '',
+        swipeId,
+        generationId
       });
     }
     flushPair();
@@ -32108,10 +32136,11 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -32312,6 +32341,7 @@ function memorySuiteProjectSourceRules(value,rules) {
     if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
     if(control==='suite-blocks')body=body
       .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*?(?:\[\/HAYAKU SIDE-WRITE FINAL REMINDER\]|$)/gi,'')
       .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
   }
   return {text:body,warnings};
@@ -32320,7 +32350,7 @@ function memorySuiteProjectSourceRules(value,rules) {
 function memorySuiteIsInternalSourceRule(entry) {
   if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
   if(!entry||typeof entry.open!=='string')return false;
-  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE|SIDE-WRITE FINAL REMINDER)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
     || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
 }
 function memorySuiteExternalSourceRules(rules, migrate=false) {
@@ -33134,7 +33164,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill(memorySuiteDefaultSourceRules(owner),false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     const applyDraft=async()=>{
       if(!loaded||applying||disposed())return {ok:false,skipped:true};
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -33353,7 +33383,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ids=new Set(group.records.flatMap(r=>r.sourceMessageIds||[]).map(String));
     const liveIds=[pair.userMessageId,...(pair.assistantMessageIds||[])].filter(Boolean).map(String);
     // With no stable IDs the existing turn/content checks remain conservative.
-    return ids.size>0 && liveIds.length>=2 && liveIds.every(id=>ids.has(id));
+    if (!(ids.size>0 && liveIds.length>=2 && liveIds.every(id=>ids.has(id)))) return false;
+    const storedMeta = group.records.find(r => r?.metadata)?.metadata || {};
+    const storedUserSwipe = text(storedMeta.userSwipeId || '');
+    const liveUserSwipe = text(pair?.userSwipeId || '');
+    if (storedUserSwipe && liveUserSwipe && storedUserSwipe !== liveUserSwipe) return false;
+    const storedSwipes = Array.isArray(storedMeta.assistantSwipeIds) ? storedMeta.assistantSwipeIds.map(String).filter(Boolean) : [];
+    const liveSwipes = Array.isArray(pair?.assistantSwipeIds) ? pair.assistantSwipeIds.map(String).filter(Boolean) : [];
+    if (storedSwipes.length && liveSwipes.length && storedSwipes.join('|') !== liveSwipes.join('|')) return false;
+    const storedGenIds = Array.isArray(storedMeta.assistantGenerationIds) ? storedMeta.assistantGenerationIds.map(String).filter(Boolean) : [];
+    const liveGenIds = Array.isArray(pair?.assistantGenerationIds) ? pair.assistantGenerationIds.map(String).filter(Boolean) : [];
+    if (storedGenIds.length && liveGenIds.length && storedGenIds.join('|') !== liveGenIds.join('|')) return false;
+    return true;
   };
   const confirmFlashbackInitialCaptures = (records, live, scope) => {
     const groups=responseGroupsForWorldline(records);

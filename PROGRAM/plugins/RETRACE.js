@@ -7845,13 +7845,35 @@ const PLUGIN_VERSION = '2.2.0';
   const HAYAKU_NATIVE_REPAIR_CANDIDATE_PREFIX = 'hayaku.v2.native_repair_candidate.';
   const HAYAKU_NATIVE_COLD_START_RUN_PREFIX = 'hayaku.v2.native_cold_start_run.';
   const HAYAKU_NATIVE_REGEN_RUN_PREFIX = 'hayaku.v2.native_regeneration_run.';
+  const HAYAKU_CAPTURE_DELTA_PREFIX = 'hayaku.v2.storage_reconciliation_journal.capture_delta::';
+  const HAYAKU_SOURCE_EVIDENCE_PREFIX = 'hayaku.v2.source-evidence.';
+  const HAYAKU_SOURCE_EDIT_PREFIX = 'hayaku.v2.source-edit.';
+  const HAYAKU_RECALL_INDEX_PREFIX = 'hayaku.v2.recall_index.';
+  const HAYAKU_PARTIAL_MEMORY_PREFIX = 'hayaku.v2.partial_memory.';
+  const HAYAKU_RECOVERY_EVIDENCE_MANIFEST_PREFIX = 'hayaku.v2.recovery_evidence_manifest.';
+  const HAYAKU_RECOVERY_EVIDENCE_CHUNK_PREFIX = 'hayaku.v2.recovery_evidence_chunk.';
+  const HAYAKU_FAILED_ANALYSIS_INDEX_PREFIX = 'hayaku.v2.failed_analysis_index.';
+  const HAYAKU_FAILED_ANALYSIS_MANIFEST_PREFIX = 'hayaku.v2.failed_analysis_manifest.';
+  const HAYAKU_FAILED_ANALYSIS_CHUNK_PREFIX = 'hayaku.v2.failed_analysis_chunk.';
+  const HAYAKU_ANALYSIS_FAILURE_LOG_PREFIX = 'hayaku.v2.analysis_failure_log.';
   const HAYAKU_SCOPE_RECORD_PREFIXES = Object.freeze([
     HAYAKU_LEDGER_PREFIX,
     HAYAKU_RECOVERY_VAULT_PREFIX,
     HAYAKU_NATIVE_REPAIR_RUN_PREFIX,
     HAYAKU_NATIVE_REPAIR_CANDIDATE_PREFIX,
     HAYAKU_NATIVE_COLD_START_RUN_PREFIX,
-    HAYAKU_NATIVE_REGEN_RUN_PREFIX
+    HAYAKU_NATIVE_REGEN_RUN_PREFIX,
+    HAYAKU_CAPTURE_DELTA_PREFIX,
+    HAYAKU_SOURCE_EVIDENCE_PREFIX,
+    HAYAKU_SOURCE_EDIT_PREFIX,
+    HAYAKU_RECALL_INDEX_PREFIX,
+    HAYAKU_PARTIAL_MEMORY_PREFIX,
+    HAYAKU_RECOVERY_EVIDENCE_MANIFEST_PREFIX,
+    HAYAKU_RECOVERY_EVIDENCE_CHUNK_PREFIX,
+    HAYAKU_FAILED_ANALYSIS_INDEX_PREFIX,
+    HAYAKU_FAILED_ANALYSIS_MANIFEST_PREFIX,
+    HAYAKU_FAILED_ANALYSIS_CHUNK_PREFIX,
+    HAYAKU_ANALYSIS_FAILURE_LOG_PREFIX
   ]);
   const HAYAKU_ARCHIVE_MAX_DEPTH = 256;
   // Exact retired keys remain named so startup can purge only RE:TRACE-owned
@@ -14059,9 +14081,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       for (const [key, raw] of Object.entries(node).slice(0, 600)) {
         const lower = key.toLowerCase();
         if (typeof raw === 'string' && raw.trim()) {
-          if (/(?:source|forkedfrom|copiedfrom|predecessor|inheritedfrom).*scope(?:key|id)$/.test(lower)
-            || /^(?:sourcescopekey|forkedfromscopekey|copiedfromscopekey|predecessorscopekey|inheritedfromscopekey)$/.test(lower)) {
-            out.push({ targetRef: raw.trim(), kind: lower.includes('fork') ? 'forked_from' : lower.includes('copy') ? 'copied_from' : lower.includes('inherit') ? 'inherited_from' : 'session_predecessor' });
+          if (/(?:source|forkedfrom|copiedfrom|predecessor|inheritedfrom|archive).*scope(?:key|id)$/.test(lower)
+            || /^(?:sourcescopekey|forkedfromscopekey|copiedfromscopekey|predecessorscopekey|inheritedfromscopekey|archivescopekey)$/.test(lower)) {
+            out.push({ targetRef: raw.trim(), kind: lower.includes('fork') ? 'forked_from' : lower.includes('copy') ? 'copied_from' : (lower.includes('inherit') || lower.includes('archive')) ? 'inherited_from' : 'session_predecessor' });
           }
         }
         visit(raw, depth + 1);
@@ -14721,21 +14743,35 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }
     for (const [storageHash, members] of unknown.entries()) {
       if (!members.some(member => member.exists === true)) continue;
+      let unregisteredManifest = null;
+      const manifestMember = members.find(member => member.space === 'plugin' && /:manifest:v\d+$/.test(member.key) && Number(member.valueBytes || 0) <= 512 * 1024);
+      if (manifestMember) {
+        try { unregisteredManifest = (await snapshot.read('plugin', manifestMember.key))?.parsed || null; } catch (_) {}
+      }
+      const discoveredScopeKey = text(unregisteredManifest?.scopeKey || '');
       scopes.push(scopeManagerFinalize('flashback', {
-        scopeId: `unregistered:${storageHash}`, scopeKey: '', kind: 'unregistered_storage',
-        descriptor: { displayName: `등록되지 않은 Flashback 저장소 · ${storageHash}` },
-        members, links: [], mutations: scopeManagerPurgeMutations(members), coverageComplete: true
+        scopeId: `unregistered:${storageHash}`, scopeKey: discoveredScopeKey, kind: 'unregistered_storage',
+        descriptor: { ...(discoveredScopeKey ? { scopeKey: discoveredScopeKey } : {}), displayName: `등록되지 않은 Flashback 저장소 · ${storageHash}` },
+        members, links: unregisteredManifest ? scopeManagerCollectLinks(unregisteredManifest) : [], mutations: scopeManagerPurgeMutations(members), coverageComplete: true
       }, inventory, priorMap));
     }
     return scopes;
   };
 
+  const HAYAKU_SUFFIXED_SCOPE_PREFIXES = new Set([
+    HAYAKU_NATIVE_REPAIR_CANDIDATE_PREFIX,
+    HAYAKU_RECALL_INDEX_PREFIX,
+    HAYAKU_RECOVERY_EVIDENCE_MANIFEST_PREFIX,
+    HAYAKU_RECOVERY_EVIDENCE_CHUNK_PREFIX,
+    HAYAKU_FAILED_ANALYSIS_MANIFEST_PREFIX,
+    HAYAKU_FAILED_ANALYSIS_CHUNK_PREFIX
+  ]);
   const scopeManagerHayakuRecordScope = keyValue => {
     const key = scopeManagerText(keyValue);
     const prefix = HAYAKU_SCOPE_RECORD_PREFIXES.find(item => key.startsWith(item));
     if (!prefix) return null;
     let scopeKey = key.slice(prefix.length);
-    if (prefix === HAYAKU_NATIVE_REPAIR_CANDIDATE_PREFIX && scopeKey.includes('::')) scopeKey = scopeKey.slice(0, scopeKey.indexOf('::'));
+    if (HAYAKU_SUFFIXED_SCOPE_PREFIXES.has(prefix) && scopeKey.includes('::')) scopeKey = scopeKey.slice(0, scopeKey.indexOf('::'));
     return scopeKey ? { prefix, scopeKey } : null;
   };
   const scopeManagerHayakuPureEmptyLedger = (ledger, scopeKey) => {
@@ -14934,7 +14970,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }
     const unknownByScope = new Map();
     for (const record of snapshot.records.filter(item => item.space === 'plugin')) {
-      const match = /^libra:v1:scope:(.+?):(?:manifest|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|lens:)/.exec(record.key);
+      const match = /^libra:v1:scope:(.+?):(?:manifest|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|lens:|micro-memory:|micro-state:|micro-handoff-archive:|narrative:|continuity:|worldline:|source-evidence:|audit:|checkpoint:)/.exec(record.key);
       if (!match || knownScopeKeys.has(match[1])) continue;
       const members = unknownByScope.get(match[1]) || [];
       members.push(scopeManagerMember(record, false));
