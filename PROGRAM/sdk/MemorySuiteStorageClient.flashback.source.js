@@ -1586,9 +1586,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
-      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }

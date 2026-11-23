@@ -55,7 +55,22 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 const MIN_SERVER_PORT = 1024, MAX_SERVER_PORT = 65535;
+const MAX_LAUNCHER_LOG_BYTES = 5 * 1024 * 1024;
 const launcherFailure = (code, message, exitCode) => Object.assign(new Error(message), { code, exitCode });
+
+function rotateLogFileIfOversized(logPath, maxBytes = MAX_LAUNCHER_LOG_BYTES) {
+  try {
+    if (!fs.existsSync(logPath)) return false;
+    const stat = fs.statSync(logPath);
+    if (!stat.isFile() || stat.size <= maxBytes) return false;
+    const rotated = `${logPath}.1`;
+    try { fs.rmSync(rotated, { force: true }); } catch (_) {}
+    fs.renameSync(logPath, rotated);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 // Inside the Docker image (LIBRARIAN_CONTAINER=1) the server is a separate device: remote access
 // mode is fixed and it listens on the container's own interface.
@@ -548,6 +563,9 @@ async function serveBackground(config, dataDir) {
   }
   const logsDir = path.join(dataDir, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
+  for (const name of ['server.log', 'startup.log', 'startup-error.log']) {
+    rotateLogFileIfOversized(path.join(logsDir, name));
+  }
   const logPath = path.join(logsDir, 'server.log');
   const logFd = fs.openSync(logPath, 'a');
   let child = null;
@@ -658,6 +676,7 @@ module.exports = {
   canonicalizePotentialPath,
   isTermuxRuntime,
   assertSafeDataDir,
+  rotateLogFileIfOversized,
   setServerPort,
   setRemoteAccess,
   remoteTunnel

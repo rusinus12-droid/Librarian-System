@@ -10,6 +10,10 @@ on:
   workflow_dispatch:
 
 jobs:
+  risu-compatibility-gate:
+    name: risu-compatibility-gate
+    uses: ./.github/workflows/_risu-compatibility-check.yml
+
   release-builder-gate:
     name: release-builder-gate
     runs-on: ubuntu-latest
@@ -200,7 +204,11 @@ jobs:
             PROGRAM/tests/libra_state_projection_currentness_test.cjs \
             PROGRAM/tests/libra_state_replay_error_resolution_test.cjs \
             PROGRAM/tests/libra_story_clock_ui_anchor_test.cjs \
-            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs
+            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs \
+            PROGRAM/tests/audit_p0a_cache_ai_embedding_fixes_test.cjs \
+            PROGRAM/tests/audit_p0b_tag_filter_and_scope_fixes_test.cjs \
+            PROGRAM/tests/audit_p1_server_security_and_updater_fixes_test.cjs \
+            PROGRAM/tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs
 
       - name: Verify clean working tree
         run: |

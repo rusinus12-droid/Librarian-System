@@ -4246,6 +4246,31 @@ ${BIANCA_PERSONA_TEXT}`;
     guiPerformance: { stateLoads: 0, lastStateLoadMs: 0, lastStateLoadSource: '', renders: 0, lastRenderMs: 0, maxRenderMs: 0, oocHydrations: 0, lastOocHydrationMs: 0 },
     hookStatus: { input: false, beforeRequest: false, afterRequest: false, replacerPermission: 'unknown', unload: false, setting: false, button: false, inputAssistSendButton: false, retraceIpc: false }
   };
+
+  const GRADIA_RUNTIME_SCOPE_BUCKET_KEYS = Object.freeze([
+    'forcedBondReadings', 'forcedBondTelemetry', 'sceneVarianceHistory',
+    'bodyStateReadings', 'bodyStateSleep', 'bodyStateVerdicts',
+    'worldDynamicsReadings', 'worldDynamicsTelemetry',
+    'intimacyReadings', 'intimacyTelemetry', 'shadowPrevious',
+    'relationshipSimReadings', 'knowledgeBoundaryReadings', 'dialogueReadings'
+  ]);
+  const GRADIA_RUNTIME_SCOPE_MAX = 16;
+  const pruneGradiaRuntimeScopeMaps = (keepScopeKey = Runtime.activeScopeKey) => {
+    const keep = String(keepScopeKey || '');
+    for (const bucketName of GRADIA_RUNTIME_SCOPE_BUCKET_KEYS) {
+      const bucket = Runtime[bucketName];
+      if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) continue;
+      const keys = Object.keys(bucket);
+      if (keys.length <= GRADIA_RUNTIME_SCOPE_MAX) continue;
+      let remaining = keys.length;
+      for (const k of keys) {
+        if (remaining <= GRADIA_RUNTIME_SCOPE_MAX) break;
+        if (keep && k === keep) continue;
+        delete bucket[k];
+        remaining -= 1;
+      }
+    }
+  };
   
   
   
@@ -11948,6 +11973,7 @@ function summarizeAgentCbsTag(rawContent) {
     const loreSettings = staticSource.rawLoreSettings || {};
     const loreContinuityScope = loreContinuityScopeKey(character, chatInfo.chat);
     Runtime.activeScopeKey = loreContinuityScope;
+    pruneGradiaRuntimeScopeMaps(Runtime.activeScopeKey);
     Runtime.activePersonaName = compact(persona?.name || persona?.nickname || '', 80);
     Runtime.activeCharacterName = compact(character?.name || character?.nickname || '', 80);
     const inputAssistTerminalPath = settings?.activeStageName === INPUT_ASSIST_STAGE_ID
@@ -12229,8 +12255,8 @@ function summarizeAgentCbsTag(rawContent) {
   // is sized for large lorebooks; a token's n-gram key set depends only on the token. Both
   // are pure memos and are cleared whole at their limit: evicting the oldest key one at a
   // time leaves deleted slots that every later keys().next() has to skip.
-  const LORE_JACCARD_SIMILARITY_CACHE_LIMIT = 200000;
-  const LORE_JACCARD_GRAM_CACHE_LIMIT = 50000;
+  const LORE_JACCARD_SIMILARITY_CACHE_LIMIT = 32768;
+  const LORE_JACCARD_GRAM_CACHE_LIMIT = 16384;
   const LoreJaccardTokenSimilarityCache = new Map();
   const LoreJaccardGramKeyCache = new Map();
   const loreJaccardGramKeys = token => {
@@ -35590,11 +35616,20 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
+      const nextDisabled=!loaded||applying;
+      for(const row of rows){
+        for(const node of row.element.querySelectorAll('input,textarea,select,button'))if(node.disabled!==nextDisabled)node.disabled=nextDisabled;
+        const blank=isEmpty(row);const nextRemoveDisabled=nextDisabled||blank;
+        if(row.remove.disabled!==nextRemoveDisabled)row.remove.disabled=nextRemoveDisabled;
+        row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');
+      }
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
-      apply.disabled=!loaded||applying||!dirty;
-      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
-      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+      if(apply.disabled!==(!loaded||applying||!dirty))apply.disabled=!loaded||applying||!dirty;
+      if(add.disabled!==nextDisabled)add.disabled=nextDisabled;
+      if(defaults.disabled!==nextDisabled)defaults.disabled=nextDisabled;
+      if(undo.disabled!==(nextDisabled||!removed.length))undo.disabled=nextDisabled||!removed.length;
+      const nextPreviewDisabled=nextDisabled||readingSample||typeof config.readSample!=='function';
+      if(previewButton.disabled!==nextPreviewDisabled)previewButton.disabled=nextPreviewDisabled;
     }
     async function showPreview() {
       if(!sample)return;
@@ -35714,7 +35749,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
 
 function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
-.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 168px;transition:border-color .16s,box-shadow .16s,background .16s}
 .ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
 .ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
 .ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
@@ -35727,7 +35762,7 @@ function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
 .ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
 .ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
-.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default;content-visibility:visible;contain-intrinsic-size:none}
 .ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
 @media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
 `;}
@@ -35823,7 +35858,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
     return memorySuiteNormalizeSourceRules(draft);
   }
-  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))if(n.disabled!==value)n.disabled=value;const runDisabled=value||!applied;if(run.disabled!==runDisabled)run.disabled=runDisabled;}
   for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
     const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
     const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
@@ -60217,6 +60252,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const key = snapshot?.character ? loreContinuityScopeKey(snapshot.character, snapshot.chatInfo?.chat) : '';
       if (!key || key === Runtime.activeScopeKey) return false;
       Runtime.activeScopeKey = key;
+      pruneGradiaRuntimeScopeMaps(Runtime.activeScopeKey);
       return true;
     } catch (error) { warn('forced_bond_scope_read_failed', error); return false; }
   };
@@ -62692,6 +62728,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     debugWorldDynamicsState() {
       const scopeKey = Runtime.activeScopeKey || '';
       return cloneJson({ scopeKey, readings: Runtime.worldDynamicsReadings?.[scopeKey] || null, telemetry: Runtime.worldDynamicsTelemetry?.[scopeKey] || null });
+    },
+    debugPruneRuntimeScopeMaps(keepScopeKey = Runtime.activeScopeKey) {
+      pruneGradiaRuntimeScopeMaps(keepScopeKey);
+      return { max: GRADIA_RUNTIME_SCOPE_MAX };
     },
     debugSetSceneVarianceRandom(values = null) {
       const queue = Array.isArray(values) ? values.slice() : null;

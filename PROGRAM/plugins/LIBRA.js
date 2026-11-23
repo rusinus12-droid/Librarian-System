@@ -5180,9 +5180,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
-      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
@@ -40652,7 +40651,21 @@ function createLibraReadonlySourceContext(owner) {
       const context = { character, chat, identity, hostLineage, hostWorldlineMeta, scope, transientUnstableChatIdentity };
       const previous = state.lastResolvedContext;
       if (previous?.scope?.chatId && string(previous.scope.chatId) !== string(chatId)) {
-        state.previousResolvedContext = previous;
+        state.previousResolvedContext = {
+          scope: previous.scope ? { ...previous.scope } : null,
+          identity: previous.identity || '',
+          chat: previous.chat ? {
+            id: previous.chat.id,
+            chatId: previous.chat.chatId,
+            uuid: previous.chat.uuid,
+            name: previous.chat.name,
+            title: previous.chat.title,
+            chatName: previous.chat.chatName,
+            filename: previous.chat.filename,
+            ...(Array.isArray(previous.chat.message) ? { message: previous.chat.message } : {}),
+            ...(Array.isArray(previous.chat.messages) ? { messages: previous.chat.messages } : {})
+          } : null
+        };
       }
       state.lastResolvedContext = context;
       return context;
@@ -53373,11 +53386,20 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
+      const nextDisabled=!loaded||applying;
+      for(const row of rows){
+        for(const node of row.element.querySelectorAll('input,textarea,select,button'))if(node.disabled!==nextDisabled)node.disabled=nextDisabled;
+        const blank=isEmpty(row);const nextRemoveDisabled=nextDisabled||blank;
+        if(row.remove.disabled!==nextRemoveDisabled)row.remove.disabled=nextRemoveDisabled;
+        row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');
+      }
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
-      apply.disabled=!loaded||applying||!dirty;
-      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
-      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+      if(apply.disabled!==(!loaded||applying||!dirty))apply.disabled=!loaded||applying||!dirty;
+      if(add.disabled!==nextDisabled)add.disabled=nextDisabled;
+      if(defaults.disabled!==nextDisabled)defaults.disabled=nextDisabled;
+      if(undo.disabled!==(nextDisabled||!removed.length))undo.disabled=nextDisabled||!removed.length;
+      const nextPreviewDisabled=nextDisabled||readingSample||typeof config.readSample!=='function';
+      if(previewButton.disabled!==nextPreviewDisabled)previewButton.disabled=nextPreviewDisabled;
     }
     async function showPreview() {
       if(!sample)return;
@@ -53497,7 +53519,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
 
 function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
-.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 168px;transition:border-color .16s,box-shadow .16s,background .16s}
 .ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
 .ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
 .ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
@@ -53510,7 +53532,7 @@ function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
 .ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
 .ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
-.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default;content-visibility:visible;contain-intrinsic-size:none}
 .ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
 @media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
 `;}
@@ -53606,7 +53628,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
     return memorySuiteNormalizeSourceRules(draft);
   }
-  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))if(n.disabled!==value)n.disabled=value;const runDisabled=value||!applied;if(run.disabled!==runDisabled)run.disabled=runDisabled;}
   for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
     const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
     const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
@@ -74035,7 +74057,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return {available,measurement:!available?'unavailable':estimated?'estimated':'measured',inputTokens:Number(source.inputTokens||source.promptTokens||0),outputTokens:Number(source.outputTokens||source.completionTokens||0),
         reasoningTokens:Number(source.reasoningTokens||0),cachedInputTokens:Number(source.cachedInputTokens||source.cachedTokens||0),totalTokens:Number(source.totalTokens||0),estimated};
     };
-    const executionReceiptRows = async ({kind,worldlineId,expectedScopeKey=''}={}) => {
+    const executionReceiptRows = async ({kind,worldlineId,expectedScopeKey='',targetId=''}={}) => {
       const normalizedKind=string(kind||'memory').trim().toLowerCase(); const allowed=['memory','state','draft','recall','embedding','rebuild'];
       if (!allowed.includes(normalizedKind)) throw stateCorrectionFailure('EXECUTION_RECEIPT_KIND_INVALID');
       const context=await resolveContext();
@@ -74049,7 +74071,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           startedAt:run.startedAt,finishedAt:run.finishedAt,latencyMs:Number(run.durationMs||0),turnRange:clone(run.turnRange),memoryId:string(run.memoryId||run.commit?.memoryId||''),revision:Number(run.revision||run.commit?.revision||0),
           usage:executionUsageSummary(run.commit?.providerBudget ?? run.providerBudget),providerBudget:clone(asObject(run.commit?.providerBudget ?? run.providerBudget)),retry:clone(asObject((run.commit?.providerBudget ?? run.providerBudget)?.retryLedger)),error:compact(asArray(run.errors).map(item=>item?.message||item).join('; '),700),payload:clone(run)});
       } else if (normalizedKind==='state') {
-        const refs=canonicalReaderRefs(manifest,resolved); const loaded=await mapWithConcurrency(refs,async ref=>{
+        const allRefs=canonicalReaderRefs(manifest,resolved);
+        let refs=allRefs;
+        if (targetId) {
+          const targetMemId=string(targetId).split(':r')[0];
+          const exactRefs=allRefs.filter(ref=>`${ref.memoryId}:r${Number(ref.revision||0)}:${resolved.worldlineId}`===string(targetId)||string(ref.memoryId)===targetMemId);
+          if (exactRefs.length) refs=exactRefs;
+        } else {
+          const retention=Math.max(20,Number((await loadMemorySettings()).runDetailRetention||50)*2);
+          if (allRefs.length>retention) refs=allRefs.slice(-retention);
+        }
+        const loaded=await mapWithConcurrency(refs,async ref=>{
           const receiptKey=key.statePipelineReceipt(context.scope,ref.memoryId,ref.revision,resolved.worldlineId); const receipt=await storage.getJson(receiptKey,null); return {ref,receiptKey,receipt};
         },8);
         for (const item of loaded) {
@@ -74077,7 +74109,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         worldlineId:loaded.resolved.worldlineId,requestLocalReadOnly:true});
     };
     const getExecutionReceiptDetail = async ({kind='memory',id='',worldlineId='',expectedScopeKey=''}={}) => {
-      const loaded=await executionReceiptRows({kind,worldlineId,expectedScopeKey}); const matches=loaded.rows.filter(row=>string(row.id)===string(id));
+      const loaded=await executionReceiptRows({kind,worldlineId,expectedScopeKey,targetId:id}); const matches=loaded.rows.filter(row=>string(row.id)===string(id));
       if (matches.length!==1) throw stateCorrectionFailure(matches.length?'EXECUTION_RECEIPT_IDENTITY_AMBIGUOUS':'EXECUTION_RECEIPT_NOT_FOUND');
       return clone({schema:EXECUTION_RECEIPT_DETAIL_SCHEMA,...matches[0],scopeKey:string(loaded.context.scope.scopeKey),worldlineId:loaded.resolved.worldlineId,requestLocalReadOnly:true});
     };
@@ -82001,7 +82033,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.wl-layout{display:grid;grid-template-columns:minmax(230px,.8fr) minmax(0,1.5fr);gap:14px;align-items:start}',
     '.wl-list{max-height:520px;overflow:auto;overflow-anchor:none;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--surface)}',
     '.wl-list__head{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);color:var(--text3);font-weight:700}',
-    '.wl-row{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 8px;align-items:center;width:100%;min-height:44px;padding:8px 12px 8px 30px;border:0;border-top:1px solid var(--border);background:transparent;color:var(--text);text-align:left;cursor:pointer}',
+    '.wl-row{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 8px;align-items:center;width:100%;min-height:44px;padding:8px 12px 8px 30px;border:0;border-top:1px solid var(--border);background:transparent;color:var(--text);text-align:left;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 48px}',
     '.wl-list__head+.wl-row{border-top:0}',
     '.wl-row::before{content:"";position:absolute;left:14px;top:0;bottom:0;width:2px;background:var(--accent-line,var(--accent))}',
     '.wl-row::after{content:"";position:absolute;left:8px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:var(--surface);border:3px solid var(--ok)}',
@@ -84426,6 +84458,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const summaryBlocks = [];
     const canonicalReferenceBudget = canonicalReferenceBudgetForDisplay();
     const formatChars = value => `${Number(value || 0).toLocaleString('ko-KR')}자`;
+    const formatDebugPreview = (value, maxChars = 24000) => {
+      if (value == null) return '';
+      if (typeof value === 'string') {
+        return value.length <= maxChars ? value : `${value.slice(0, maxChars)}\n... [미리보기 절삭됨: 총 ${value.length}자 · 전체 원문은 위 '디버그 JSON 파일로 저장'을 이용하세요]`;
+      }
+      try {
+        const serialized = JSON.stringify(value, (_k, v) => (typeof v === 'string' && v.length > 2400 ? `${v.slice(0, 2400)}... [${v.length} chars]` : v), 2) || '';
+        return serialized.length <= maxChars ? serialized : `${serialized.slice(0, maxChars)}\n... [미리보기 절삭됨: 총 ${serialized.length}자 · 전체 원문은 위 '디버그 JSON 파일로 저장'을 이용하세요]`;
+      } catch (_) {
+        return String(value).slice(0, maxChars);
+      }
+    };
     if (Runtime.inFlight) summaryBlocks.push(guiEl('div', { class: 'note', text: '● 파이프라인 실행 중…' }));
     if (beforeTraces.length) summaryBlocks.push(guiEl('div', { class: 'setting' }, [guiEl('span', { class: 'setting__name', text: '직렬 단계' }), ...beforeTraces.map(t => tracePill(t))]));
     if (!summaryBlocks.length) summaryBlocks.push(guiEl('div', { class: 'empty', text: '아직 실행 기록이 없습니다. 응답을 한 번 생성하면 요약이 표시됩니다.' }));
@@ -84466,7 +84510,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]) : null,
       guiEl('div', { class: 'card' }, summaryBlocks),
       guiEl('div', { class: 'grid g2' }, [
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'code', text: JSON.stringify({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, hookRuntime: hookRuntimeSnapshot(), recallRuntime: LibraMemoryCore.state.lastRecallRuntime || null, storageWriteStats: LibraMemoryCore.state.storageWriteStats || {}, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }, null, 2) })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'code', text: formatDebugPreview({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, hookRuntime: hookRuntimeSnapshot(), recallRuntime: LibraMemoryCore.state.lastRecallRuntime || null, storageWriteStats: LibraMemoryCore.state.storageWriteStats || {}, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }) })]),
         (() => {
           const view = LibraMemoryCore.getMemoryRecallDiagnosticsView();
           const rows = [];
@@ -84490,7 +84534,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows,
             guiEl('div', { class: 'hint', text: 'State 네 축의 기본 자료와 기존 기록을 직접 검색합니다. 후보 상한에 도달한 검색은 부분 탐색으로 표시합니다.' })]);
         })(),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: formatDebugPreview({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }) || '(아직 provider 호출 기록 없음)' })]),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
         guiEl('div', { class: 'card' }, [
           guiEl('h3', { text: '정본 참조 예산' }),
@@ -84511,11 +84555,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               ])
             : guiEl('div', { class: 'hint', text: '아직 정본 참조 패킷의 예산 기록이 없습니다.' })
         ]),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Ariadne RisuAI 참조' }), guiEl('div', { class: 'code', text: Runtime.lastRisuContext ? JSON.stringify(Runtime.lastRisuContext, null, 2) : '(아직 참조 기록 없음)' })]),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '확장 모드 RisuAI식 엔진 기록' }), guiEl('div', { class: 'code', text: Runtime.risuEngine ? JSON.stringify(Runtime.risuEngine, null, 2) : '(아직 확장 모드 실행 기록 없음)' })]),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: 'Ariadne 최종 응답 초안' }), guiEl('div', { class: 'code', text: Runtime.finalDraft || (Runtime.finalDraftMeta?.skipped ? `실행 안 됨: ${Runtime.finalDraftMeta.reason || 'unknown'}` : '(아직 최종 초안 없음)') })]),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '응답 전 에이전트 원문 추적' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.stageTrace.slice(-32), null, 2) || '(아직 실행 기록 없음)' })]),
-        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 메인 모델 주입 draft' }), guiEl('div', { class: 'code', text: Runtime.lastInjection || '(아직 주입 기록 없음)' })])
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Ariadne RisuAI 참조' }), guiEl('div', { class: 'code', text: Runtime.lastRisuContext ? formatDebugPreview(Runtime.lastRisuContext) : '(아직 참조 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '확장 모드 RisuAI식 엔진 기록' }), guiEl('div', { class: 'code', text: Runtime.risuEngine ? formatDebugPreview(Runtime.risuEngine) : '(아직 확장 모드 실행 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: 'Ariadne 최종 응답 초안' }), guiEl('div', { class: 'code', text: formatDebugPreview(Runtime.finalDraft) || (Runtime.finalDraftMeta?.skipped ? `실행 안 됨: ${Runtime.finalDraftMeta.reason || 'unknown'}` : '(아직 최종 초안 없음)') })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '응답 전 에이전트 원문 추적' }), guiEl('div', { class: 'code', text: Runtime.stageTrace.length ? formatDebugPreview(Runtime.stageTrace.slice(-16)) : '(아직 실행 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 메인 모델 주입 draft' }), guiEl('div', { class: 'code', text: formatDebugPreview(Runtime.lastInjection) || '(아직 주입 기록 없음)' })])
       ])
     ]);
   };
@@ -91636,12 +91680,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ].map(([key,label])=>guiEl('span',{},[guiEl('i',{class:`wl-legend__dot wl-seg--${key}`}),guiEl('span',{text:label})])));
     const chip=(label,tone)=>guiEl('span',{class:`wl-chip wl-chip--${tone}`,text:label});
     const chipTone=value=>['saved','partial','verified','succeeded'].includes(value)?'ok':['failed','unrecoverable'].includes(value)?'bad':['pending','off','OFF','unknown'].includes(value)?'muted':['running','queued'].includes(value)?'run':'gap';
+    const WORLDLINE_PAGE_STEP=120;
+    const visibleTurnLimit=Math.max(WORLDLINE_PAGE_STEP,Number(state.visibleTurnLimit||WORLDLINE_PAGE_STEP));
+    let visibleStartIndex=Math.max(0,turnList.length-visibleTurnLimit);
+    if(visibleStartIndex>0&&activeTurn<turnList[visibleStartIndex].turn){
+      const activeIndex=turnList.findIndex(item=>item.turn===activeTurn);
+      if(activeIndex>=0&&activeIndex<visibleStartIndex)visibleStartIndex=activeIndex;
+    }
+    const visibleTurnList=visibleStartIndex>0?turnList.slice(visibleStartIndex):turnList;
+    const hiddenEarlierCount=visibleStartIndex;
     const timelineCol=guiEl('div',{class:"turn-timeline-col wl-list",role:'list','aria-label':'턴 연속성'},[
       guiEl('div',{class:"wl-list__head"},[
         guiEl('small',{text:'턴 연속성'}),
         guiEl('small',{text:`${totalTurns}개 턴`})
       ]),
-      ...turnList.flatMap(item=>{
+      hiddenEarlierCount>0?guiEl('button',{
+        type:'button',class:'btn btn--sm',style:{margin:'6px 10px',width:'calc(100% - 20px)'},
+        dataset:{worldlineShowMore:'true'},
+        text:`이전 턴 더 보기 (${hiddenEarlierCount}개 남음)`,
+        onClick:()=>{state.visibleTurnLimit=(turnList.length-visibleStartIndex)+WORLDLINE_PAGE_STEP;queueGuiNavigationRender();}
+      }):null,
+      ...visibleTurnList.flatMap(item=>{
         const elements=[];
         const turnInherited=isHostBranch&&forkTurn>0&&item.turn<=forkTurn;
         if(isHostBranch&&forkTurn>0&&item.turn===forkTurn+1){

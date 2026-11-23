@@ -104,8 +104,9 @@ async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, paylo
   const COMFY_BINDING_PROFILE_SCHEMA = "lia.comfy_workflow_binding.v1";
   const COMFY_BINDING_PROFILE_VERSION = 1;
   const LOG_SCHEMA_VERSION = 1;
-  const OPERATION_LOG_MAX = 300;
-  const DEBUG_LOG_MAX = 600;
+  const OPERATION_LOG_MAX = 200;
+  const DEBUG_LOG_MAX = 160;
+  const LOG_MAX_STORED_CHARS = 180000;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
 const PLUGIN_VERSION = "0.32.0";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
@@ -542,13 +543,13 @@ const PLUGIN_VERSION = "0.32.0";
       const redacted = value
         .replace(/(Bearer\s+)[A-Za-z0-9._~+\/-]{8,}/gi, "$1[REDACTED]")
         .replace(/("?(?:api[_-]?key|access[_-]?token|authorization|private[_-]?key|secret|password)"?\s*[:=]\s*["']?)[^"'\s,}]+/gi, "$1[REDACTED]");
-      return limitText(redacted, 14000);
+      return limitText(redacted, 4096);
     }
     if (depth >= 4) return "[DEPTH_LIMIT]";
-    if (Array.isArray(value)) return value.slice(0, 80).map((item) => sanitizeLogValue(item, depth + 1, keyHint));
+    if (Array.isArray(value)) return value.slice(0, 40).map((item) => sanitizeLogValue(item, depth + 1, keyHint));
     if (typeof value === "object") {
       const out = {};
-      for (const [key, item] of Object.entries(value).slice(0, 120)) out[key] = sanitizeLogValue(item, depth + 1, key);
+      for (const [key, item] of Object.entries(value).slice(0, 60)) out[key] = sanitizeLogValue(item, depth + 1, key);
       return out;
     }
     return limitText(String(value), 4000);
@@ -640,13 +641,28 @@ const PLUGIN_VERSION = "0.32.0";
       await readLogStore();
       const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
       if (!storage?.setItem) return false;
-      const payload = {
+      const updatedAt = new Date().toISOString();
+      let ops = operationLogEntries.slice(-OPERATION_LOG_MAX);
+      let dbg = debugLogEntries.slice(-DEBUG_LOG_MAX);
+      let serialized = JSON.stringify({
         version: LOG_SCHEMA_VERSION,
-        updatedAt: new Date().toISOString(),
-        operations: operationLogEntries.slice(-OPERATION_LOG_MAX),
-        debug: debugLogEntries.slice(-DEBUG_LOG_MAX),
-      };
-      await storage.setItem(LOG_STORAGE_KEY, JSON.stringify(payload));
+        updatedAt,
+        operations: ops,
+        debug: dbg,
+      });
+      while (serialized.length > LOG_MAX_STORED_CHARS && (dbg.length > 1 || ops.length > 1)) {
+        if (dbg.length > 1) dbg = dbg.slice(Math.max(1, Math.floor(dbg.length / 2)));
+        else ops = ops.slice(Math.max(1, Math.floor(ops.length / 2)));
+        serialized = JSON.stringify({
+          version: LOG_SCHEMA_VERSION,
+          updatedAt,
+          operations: ops,
+          debug: dbg,
+        });
+      }
+      debugLogEntries = dbg;
+      operationLogEntries = ops;
+      await storage.setItem(LOG_STORAGE_KEY, serialized);
       return true;
     } catch (_) { return false; }
   }

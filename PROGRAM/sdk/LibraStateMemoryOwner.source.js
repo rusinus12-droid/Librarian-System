@@ -360,8 +360,23 @@
           if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
           const loaded = await Promise.all(part.map(async row => {
             try {
-              const stored = await storage.getVerifiedJson(row.key, scanScope, null);
-              return { ...row, stored, record: await hydrateProjectionFromLocalStorage(stored) };
+              let vectorKey = row.key;
+              let stored = await storage.getVerifiedJson(vectorKey, scanScope, null);
+              if (!stored) {
+                let fallbackKey = string(row.ref?.vectorKey || '');
+                if (!fallbackKey || fallbackKey === vectorKey) {
+                  const mem = await storage.getVerifiedJson(row.ref.key, scanScope, null);
+                  fallbackKey = string(mem?.embedding?.vectorKey || '');
+                }
+                if (fallbackKey && fallbackKey !== vectorKey) {
+                  const candidate = await storage.getVerifiedJson(fallbackKey, scanScope, null);
+                  if (candidate && string(candidate.profileId || '') === query.profileId) {
+                    vectorKey = fallbackKey;
+                    stored = candidate;
+                  }
+                }
+              }
+              return { ...row, key: vectorKey, stored, record: await hydrateProjectionFromLocalStorage(stored) };
             }
             catch (_) { diagnostics.failedReads++; return { ...row, record: null }; }
           }));

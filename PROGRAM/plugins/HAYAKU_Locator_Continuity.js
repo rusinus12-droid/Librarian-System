@@ -2387,6 +2387,8 @@ const MODE_PROFILES = Object.freeze({
     globalRoutingCatalogCache: new Map(),
     globalRoutingCatalogStats: { builds: 0, cacheHits: 0, routes: 0, routedPackets: 0, evictions: 0, failures: 0, lastError: '' },
     authoritativeLedgerCache: null,
+    captureRawBodyCache: new Map(),
+    parsedLedgerMemo: null,
     pendingCaptures: [],
     recoveryDebtInBandReservations: new Map(),
     messageRevisionCaches: new Map(),
@@ -4433,9 +4435,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
-      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
@@ -21193,9 +21194,32 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const operationLogSnapshot = () => clone(ensureArray(Memory.operationLog), []);
   const debugLog = (...args) => {
+    if (!Memory.settings?.debug) {
+      const rawDetail = args.length > 1 ? args[1] : null;
+      const liteDetail = rawDetail == null ? null : typeof rawDetail === 'string' ? compact(rawDetail, 240)
+        : objectish(rawDetail) ? {
+            ...(rawDetail.reason ? { reason: compact(rawDetail.reason, 120) } : {}),
+            ...(rawDetail.action ? { action: compact(rawDetail.action, 80) } : {}),
+            ...(rawDetail.scopeKey ? { scopeKey: compact(rawDetail.scopeKey, 120) } : {}),
+            ...(typeof rawDetail.skipped === 'boolean' ? { skipped: rawDetail.skipped } : {}),
+            ...(typeof rawDetail.messages === 'number' ? { messages: rawDetail.messages } : {})
+          } : null;
+      const entry = {
+        id: ++Memory.operationLogSeq,
+        at: now(),
+        event: compact(args[0] || 'event', 120),
+        level: 'info',
+        detail: liteDetail
+      };
+      Memory.operationLog.push(entry);
+      if (Memory.operationLog.length > OPERATION_LOG_MAX_ENTRIES) {
+        Memory.operationLog.splice(0, Memory.operationLog.length - OPERATION_LOG_MAX_ENTRIES);
+      }
+      return;
+    }
     pushOperationLog(args[0], args.length > 1 ? args[1] : null, 'info');
     try {
-      if (Memory.settings?.debug) console.log('[HAYAKU DEBUG]', ...args);
+      console.log('[HAYAKU DEBUG]', ...args);
     } catch (_) {}
   };
   const debugError = (label, error, extra = {}) => {
@@ -21572,7 +21596,50 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // shortcut. Its exact payload/roles/order, settings and authoritative chat
   // must still match. Partial, edited, old or foreign-instance sets reassemble.
   let lastHayakuRequestInjectionReceipt = null;
-  const hayakuInjectionFingerprint = value => stableHash64(canonicalPromptCacheStringify(value));
+  const HAYAKU_SIMPLE_MSG_KEYS = new Set(['role', 'content', 'data', 'name', 'memo', 'chatId', 'chat_id', 'id', 'messageId', 'message_id', 'swipeId', 'generationId', 'saying', 'time']);
+  const hayakuMessageArrayDigest = list => {
+    if (!Array.isArray(list)) return canonicalPromptCacheStringify(list);
+    const parts = [String(list.length)];
+    for (let i = 0; i < list.length; i += 1) {
+      const msg = list[i];
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+        parts.push(canonicalPromptCacheStringify(msg));
+        continue;
+      }
+      const keys = Object.keys(msg);
+      if (keys.some(k => !HAYAKU_SIMPLE_MSG_KEYS.has(k))) {
+        parts.push(canonicalPromptCacheStringify(msg));
+        continue;
+      }
+      const bodyRaw = Object.prototype.hasOwnProperty.call(msg, 'content') ? msg.content : msg.data;
+      const bodyStr = typeof bodyRaw === 'string' ? bodyRaw : canonicalPromptCacheStringify(bodyRaw);
+      const bodyDigest = typeof bodyRaw === 'string' && bodyStr.length > 64 ? `${bodyStr.length}:${stableHash64(bodyStr)}` : bodyStr;
+      parts.push([
+        text(msg.role || ''),
+        text(msg.name || ''),
+        text(msg.memo || ''),
+        text(msg.chatId || msg.chat_id || msg.id || msg.messageId || msg.message_id || ''),
+        text(msg.swipeId ?? ''),
+        text(msg.generationId ?? ''),
+        text(msg.saying ?? ''),
+        text(msg.time ?? ''),
+        Object.prototype.hasOwnProperty.call(msg, 'content') ? 'c' : Object.prototype.hasOwnProperty.call(msg, 'data') ? 'd' : '',
+        bodyDigest
+      ].join('\u0001'));
+    }
+    return stableHash64(parts.join('\u0002'));
+  };
+  const hayakuInjectionFingerprint = value => {
+    if (Array.isArray(value)) {
+      if (value.length === 4 && Array.isArray(value[2]) && (!value[2].length || (value[2][0] && typeof value[2][0] === 'object' && ('role' in value[2][0] || 'content' in value[2][0] || 'data' in value[2][0])))) {
+        return stableHash64(canonicalPromptCacheStringify([value[0], value[1], hayakuMessageArrayDigest(value[2]), value[3]]));
+      }
+      if (!value.length || (value[0] && typeof value[0] === 'object' && !Array.isArray(value[0]) && ('role' in value[0] || 'content' in value[0] || 'data' in value[0]))) {
+        return hayakuMessageArrayDigest(value);
+      }
+    }
+    return stableHash64(canonicalPromptCacheStringify(value));
+  };
   const hasExistingHayakuRequestInjection = (messages = [], contextFingerprint = '') => Boolean(
     contextFingerprint && lastHayakuRequestInjectionReceipt
     && lastHayakuRequestInjectionReceipt.contextFingerprint === contextFingerprint
@@ -39724,7 +39791,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           authoritativeSnapshot,
           authoritativeLedger.worldline
         )),
-        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
+        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory(
+          { ...chatScope, chatMessages: authoritativeChatAvailable ? authoritativeChatMessages : [] },
+          retrievalQuery,
+          authoritativeChatAvailable && authoritativeSnapshot && authoritativeLedger?.current?.enabled === true
+            ? { snapshot: authoritativeSnapshot, boundLedger: authoritativeLedger.current }
+            : null
+        ).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
       ]));
       if(!hayakuRequestCurrent(recallToken)) return hayakuRecallPassthrough(messages);
       const packetCoverageFallbackRecall = stage('packetCoverageFallbackRecall', () => selectPacketCoverageFallbackRows(store, searched, query, settings));
@@ -43239,8 +43312,37 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         : 'incremental_recovery_adoption_not_verified'
     };
   };
+  const CAPTURE_RAW_BODY_CACHE_MAX = 128;
+  const cloneNormalizedLedgerMemo = ledger => ({
+    ...ledger,
+    identity: ledger.identity ? { ...ledger.identity } : undefined,
+    migration: ledger.migration ? clone(ledger.migration) : undefined,
+    coldStart: ledger.coldStart ? { ...ledger.coldStart } : undefined,
+    incrementalRecovery: ledger.incrementalRecovery ? { ...ledger.incrementalRecovery, recoveredTurns: [...ensureArray(ledger.incrementalRecovery.recoveredTurns)] } : undefined,
+    worldline: clone(ledger.worldline),
+    archiveRef: ledger.archiveRef ? { ...ledger.archiveRef } : null,
+    sessionHandoff: ledger.sessionHandoff ? clone(ledger.sessionHandoff) : undefined,
+    portableImport: ledger.portableImport ? clone(ledger.portableImport) : null,
+    nativeBranchStorageBinding: ledger.nativeBranchStorageBinding ? { ...ledger.nativeBranchStorageBinding } : null,
+    analysisFailureProofs: ensureArray(ledger.analysisFailureProofs).map(item => ({ ...item })),
+    records: ensureArray(ledger.records).map(item => ({ ...item })),
+    slotHeads: ensureArray(ledger.slotHeads).map(item => ({ ...item })),
+    tombstones: ensureArray(ledger.tombstones).map(item => ({ ...item }))
+  });
   const invalidateExternalLedgerCaches = scopeKey => {
     Memory.authoritativeLedgerCache = null;
+    if (!scopeKey || !Memory.parsedLedgerMemo || Memory.parsedLedgerMemo.scopeKey === scopeKey) {
+      Memory.parsedLedgerMemo = null;
+    }
+    if (Memory.captureRawBodyCache instanceof Map) {
+      if (!scopeKey) Memory.captureRawBodyCache.clear();
+      else {
+        const prefix = `${scopeKey}::`;
+        for (const k of [...Memory.captureRawBodyCache.keys()]) {
+          if (k.startsWith(prefix) || k.includes(`::${prefix}`)) Memory.captureRawBodyCache.delete(k);
+        }
+      }
+    }
     try { Memory.globalRoutingCatalogCache?.clear?.(); } catch (_) {}
     try { Memory.copiedChatSourceCache?.clear?.(); } catch (_) {}
     if (!scopeKey) {
@@ -43266,7 +43368,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const ref=captureRawRef(record.captureRawRef);
       if(!ref||ref.scopeKey!==scope.key
         ||ref.storageKey!==CAPTURE_RAW_DELTA_PREFIX+ref.scopeKey+'::'+ref.binding+'::'+ref.digest)throw Error('CAPTURE_RAW_REFERENCE_INVALID');
+      const cacheKey = !options.read && !options.offline && binding
+        ? `${scope.key}::${binding}::${ref.storageKey}::${ref.digest}`
+        : '';
       let body=bodies.get(ref.storageKey);
+      if(!body && cacheKey && Memory.captureRawBodyCache instanceof Map && Memory.captureRawBodyCache.has(cacheKey)){
+        body = Memory.captureRawBodyCache.get(cacheKey);
+        Memory.captureRawBodyCache.delete(cacheKey);
+        Memory.captureRawBodyCache.set(cacheKey, body);
+        bodies.set(ref.storageKey, body);
+      }
       if(!body){
         const raw=options.read?await options.read(ref.storageKey):await RisuCompat.getStorageItem(ref.storageKey,null);
         stats.reads+=1;stats.chars+=typeof raw==='string'?raw.length:0;
@@ -43274,6 +43385,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         body=safeJsonParse(raw,null);
         if(body?.schema!==CAPTURE_RAW_DELTA_SCHEMA||body.scopeKey!==scope.key||body.binding!==ref.binding)throw Error('CAPTURE_RAW_REFERENCE_BINDING_INVALID');
         bodies.set(ref.storageKey,body);
+        if(cacheKey){
+          if(!(Memory.captureRawBodyCache instanceof Map)) Memory.captureRawBodyCache = new Map();
+          if(Memory.captureRawBodyCache.has(cacheKey)) Memory.captureRawBodyCache.delete(cacheKey);
+          Memory.captureRawBodyCache.set(cacheKey, body);
+          while(Memory.captureRawBodyCache.size > CAPTURE_RAW_BODY_CACHE_MAX){
+            const oldestKey = Memory.captureRawBodyCache.keys().next().value;
+            if(!oldestKey) break;
+            Memory.captureRawBodyCache.delete(oldestKey);
+          }
+        }
       }
       const raw=body.packets?.[ref.packetIndex]?.raw;
       if(typeof raw!=='string'||stableHash64(raw)!==ref.rawDigest)throw Error('CAPTURE_RAW_REFERENCE_PACKET_MISMATCH');
@@ -43356,7 +43477,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const stored = storedOutcome.value ?? null;
     const hydratedRaw = await hydrateCapturedLedgerRaw(stored,scope);
     if (Memory.unloaded || !ownsRuntime()) return inactive();
-    const ledger = normalizeStorageLedger(hydratedRaw, scope);
+    const rawStringMemoEligible = typeof stored === 'string' && stored.length > 0 && hydratedRaw === stored;
+    const scopeKeyStr = text(scope?.key || scope?.scopeKey || '');
+    let ledger;
+    if (rawStringMemoEligible && Memory.parsedLedgerMemo && Memory.parsedLedgerMemo.storageKey === key && Memory.parsedLedgerMemo.scopeKey === scopeKeyStr && Memory.parsedLedgerMemo.raw === stored) {
+      ledger = cloneNormalizedLedgerMemo(Memory.parsedLedgerMemo.ledger);
+    } else {
+      ledger = normalizeStorageLedger(hydratedRaw, scope);
+      if (rawStringMemoEligible) {
+        Memory.parsedLedgerMemo = {
+          storageKey: key,
+          scopeKey: scopeKeyStr,
+          raw: stored,
+          ledger: cloneNormalizedLedgerMemo(ledger)
+        };
+      }
+    }
     const nativeCopyDetach = detachNativeChatCopySourceStorageArtifacts(ledger, scope);
     const adopted = await inheritStorageLedgerForCopiedChat(nativeCopyDetach.ledger, scope, options);
     if (Memory.unloaded || !ownsRuntime()) return inactive();
@@ -46360,17 +46496,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       transferId: transfer
     };
   };
-  const searchAcceptedPartialMemory = async (scope,query) => {
+  const searchAcceptedPartialMemory = async (scope, query, preloaded = null) => {
     if(!scope?.confident||!scope.key)return [];
     const raw=await RisuCompat.getStorageItem(partialMemoryKey(scope.key),null),store=typeof raw==='string'?safeJsonParse(raw,null):raw;
     if(!store||store.schema!=='hayaku.partial_memory.v1'||store.scopeKey!==scope.key||store.digest!==stableHash64(JSON.stringify(store.records)))return [];
     // Use the same source/worldline/body checks as recovery coverage. A matching
     // turn number or an old audit copy alone must not retire historical evidence.
-    const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
-    const storedLedger=await loadStorageLedger(scope,{hydrateArchive:false,authoritativeSnapshot:snapshot});
-    if(storedLedger.enabled!==true)return [];
-    const worldline=reconcileTurnWorldline(storedLedger.worldline,snapshot,scope);
-    const boundLedger=bindStorageLedgerToSnapshot({...storedLedger,worldline},snapshot,worldline).ledger;
+    let snapshot = preloaded?.snapshot || null;
+    let boundLedger = preloaded?.boundLedger || null;
+    if (!snapshot || boundLedger?.enabled !== true) {
+      snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
+      const storedLedger=await loadStorageLedger(scope,{hydrateArchive:false,authoritativeSnapshot:snapshot});
+      if(storedLedger.enabled!==true)return [];
+      const worldline=reconcileTurnWorldline(storedLedger.worldline,snapshot,scope);
+      boundLedger=bindStorageLedgerToSnapshot({...storedLedger,worldline},snapshot,worldline).ledger;
+    }
     const coveredTurns=new Set(exactHayakuTurnCoverage(snapshot,boundLedger,scope.key).coveredTurns);
     const units=ensureArray(collectNativeColdStartEvidence(scope).units),candidates=[];
     for(const row of ensureArray(store.records)){
@@ -57507,11 +57647,20 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
+      const nextDisabled=!loaded||applying;
+      for(const row of rows){
+        for(const node of row.element.querySelectorAll('input,textarea,select,button'))if(node.disabled!==nextDisabled)node.disabled=nextDisabled;
+        const blank=isEmpty(row);const nextRemoveDisabled=nextDisabled||blank;
+        if(row.remove.disabled!==nextRemoveDisabled)row.remove.disabled=nextRemoveDisabled;
+        row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');
+      }
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
-      apply.disabled=!loaded||applying||!dirty;
-      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
-      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+      if(apply.disabled!==(!loaded||applying||!dirty))apply.disabled=!loaded||applying||!dirty;
+      if(add.disabled!==nextDisabled)add.disabled=nextDisabled;
+      if(defaults.disabled!==nextDisabled)defaults.disabled=nextDisabled;
+      if(undo.disabled!==(nextDisabled||!removed.length))undo.disabled=nextDisabled||!removed.length;
+      const nextPreviewDisabled=nextDisabled||readingSample||typeof config.readSample!=='function';
+      if(previewButton.disabled!==nextPreviewDisabled)previewButton.disabled=nextPreviewDisabled;
     }
     async function showPreview() {
       if(!sample)return;
@@ -57631,7 +57780,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
 
 function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
-.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 168px;transition:border-color .16s,box-shadow .16s,background .16s}
 .ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
 .ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
 .ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
@@ -57644,7 +57793,7 @@ function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
 .ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
 .ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
-.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default;content-visibility:visible;contain-intrinsic-size:none}
 .ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
 @media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
 `;}
@@ -57740,7 +57889,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
     return memorySuiteNormalizeSourceRules(draft);
   }
-  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))if(n.disabled!==value)n.disabled=value;const runDisabled=value||!applied;if(run.disabled!==runDisabled)run.disabled=runDisabled;}
   for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
     const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
     const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
@@ -61867,7 +62016,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card&&card.contains(list)&&root.querySelector('[data-recovery-panel="reanalysis"]')?.hidden!==true;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
     const selectAll=card.querySelector('[data-reanalysis-select-all]'),selectNone=card.querySelector('[data-reanalysis-select-none]'),count=card.querySelector('[data-reanalysis-count]');
-    const sync=()=>{const locked=busy||reviewSaving,n=selected().length,total=list.querySelectorAll('input').length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;selectAll.disabled=locked||!total||n===total;selectNone.disabled=locked||!n;count.textContent='선택 '+n+' / '+total;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length,total=list.querySelectorAll('input').length;if(run.disabled!==(locked||!n))run.disabled=locked||!n;if(review.hidden!==(n!==1))review.hidden=n!==1;if(review.disabled!==(locked||n!==1))review.disabled=locked||n!==1;if(refresh.disabled!==locked)refresh.disabled=locked;if(selectAll.disabled!==(locked||!total||n===total))selectAll.disabled=locked||!total||n===total;if(selectNone.disabled!==(locked||!n))selectNone.disabled=locked||!n;count.textContent='선택 '+n+' / '+total;for(const input of list.querySelectorAll('input'))if(input.disabled!==locked)input.disabled=locked;};
     const setAll=checked=>{
       if(busy||reviewSaving||!inventory||!current())return;reviewVersion++;panel.replaceChildren();
       const inputs=[...list.querySelectorAll('input')];inputs.forEach(node=>{node.checked=checked;});
@@ -65347,6 +65496,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         promptCacheModeOf,
         packetCacheStaticContract,
         canonicalPromptCacheStringify,
+        hayakuInjectionFingerprint,
+        hayakuMessageArrayDigest,
+        invalidateExternalLedgerCaches,
+        loadStorageLedger,
+        hydrateCapturedLedgerRaw,
+        searchAcceptedPartialMemory,
+        debugLog,
         promptCacheTransportInfo,
         detectPromptCacheProvider,
         attestPromptCacheStaticContract,

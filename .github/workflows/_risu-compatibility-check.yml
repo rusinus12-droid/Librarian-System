@@ -13,6 +13,8 @@ jobs:
   risu-compatibility-check:
     name: RisuAI Compatibility Check
     runs-on: ubuntu-latest
+    env:
+      NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
     permissions:
       contents: read
     steps:
@@ -101,6 +103,9 @@ jobs:
 
       - name: Write job summary
         if: always()
+        env:
+          UPSTREAM_REPO: ${{ steps.lock.outputs.repository }}
+          UPSTREAM_COMMIT: ${{ steps.lock.outputs.commit }}
         run: |
           node -e '
           const fs = require("node:fs");

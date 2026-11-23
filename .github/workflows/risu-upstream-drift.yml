@@ -15,6 +15,8 @@ jobs:
   risu-upstream-drift:
     name: risu-upstream-drift
     runs-on: ubuntu-latest
+    env:
+      NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
     permissions:
       contents: read
     steps:
@@ -82,7 +84,7 @@ jobs:
           retention-days: 30
 
       - name: Fail closed if upstream drift requires review
-        if: steps.drift.outputs.status == 'upstream_review_required'
+        if: steps.drift.outputs.status != 'compatible_pin_current'
         run: |
           echo "Notice: RisuAI upstream drift detected. Review required before updating compatibility pin."
           exit 1
