@@ -660,3 +660,131 @@ test('11) Contraception/menstruation directives diversify reaction tone per char
   assert.match(strictDir, /이성적 경계|현실적 위험/);
   assert.notEqual(lazyDir, shyDir);
 });
+
+test('12) Lore-based male genitalia size estimation, persistent recording, and female penetrative stimulation scaling', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+
+  // 12a: Lore estimator unit checks + stature/height false-positive guard
+  const cmEst = f.host.plugin.debugEstimateMaleSizeFromLore({ name: '푸딩', loreText: '남성기 19.5cm의 거근' });
+  assert.equal(cmEst.size, 'very_large');
+  assert.equal(cmEst.cm, 19.5);
+
+  assert.equal(f.host.plugin.debugEstimateMaleSizeFromLore({ name: '준호', loreText: '평균 이하의 작은 물건을 가진 편' }).size, 'small');
+  assert.equal(f.host.plugin.debugEstimateMaleSizeFromLore({ name: '민수', loreText: '극소 왜소 콤플렉스가 있다.' }).size, 'very_small');
+  assert.equal(f.host.plugin.debugEstimateMaleSizeFromLore({ name: '태오', loreText: '키 183cm의 평범한 회사원이다.' }).size, 'average');
+  const muscular = f.host.plugin.debugEstimateMaleSizeFromLore({ name: '강현', loreText: '190cm 건장한 근육질 체격의 격투기 선수' });
+  assert.ok(['large', 'very_large'].includes(muscular.size));
+  assert.equal(f.host.plugin.debugEstimateMaleSizeFromLore({ name: '지민', loreText: '단신에 왜소한 체격의 미소년' }).size, 'small');
+  assert.equal(f.host.plugin.debugEstimateMaleSizeFromLore({ name: '무명', loreText: '' }).size, 'average');
+
+  // 12b: Male persona size estimated from lore is recorded in debugIntimacyMaleSizes without creating an RP persona preference card
+  const autoPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'male-size-auto-12',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    recent: {
+      personaText: '푸딩은 대물 거근으로 알려져 있다.',
+      visibleMessages: [{ role: 'char', content: '천하연이 침대 위에서 푸딩을 바라보았다.' }],
+      latestUser: '푸딩이 천하연의 안으로 깊이 삽입해 허리를 움직였다.'
+    }
+  });
+  const recorded = f.host.plugin.debugIntimacyMaleSizes({ scopeKey: 'male-size-auto-12' });
+  const pudingEntry = Object.values(recorded).find(item => item?.name === '푸딩');
+  assert.ok(pudingEntry && pudingEntry.size === 'very_large', 'male persona size recorded persistently');
+  const autoFemale = autoPkt.gauges.find(g => g.name === '천하연');
+  assert.equal(autoFemale.partnerSizeModifier?.size, 'very_large');
+  assert.match(autoFemale.line, /남성기/);
+  const loadedAfterAuto = await f.host.plugin.debugIntimacyLoadCards();
+  assert.equal((loadedAfterAuto['male-size-auto-12'] || []).some(c => c.name === '푸딩'), false, 'RP mode does not pollute preference cards with a persona card');
+
+  // 12c: User-set male size (origin === 'user') is preserved against subsequent lore/profile overwrites
+  await f.host.plugin.debugSetIntimacyMaleSize({
+    scopeKey: 'male-size-user-lock',
+    name: '강현',
+    size: 'small',
+    cm: 11,
+    basis: '사용자 직접 설정'
+  });
+  const novelIntimacySettings = {
+    ...(await f.host.plugin.getRuntimeSettings()),
+    mode: 'normal',
+    writingMode: 'novel',
+    nsfwMode: 'direct',
+    nsfwGuidanceEnabled: true,
+    enableCharacterAide: true,
+    enableIntimacyAide: true
+  };
+  const recAfterLock = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: novelIntimacySettings,
+    parsed: {
+      intimacyReadings: [{ participant: '강현', phase: 'intercourse', position: '정상위', summary: '강현이 움직였다.' }],
+      intimacyProfiles: [{
+        name: '강현',
+        gender: 'male',
+        male_size: 'very_large',
+        male_size_cm: 21,
+        male_size_basis: '임의 로어',
+        liked_positions: '정상위',
+        disliked_positions: '',
+        sensitive_zones: '귀두',
+        dull_zones: '',
+        zone_defaults: [{ zone: 'penis_glans', sensitivity: 40, development: 30 }],
+        foreplay_stance: 'likes',
+        foreplay_style: '차분함',
+        intercourse_stance: 'likes',
+        intercourse_style: '꾸준함',
+        afterplay_stance: 'likes',
+        afterplay_style: '다정함',
+        basis: '테스트'
+      }]
+    }
+  });
+  const lockedEntry = Object.values(f.host.plugin.debugIntimacyMaleSizes({ scopeKey: 'male-size-user-lock' })).find(item => item?.name === '강현');
+  assert.equal(lockedEntry?.size, 'small', 'user-set male size must not be overwritten by subsequent lore estimate');
+  assert.equal(recAfterLock.cards.find(c => c.name === '강현')?.maleSize, 'small', 'newly created card inherits user-locked size');
+
+  // 12d: Monotonic female penetrative stimulation scaling across all 5 tiers + non-penetrative foreplay invariance
+  const deltas = {};
+  const lubs = {};
+  const foreplayDeltas = {};
+  for (const tier of ['very_small', 'small', 'average', 'large', 'very_large']) {
+    const sk = `male-size-scale-${tier}`;
+    await f.host.plugin.debugSetIntimacyMaleSize({ scopeKey: sk, name: '푸딩', size: tier });
+    const penPkt = f.host.plugin.debugIntimacyPacket({
+      characterName: '천하연',
+      personaName: '푸딩',
+      scopeKey: sk,
+      profileGenders: { 천하연: 'female', 푸딩: 'male' },
+      recent: {
+        visibleMessages: [{ role: 'char', content: '천하연이 시트를 움켜쥐며 푸딩을 받아들였다.' }],
+        latestUser: '푸딩이 천하연의 질내 깊숙이 삽입해 허리를 움직였다.'
+      }
+    });
+    const fGauge = penPkt.gauges.find(g => g.name === '천하연');
+    deltas[tier] = fGauge.climaxGauge;
+    lubs[tier] = fGauge.lubricationGauge;
+
+    const skForeplay = `male-size-foreplay-${tier}`;
+    await f.host.plugin.debugSetIntimacyMaleSize({ scopeKey: skForeplay, name: '푸딩', size: tier });
+    const forePkt = f.host.plugin.debugIntimacyPacket({
+      characterName: '천하연',
+      personaName: '푸딩',
+      scopeKey: skForeplay,
+      profileGenders: { 천하연: 'female', 푸딩: 'male' },
+      recent: {
+        visibleMessages: [{ role: 'char', content: '천하연이 작게 숨을 삼켰다.' }],
+        latestUser: '푸딩이 천하연의 입술에 키스하고 가슴을 부드럽게 애무했다.'
+      }
+    });
+    foreplayDeltas[tier] = forePkt.gauges.find(g => g.name === '천하연').climaxGauge;
+  }
+
+  assert.ok(deltas.very_small < deltas.small, `expected very_small (${deltas.very_small}) < small (${deltas.small})`);
+  assert.ok(deltas.small < deltas.average, `expected small (${deltas.small}) < average (${deltas.average})`);
+  assert.ok(deltas.average < deltas.large, `expected average (${deltas.average}) < large (${deltas.large})`);
+  assert.ok(deltas.large < deltas.very_large, `expected large (${deltas.large}) < very_large (${deltas.very_large})`);
+  assert.ok(lubs.very_small < lubs.average && lubs.average < lubs.very_large, `expected lubrication monotonic (${JSON.stringify(lubs)})`);
+  assert.equal(foreplayDeltas.very_small, foreplayDeltas.very_large, 'non-penetrative foreplay stimulation must not change with male genitalia size');
+});

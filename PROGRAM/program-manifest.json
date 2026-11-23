@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T17:46:29.993Z",
+  "generatedAt": "2026-11-23T22:45:20.036Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "8d1c1979ef3f68efa80614a52916f44cde9c869c287a92b1bf409daf89c6dbef",
+      "sha256": "c487b1e7b9f845709d3f0d34cf80cd4467d37c37faba4967615834a2a32f6ea0",
       "bytes": 20734
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,8 +4340,8 @@
       "bytes": 4036575
     },
     "plugins/GRADIA.js": {
-      "sha256": "4bdb8b6918139a79b2243c9a4094cb265471c3dd99fc14cdf04866bda3245dd4",
-      "bytes": 4431438
+      "sha256": "cc5309358ccdfe455ce4e66a3bf3c888929de6b3c2d0439557101a378b815681",
+      "bytes": 4463120
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "91fa610e3bd052ce4c60bfe322edee28d5160bc43cf51f832002ef787b26b056",
@@ -6960,8 +6960,8 @@
       "bytes": 30982
     },
     "tests/gradia_world_sim_and_intimacy_fixes_test.cjs": {
-      "sha256": "701747b21dc4be3b7df2dc48ed5b337c9c84b9e92b6d8ba40f2759ac59fb47a5",
-      "bytes": 34029
+      "sha256": "c11dc101f60e998959e7beb4f327f19c88c51f4a429e394ce0673266a8c6c311",
+      "bytes": 41103
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",
@@ -7602,6 +7602,10 @@
     "tests/hayaku_missed_after_request_canonical_packet_test.cjs": {
       "sha256": "4c32e72ea04acb47a6a096c8617e4e32fa0101c5fec9d91d378a577e6081482b",
       "bytes": 6260
+    },
+    "tests/hayaku_mobile_gui_fit_browser_test.cjs": {
+      "sha256": "aa9f5add68f646789bc3a092cc8a29971b908259383103d845f702ceef4f8174",
+      "bytes": 13016
     },
     "tests/hayaku_native_cold_start_contract_identity_test.cjs": {
       "sha256": "c4b7d2a2f9733c6125c51de468b28f2c1b8236522d79e1e4b605db192af5f90d",

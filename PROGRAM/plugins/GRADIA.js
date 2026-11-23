@@ -4157,6 +4157,7 @@ ${BIANCA_PERSONA_TEXT}`;
     shadowPrevious: {},
     // 정사 AIDE preference cards: loaded from storage once, then written through on change.
     intimacyCards: null,
+    intimacyMaleSizes: null,
     // 관계 시뮬레이터: this run's readings (memory only), the loaded relationship state, and the run's prepared rolls.
     relationshipSimReadings: {},
     // 지식 경계: this run's verified leak and kept-line readings (memory only).
@@ -31214,15 +31215,156 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return out;
   };
   const intimacyZoneStatsAllZero = stats => !stats || INTIMACY_BODY_PARTS.every(([id]) => !stats[id]?.sensitivity && !stats[id]?.development);
+  const INTIMACY_MALE_SIZES = Object.freeze(['very_small', 'small', 'average', 'large', 'very_large']);
+  const INTIMACY_MALE_SIZE_META = Object.freeze({
+    very_small: Object.freeze({ label: '작음·왜소', defaultCm: 9, mult: 0.72, bonus: -6, lubMult: 0.80, effectLabel: '자극 감소(−−)' }),
+    small: Object.freeze({ label: '평균 이하', defaultCm: 11, mult: 0.86, bonus: -3, lubMult: 0.90, effectLabel: '자극 감소(−)' }),
+    average: Object.freeze({ label: '평균', defaultCm: 14, mult: 1.00, bonus: 0, lubMult: 1.00, effectLabel: '표준(±0)' }),
+    large: Object.freeze({ label: '평균 이상·큼', defaultCm: 17, mult: 1.18, bonus: 4, lubMult: 1.12, effectLabel: '자극 가산(+)' }),
+    very_large: Object.freeze({ label: '매우 큼·거근', defaultCm: 20, mult: 1.35, bonus: 8, lubMult: 1.25, effectLabel: '자극 대폭 가산(++)' })
+  });
+  const INTIMACY_PENETRATIVE_ZONES = Object.freeze(new Set(['vaginal_canal', 'cervix', 'anal_perineum']));
+  const normalizeIntimacyMaleSizeTier = value => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (INTIMACY_MALE_SIZES.includes(raw)) return raw;
+    if (/^(?:very[_\s-]*small|micro|tiny)$|극소|왜소|소근|매우\s*작/.test(raw)) return 'very_small';
+    if (/^(?:small|below[_\s-]*avg|below[_\s-]*average)$|평균\s*이하|작은|아담/.test(raw)) return 'small';
+    if (/^(?:average|avg|normal|medium|standard)$|평균|보통|평범/.test(raw)) return 'average';
+    if (/^(?:very[_\s-]*large|huge|monster|macro|xl)$|거근|대물|매우\s*큼|매우\s*큰/.test(raw)) return 'very_large';
+    if (/^(?:large|big|above[_\s-]*avg|above[_\s-]*average)$|평균\s*이상|큼|큰\s*편/.test(raw)) return 'large';
+    return '';
+  };
+  const normalizeIntimacyMaleSizeCm = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 6 || n > 28) return null;
+    return Math.round(n * 10) / 10;
+  };
+  const intimacyMaleSizeFromCm = cm => {
+    const n = normalizeIntimacyMaleSizeCm(cm);
+    if (n === null) return '';
+    if (n < 10.5) return 'very_small';
+    if (n < 12.5) return 'small';
+    if (n <= 15.5) return 'average';
+    if (n <= 18.5) return 'large';
+    return 'very_large';
+  };
+  const intimacyMaleSizeModifier = (sizeTier = '', cm = null) => {
+    const normCm = normalizeIntimacyMaleSizeCm(cm);
+    const tier = normalizeIntimacyMaleSizeTier(sizeTier) || intimacyMaleSizeFromCm(normCm) || 'average';
+    const meta = INTIMACY_MALE_SIZE_META[tier] || INTIMACY_MALE_SIZE_META.average;
+    return {
+      size: tier,
+      cm: normCm !== null ? normCm : meta.defaultCm,
+      ...meta
+    };
+  };
+  const normalizeIntimacyMaleSizeEntry = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const name = compact(value.name || '', 80);
+    const cm = normalizeIntimacyMaleSizeCm(value.cm ?? value.maleSizeCm ?? value.male_size_cm);
+    const size = normalizeIntimacyMaleSizeTier(value.size ?? value.maleSize ?? value.male_size) || intimacyMaleSizeFromCm(cm);
+    if (!name || !size) return null;
+    const meta = INTIMACY_MALE_SIZE_META[size] || INTIMACY_MALE_SIZE_META.average;
+    return {
+      name,
+      size,
+      cm: cm !== null ? cm : meta.defaultCm,
+      basis: compact(value.basis ?? value.maleSizeBasis ?? value.male_size_basis ?? '', 240),
+      origin: value.origin === 'user' ? 'user' : 'lore',
+      updatedAt: compact(value.updatedAt || value.createdAt || '', 40)
+    };
+  };
+  const normalizeIntimacyMaleSizeMap = value => {
+    const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [rawScope, rawBucket] of Object.entries(parsed)) {
+      const scopeKey = compact(rawScope, 512);
+      if (!scopeKey || !rawBucket || typeof rawBucket !== 'object' || Array.isArray(rawBucket)) continue;
+      const bucket = {};
+      for (const [rawPersonKey, rawEntry] of Object.entries(rawBucket)) {
+        const normKey = compact(normalizeContinuityAlias(rawEntry?.name || rawPersonKey) || rawPersonKey, 80).toLowerCase();
+        const entry = normalizeIntimacyMaleSizeEntry(rawEntry);
+        if (normKey && entry) bucket[normKey] = entry;
+      }
+      if (Object.keys(bucket).length) out[scopeKey] = bucket;
+    }
+    return out;
+  };
+  const estimateMaleSizeFromLore = (name = '', loreText = '') => {
+    const raw = String(loreText || '');
+    if (!raw.trim()) {
+      return { name: compact(name, 80), size: 'average', cm: INTIMACY_MALE_SIZE_META.average.defaultCm, basis: '로어 명시 없음 · 평균 기준 추정', origin: 'lore' };
+    }
+    const sanitized = raw.replace(/(?:키|신장|height)\s*[:은는이가]?\s*\d{2,3}(?:\.\d+)?\s*(?:cm|센치|센티|m\b)?/gi, ' ');
+    const genitalContextRe = /남성기|성기|음경|자지|페니스|귀두|기둥|물건|거근|소근|대물|크기|길이|굵기|penis|cock|dick|shaft|length|girth|size/i;
+    for (const clause of sanitized.split(/(?:\.(?!\d)|[!?;\n,])+|(?:\s{2,})/)) {
+      if (!clause || !genitalContextRe.test(clause)) continue;
+      const cmMatch = clause.match(/(\d{1,2}(?:\.\d+)?)\s*(?:cm|센치|센티)\b/i)
+        || clause.match(/(?:남성기|성기|음경|자지|페니스|물건|길이)[^\d\n]{0,12}(\d{1,2}(?:\.\d+)?)\s*(?:cm|센치|센티)/i);
+      if (cmMatch) {
+        const cmVal = normalizeIntimacyMaleSizeCm(cmMatch[1]);
+        if (cmVal !== null) {
+          const size = intimacyMaleSizeFromCm(cmVal);
+          return { name: compact(name, 80), size, cm: cmVal, basis: `로어 명시 치수 (${cmVal}cm)`, origin: 'lore' };
+        }
+      }
+      const inMatch = clause.match(/(\d(?:\.\d+)?)\s*(?:inch|inches|인치)\b/i);
+      if (inMatch) {
+        const inches = Number(inMatch[1]);
+        if (Number.isFinite(inches) && inches >= 2.5 && inches <= 11) {
+          const cmVal = normalizeIntimacyMaleSizeCm(inches * 2.54);
+          if (cmVal !== null) {
+            const size = intimacyMaleSizeFromCm(cmVal);
+            return { name: compact(name, 80), size, cm: cmVal, basis: `로어 명시 치수 (${cmVal}cm)`, origin: 'lore' };
+          }
+        }
+      }
+    }
+    if (/거근|대물|우람한\s*(?:물건|성기|남성기|음경|자지)|압도적(?:인)?\s*(?:크기|굵기|물건)|흉기\s*수준|비정상적으로\s*(?:큰|굵은)|엄청나게\s*(?:큰|굵은)|horse[- ]?hung|(?:huge|massive|monster|enormous)\s+(?:cock|dick|penis|member)/i.test(sanitized)) {
+      return { name: compact(name, 80), size: 'very_large', cm: INTIMACY_MALE_SIZE_META.very_large.defaultCm, basis: '로어 직접 묘사 (대물·거근)', origin: 'lore' };
+    }
+    if (/극소|소근|왜소한\s*(?:성기|남성기|음경|물건|고추|자지)|(?:성기|남성기|음경|물건)(?:이|가|은|는)?\s*왜소|왜소\s*콤플렉스|매우\s*작(?:은|다|고)|터무니없이\s*작|micro\s*penis|(?:tiny|very\s+small|micro)\s+(?:cock|dick|penis|member)/i.test(sanitized)) {
+      return { name: compact(name, 80), size: 'very_small', cm: INTIMACY_MALE_SIZE_META.very_small.defaultCm, basis: '로어 직접 묘사 (왜소·작음)', origin: 'lore' };
+    }
+    if (/평균\s*이상|평균보다\s*(?:크|큰|굵)|(?:큰|굵은|두툼한|묵직한|길고\s*굵은)\s*(?:편|물건|성기|남성기|음경|자지)|굵고\s*긴|두툼하고\s*긴|남들보다\s*(?:큰|굵은|월등)|above\s+average|well[- ]endowed|well[- ]hung|(?:big|large|thick)\s+(?:cock|dick|penis|member)/i.test(sanitized)) {
+      return { name: compact(name, 80), size: 'large', cm: INTIMACY_MALE_SIZE_META.large.defaultCm, basis: '로어 직접 묘사 (평균 이상·큼)', origin: 'lore' };
+    }
+    if (/평균\s*이하|평균보다\s*작|다소\s*작(?:은|다)|작은\s*(?:편|물건|성기|남성기|음경|자지)|아담한\s*(?:물건|성기|남성기)|빈약한\s*(?:물건|성기)|왜소콤플렉스|below\s+average|smaller\s+than\s+average|(?:small|modest|short)\s+(?:cock|dick|penis|member)/i.test(sanitized)) {
+      return { name: compact(name, 80), size: 'small', cm: INTIMACY_MALE_SIZE_META.small.defaultCm, basis: '로어 직접 묘사 (평균 이하)', origin: 'lore' };
+    }
+    if (/(?:남성기|성기|음경|자지|크기|물건|penis|cock|size)[^.\n]{0,20}(?:평균|보통|평범)|(?:평균적인?|평범한|보통)\s*(?:크기|물건|성기|남성기|남자|수준)|average\s+(?:size|length|cock|dick|penis)/i.test(sanitized)) {
+      return { name: compact(name, 80), size: 'average', cm: INTIMACY_MALE_SIZE_META.average.defaultCm, basis: '로어 직접 묘사 (평균)', origin: 'lore' };
+    }
+    const hasGiantFrame = /(?:거구|19\d\s*cm|20\d\s*cm)/i.test(raw) && /(?:근육질|떡대|우람한\s*체격)/i.test(raw);
+    if (hasGiantFrame) {
+      return { name: compact(name, 80), size: 'very_large', cm: 19.5, basis: '로어 체격·피지컬 기반 추정 (거구·근육질)', origin: 'lore' };
+    }
+    if (/장신|18[5-9]\s*cm|19\d\s*cm|20\d\s*cm|건장|근육질|떡대|거구|우람한\s*체격|넓은\s*어깨|운동선수|격투기|tall|muscular|broad[- ]shouldered|athletic\s+build|large\s+frame/i.test(raw)) {
+      return { name: compact(name, 80), size: 'large', cm: INTIMACY_MALE_SIZE_META.large.defaultCm, basis: '로어 체격·피지컬 기반 추정 (건장·장신)', origin: 'lore' };
+    }
+    if (/단신|15\d\s*cm|16[0-4]\s*cm|왜소한\s*체격|마르고\s*작은|가녀린|병약|미소년|소년\s*체형|petite|frail|short\s+stature|slight\s+build|boyish/i.test(raw)) {
+      return { name: compact(name, 80), size: 'small', cm: 11.5, basis: '로어 체격·피지컬 기반 추정 (왜소·단신)', origin: 'lore' };
+    }
+    return { name: compact(name, 80), size: 'average', cm: INTIMACY_MALE_SIZE_META.average.defaultCm, basis: '로어 명시 없음 · 평균 기준 추정', origin: 'lore' };
+  };
   const normalizeIntimacyCard = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const name = compact(value.name || '', 80);
+    const gender = value.gender === 'male' ? 'male' : value.gender === 'female' ? 'female' : '';
     const sensitiveZones = compact(value.sensitiveZones ?? value.sensitive_zones ?? '', 240);
     const dullZones = compact(value.dullZones ?? value.dull_zones ?? '', 240);
+    const maleSizeCm = gender === 'female' ? null : normalizeIntimacyMaleSizeCm(value.maleSizeCm ?? value.male_size_cm);
+    const maleSize = gender === 'female' ? '' : (normalizeIntimacyMaleSizeTier(value.maleSize ?? value.male_size) || intimacyMaleSizeFromCm(maleSizeCm));
     const card = {
       id: compact(value.id || '', 64),
       name,
-      gender: value.gender === 'male' ? 'male' : value.gender === 'female' ? 'female' : '',
+      gender,
+      maleSize,
+      maleSizeCm: maleSize ? (maleSizeCm !== null ? maleSizeCm : (INTIMACY_MALE_SIZE_META[maleSize]?.defaultCm ?? null)) : null,
+      maleSizeBasis: gender === 'female' ? '' : compact(value.maleSizeBasis ?? value.male_size_basis ?? '', 240),
       likedPositions: compact(value.likedPositions || '', 240),
       dislikedPositions: compact(value.dislikedPositions || '', 240),
       sensitiveZones,
@@ -31374,6 +31516,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const stored = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
     Runtime.intimacyCards = normalizeIntimacyCardMap(stored.cards || {});
     Runtime.intimacyGauges = normalizeIntimacyGaugeMap(stored.gauges || {});
+    Runtime.intimacyMaleSizes = normalizeIntimacyMaleSizeMap(stored.maleSizes || {});
     hydrateIntimacyTelemetryFromStorage();
     return Runtime.intimacyCards;
   };
@@ -31381,9 +31524,101 @@ Begin directly with the in-world response and finish the complete same-turn draf
     version: 1,
     savedAt: new Date().toISOString(),
     cards: normalizeIntimacyCardMap(Runtime.intimacyCards || {}),
-    gauges: normalizeIntimacyGaugeMap(Runtime.intimacyGauges || {})
+    gauges: normalizeIntimacyGaugeMap(Runtime.intimacyGauges || {}),
+    maleSizes: normalizeIntimacyMaleSizeMap(Runtime.intimacyMaleSizes || {})
   });
   const intimacyCardsForScope = (scopeKey = '') => (scopeKey ? (Runtime.intimacyCards?.[scopeKey] || []) : []);
+  const intimacyMaleSizeScope = (scopeKey = '', create = false) => {
+    if (!scopeKey) return null;
+    if (!Runtime.intimacyMaleSizes) Runtime.intimacyMaleSizes = {};
+    if (!Runtime.intimacyMaleSizes[scopeKey] && create) Runtime.intimacyMaleSizes[scopeKey] = {};
+    return Runtime.intimacyMaleSizes[scopeKey] || null;
+  };
+  const intimacyMaleSizeLookupKey = name => compact(normalizeContinuityAlias(name) || name, 80).toLowerCase();
+  const getRecordedIntimacyMaleSize = (scopeKey = '', name = '', card = null) => {
+    const scope = compact(scopeKey, 512);
+    const label = compact(name || card?.name || '', 80);
+    if (!label) return null;
+    const bucket = scope ? intimacyMaleSizeScope(scope, false) : null;
+    const key = intimacyMaleSizeLookupKey(label);
+    const stored = (key && bucket?.[key])
+      || (bucket && Object.values(bucket).find(item => item?.name && extensionSameOrGivenName(item.name, label)))
+      || null;
+    const cardEntry = (card && card.gender !== 'female' && card.maleSize)
+      ? normalizeIntimacyMaleSizeEntry({
+          name: card.name || label,
+          size: card.maleSize,
+          cm: card.maleSizeCm,
+          basis: card.maleSizeBasis || card.basis,
+          origin: card.origin
+        })
+      : null;
+    if (cardEntry && cardEntry.origin === 'user') return cardEntry;
+    if (stored && stored.origin === 'user') return stored;
+    return cardEntry || stored || null;
+  };
+  const setRecordedIntimacyMaleSize = (scopeKey = '', name = '', entryInput = {}, options = {}) => {
+    const scope = compact(scopeKey, 512);
+    const label = compact(name || entryInput?.name || '', 80);
+    if (!scope || !label) return null;
+    const existing = getRecordedIntimacyMaleSize(scope, label);
+    if (existing?.origin === 'user' && options.force !== true && entryInput?.origin !== 'user') return existing;
+    const entry = normalizeIntimacyMaleSizeEntry({
+      name: label,
+      size: entryInput?.size ?? entryInput?.maleSize ?? entryInput?.male_size,
+      cm: entryInput?.cm ?? entryInput?.maleSizeCm ?? entryInput?.male_size_cm,
+      basis: entryInput?.basis ?? entryInput?.maleSizeBasis ?? entryInput?.male_size_basis,
+      origin: entryInput?.origin === 'user' ? 'user' : 'lore',
+      updatedAt: new Date().toISOString()
+    });
+    if (!entry) return null;
+    const bucket = intimacyMaleSizeScope(scope, true);
+    const key = intimacyMaleSizeLookupKey(label);
+    if (bucket && key) {
+      for (const k of Object.keys(bucket)) {
+        if (k !== key && bucket[k]?.name && extensionSameOrGivenName(bucket[k].name, label)) delete bucket[k];
+      }
+      bucket[key] = entry;
+    }
+    let cardChanged = false;
+    if (options.syncCard !== false && Runtime.intimacyCards?.[scope]) {
+      const idx = Runtime.intimacyCards[scope].findIndex(c => c.name && extensionSameOrGivenName(c.name, label));
+      if (idx >= 0) {
+        const card = Runtime.intimacyCards[scope][idx];
+        if (card.gender !== 'female' && (entry.origin === 'user' || !card.maleSize)) {
+          Runtime.intimacyCards[scope][idx] = normalizeIntimacyCard({
+            ...card,
+            gender: card.gender || 'male',
+            maleSize: entry.size,
+            maleSizeCm: entry.cm,
+            maleSizeBasis: entry.basis || card.maleSizeBasis
+          });
+          cardChanged = true;
+        }
+      }
+    }
+    if (options.persist !== false) void saveIntimacyCards().catch(() => {});
+    return { ...entry, _cardChanged: cardChanged };
+  };
+  const resolveIntimacyMaleSize = (name = '', scopeKey = '', card = null, settings = {}, recent = {}) => {
+    const label = compact(name || card?.name || '', 80);
+    if (!label) return null;
+    const existing = getRecordedIntimacyMaleSize(scopeKey, label, card);
+    if (existing) {
+      if (scopeKey && card && card.gender === 'male' && !card.maleSize) {
+        setRecordedIntimacyMaleSize(scopeKey, label, existing, { persist: false, syncCard: true });
+      } else if (scopeKey && !intimacyMaleSizeScope(scopeKey, false)?.[intimacyMaleSizeLookupKey(label)]) {
+        setRecordedIntimacyMaleSize(scopeKey, label, existing, { persist: false, syncCard: false });
+      }
+      return existing;
+    }
+    const loreText = typeof collectSafeCharacterLoreText === 'function'
+      ? collectSafeCharacterLoreText(label, scopeKey, settings, recent)
+      : '';
+    const est = estimateMaleSizeFromLore(label, loreText);
+    if (!scopeKey) return est;
+    return setRecordedIntimacyMaleSize(scopeKey, label, est, { persist: true, syncCard: true }) || est;
+  };
   const intimacyGaugeScope = (scopeKey = '', create = false) => {
     if (!scopeKey) return null;
     if (!Runtime.intimacyGauges) Runtime.intimacyGauges = {};
@@ -31460,9 +31695,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
       })
       .filter(Boolean)
       .join(', ');
+    const sizeMod = card?.gender === 'male' && card?.maleSize
+      ? intimacyMaleSizeModifier(card.maleSize, card.maleSizeCm)
+      : null;
+    const sizeLine = sizeMod
+      ? `male size: ${sizeMod.label}${sizeMod.cm ? ` (${sizeMod.cm}cm)` : ''} [penetrative stim: ${sizeMod.effectLabel}].`
+      : '';
     return [
       `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
       `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
+      sizeLine,
       `erogenous sensitivity — sensitive (×1.5): ${card.sensitiveZones || 'none on record'}; dull/resistant (×0.6): ${card.dullZones || 'none on record'}.`,
       zoneSummary ? `zone stats (sensitivity -100..+100 / development 0..100): ${zoneSummary}.` : '',
       ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
@@ -31790,11 +32032,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
       || INTIMACY_PENETRATIVE_ACT_RE.test(lastAssistant)
       || INTIMACY_PENETRATIVE_ACT_RE.test(input)
     );
+    const effectiveSettings = (settings && Object.keys(settings).length) ? settings : (Runtime.settings || Gui?.state?.runtime || {});
     let assistantCardsDirty = false;
     const resolvedGenderByName = new Map();
+    const maleSizeByName = new Map();
     for (const n of names) {
       const c = cards.find(item => item.name && (item.name === n || extensionSameOrGivenName(item.name, n))) || null;
-      resolvedGenderByName.set(n, intimacyResolveGender(n, c, recent));
+      const g = intimacyResolveGender(n, c, recent);
+      resolvedGenderByName.set(n, g);
+      if (g === 'male') {
+        const sizeEntry = resolveIntimacyMaleSize(n, scopeKey, c, effectiveSettings, recent);
+        if (sizeEntry) {
+          maleSizeByName.set(n, sizeEntry);
+          if (sizeEntry._cardChanged) assistantCardsDirty = true;
+        }
+      }
     }
     const priorUserText = text(recent?.previousTurnUser || '');
     const priorVaginalOwners = intimacyBodyPartOwners([priorUserText, lastAssistant].filter(Boolean).join('\n'), names).get('vaginal_canal') || null;
@@ -31803,6 +32055,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const zoneStats = card?.zoneStats || normalizeIntimacyZoneStats(null, card?.sensitiveZones || '', card?.dullZones || '');
       const multMap = Object.fromEntries(INTIMACY_BODY_PARTS.map(([id]) => [id, intimacyZoneMultiplier(zoneStats[id])]));
       const gender = resolvedGenderByName.get(name) || intimacyResolveGender(name, card, recent);
+      const ownMaleSize = gender === 'male' ? (maleSizeByName.get(name) || resolveIntimacyMaleSize(name, scopeKey, card, effectiveSettings, recent)) : null;
       const showClimax = gender !== 'male';
       const showEjac = gender === 'male';
       const normKey = compact(name, 80).toLowerCase();
@@ -31942,20 +32195,56 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
         return { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink };
       };
+      let partnerSizeModifier = null;
+      const resolveActiveMaleSizeForStep = stepText => {
+        if (!showClimax || !malePeers.length) return null;
+        const activeMale = malePeers.find(peer => extensionTextMentionsName(stepText, peer))
+          || malePeers.find(peer => bodyStateIsPersona(peer) || (personaName && extensionSameOrGivenName(peer, personaName)))
+          || malePeers[0];
+        return (activeMale && maleSizeByName.get(activeMale)) || null;
+      };
+      const computeFemaleZoneGain = (id, baseC, mult, dim, stepText, activeMaleSize) => {
+        const isPenetrative = INTIMACY_PENETRATIVE_ZONES.has(id)
+          && !/손가락(?:만|으로만)|도구|바이브|딜도|fingering\s+only|toy|vibrator|dildo/i.test(stepText);
+        const sizeMod = (isPenetrative && activeMaleSize) ? intimacyMaleSizeModifier(activeMaleSize.size, activeMaleSize.cm) : null;
+        const cPts = sizeMod
+          ? Math.max(2, Math.round((baseC * mult * dim) * sizeMod.mult + sizeMod.bonus * dim))
+          : Math.round(baseC * mult * dim);
+        const lPts = sizeMod
+          ? Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * mult * dim * sizeMod.lubMult))
+          : Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * mult * dim);
+        if (sizeMod && sizeMod.bonus !== 0 && activeMaleSize) {
+          partnerSizeModifier = {
+            partnerName: activeMaleSize.name,
+            size: sizeMod.size,
+            cm: sizeMod.cm,
+            label: sizeMod.label,
+            mult: sizeMod.mult,
+            bonus: sizeMod.bonus,
+            effectLabel: sizeMod.effectLabel,
+            basis: activeMaleSize.basis || ''
+          };
+        }
+        return { cPts, lPts, sizeMod };
+      };
       if (settled) {
         const priorIds = new Set(Array.isArray(settled.lastMatchedIds) ? settled.lastMatchedIds : []);
         if (lastAssistant) {
           const { boosterMult, matchedParts } = scorePartsForText(lastAssistant, priorIds, { ongoingIntercourse: INTIMACY_PENETRATIVE_ACT_RE.test(lastAssistant) || INTIMACY_PENETRATIVE_ACT_RE.test(priorUserText) });
           if (matchedParts.length) {
+            const activeMaleSize = resolveActiveMaleSizeForStep(lastAssistant);
             let addC = 0;
             let addE = 0;
             let addL = 0;
             matchedParts.forEach(([id, , baseC, baseE], idx) => {
               const dim = idx === 0 ? 1.0 : 0.55;
               const zoneMult = multMap[id] || 1.0;
-              addC += showClimax ? Math.round(baseC * zoneMult * boosterMult * dim) : 0;
+              if (showClimax) {
+                const { cPts, lPts } = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, lastAssistant, activeMaleSize);
+                addC += cPts;
+                addL += lPts;
+              }
               addE += showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
-              if (showClimax) addL += Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * boosterMult * dim);
               assistantMatchedIds.push(id);
             });
             if (showClimax) climaxGauge = Math.min(100, climaxGauge + addC);
@@ -31985,6 +32274,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             lastTurnDeltaLubrication = showClimax ? -decLub : 0;
             return;
           }
+          const activeMaleSize = resolveActiveMaleSizeForStep(stepText);
           let addClimax = 0;
           let addEjac = 0;
           let addLub = 0;
@@ -31992,14 +32282,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
           matchedParts.forEach(([id, label, baseC, baseE], idx) => {
             const dim = idx === 0 ? 1.0 : 0.55;
             const zoneMult = multMap[id] || 1.0;
-            const cPts = showClimax ? Math.round(baseC * zoneMult * boosterMult * dim) : 0;
+            let cPts = 0;
+            let lPts = 0;
+            let sizeMod = null;
+            if (showClimax) {
+              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, stepText, activeMaleSize);
+              cPts = gain.cPts;
+              lPts = gain.lPts;
+              sizeMod = gain.sizeMod;
+            }
             const ePts = showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
             if (cPts <= 0 && ePts <= 0) return;
             addClimax += cPts;
             addEjac += ePts;
-            if (showClimax) addLub += Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * boosterMult * dim);
+            if (showClimax) addLub += lPts;
             currentMatchedIds.push(id);
-            partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
+            const sizeNote = sizeMod && sizeMod.bonus !== 0 ? ` · 남성기:${sizeMod.label} ${sizeMod.bonus > 0 ? `+${sizeMod.bonus}` : sizeMod.bonus}` : '';
+            partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}${sizeNote}`);
           });
           const preClimax = climaxGauge;
           const preEjac = ejaculationGauge;
@@ -32051,6 +32350,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             }
             return;
           }
+          const activeMaleSize = resolveActiveMaleSizeForStep(stepText);
           let addClimax = 0;
           let addEjac = 0;
           let addLub = 0;
@@ -32058,15 +32358,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
           matchedParts.forEach(([id, label, baseC, baseE], idx) => {
             const dim = idx === 0 ? 1.0 : 0.55;
             const zoneMult = multMap[id] || 1.0;
-            const cPts = showClimax ? Math.round(baseC * zoneMult * boosterMult * dim) : 0;
+            let cPts = 0;
+            let lPts = 0;
+            let sizeMod = null;
+            if (showClimax) {
+              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, stepText, activeMaleSize);
+              cPts = gain.cPts;
+              lPts = gain.lPts;
+              sizeMod = gain.sizeMod;
+            }
             const ePts = showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
             if (cPts <= 0 && ePts <= 0) return;
             addClimax += cPts;
             addEjac += ePts;
-            if (showClimax) addLub += Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * boosterMult * dim);
+            if (showClimax) addLub += lPts;
             if (isCurrentTurn) {
               currentMatchedIds.push(id);
-              partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
+              const sizeNote = sizeMod && sizeMod.bonus !== 0 ? ` · 남성기:${sizeMod.label} ${sizeMod.bonus > 0 ? `+${sizeMod.bonus}` : sizeMod.bonus}` : '';
+              partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}${sizeNote}`);
             } else if (lastAssistant && stepText === lastAssistant) {
               assistantMatchedIds.push(id);
             }
@@ -32192,6 +32501,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? ` [수면 중 자율 신체반응 (${sleepPerson.stage || sleepPerson.verdict || 'asleep'} · 각성 ${sleepPerson.wakefulnessGauge}/100): ${(activeGaugeNow >= 50 || sleepPerson.wakefulnessGauge >= 65) ? '눈에 띄는 뒤척임·몸부림·가쁜 잠숨·각성 자극 상승' : '무의식적 신체 반응 적립'}]`
         : '';
       const loreHook = typeof personLoreReactionBrief === 'function' ? personLoreReactionBrief(name, scopeKey, settings, recent) : '';
+      const maleSizeModNow = ownMaleSize ? intimacyMaleSizeModifier(ownMaleSize.size, ownMaleSize.cm) : null;
+      const maleSizeTag = maleSizeModNow
+        ? ` [남성기 크기: ${maleSizeModNow.label} (${maleSizeModNow.cm}cm) · 여성 삽입 자극 ${maleSizeModNow.effectLabel}]`
+        : '';
+      const partnerSizeTag = partnerSizeModifier
+        ? ` [상대 남성기 자극 보정(${forcedBondDisplayName(partnerSizeModifier.partnerName)}): ${partnerSizeModifier.label} (${partnerSizeModifier.cm}cm) → ${partnerSizeModifier.effectLabel}]`
+        : '';
       return {
         name,
         gender,
@@ -32211,15 +32527,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
         wakefulnessGauge: sleepPerson ? sleepPerson.wakefulnessGauge : 100,
         stimulatedParts: lastTurnParts,
         zoneDeltas,
+        maleSize: ownMaleSize ? { ...ownMaleSize, ...maleSizeModNow } : null,
+        partnerSizeModifier,
         inputHash: settleInfo?.inputHash || '',
-        line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText].filter(Boolean).join(' · ')}${sleepTag}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no received stimulation this turn → gauge decayed; do NOT claim their climax/ejaculation is rising unless someone stimulates them in the draft]'}${loreHook ? ` [성격·로어: ${loreHook}]` : ''}`
+        line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText].filter(Boolean).join(' · ')}${sleepTag}${maleSizeTag}${partnerSizeTag}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no received stimulation this turn → gauge decayed; do NOT claim their climax/ejaculation is rising unless someone stimulates them in the draft]'}${loreHook ? ` [성격·로어: ${loreHook}]` : ''}`
       };
     });
-    if (settleInfo?.chat) {
-      settleInfo.chat.lastInputHash = settleInfo.inputHash;
-      settleInfo.chat.lastPriorAssistantHash = settleInfo.priorAssistantHash;
-      settleInfo.chat.lastInputKey = settleInfo.inputKey;
-      settleInfo.chat.lastKnownTailHashes = settleInfo.tailHashes;
+    if (settleInfo?.chat || assistantCardsDirty) {
+      if (settleInfo?.chat) {
+        settleInfo.chat.lastInputHash = settleInfo.inputHash;
+        settleInfo.chat.lastPriorAssistantHash = settleInfo.priorAssistantHash;
+        settleInfo.chat.lastInputKey = settleInfo.inputKey;
+        settleInfo.chat.lastKnownTailHashes = settleInfo.tailHashes;
+      }
       void saveIntimacyCards().catch(() => {});
     }
     return gauges;
@@ -32241,7 +32561,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
       seen.add(clean);
       chunks.push(clean);
     };
+    const isPersonaTarget = bodyStateIsPersona(name)
+      || (Runtime.activePersonaName && extensionSameOrGivenName(name, Runtime.activePersonaName));
+    const isCharTarget = Runtime.activeCharacterName && extensionSameOrGivenName(name, Runtime.activeCharacterName);
     const refs = Runtime.lastRisuContext?.shared?.referencePacket?.references;
+    if (isPersonaTarget) {
+      const srcPersona = Runtime.lastRisuContext?.shared?.source?.persona;
+      if (srcPersona && typeof srcPersona === 'object') {
+        pushChunk(srcPersona.personaPrompt || srcPersona.persona || srcPersona.description || srcPersona.desc || srcPersona.prompt || srcPersona.content || srcPersona.text || '');
+      }
+      if (refs?.persona) {
+        if (typeof refs.persona === 'string') pushChunk(refs.persona);
+        else if (typeof refs.persona === 'object') pushChunk(refs.persona.content || refs.persona.description || refs.persona.personaPrompt || refs.persona.text || '');
+      }
+      pushChunk(recent?.personaText || recent?.personaPrompt || recent?.personaDescription || '');
+    }
+    if (isCharTarget && recent?.characterDescription) pushChunk(recent.characterDescription);
     const pool = [
       ...(Array.isArray(Gui?.characterLoreCatalog) ? Gui.characterLoreCatalog : []),
       ...(Array.isArray(refs?.lore) ? refs.lore : []),
@@ -32753,7 +33088,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const externalReaction = reuseSettled
       ? (existingTelemetry.externalReaction ?? (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null))
       : (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null);
-    const gauges = reuseSettled ? existingTelemetry.gauges : computeIntimacyParticipantGauges(recent, cards, scene, externalReaction);
+    const gauges = reuseSettled ? existingTelemetry.gauges : computeIntimacyParticipantGauges(recent, cards, scene, externalReaction, settings);
     const contraception = reuseSettled
       ? (Array.isArray(existingTelemetry.contraception) ? existingTelemetry.contraception : [])
       : (scene.engaged ? computeIntimacyContraceptionVerdicts(recent, cards, scene, gauges, externalReaction, settings) : []);
@@ -32890,7 +33225,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
             'Also add a top-level "intimacy_body_responses" array. For every participant who was physically stimulated this response (including a male initiator receiving hand/oral/intercourse stimulation via penis_glans or penis_shaft_scrotum, as well as stimulated female participants), write one item: name, zone (the body-part id that was stimulated), physical (the immediate bodily change: breath, muscle tension, wetness, flush, tremble, oversensitivity), reaction (what it makes them do or say next — a hand stopping, a sound, pulling in or away). A body that was touched changes; a response that says nothing about the body is not a response. Do not write responses for people who were not touched this turn, and never attribute a response to the person who gave the touch instead of the person who received it.',
-            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); male_size (for male participants ONLY: one of "very_small", "small", "average", "large", "very_large" estimated from explicit lore, physique/build, or scene cues — smaller than average reduces female penetrative stimulation, larger increases it; "" for female participants); male_size_cm (estimated length in cm 6..28 for males, or 0 for females); male_size_basis (brief lore/physique basis for male_size, or "" for females); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
@@ -32907,7 +33242,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
         intimacy_body_responses: { type: 'array', items: closedJsonObject({ name: str, zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, physical: str, reaction: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, male_size: { type: 'string', enum: ['', ...INTIMACY_MALE_SIZES] }, male_size_cm: { type: 'number' }, male_size_basis: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -33023,16 +33358,34 @@ Begin directly with the in-world response and finish the complete same-turn draf
           let extraL = 0;
           const extraNotes = [];
           const zoneStats = card?.zoneStats || normalizeIntimacyZoneStats(null, card?.sensitiveZones || '', card?.dullZones || '');
+          const partnerMaleGauge = showClimax
+            ? telemetryGauges.find(tg => tg.name !== g.name && (tg.gender === 'male' || tg.maleSize))
+            : null;
+          const partnerMaleSize = partnerMaleGauge
+            ? (partnerMaleGauge.maleSize || getRecordedIntimacyMaleSize(scopeKey, partnerMaleGauge.name))
+            : null;
+          const partnerSizeMod = partnerMaleSize ? intimacyMaleSizeModifier(partnerMaleSize.size, partnerMaleSize.cm) : null;
+          const postToyOnly = /손가락(?:만|으로만)|도구|바이브|딜도|fingering\s+only|toy|vibrator|dildo/i.test(reading?.summary || '');
           matchedFromReading.forEach(([id, label, baseC, baseE], idx) => {
             if (!deltas[id]) deltas[id] = { dev: 2, sens: 2 };
             const needsPostUpdate = (showClimax && g.lastTurnDeltaClimax <= 0) || (showEjac && g.lastTurnDeltaEjac <= 0);
             if (needsPostUpdate) {
               const dim = idx === 0 ? 1.0 : 0.55;
               const zoneMult = intimacyZoneMultiplier(zoneStats[id]);
-              extraC += showClimax ? Math.round(baseC * zoneMult * dim) : 0;
+              const applySize = showClimax && partnerSizeMod && INTIMACY_PENETRATIVE_ZONES.has(id) && !postToyOnly;
+              extraC += showClimax
+                ? (applySize
+                  ? Math.max(2, Math.round((baseC * zoneMult * dim) * partnerSizeMod.mult + partnerSizeMod.bonus * dim))
+                  : Math.round(baseC * zoneMult * dim))
+                : 0;
               extraE += showEjac ? Math.round(baseE * zoneMult * dim) : 0;
-              if (showClimax) extraL += Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * dim);
-              extraNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}`);
+              if (showClimax) {
+                extraL += applySize
+                  ? Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * dim * partnerSizeMod.lubMult))
+                  : Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * dim);
+              }
+              const sizePostNote = applySize && partnerSizeMod.bonus !== 0 ? ` · 남성기:${partnerSizeMod.label} ${partnerSizeMod.bonus > 0 ? `+${partnerSizeMod.bonus}` : partnerSizeMod.bonus}` : '';
+              extraNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}${sizePostNote}`);
             }
           });
           if (extraC > 0 || extraE > 0 || extraL > 0) {
@@ -33110,6 +33463,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const card = normalizeIntimacyCard({
         name: raw?.name,
         gender: raw?.gender,
+        maleSize: raw?.male_size,
+        maleSizeCm: raw?.male_size_cm,
+        maleSizeBasis: raw?.male_size_basis,
         likedPositions: raw?.liked_positions,
         dislikedPositions: raw?.disliked_positions,
         sensitiveZones: raw?.sensitive_zones,
@@ -33127,6 +33483,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
       });
       const key = normalizeContinuityAlias(card?.name || '');
       if (!card?.name || !key) continue;
+      if (card.gender === 'male') {
+        const recorded = getRecordedIntimacyMaleSize(scopeKey, card.name);
+        if (recorded?.origin === 'user') {
+          card.maleSize = recorded.size;
+          card.maleSizeCm = recorded.cm;
+          card.maleSizeBasis = recorded.basis || card.maleSizeBasis;
+        } else if (card.maleSize) {
+          setRecordedIntimacyMaleSize(scopeKey, card.name, {
+            name: card.name,
+            size: card.maleSize,
+            cm: card.maleSizeCm,
+            basis: card.maleSizeBasis || card.basis,
+            origin: 'lore'
+          }, { persist: false, syncCard: false });
+          backfilled = true;
+        }
+      }
       // The persona's tastes are the user's in RP; the stage is told so, and this holds it.
       if (intimacyModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
       const existingIdx = cards.findIndex(existing => normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name));
@@ -33135,6 +33508,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
         let touched = false;
         const next = { ...existing };
         if (!next.gender && card.gender) { next.gender = card.gender; touched = true; }
+        if (next.gender === 'male' && !next.maleSize && card.maleSize && next.origin !== 'user') {
+          next.maleSize = card.maleSize;
+          next.maleSizeCm = card.maleSizeCm;
+          if (!next.maleSizeBasis && card.maleSizeBasis) next.maleSizeBasis = card.maleSizeBasis;
+          touched = true;
+        }
         if (intimacyZoneStatsAllZero(next.zoneStats) && !intimacyZoneStatsAllZero(card.zoneStats)) {
           next.zoneStats = card.zoneStats;
           if (!next.sensitiveZones && card.sensitiveZones) next.sensitiveZones = card.sensitiveZones;
@@ -51298,6 +51677,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.loreCards = null;
     Runtime.intimacyCards = null;
     Runtime.intimacyGauges = null;
+    Runtime.intimacyMaleSizes = null;
     Runtime.relationshipState = null;
     Runtime.worldSimLogs = null;
     Runtime.gaugeContinuityLoaded = false;
@@ -51371,6 +51751,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
       const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
       const nextGauges = normalizeIntimacyGaugeMap(rawIntimacy.gauges || {});
+      const nextMaleSizes = normalizeIntimacyMaleSizeMap(rawIntimacy.maleSizes || {});
       if (src.intimacyCards.length) nextIntimacy[key] = cloneJson(src.intimacyCards);
       else delete nextIntimacy[key];
       if (src.intimacyGauges && isGradiaIntimacyGaugePopulated(src.intimacyGauges)) nextGauges[key] = cloneJson(src.intimacyGauges);
@@ -51379,7 +51760,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         version: 1,
         savedAt: new Date().toISOString(),
         cards: normalizeIntimacyCardMap(nextIntimacy),
-        gauges: normalizeIntimacyGaugeMap(nextGauges)
+        gauges: normalizeIntimacyGaugeMap(nextGauges),
+        maleSizes: nextMaleSizes
       }) !== true) {
         throw new Error('GRADIA_INTIMACY_WRITE_FAILED');
       }
@@ -57041,6 +57423,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       return;
     }
+    if (control.matches?.('[data-char-male-size-select]')) {
+      if (inputEvent) return;
+      const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+      const personName = control.dataset.charMaleSizeSelect || '';
+      if (!scopeKey || !personName) return;
+      const nextTier = normalizeIntimacyMaleSizeTier(control.value);
+      void loadIntimacyCards().then(async () => {
+        if (nextTier) {
+          const prev = getRecordedIntimacyMaleSize(scopeKey, personName);
+          const meta = INTIMACY_MALE_SIZE_META[nextTier] || INTIMACY_MALE_SIZE_META.average;
+          setRecordedIntimacyMaleSize(scopeKey, personName, {
+            name: personName,
+            size: nextTier,
+            cm: meta.defaultCm,
+            basis: prev?.origin === 'user' && prev?.basis ? prev.basis : '사용자 직접 지정',
+            origin: 'user'
+          }, { persist: false, syncCard: true, force: true });
+          await saveIntimacyCards();
+        } else {
+          const bucket = intimacyMaleSizeScope(scopeKey, false);
+          const key = intimacyMaleSizeLookupKey(personName);
+          if (bucket && key) delete bucket[key];
+          if (Runtime.intimacyCards?.[scopeKey]) {
+            Runtime.intimacyCards[scopeKey] = Runtime.intimacyCards[scopeKey].map(card => (
+              card.name && extensionSameOrGivenName(card.name, personName)
+                ? { ...card, maleSize: '', maleSizeCm: null, maleSizeBasis: '' }
+                : card
+            ));
+          }
+          await saveIntimacyCards();
+        }
+        renderIntimacyPanel(Gui.app);
+        renderChatPersonFilterBar(Gui.app);
+        mockupRefreshStatus();
+        guiSetStatus(nextTier ? `${personName} 남성기 크기 설정을 저장했습니다.` : `${personName} 남성기 크기 지정을 초기화했습니다.`);
+      });
+      return;
+    }
     if (control.matches?.('[data-char-disp-select]')) {
       if (inputEvent) return;
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
@@ -57952,11 +58372,37 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const area = (key, value, placeholder = '') => { const node = guiEl('textarea', { class: 'textarea', rows: '2', placeholder, dataset: { intimacyCardField: key, cardId: card.id } }); node.value = value || ''; return node; };
     const stance = key => { const node = guiEl('select', { class: 'select', dataset: { intimacyCardField: key, cardId: card.id } }); for (const id of INTIMACY_STANCES) mockupOption(node, id, INTIMACY_STANCE_LABELS[id]); node.value = card[key] || 'unknown'; return node; };
     const phase = (key, label) => guiEl('div', { class: 'opt-grid' }, [field(`${label} 선호`, stance(`${key}Stance`)), field(`${label} 방식·좋고 싫은 것`, area(`${key}Style`, card[`${key}Style`], '어떻게 이끌거나 따르는지, 어떤 방식을 좋아하고 싫어하는지'))]);
+    const isMaleCard = card.gender === 'male' || card.anatomyView === 'male' || Boolean(card.maleSize);
+    const maleSizeSection = isMaleCard ? (() => {
+      const sizeSel = guiEl('select', { class: 'select', dataset: { intimacyCardField: 'maleSize', cardId: card.id } });
+      mockupOption(sizeSel, '', '미지정 (로어 자동 추정)');
+      for (const id of INTIMACY_MALE_SIZES) {
+        const meta = INTIMACY_MALE_SIZE_META[id];
+        mockupOption(sizeSel, id, `${meta.label} (~${meta.defaultCm}cm · 여성 삽입 ${meta.effectLabel})`);
+      }
+      sizeSel.value = card.maleSize || '';
+      const cmInput = guiEl('input', {
+        class: 'input',
+        type: 'number',
+        min: '6',
+        max: '28',
+        step: '0.5',
+        value: card.maleSizeCm ? String(card.maleSizeCm) : '',
+        placeholder: '예: 14',
+        dataset: { intimacyCardField: 'maleSizeCm', cardId: card.id }
+      });
+      return guiEl('div', { class: 'opt-grid' }, [
+        field('남성기 크기 (여성 삽입 자극 보정)', sizeSel),
+        field('추정 길이 (cm · 6~28)', cmInput),
+        field('크기 추정 근거', input('maleSizeBasis', card.maleSizeBasis || '', '예: 로어 체격/직접 묘사 기반'))
+      ]);
+    })() : null;
     return guiEl('div', { class: 'note', dataset: { intimacyCard: card.id } }, [
       guiEl('div', { class: 'opt-grid' }, [
         field('인물', input('name', forcedBondPersonLabel(card.name), '인물 이름')),
         field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: card.origin === 'user' ? '직접 작성·수정' : `로어로 추정${card.createdAt ? ` · ${card.createdAt.slice(0, 10)}` : ''}` }))
       ]),
+      maleSizeSection,
       guiEl('div', { class: 'opt-grid' }, [
         field('좋아하는 체위', input('likedPositions', card.likedPositions, '예: 기승위, 대면좌위')),
         field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위')),
@@ -57969,7 +58415,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       phase('afterplay', '후희'),
       field('근거(로어)', area('basis', card.basis, '추정의 근거')),
       guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '카드 삭제', dataset: { intimacyAction: 'remove', itemId: card.id } })])
-    ]);
+    ].filter(Boolean));
   };
   const renderIntimacyPanel = app => {
     if (!app) return;
@@ -58024,6 +58470,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (showClimax && (g.lubricationGauge || 0) > 0) meters.push({ label: '애액·윤활', value: g.lubricationGauge, max: 100, variant: 'lub', suffix: `${g.lubricationGauge}/100` });
           if (showEjac) meters.push({ label: '사정 게이지', value: g.ejaculationGauge || 0, max: 100, variant: 'ejac', suffix: `${g.ejaculationGauge || 0}/100` });
           const tags = [
+            g.maleSize ? `남성기: ${g.maleSize.label} (${g.maleSize.cm}cm · ${g.maleSize.effectLabel})` : '',
+            g.partnerSizeModifier ? `상대 남성기 자극 보정(${forcedBondPersonLabel(g.partnerSizeModifier.partnerName)}): ${g.partnerSizeModifier.label} (${g.partnerSizeModifier.effectLabel})` : '',
             g.interruptedBrink ? '외부 개입으로 절정 불발' : '',
             g.sleeping ? `수면 중 반응 (각성 ${g.wakefulnessGauge || 0}%)` : '',
             g.carriedFromSettled ? '이전 턴 승계' : '',
@@ -58102,6 +58550,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!scopeKey || !cardId || !key) return;
     await loadIntimacyCards();
     let changedGenderCard = null;
+    let maleSizeSync = null;
     const cards = intimacyCardsForScope(scopeKey).map(card => {
       if (card.id !== cardId) return card;
       const nextVal = key === 'name' && value === '페르소나' ? FORCED_BOND_PERSONA : value;
@@ -58110,7 +58559,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const gNorm = canonicalCharacterGender(nextVal);
         updated.gender = gNorm;
         updated.anatomyView = gNorm || '';
+        if (gNorm === 'female') {
+          updated.maleSize = '';
+          updated.maleSizeCm = null;
+          updated.maleSizeBasis = '';
+          if (updated.name) maleSizeSync = { name: updated.name, clear: true };
+        }
         if (updated.name) changedGenderCard = { name: updated.name, gender: gNorm };
+      } else if (key === 'maleSize') {
+        const nextTier = normalizeIntimacyMaleSizeTier(nextVal);
+        updated.maleSize = nextTier;
+        updated.maleSizeCm = nextTier ? (INTIMACY_MALE_SIZE_META[nextTier]?.defaultCm ?? null) : null;
+        if (updated.name) maleSizeSync = nextTier
+          ? { name: updated.name, size: nextTier, cm: updated.maleSizeCm, basis: updated.maleSizeBasis || '사용자 직접 지정' }
+          : { name: updated.name, clear: true };
+      } else if (key === 'maleSizeCm') {
+        const nextCm = normalizeIntimacyMaleSizeCm(nextVal);
+        updated.maleSizeCm = nextCm;
+        const mappedTier = intimacyMaleSizeFromCm(nextCm);
+        if (mappedTier) updated.maleSize = mappedTier;
+        if (updated.name && updated.maleSize) {
+          maleSizeSync = { name: updated.name, size: updated.maleSize, cm: nextCm, basis: updated.maleSizeBasis || `사용자 지정 (${nextCm}cm)` };
+        }
+      } else if (key === 'maleSizeBasis') {
+        updated.maleSizeBasis = compact(nextVal || '', 240);
+        if (updated.name && updated.maleSize) {
+          maleSizeSync = { name: updated.name, size: updated.maleSize, cm: updated.maleSizeCm, basis: updated.maleSizeBasis };
+        }
       } else if (key === 'sensitiveZones' || key === 'dullZones') {
         const oldText = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
         const newText = normalizeIntimacyZoneStats(null, updated.sensitiveZones || '', updated.dullZones || '');
@@ -58126,6 +58601,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       return updated;
     });
+    if (maleSizeSync?.name) {
+      if (maleSizeSync.clear) {
+        const bucket = intimacyMaleSizeScope(scopeKey, false);
+        const mk = intimacyMaleSizeLookupKey(maleSizeSync.name);
+        if (bucket && mk) delete bucket[mk];
+      } else {
+        setRecordedIntimacyMaleSize(scopeKey, maleSizeSync.name, {
+          name: maleSizeSync.name,
+          size: maleSizeSync.size,
+          cm: maleSizeSync.cm,
+          basis: maleSizeSync.basis,
+          origin: 'user'
+        }, { persist: false, syncCard: false, force: true });
+      }
+    }
     try {
       await writeIntimacyCardsForScope(scopeKey, cards);
       if (changedGenderCard) {
@@ -58708,15 +59198,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         .sort((a, b) => (Math.abs(b.st.sensitivity || 0) + (b.st.development || 0)) - (Math.abs(a.st.sensitivity || 0) + (a.st.development || 0)))
         .slice(0, 4)
         .map(x => `${x.label}(${x.st.sensitivity >= 0 ? `+${x.st.sensitivity}` : x.st.sensitivity}/개발${x.st.development})`) : [];
-      const intLines = intCard ? [
-        hotZoneRows.length ? `성감대: ${hotZoneRows.join(', ')}` : (intCard.sensitiveZones ? `민감: ${compact(intCard.sensitiveZones, 56)}` : ''),
-        intCard.intercourseStyle ? `체위·성향: ${compact(intCard.intercourseStyle, 52)}` : (intCard.foreplayStyle ? `전희: ${compact(intCard.foreplayStyle, 52)}` : '')
-      ].filter(Boolean) : [];
+      const recordedMaleSize = isMale ? getRecordedIntimacyMaleSize(scopeKey, name, intCard) : null;
+      const recordedMaleMod = recordedMaleSize ? intimacyMaleSizeModifier(recordedMaleSize.size, recordedMaleSize.cm) : null;
+      const intLines = [
+        recordedMaleMod
+          ? `남성기 크기: ${recordedMaleMod.label} (${recordedMaleMod.cm}cm · 여성 삽입 ${recordedMaleMod.effectLabel})${recordedMaleSize.basis ? ` — ${compact(recordedMaleSize.basis, 42)}` : ''}`
+          : '',
+        ...(intCard ? [
+          hotZoneRows.length ? `성감대: ${hotZoneRows.join(', ')}` : (intCard.sensitiveZones ? `민감: ${compact(intCard.sensitiveZones, 56)}` : ''),
+          intCard.intercourseStyle ? `체위·성향: ${compact(intCard.intercourseStyle, 52)}` : (intCard.foreplayStyle ? `전희: ${compact(intCard.foreplayStyle, 52)}` : '')
+        ] : [])
+      ].filter(Boolean);
+      const maleSizeSelect = isMale ? (() => {
+        const sel = guiEl('select', { class: 'select char-tile__select', 'aria-label': `${name} 남성기 크기 설정`, dataset: { charMaleSizeSelect: name } });
+        mockupOption(sel, '', '크기: 로어 자동 추정');
+        for (const id of INTIMACY_MALE_SIZES) {
+          const meta = INTIMACY_MALE_SIZE_META[id];
+          mockupOption(sel, id, `크기: ${meta.label} (${meta.effectLabel})`);
+        }
+        sel.value = recordedMaleSize?.size || '';
+        return sel;
+      })() : null;
       const tileIntimacy = makeTile(
         '6. 정사 선호 · 성감대',
-        !!intCard,
+        !!(intCard || recordedMaleSize),
         intLines.length ? intLines.map(t => guiEl('div', { text: t })) : [guiEl('span', { class: 'hint', text: '정사 선호·해부도 카드가 없습니다.' })],
-        [guiEl('button', { class: 'btn btn--sm', type: 'button', text: intCard ? '편집' : '카드 보기', dataset: { dossierJump: 'intimacy', dossierPerson: name } })]
+        [maleSizeSelect, guiEl('button', { class: 'btn btn--sm', type: 'button', text: intCard ? '편집' : '카드 보기', dataset: { dossierJump: 'intimacy', dossierPerson: name } })].filter(Boolean)
       );
 
       return guiEl('section', { class: 'char-section-card dossier-card', dataset: { personDossier: name } }, [
@@ -62960,12 +63467,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       await loadIntimacyCards();
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
       const cards = intimacyCardsForScope(scopeKey).map(card => (
-        card.name && extensionSamePerson(card.name, name) ? { ...card, ...patch } : card));
+        card.name && extensionSamePerson(card.name, name) ? normalizeIntimacyCard({ ...card, ...patch }) : card));
       await writeIntimacyCardsForScope(scopeKey, cards);
       return cloneJson(cards.find(card => card.name && extensionSamePerson(card.name, name)) || null);
     },
+    debugIntimacyMaleSizes({ scopeKey = '' } = {}) {
+      const targetScope = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      return cloneJson(targetScope ? (Runtime.intimacyMaleSizes?.[targetScope] || {}) : (Runtime.intimacyMaleSizes || {}));
+    },
+    async debugSetIntimacyMaleSize({ scopeKey = '', name = '', size = '', cm = null, basis = '', origin = 'user', force = true } = {}) {
+      await loadIntimacyCards();
+      const targetScope = compact(scopeKey || Runtime.activeScopeKey || 'debug-scope', 512);
+      Runtime.activeScopeKey = targetScope;
+      const saved = setRecordedIntimacyMaleSize(targetScope, name, { name, size, cm, basis, origin }, { persist: true, syncCard: true, force });
+      await saveIntimacyCards();
+      return cloneJson(saved);
+    },
+    debugEstimateMaleSizeFromLore({ name = '', loreText = '' } = {}) {
+      return cloneJson(estimateMaleSizeFromLore(name, loreText));
+    },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
+      Runtime.intimacyMaleSizes = null;
       return cloneJson(await loadIntimacyCards());
     },
     async debugLoreLoadCards() {
@@ -62992,8 +63515,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       Runtime.bodyStateSleep = {};
       Runtime.intimacyCards = null;
       Runtime.intimacyGauges = null;
+      Runtime.intimacyMaleSizes = null;
       await Promise.all([loadIntimacyCards(), loadGaugeContinuity()]);
-      return cloneJson({ intimacyGauges: Runtime.intimacyGauges, sleep: Runtime.bodyStateSleep });
+      return cloneJson({ intimacyGauges: Runtime.intimacyGauges, sleep: Runtime.bodyStateSleep, maleSizes: Runtime.intimacyMaleSizes });
     },
     debugLivingWorldBlock({ stageName = 'shadow_act', recent = {}, settings = {}, phase = 'writing', primePackets = false } = {}) {
       if (primePackets) {
