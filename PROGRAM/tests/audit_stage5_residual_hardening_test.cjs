@@ -116,3 +116,13 @@ test('Stage 5.6: risu-upstream-drift.yml passes resolved --head-commit SHA to ve
   assert.match(driftYml, /--head-commit "\$HEAD_COMMIT"/);
   assert.match(driftYml, /Head Commit/);
 });
+
+test('Stage 5.7: sourceRuleSync.ask keeps timeout refd and settles pending promises on dispose', () => {
+  const sdkSrc = fs.readFileSync(path.join(PROGRAM, 'sdk/MemorySuiteSourceInputControls.source.js'), 'utf8');
+  const askStart = sdkSrc.indexOf('  const ask=async(');
+  const askEnd = sdkSrc.indexOf('  const compare=async(', askStart);
+  assert.ok(askStart > 0 && askEnd > askStart);
+  const askSlice = sdkSrc.slice(askStart, askEnd);
+  assert.doesNotMatch(askSlice, /record\.timer\?\.unref/, 'awaited ask() timer must stay refd to avoid premature event-loop drain');
+  assert.match(sdkSrc, /record\.resolve\(\{ok:false,error:'SOURCE_RULE_SYNC_DISPOSED'\}\)/);
+});

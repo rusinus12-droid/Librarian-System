@@ -32867,7 +32867,6 @@ function createMemorySuiteSourceRuleSync(config) {
     const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
     return await new Promise(resolve=>{
       const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
-      record.timer?.unref?.();
       pending.set(id,record);
       Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
         .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
@@ -32909,7 +32908,7 @@ function createMemorySuiteSourceRuleSync(config) {
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
   // Editors listen here so a rule applied from another plugin shows up in an open editor.
   const subscribe=fn=>{if(typeof fn!=='function')return()=>{};subscribers.add(fn);return()=>{subscribers.delete(fn);};};
-  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values()){clearTimeout(record.timer);record.resolve({ok:false,error:'SOURCE_RULE_SYNC_DISPOSED'});}pending.clear();
     if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
   return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,compareBudget,applyBudgetToPeers,subscribeBudget,dispose});
 }
