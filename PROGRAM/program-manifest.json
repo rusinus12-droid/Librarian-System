@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T22:45:20.036Z",
+  "generatedAt": "2026-11-23T22:52:15.759Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "c487b1e7b9f845709d3f0d34cf80cd4467d37c37faba4967615834a2a32f6ea0",
+      "sha256": "7462b07bd4e8a80bd561bdacee7670676b90cadd6cf78573f10527404baa6204",
       "bytes": 20734
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,8 +4340,8 @@
       "bytes": 4036575
     },
     "plugins/GRADIA.js": {
-      "sha256": "cc5309358ccdfe455ce4e66a3bf3c888929de6b3c2d0439557101a378b815681",
-      "bytes": 4463120
+      "sha256": "bbecc0c9d14f76e4647162bc5b5eeb1c1c5398938cefce1e77c48891f3c3ee26",
+      "bytes": 4477646
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "91fa610e3bd052ce4c60bfe322edee28d5160bc43cf51f832002ef787b26b056",
@@ -6948,8 +6948,8 @@
       "bytes": 17402
     },
     "tests/gradia_unified_bond_relsim_and_dialogue_test.cjs": {
-      "sha256": "08036f7005005d99b215e3f2b258f7f6c549377a35cfe7695564b781050c6ed2",
-      "bytes": 8895
+      "sha256": "3e2fad2985b39dab58c7ce3eed8e9fb6b6b704156e840cdc48be55c4d0f8515d",
+      "bytes": 14149
     },
     "tests/gradia_work_scale_gui_test.cjs": {
       "sha256": "e39c45b904a862a3adf3d4ea3eb9a852cdc65ac4b4f671d5062b773862735a51",

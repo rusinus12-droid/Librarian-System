@@ -2209,7 +2209,7 @@
       isActive: settings => dialogueStageActive(settings),
       stageBlock: (stageName, recent, settings, ledger, phase) => dialogueStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => dialogueJsonProperties(stageName, settings),
-      recordOutput: (ledger, stageName, parsed, settings) => recordDialogueOutput(ledger, stageName, parsed, settings)
+      recordOutput: (ledger, stageName, parsed, settings, recent) => recordDialogueOutput(ledger, stageName, parsed, settings, recent)
     }),
     // The act comes after body state (a hurt or pregnant body still applies inside it).
     aide_intimacy: Object.freeze({
@@ -2336,9 +2336,9 @@
     if (!keys.length) return schema;
     return { ...schema, required: [...schema.required, ...keys.filter(key => !schema.required.includes(key))], properties: { ...schema.properties, ...extra } };
   };
-  const recordExtensionAideOutputs = (ledger, stageName, parsed = {}, settings = {}) => {
+  const recordExtensionAideOutputs = (ledger, stageName, parsed = {}, settings = {}, recent = {}) => {
     recordNpcDispositionOutput(ledger, stageName, parsed, settings);
-    for (const stageId of activeExtensionAideStages(settings)) EXTENSION_AIDE_DEFS[stageId].recordOutput(ledger, stageName, parsed, settings);
+    for (const stageId of activeExtensionAideStages(settings)) EXTENSION_AIDE_DEFS[stageId].recordOutput(ledger, stageName, parsed, settings, recent);
   };
   const WRITING_MODES = Object.freeze(['novel', 'rp']);
   const DEFAULT_WRITING_MODE = 'novel';
@@ -30435,14 +30435,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
     && settings?.mode !== 'off'
     && dialogueModeGate(settings) !== 'skip';
   const DIALOGUE_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, and natural Korean spoken rhythm.',
-    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, and conversational intent, and flag any echo-loop repetition or flat voice blending.',
-    aide_world: 'World AIDE: verify that dialogue register (workplace vs private vs intimate, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
-    aide_plot: 'Plot AIDE: verify that every spoken line moves the interaction (probe, tease, dodge, pressure, bargain, reassure, test a boundary) rather than stalling in repetitive filler exchanges.',
-    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet, then inspect every spoken line in CURRENT_SAME_TURN_DRAFT. Break echo-loop Q&A (「~이야?」 / 「~이야.」), cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext, deflection, or purposeful turns in edits. Report every grounded repair in dialogue_repairs. Return edits: [] when the dialogue already sounds natural and distinct, and say so in analysis.summary.'
+    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, situational fit (intimacy, date, work/service, public stealth, conflict), and strict physical speech causality (characters currently deep-kissing, mouth-occupied, or choking cannot speak crisp fluent lines without either separating lips/mouth first or slurring/muffling their words).',
+    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, situational register, and conversational intent, obeys physical speech causality (no crisp fluent speech while locked in a deep kiss or mouth-occupied), and flag any echo-loop repetition or flat voice blending.',
+    aide_world: 'World AIDE: verify physical speech causality (a mouth engaged in a deep kiss/tongue contact, oral act, or hand-cover cannot articulate normal clear dialogue unless lips physically separate first or speech is muffled/slurred) and verify that dialogue register (workplace/service vs private vs intimate vs date, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
+    aide_plot: 'Plot AIDE: verify that every spoken line moves the interaction (probe, tease, dodge, pressure, bargain, reassure, test a boundary) in character and situation rather than stalling in repetitive filler exchanges.',
+    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet (including [장면 상황·대화 톤] and [물리 발화 제약]), then inspect every spoken line in CURRENT_SAME_TURN_DRAFT. Enforce situational fit (intimacy, date, work/customer service, public stealth, conflict, private), enforce physical speech causality (if a speaker is deep-kissing/mouth-occupied and speaks crisp fluent dialogue without an explicit lip-separation beat before the quote, either insert a causal lip-separation beat right before the quote when not physically restrained OR rewrite the quote into muffled/slurred articulation), break echo-loop Q&A, cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext in edits. Report every grounded repair in dialogue_repairs. Return edits: [] only when the dialogue already fits both situation and physical causality, and say so in analysis.summary.'
   });
-  const DIALOGUE_ISSUES = Object.freeze(['echo_loop', 'flat_filler', 'voice_blend', 'register_mismatch', 'on_the_nose', 'stiff_rhythm']);
+  const DIALOGUE_ISSUES = Object.freeze(['speech_causality', 'situational_fit', 'echo_loop', 'flat_filler', 'voice_blend', 'register_mismatch', 'on_the_nose', 'stiff_rhythm']);
   const DIALOGUE_ISSUE_LABELS = Object.freeze({
+    speech_causality: '발화 인과·물리 제약 위반',
+    situational_fit: '상황·장면 부적합 대사',
     echo_loop: '메아리 문답 반복',
     flat_filler: '빈 추임새·의미 없는 대사',
     voice_blend: '말투·개성 희석',
@@ -30453,13 +30455,145 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const DIALOGUE_VERDICTS = Object.freeze(['confirm', 'adjust', 'uncertain']);
   const DIALOGUE_MAX_ITEMS = 8;
   const DIALOGUE_CRAFT_PRINCIPLES = Object.freeze([
-    '1. Break Echo-Loops (메아리 문답 금지): Real speakers almost never answer "~이야?" with "~이야.", "~거야?" with "~거야.", or "~맞아?" with "~맞아.". Answer obliquely — deflect, counter-question, address the unspoken motive, shift the frame, respond with silence/action, or move the beat one step forward.',
-    '2. Subtext & Implicature (언외의 의미·함축): Convey desire, embarrassment, jealousy, reluctance, or tension through word choice, hesitation, teasing, understatement, or evasion — never flatly state obvious feelings or what both speakers already know.',
-    '3. Pragmatic Turn Function (대사의 목적): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Cut empty filler confirmations; a physical beat or brief silence beats a throwaway line.',
-    '4. Distinct Character Idiolect & Honorifics (인물별 화법·말투 분화): Enforce each character’s own cadence, sentence length, sentence endings (어미), vocabulary, and Korean honorifics (존댓말/반말/호칭) from lore/Voice Guard. Speakers in the same scene must remain distinguishable even without speaker tags.',
-    '5. Situational & Emotional Register (상황·감정 맞춤 화술): Adapt speech to setting and physical/emotional state (breathless fragments or muffled words in intimacy, polite veneer in public/work, looser cadence in private).',
-    '6. Natural Korean Spoken Rhythm (구어체 호흡): Omit already-understood subjects, vary line lengths, and allow natural interruptions, trailing fragments, or action-interleaved speech instead of stiff textbook Q&A.'
+    '1. Physical Speech Causality & Articulation (발화 물리 인과·구강 제약): Never let a character who is deep-kissing (lips locked, tongue inside mouth, head held), mouth-occupied (oral act, hand over mouth, gag, mouth full), choking, or unconscious utter crisp, fluent sentences. Either (a) depict a clear physical beat breaking lip contact / freeing the mouth BEFORE the dialogue (only if not physically restrained), OR (b) render slurred, muffled, broken syllables (“으읍… 나, 중에…” / “흐, 잠…깐…”) or non-verbal action.',
+    '2. Situational Dialogue Fit (상황·장면 맞춤 화술): Match tone, diction, line length, and social mask to the active scene — breathless/intimate fragments or muffled words in intimacy, warm teasing/tension on dates, polite role-bound register in workplace/customer service, hushed veiled phrasing around nearby third parties, sharp pressure in conflict.',
+    '3. Break Echo-Loops (메아리 문답 금지): Real speakers almost never answer "~이야?" with "~이야.", "~거야?" with "~거야.", or "~맞아?" with "~맞아.". Answer obliquely — deflect, counter-question, address the unspoken motive, shift the frame, respond with silence/action, or move the beat one step forward.',
+    '4. Subtext & Implicature (언외의 의미·함축): Convey desire, embarrassment, jealousy, reluctance, or tension through word choice, hesitation, teasing, understatement, or evasion — never flatly state obvious feelings or what both speakers already know.',
+    '5. Pragmatic Turn Function (대사의 목적): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Cut empty filler confirmations; a physical beat or brief silence beats a throwaway line.',
+    '6. Distinct Character Idiolect & Korean Spoken Rhythm (인물별 화법·구어체 호흡): Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Omit already-understood subjects and allow natural interruptions or action-interleaved speech.'
   ]);
+  const DIALOGUE_KISS_ACTIVE_RE = /키스(?:를|가)?\s*(?:나누|나눴|하|했|이어|계속|퍼부|파고들|깊어)|입술(?:을|이|에)?\s*(?:맞대|맞닿|부딪|포개|덮|삼키|물|빨|파고들)|혀(?:가|를|로|끝)?\s*(?:섞|얽|밀어\s*넣|파고들|들어왔|들어가|감아|감싸|훑)|입\s*(?:속|안)으로\s*혀|deep[- ]?kiss|tongues?\s+(?:entwined|tangled|inside|plunged)|lips?\s+(?:locked|pressed)/i;
+  const DIALOGUE_KISS_LOCKED_RE = /물러나려고\s*해도[^\n.!?]{0,24}허락하지\s*않|뒤통수[^\n.!?]{0,24}(?:붙잡|눌러|감싸|고정)|고개(?:를|가)?\s*(?:고정|붙잡|놓지\s*않)|입술(?:을|이)?\s*떼지\s*못|놓아주지\s*않|escap(?:e|ing)\s+the\s+kiss|held\s+(?:her|his)\s+head/i;
+  const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이)?\s*(?:떼|떨어뜨|떨어졌|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:돌려|돌렸|젖혀|젖혔|빼내|뺐|뒤로\s*빼)|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
+  const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*못|풀지\s*못|못\s*하|못하|허락하지\s*않|떼지\s*않고/;
+  const DIALOGUE_ORAL_ACTIVE_RE = /(?:페니스|자지|음경|귀두|남성기|손가락|재갈|입마개|손)(?:이|가|을|를|로)?[^\n.?!]{0,20}(?:입\s*(?:안|속)|목구멍|입을?\s*막|틀어막|물고\s*(?:있|빨)|삼키|파고들)|펠라(?:티오|치오)?|딥쓰롯|사까시|이라마|쿠니|커닐링구스|음핵(?:을|에)?\s*(?:입술|혀)(?:로|를)\s*(?:핥|빨|파묻)|mouth\s+(?:full|occupied|covered)|gag(?:ged)?|fellatio|deepthroat/i;
+  const DIALOGUE_MOUTH_FREE_RE = /입(?:에서|을|이)?\s*(?:빼내|뺐|떼어|떼었|풀어|치워|치웠|내뱉|놓아)|손(?:을|이)?\s*(?:떼|치우|내리|풀)|재갈(?:을)?\s*(?:풀|빼)|pulled\s+out\s+of\s+(?:her|his)\s+mouth/i;
+  const DIALOGUE_BREATHLESS_RE = /숨(?:을|이)?\s*(?:고르(?:지|려다|내지)?\s*못|가빠|헐떡|턱\s*끝|가쁘|몰아쉬|거칠)|헉헉|신음|panting|breathless|gasping\s+for\s+air/i;
+  const DIALOGUE_SLURRED_SPEECH_RE = /(?:^|[….\-\s"“「])(?:으+읍|흐+읍|하+읍|응+읍|음+[….\-~]|흡|흐+ㄱ|끅|응[….~]+|흐[….~]+|으응|아읍)|(?:[가-힣]{1,2}[,…\-]\s*[가-힣]{1,2}[,…\-])/;
+  const dialogueIsSlurredOrVocalQuote = rawQuote => {
+    const inner = String(rawQuote || '').replace(/^["“「]+|["”」]+$/g, '').trim();
+    if (!inner) return true;
+    if (DIALOGUE_SLURRED_SPEECH_RE.test(inner)) return true;
+    const stripped = inner.replace(/[….\s,!?\-~"“”「」]/g, '');
+    return stripped.length <= 2;
+  };
+  const dialogueDetectSpeechConstraints = (recent = {}, draftText = '') => {
+    const input = text(recent?.latestUser || '');
+    const visible = (Array.isArray(recent?.visibleMessages) ? recent.visibleMessages : [])
+      .filter(m => m?.role !== 'user')
+      .slice(-2)
+      .map(m => text(m?.content || ''))
+      .filter(Boolean);
+    if (visible.length && input && visible[visible.length - 1].trim() === input.trim()) visible.pop();
+    const contextSteps = [...visible, input].filter(Boolean);
+    let kissActive = false;
+    let kissLocked = false;
+    let oralActive = false;
+    let breathless = false;
+    let asleep = false;
+    for (const step of contextSteps) {
+      const cleaned = stripNonProseSceneTags(step);
+      for (const clause of cleaned.split(/(?:\.(?!\d)|[!?;\n])+/) ) {
+        if (!clause.trim()) continue;
+        if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissActive = true;
+        if (DIALOGUE_KISS_LOCKED_RE.test(clause)) kissLocked = true;
+        if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
+          kissActive = false;
+          kissLocked = false;
+        }
+        if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralActive = true;
+        if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) oralActive = false;
+        if (DIALOGUE_BREATHLESS_RE.test(clause)) breathless = true;
+        if (/깊(?:이|게)\s*잠(?:든|들)|수면\s*중|의식(?:이|을)?\s*(?:잃|없)|fast\s+asleep|unconscious/i.test(clause)) asleep = true;
+      }
+    }
+    const constraints = [];
+    if (kissActive) constraints.push({ kind: 'deep_kiss', locked: kissLocked, label: kissLocked ? '딥키스·고개 고정 중' : '키스·입술 밀착 중' });
+    if (oralActive) constraints.push({ kind: 'mouth_occupied', locked: false, label: '구강 점유·입 막힘 중' });
+    if (breathless) constraints.push({ kind: 'breathless_intimacy', locked: false, label: '호흡 가쁨·신음 섞임 상태' });
+    if (asleep) constraints.push({ kind: 'asleep_or_drowsy', locked: false, label: '수면·반수면 발화 제한' });
+
+    const violations = [];
+    const targetDraft = stripNonProseSceneTags(text(draftText || ''));
+    if (targetDraft && (kissActive || oralActive)) {
+      let kissOn = kissActive;
+      let oralOn = oralActive;
+      const parts = targetDraft.split(/("[^"\n]{1,220}"|“[^”\n]{1,220}”|「[^」\n]{1,220}」)/g);
+      for (let i = 0; i < parts.length; i += 1) {
+        const seg = parts[i];
+        if (!seg) continue;
+        if (i % 2 === 1) {
+          if ((kissOn || oralOn) && !dialogueIsSlurredOrVocalQuote(seg)) {
+            const inner = compact(seg.replace(/^["“「]+|["”」]+$/g, ''), 48);
+            const activeKind = oralOn ? 'mouth_occupied' : 'deep_kiss';
+            violations.push(`Speech causality violation (${activeKind}): clear speech "${inner}" without separating lips/mouth first or slurring`);
+          }
+        } else {
+          for (const clause of seg.split(/(?:\.(?!\d)|[!?;\n])+/)) {
+            if (!clause.trim()) continue;
+            if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissOn = true;
+            if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) kissOn = false;
+            if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralOn = true;
+            if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) oralOn = false;
+          }
+        }
+      }
+    }
+    return { constraints, kissActive, kissLocked, oralActive, breathless, asleep, violations: [...new Set(violations)].slice(0, 6) };
+  };
+  const dialogueDetectSituations = (recent = {}, settings = {}) => {
+    const input = text(recent?.latestUser || '');
+    const msgs = (Array.isArray(recent?.visibleMessages) ? recent.visibleMessages : []).slice(-3).map(m => text(m?.content || '')).filter(Boolean);
+    const corpus = [...msgs, input].join('\n');
+    const scene = typeof intimacyScene === 'function' ? intimacyScene(recent) : null;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const extNotice = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey]?.externalReaction : null;
+    const relChat = scopeKey && typeof relsimChat === 'function' ? relsimChat(scopeKey) : null;
+    const situations = [];
+    if (scene?.engaged || DIALOGUE_KISS_ACTIVE_RE.test(corpus) || DIALOGUE_ORAL_ACTIVE_RE.test(corpus)) {
+      situations.push({
+        id: 'intimacy',
+        label: '정사·밀착 스킨십',
+        guidance: '호흡·신체 감각·접촉 리듬에 맞춘 짧은 단문·속삭임·여운 위주로 쓰고, 장황하거나 평온한 일상 대화 금지(입술/구강 점유 시 발화 물리 인과 엄수).'
+      });
+    }
+    if (/손님|고객|주문|계산|결제|카운터|매장|가게|알바|아르바이트|직장|사무실|회의|상사|거래처|업무|근무|응대|병원|진료|수업|강의|customer|client|order|counter|cashier|office|meeting|workplace/i.test(corpus)) {
+      situations.push({
+        id: 'work_service',
+        label: '업무·근무·손님 응대',
+        guidance: '직업·응대 역할에 맞는 공적 존댓말·업무 어휘·거리감을 유지하고, 사적 반말이나 맥락 없는 잡담을 섞지 말 것.'
+      });
+    }
+    if (/데이트|산책|레스토랑|야경|카페거리|전시회|놀이공원|손을\s*잡고\s*걸|date\s+night/i.test(corpus) || relChat?.activeDate?.active) {
+      situations.push({
+        id: 'date',
+        label: '데이트·로맨틱',
+        guidance: '둘만의 분위기·시선·호감 온도를 살려 가벼운 농담·은근한 배려·여운 있는 티키타카를 만들고 사무적 설명투를 피할 것.'
+      });
+    }
+    if (/복도|문\s*밖|문\s*너머|옆방|주변|사람들|타인|지나가|들릴까|숨죽|낮은\s*목소리|속삭|earshot|hallway|nearby/i.test(corpus) || (extNotice && extNotice.score >= 60)) {
+      situations.push({
+        id: 'public_stealth',
+        label: '공공장소·제3자 청취 위험',
+        guidance: '제3자 가청 반경을 의식해 음량을 낮춘 속삭임·암시·몸짓 위주로 표현하고, 들킬 만한 큰 소리나 직설 발설을 피할 것.'
+      });
+    }
+    if (/따졌|추궁|화내|소리치|싸우|언쟁|위험|긴급|도망|서둘|지금\s*당장|confront|urgent|danger/i.test(corpus)) {
+      situations.push({
+        id: 'conflict_urgent',
+        label: '갈등·긴박·추궁',
+        guidance: '팽팽한 긴장·주도권 다툼·감정 압박에 맞춰 즉각적이고 날 선 화법(반박·회피·단호한 끊기)을 쓸 것.'
+      });
+    }
+    if (!situations.length) {
+      situations.push({
+        id: 'casual_private',
+        label: '일상·사적 대화',
+        guidance: '인물 간 관계와 거리감에 맞는 자연스러운 한국어 구어체 리듬과 화자별 말투 차이를 살릴 것.'
+      });
+    }
+    return situations;
+  };
   const dialogueExtractQuotes = value => {
     const body = String(value || '');
     const quotes = [];
@@ -30546,41 +30680,60 @@ Begin directly with the in-world response and finish the complete same-turn draf
         flags.push(`Possible unquoted dialogue (${unquotedLines.length}): "${compact(unquotedLines[0], 48)}"`);
       }
     }
+    const causality = dialogueDetectSpeechConstraints(recent, targetText);
+    for (const v of causality.violations) flags.push(v);
     return {
       quoteCount: targetQuotes.length,
       ellipsisCount,
       unquotedCount: unquotedLines.length,
+      causalityViolations: causality.violations.length,
       shortRunMax,
-      flags: [...new Set(flags)].slice(0, 8)
+      flags: [...new Set(flags)].slice(0, 10)
     };
   };
-  const dialogueCraftPacket = (recent = {}, settings = {}) => {
+  const dialogueCraftPacket = (recent = {}, settings = {}, draftText = '') => {
     const scenePeople = extensionScenePeople(recent);
     const present = [...new Set([extensionCardPerson(recent, scenePeople), ...scenePeople].filter(Boolean))].slice(0, 8);
-    const scan = dialogueScanEchoPatterns(recent);
+    const situations = dialogueDetectSituations(recent, settings);
+    const causality = dialogueDetectSpeechConstraints(recent, draftText);
+    const scan = dialogueScanEchoPatterns(recent, draftText);
     const gate = dialogueModeGate(settings);
-    return compact([
+    const lines = [
       present.length
         ? `Speakers in scene: ${present.map(name => (gate !== 'novel' && bodyStateIsPersona(name) ? `${name} (persona — do not alter persona lines)` : name)).join(', ')}`
         : 'No named speaker detected; check every NPC spoken line in the draft anyway.',
+      `[장면 상황·대화 톤]: ${situations.map(s => `${s.label} — ${s.guidance}`).join(' | ')}`
+    ];
+    if (causality.constraints.length) {
+      const labels = causality.constraints.map(c => c.label).join(' · ');
+      const remedy = causality.kissActive || causality.oralActive
+        ? (causality.kissLocked
+          ? '상대가 고개를 고정해 입술을 떼기 어려운 상태이므로, 발화가 나온다면 반드시 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음이나 비언어 반응으로 묘사할 것(또는 먼저 물리적으로 고개를 돌려 입을 떼어내는 명확한 동작 뒤에 대사할 것).'
+          : '키스/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.')
+        : '호흡이 가쁘거나 각성도가 낮은 상태에 맞게 대사 길이·호흡 단절·신음 섞임을 조절할 것.';
+      lines.push(`[물리 발화 제약]: ${labels} 감지됨 → ${remedy}`);
+    }
+    lines.push(
       scan.flags.length
-        ? `Detected dialogue anti-patterns in recent turns (DO NOT repeat these):\n${scan.flags.map(f => `- ${f}`).join('\n')}`
-        : 'Recent turns scan: no mechanical echo-loop detected; still enforce character voice, subtext, and natural rhythm on the current draft.'
-    ].join('\n'), 2400);
+        ? `Detected dialogue anti-patterns & causality flags (MUST fix if present in draft):\n${scan.flags.map(f => `- ${f}`).join('\n')}`
+        : 'Recent turns scan: no mechanical echo-loop or speech-causality break detected; still enforce character voice, subtext, situational fit, and natural rhythm on the current draft.'
+    );
+    return compact(lines.join('\n'), 3200);
   };
   const dialogueOutputKind = (stageName, settings = {}) => (dialogueStageActive(settings) ? extensionAideOutputKind('aide_dialogue', stageName, settings) : '');
   const dialogueStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = dialogueStageActive(settings) ? extensionAideDuty('aide_dialogue', stageName, DIALOGUE_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const gate = dialogueModeGate(settings);
-    const packet = dialogueCraftPacket(recent, settings);
+    const draftForScan = text(ledger?.currentStageDraft || ledger?.dialogueDraftBefore || '');
+    const packet = dialogueCraftPacket(recent, settings, draftForScan);
     const priorChecks = (Array.isArray(ledger?.dialogueChecks) ? ledger.dialogueChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.character}: ${item.verdict} (${item.issue}) — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
       .slice(-16);
     const outputKind = phase === 'writing' ? '' : dialogueOutputKind(stageName, settings);
     return [
-      '[DIALOGUE & SPEECHCRAFT (화술·대화) — HUMAN SPOKEN DIALOGUE]',
-      'Write and repair spoken dialogue so every character sounds like a real, distinct person in motion — never a textbook Q&A echo.',
+      '[DIALOGUE & SPEECHCRAFT (화술·대화) — HUMAN SPOKEN DIALOGUE & CAUSALITY]',
+      'Write and repair spoken dialogue so every character sounds like a real, distinct person in their exact physical & situational moment — never crisp fluent Q&A while deep-kissing or mismatching the scene.',
       gate === 'novel'
         ? '- Novel mode: apply to every character, the persona included. Author-specified lines stay intact.'
         : gate === 'staging'
@@ -30591,12 +30744,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       `DIALOGUE PACKET:\n${packet}`,
       priorChecks.length
-        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names a line to rewrite; an "uncertain" note means check it against character voice before keeping it.`
+        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names a line to rewrite; an "uncertain" note means check it against character voice, situational fit, and physical speech causality before keeping it.`
         : '',
       outputKind === 'check'
-        ? 'OUTPUT: add a top-level "dialogue_check" array with one item per spoken line in this draft that suffers from echo_loop, flat_filler, voice_blend, register_mismatch, on_the_nose, or stiff_rhythm, judged from your own duty. Item fields: character; issue (echo_loop, flat_filler, voice_blend, register_mismatch, on_the_nose, or stiff_rhythm); verdict (confirm, adjust, or uncertain); claim (the quoted line); reason. Use an empty array when dialogue is already sharp.'
+        ? `OUTPUT: add a top-level "dialogue_check" array with one item per spoken line in this draft that suffers from ${DIALOGUE_ISSUES.join(', ')}, judged from your own duty. Item fields: character; issue (${DIALOGUE_ISSUES.join(', ')}); verdict (confirm, adjust, or uncertain); claim (the quoted line); reason. Use an empty array when dialogue is already sharp and causally valid.`
         : outputKind === 'readings'
-          ? 'OUTPUT: add a top-level "dialogue_repairs" array, one item per line you repaired in edits. Fields: character; draft_quote (the original spoken line copied exactly from CURRENT_SAME_TURN_DRAFT); issue (echo_loop, flat_filler, voice_blend, register_mismatch, on_the_nose, or stiff_rhythm); replacement (the rewritten line, or empty if cut); reason (why the original failed human speechcraft and how the rewrite fixes it). The rewrite itself goes in edits. Use an empty array when the draft’s dialogue already fits.'
+          ? `OUTPUT: add a top-level "dialogue_repairs" array, one item per line you repaired in edits. Fields: character; draft_quote (the original spoken line copied exactly from CURRENT_SAME_TURN_DRAFT); issue (${DIALOGUE_ISSUES.join(', ')}); replacement (the rewritten line — for speech_causality during a kiss, either prepend a clear lip-separation beat right before the quote OR rewrite the quote as slurred/muffled speech, or empty if cut); reason (why the original failed human speechcraft/causality/situation and how the rewrite fixes it). The rewrite itself goes in edits. Use an empty array when the draft’s dialogue already fits.`
           : ''
     ].filter(Boolean).join('\n');
   };
@@ -30617,19 +30770,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const dialogueVerifiedReadings = (parsed = {}, ledger = {}, recent = {}) => {
     const before = knowledgeBoundaryNormalize(ledger?.dialogueDraftBefore || '');
     const after = knowledgeBoundaryNormalize(ledger?.dialogueDraftAfter || '');
-    const inDraft = quote => !!quote && !!before && before.includes(quote);
+    const quoteCandidates = quote => {
+      const q = String(quote || '');
+      if (!q) return [];
+      const out = [q];
+      if (/[“”]/.test(q)) out.push(q.replace(/[“”]/g, '"'));
+      if (q.includes('"')) out.push(q.replace(/^"|"$|(?<=^|\s)"(?=\S)|(?<=\S)"(?=$|\s|[,.!?])/g, (m, off) => (off === 0 ? '“' : '”')));
+      return [...new Set(out)];
+    };
+    const inDraft = (haystack, quote) => !!haystack && quoteCandidates(quote).some(c => haystack.includes(c));
     const repairs = [], dropped = [];
     for (const raw of (Array.isArray(parsed?.dialogueRepairs) ? parsed.dialogueRepairs : []).slice(0, DIALOGUE_MAX_ITEMS)) {
       const item = {
         character: compact(raw?.character || '', 80),
         draftQuote: compact(raw?.draft_quote || '', 240),
         issue: DIALOGUE_ISSUES.includes(raw?.issue) ? raw.issue : 'flat_filler',
-        replacement: compact(raw?.replacement || '', 240),
+        replacement: compact(raw?.replacement || '', 360),
         reason: compact(raw?.reason || '', 240)
       };
       const quote = knowledgeBoundaryNormalize(item.draftQuote);
-      if (!item.character || !inDraft(quote)) { dropped.push({ ...item, reason: 'draft_quote_not_in_draft' }); continue; }
-      repairs.push({ ...item, applied: !!after && !after.includes(quote) });
+      if (!item.character || !inDraft(before, quote)) { dropped.push({ ...item, reason: 'draft_quote_not_in_draft' }); continue; }
+      repairs.push({ ...item, applied: !!after && !inDraft(after, quote) });
     }
     const scan = dialogueScanEchoPatterns(recent, ledger?.dialogueDraftAfter || ledger?.dialogueDraftBefore || '');
     return {
@@ -30640,6 +30801,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         quoteCount: scan.quoteCount,
         ellipsisCount: scan.ellipsisCount,
         unquotedCount: scan.unquotedCount,
+        causalityViolations: scan.causalityViolations,
         shortRunMax: scan.shortRunMax
       }
     };
@@ -30650,7 +30812,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const repairs = (Array.isArray(rawRepairs) ? rawRepairs : [])
       .map(item => ({
         quote: compact(item?.draft_quote || item?.draftQuote || '', 240),
-        replacement: compact(item?.replacement || '', 240)
+        replacement: compact(item?.replacement || '', 360)
       }))
       .filter(item => item.quote && item.replacement && item.quote !== item.replacement)
       .slice(0, DIALOGUE_MAX_ITEMS);
@@ -30661,8 +30823,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!body) return { changed: false, count: 0 };
     let count = 0;
     for (const item of repairs) {
-      if (!body.includes(item.quote)) continue;
-      body = body.split(item.quote).join(item.replacement);
+      const variants = [item.quote];
+      if (/[“”]/.test(item.quote)) variants.push(item.quote.replace(/[“”]/g, '"'));
+      if (/^"[^"]+"$/.test(item.quote)) variants.push(`“${item.quote.slice(1, -1)}”`);
+      const matched = variants.find(v => body.includes(v));
+      if (!matched) continue;
+      body = body.split(matched).join(item.replacement);
       count += 1;
     }
     if (!count) return { changed: false, count: 0 };
@@ -30684,7 +30850,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const formatDialogueScannerFlagKo = rawFlag => {
     const flag = text(rawFlag || '').trim();
     if (!flag) return '';
-    let m = flag.match(/^Echo-loop pair:\s*(.+)$/i);
+    let m = flag.match(/^Speech causality violation \(([^)]+)\):\s*clear speech "([^"]+)" without separating lips\/mouth first or slurring$/i);
+    if (m) {
+      const kindKo = m[1] === 'mouth_occupied' ? '구강 점유' : '딥키스 중';
+      return `발화 인과 위반 (${kindKo}): 입술/입을 떼거나 발음이 뭉개지지 않은 채 정상 대사 "${m[2]}"`;
+    }
+    m = flag.match(/^Echo-loop pair:\s*(.+)$/i);
     if (m) return `메아리 문답 반복: ${m[1]}`;
     m = flag.match(/^Ending convergence:\s*"([^"]+)"\s*repeated\s*(\d+)\s*times across recent lines$/i);
     if (m) return `어미 반복 편중: 최근 대사에서 어미 "${m[1]}" ${m[2]}회 반복`;
@@ -30705,11 +30876,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const summaryNote = repairCount === 0 && flagCount === 0
       ? {
           title: '화술 검토 완료 · 특이사항 없음',
-          body: `총 대사 ${Number(stats.quoteCount) || 0}줄 검토 · 기계적 반복/따옴표 누락 없음`
+          body: `총 대사 ${Number(stats.quoteCount) || 0}줄 검토 · 기계적 반복/따옴표 누락/발화 인과 위반 없음`
         }
       : {
           title: `화술 검토 완료 · 교정 ${repairCount}건 · 스캐너 감지 ${flagCount}건`,
-          body: `총 대사 ${Number(stats.quoteCount) || 0}줄 (말줄임표 시작 ${Number(stats.ellipsisCount) || 0}줄 · 따옴표 누락 의심 ${Number(stats.unquotedCount) || 0}줄)`
+          body: `총 대사 ${Number(stats.quoteCount) || 0}줄 (말줄임표 시작 ${Number(stats.ellipsisCount) || 0}줄 · 따옴표 누락 의심 ${Number(stats.unquotedCount) || 0}줄${Number(stats.causalityViolations) ? ` · 발화 인과 위반 ${Number(stats.causalityViolations)}건` : ''})`
         };
     return [
       summaryNote,
@@ -39455,6 +39626,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   );
 
   const runAideStage = async (stageName, recent, previous, settings, ledger) => {
+    if (ledger && typeof ledger === 'object') ledger.currentStageDraft = stageDraft(previous) || '';
     const executionRoute = aideExecutionRouteForMode(settings?.multiPipelineMode);
     const result = executionRoute === 'analysis_then_serial_patch'
       ? await runTwoCallAidePatchStage(stageName, recent, previous, settings, ledger)
@@ -39476,7 +39648,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
           ledger.dialogueRepairsAppliedDirectly = repaired.count;
         }
       }
-      recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings);
+      recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings, recent);
       rememberScenePurpose(recent, result?.twoCallAnalysis?.scenePurpose, stageName, result?.twoCallAnalysis?.storyArc);
       rememberSceneFixations(recent, result?.twoCallAnalysis?.fixation, stageName);
     }
@@ -50943,7 +51115,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return { ok: false, reason: current?.reason || 'shadow_act_no_complete_draft', stages };
     }
     const shadowAnalysis = extractAnalysisFromStage(current);
-    recordExtensionAideOutputs(ledger, 'shadow_act', current?.twoCallAnalysis, settings);
+    recordExtensionAideOutputs(ledger, 'shadow_act', current?.twoCallAnalysis, settings, shadowEnv.recent);
     const shadowPlanning = shadowPlanningFromDomain(shadowAnalysis?.domain || {});
     rememberScenePurpose(shadowEnv.recent, shadowPlanning.storyAuthorPlan?.scene_purpose, 'shadow_act');
     if (!ledger.previousRecord && shadowPlanning.hasPreviousRecord) {

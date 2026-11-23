@@ -194,3 +194,108 @@ test('4) dialogue scanner catches leading ellipsis, suspected unquoted lines, an
   assert.equal(resClean.notes[0].title, '화술 검토 완료 · 특이사항 없음');
   assert.match(resClean.notes[0].body, /총 대사 2줄 검토/);
 });
+
+test('5) dialogue AIDE enforces physical speech causality (deep kiss / slurring vs lip separation) and situational dialogue register', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const scopeKey = 'dial-causality-1';
+  f.host.plugin.debugSetActiveScope(scopeKey, '소연');
+  const settings = {
+    enableDialogueAide: true,
+    enableCharacterAide: true,
+    aideStageOrder: ['aide_character'],
+    mode: 'normal',
+    writingMode: 'rp'
+  };
+
+  const kissInput = '"소연아." 푸딩은 허리를 흔들다가 잠시 소연의 팔을 끌어 자신에게 가까이 오게 했다. 그후 그녀의 뒤통수에 손을 얹고 자신의 얼굴 쪽으로 끌어당겨 키스를 나누었다. 소연이 물러나려고 해도 푸딩의 손은 그것을 허락하지 않았다. 소연의 입 속으로 혀가 들어왔다.';
+  const crispMidKissDraft = [
+    '소연은 그 침묵을 기다리지 않았다. 기대고 나서 곧바로 떼었다.',
+    '“대답은 나중에.”',
+    '“또 나중이야?”',
+    '“…지금은 네가 먼저 끝내.”'
+  ].join('\n');
+
+  const block = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: kissInput, visibleMessages: [] },
+    ledger: { currentStageDraft: crispMidKissDraft },
+    phase: 'analysis'
+  });
+  assert.match(block, /\[물리 발화 제약\]:.*딥키스·고개 고정 중/, 'stage block detects locked deep kiss constraint');
+  assert.match(block, /\[장면 상황·대화 톤\]:.*정사·밀착 스킨십/, 'stage block detects intimacy situation');
+  assert.match(block, /speech_causality/, 'dialogue issues expose speech_causality');
+  assert.match(block, /situational_fit/, 'dialogue issues expose situational_fit');
+
+  const recCrisp = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: kissInput, visibleMessages: [] },
+    draftBefore: crispMidKissDraft,
+    draftAfter: crispMidKissDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.ok(recCrisp.reading.draftStats.causalityViolations >= 3, 'crisp mid-kiss fluent dialogue lines flagged as causality violations');
+  const scanNote = recCrisp.notes.find(n => /^화술 스캐너 감지/.test(n.title));
+  assert.ok(scanNote && /발화 인과 위반 \(딥키스 중\)/.test(scanNote.body), 'Korean UI note renders deep-kiss causality warning');
+  assert.doesNotMatch(scanNote.body, /Speech causality violation/, 'raw English flag never leaks into UI notes');
+
+  const separatedDraft = [
+    '소연이 겨우 고개를 빼고 입술을 떼어내며 숨을 몰아쉬었다.',
+    '“대답은 나중에.”'
+  ].join('\n');
+  const recSeparated = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: kissInput, visibleMessages: [] },
+    draftBefore: separatedDraft,
+    draftAfter: separatedDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.equal(recSeparated.reading.draftStats.causalityViolations, 0, 'explicit lip separation beat before dialogue resolves kiss causality');
+
+  const slurredDraft = '“으읍…… 대, 답은… 나중에……”';
+  const recSlurred = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: kissInput, visibleMessages: [] },
+    draftBefore: slurredDraft,
+    draftAfter: slurredDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.equal(recSlurred.reading.draftStats.causalityViolations, 0, 'slurred muffled mid-kiss speech resolves kiss causality');
+
+  const workBlock = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: '손님이 카운터에서 아메리카노를 주문했다. 카페 알바 중인 하연이 응대한다.', visibleMessages: [] },
+    phase: 'writing'
+  });
+  assert.match(workBlock, /업무·근무·손님 응대/, 'detects workplace customer-service situation');
+
+  const dateBlock = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: '저녁 노을이 지는 카페거리에서 두 사람이 손을 잡고 데이트하며 산책했다.', visibleMessages: [] },
+    phase: 'writing'
+  });
+  assert.match(dateBlock, /데이트·로맨틱/, 'detects romantic date situation');
+
+  const stealthBlock = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { latestUser: '옆방 문 너머 복도에서 발소리가 들리는데 숨죽이며 속삭였다.', visibleMessages: [] },
+    phase: 'writing'
+  });
+  assert.match(stealthBlock, /공공장소·제3자 청취 위험/, 'detects public/overhearing risk situation');
+
+  const applied = f.host.plugin.debugDialogueApplyRepairs({
+    draftText: crispMidKissDraft,
+    repairs: [{
+      draft_quote: '"대답은 나중에."',
+      replacement: '소연이 겨우 입술을 떼어내며 숨을 몰아쉬었다.\n“대답은 나중에.”'
+    }]
+  });
+  assert.equal(applied.changed, true);
+  assert.match(applied.draftText, /입술을 떼어내며 숨을 몰아쉬었다\.\n“대답은 나중에\.”/);
+});
