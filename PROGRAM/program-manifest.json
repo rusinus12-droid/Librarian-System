@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T12:27:35.640Z",
+  "generatedAt": "2026-11-23T13:00:46.526Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -1488,15 +1488,15 @@
       "bytes": 158
     },
     "contracts/risuai/api-surface.json": {
-      "sha256": "b7c5e3890b74196a62aebc4101a4e4ece600fdc927032a28607a0a3e3695dfb6",
-      "bytes": 81947
+      "sha256": "22170b13f910d06ed2e5417cd6d0f99338fa1666e947257b226c53add3ddc146",
+      "bytes": 82517
     },
     "contracts/risuai/ipc-contract.json": {
-      "sha256": "4b26ca29c5dd7f83ca06cc1358aa00e9b44c6f5d76ac7f1db84aa7ca005ed2ec",
+      "sha256": "1cc2d2c8ff2db43980b587e4b3b17885fedd1e0defbe543aaf8aaa031f4cb427",
       "bytes": 2312
     },
     "contracts/risuai/plugin-loader-contract.json": {
-      "sha256": "7dea2f6ce500bc307dae8aa72716e1b6a2ef30663a1c79d7ee0969778bf2920e",
+      "sha256": "3c29d181f7937c2ff9a27ac1f5fbbfad67b24f12c2386f375822013636af564e",
       "bytes": 3956
     },
     "contracts/risuai/replay/H06-01.json": {
@@ -1532,15 +1532,15 @@
       "bytes": 1121
     },
     "contracts/risuai/runtime-semantics.json": {
-      "sha256": "e0f4236fea7a974eb1577fa4eea809a2eeb673d6e6bbb40b41fba3869e257571",
-      "bytes": 10561
+      "sha256": "456a0ac27060189c6fc7bfbc835f85f1982c950f0d73b35fdd4cacb84a571773",
+      "bytes": 10640
     },
     "contracts/risuai/storage-contract.json": {
-      "sha256": "aac473303119a4e84007bdbb8fffbae62582736b9b7825c4e03a59539ee9afca",
+      "sha256": "89d73307a4500f8ca5f7d9f7595a94f0dd25b3d4f6ff9e1b6d49724ae3d49877",
       "bytes": 3015
     },
     "contracts/risuai/upstream-lock.json": {
-      "sha256": "07dfdb7580d74bf0a6d2e4dbef9c9e7c0f059768e33b5e1e0de14a95d0c20905",
+      "sha256": "eefacfa9d372f546a89e19ffc3a2a9b5925f0a00491fbcb33491753b397ed962",
       "bytes": 704
     },
     "DATA_폴더_열기.bat": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "4560a72a42662f7cfee373a19585712ac84691591183199996b9869105ca6146",
+      "sha256": "ae18738fa110839b3d577d6360a991237a2b960571a6a28720cb2f56acc35cc3",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -3992,7 +3992,7 @@
       "bytes": 4851
     },
     "docs/RISUAI_COMPATIBILITY_GATE.md": {
-      "sha256": "94498ad65893b67dac3cf26ae99c83d5f893822b8907a43448f0865b60f4279a",
+      "sha256": "5836bd905f3dc51618d275c3e2ad3431c2de43edb02ae58d1246cfa1b0635177",
       "bytes": 14409
     },
     "docs/SDK_FORCE_INITIAL_PENDING_PROOF_20261003.md": {
@@ -4348,16 +4348,16 @@
       "bytes": 4482223
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "ce1a48e5ee4363c93838d9ca6dea211b678cd74d1d31dd0c82d4da9083333ed6",
-      "bytes": 888853
+      "sha256": "4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088",
+      "bytes": 889115
     },
     "plugins/LIBRA.js": {
       "sha256": "756da455046e4f26d0beb32922a1ffbebac0dd719f379221ed46a3e6512cc4a9",
       "bytes": 7096296
     },
     "plugins/RETRACE.js": {
-      "sha256": "dccf79dc8aaf97c3ad9203c49560f2454f6ecdab0d5a911978f8a0b9d07bd7cf",
-      "bytes": 1353466
+      "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
+      "bytes": 1353774
     },
     "release-policy.json": {
       "sha256": "26e70bb033c5526671c9d3156f24f74117e89720bbfab3f4aeffb61b52b86247",
@@ -4726,6 +4726,10 @@
     "tests/audit_p1_server_security_and_updater_fixes_test.cjs": {
       "sha256": "c454638c5044af634737ebf5044d870de4b573aec1d70015ae42e0f1fb82866e",
       "bytes": 14048
+    },
+    "tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs": {
+      "sha256": "436499a97305f11c97a017f53a0f777f78b5c4d3a0146732d061e4496b609ad3",
+      "bytes": 10379
     },
     "tests/authority_backup_worker_settlement.test.cjs": {
       "sha256": "bb42c7512a03402d793cc4e25cbc5954007f69eba92048ecbf0d8a2559c0686d",
@@ -11400,8 +11404,8 @@
       "bytes": 19109
     },
     "tests/risu_compatibility_gate_test.cjs": {
-      "sha256": "07e3c0281271d33ff2747aaa6b99d3f81fde96f9430167bbeba81b73f960f87e",
-      "bytes": 14986
+      "sha256": "e50c18aff71e5e31cd836f803904a167e31d9ef466a89411bfa3188672f6d8cb",
+      "bytes": 18159
     },
     "tests/scope_catalog_fallback_test.cjs": {
       "sha256": "f8f0f11e7803c310f579511341d4ef5cb9a1e387f6e98194f13bc36964421b59",
@@ -12624,12 +12628,12 @@
       "bytes": 52330
     },
     "tools/risu_contract_extractor.cjs": {
-      "sha256": "703a19ec8394d714c0d320d742b6972ff5716d708efaacc550ea031e3cce2a01",
-      "bytes": 34132
+      "sha256": "c85ed33709230ecc41940fae7ce1845c9def239f13d90237e62ca836ed90a84f",
+      "bytes": 34209
     },
     "tools/risu_contract_host.cjs": {
-      "sha256": "677b97f5080e8c10e53a96df75fec7d33fef91be83fd655a34e13bdddfcb8a62",
-      "bytes": 30498
+      "sha256": "adeed8ccc92d733a7076880f6bcb957c8dfc5dde31ce38f2be15fbb7115bd68b",
+      "bytes": 31464
     },
     "tools/risu_contract_verifier.cjs": {
       "sha256": "eb3441306ed87dce1971655623d32170dcd5f09292e195c053dcb1cc8c5218cf",

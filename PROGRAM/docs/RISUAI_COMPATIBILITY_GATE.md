@@ -19,17 +19,17 @@ RisuAI Compatibility Gate
 ## 2. 지원 RisuAI 기준점 (Upstream Source-of-Truth & Pin)
 
 - **Upstream Repository**: `kwaroran/Risuai`
-- **Pinned Commit**: `ea61945f9038e0189807d075f55f4e66ab7e98bf`
+- **Pinned Commit**: `996a5535fdb4629258331955982693a74ea209de`
 - **Lock File**: `PROGRAM/contracts/risuai/upstream-lock.json` (`schema: "librarian.risu-upstream-lock.v1"`)
 
 PR/릴리즈 게이트는 매 실행마다 RisuAI `main` 최신 커밋을 자동 추적하지 않는다. 외부 저장소의 임의 변경으로 인해 Librarian PR 결과가 비결정적으로 흔들리는 것을 방지하기 위해, 반드시 `upstream-lock.json`에 고정된 커밋과 추적 대상 5개 파일의 SHA-256 해시를 기준으로 검증한다.
 
 ### 추적 대상 Upstream 파일 (Tracked Files)
 
-| Upstream 경로 | SHA-256 (`ea61945f...`) | 계약 역할 |
+| Upstream 경로 | SHA-256 (`996a5535...`) | 계약 역할 |
 |---|---|---|
-| `src/ts/plugins/apiV3/risuai.d.ts` | `ddca6852e1e655afe9ed229ad95f0bb3c815b01ee75f089db779401d7cc43a3a` | RisuAI Plugin API v3 표면(시그니처, 인자, 반환 타입, deprecated 여부) |
-| `src/ts/plugins/apiV3/v3.svelte.ts` | `9e4df9238965375dbccebf6eb8fb06117b1d9f866c20e4b40c263b55a4a0a40b` | `makeRisuaiAPIV3` 런타임 구현 및 19개 핵심 semantic fingerprint |
+| `src/ts/plugins/apiV3/risuai.d.ts` | `83c3253d02d273afbfb3e4a82d2fa5cc5d12666f9830393c096d4bc93edfe633` | RisuAI Plugin API v3 표면(시그니처, 인자, 반환 타입, deprecated 여부) |
+| `src/ts/plugins/apiV3/v3.svelte.ts` | `0498c6cca453930850fececbfa7b84a0b149d0a4ab8fc836e34f39762fe6cc31` | `makeRisuaiAPIV3` 런타임 구현 및 19개 핵심 semantic fingerprint |
 | `src/ts/plugins/plugins.svelte.ts` | `c9441c23f84d53e0c4304fa8d96afe11d8883ff29579fedb65ad7956d97b5461` | v3 헤더 파서(`//@name`, `//@api`, `//@version`, `//@arg`, `//@allowed-ipc`), 라이프사이클 |
 | `src/ts/plugins/pluginSafeClass.ts` | `9a8de9a6565aacf5bf60d1fa2ea0ddb6d70b63323f60e71e466ce3823cdcdbf9` | `SafeLocalStorage`(문자열 전용) 및 `SafeLocalPluginStorage`(JSON 직렬화 localforage) |
 | `src/ts/process/pluginStorageStore.ts` | `55d1394f04dfa0c2dc76fd2b0d5981be3fd728ba05cf3912b29ba6aeacb154ca` | `PluginStorageStore` JSON 직렬화, 예약 키(`_coldpluginIndex`, `_coldplugin`) 보호 |

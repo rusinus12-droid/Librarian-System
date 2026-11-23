@@ -1,7 +1,7 @@
 {
   "schema": "librarian.risu-plugin-loader-contract.v1",
   "repository": "kwaroran/Risuai",
-  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "commit": "996a5535fdb4629258331955982693a74ea209de",
   "sourceFile": "src/ts/plugins/plugins.svelte.ts",
   "implementationFingerprint": "b093bdc2bec1ede98477817bba49d4c68b51e8fbe5a2332e0c8aabbb13c6a82a",
   "headerDirectives": {

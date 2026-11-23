@@ -300,13 +300,13 @@
       },
       "lia": {
         "version": "0.32.0",
-        "sha256": "ce1a48e5ee4363c93838d9ca6dea211b678cd74d1d31dd0c82d4da9083333ed6",
-        "bytes": 888853
+        "sha256": "4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088",
+        "bytes": 889115
       },
       "retrace": {
         "version": "2.2.0",
-        "sha256": "dccf79dc8aaf97c3ad9203c49560f2454f6ecdab0d5a911978f8a0b9d07bd7cf",
-        "bytes": 1353466
+        "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
+        "bytes": 1353774
       },
       "gradia": {
         "version": "1.3.0",

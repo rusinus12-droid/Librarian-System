@@ -338,3 +338,56 @@ test('12. Upstream drift report schema conforms to normalized specification with
     fs.rmSync(tempUpstreamDir, { recursive: true, force: true });
   }
 });
+
+test('13. Upstream 996a5535 semantics: dbWrite denial silently skips host writes, createInlay gates on inlay, and assertPluginUrlAllowed enforces hostname blacklist', async () => {
+  const cluster = createContractBackedHostCluster({
+    contractsDir,
+    strictContractedOnly: false,
+    denyPermissions: ['dbWrite'],
+    fetchImpl: async () => ({ ok: true })
+  });
+  const ctx = cluster.createHostForPlugin({ name: 'lia_persona_linker' });
+  assert.equal(await ctx.api.requestPluginPermission('dbWrite'), false);
+  assert.equal(await ctx.api.requestPluginPermission('inlay'), true);
+  assert.equal(await ctx.api.requestPluginPermission('not_a_real_permission'), false);
+  assert.equal(await ctx.api.createInlay(new Uint8Array([1, 2, 3]), { name: 'probe.png' }), 'mock-inlay-id');
+
+  // When dbWrite is denied, RisuAI v3.svelte.ts withDbWrite skips host writes and returns undefined.
+  const prePersonas = cluster.dbState.personas.map((item) => item.id);
+  const nextPersonas = [...cluster.dbState.personas, { id: 'p-blocked', name: 'Blocked', personaPrompt: 'Blocked prompt' }];
+  assert.equal(await ctx.api.setDatabase({ personas: nextPersonas }), undefined);
+  assert.equal(await ctx.api.setDatabaseLite({ personas: nextPersonas }), undefined);
+  assert.deepEqual(
+    cluster.dbState.personas.map((item) => item.id),
+    prePersonas,
+    'host dbState.personas must remain unchanged when dbWrite is denied'
+  );
+
+  const originalCharName = cluster.dbState.characters[0].name;
+  assert.equal(await ctx.api.setCharacter({ ...cluster.dbState.characters[0], name: 'MutatedChar' }), undefined);
+  assert.equal(await ctx.api.setChar({ ...cluster.dbState.characters[0], name: 'MutatedChar2' }), undefined);
+  assert.equal(await ctx.api.setCharacterToIndex(0, { ...cluster.dbState.characters[0], name: 'MutatedChar3' }), undefined);
+  assert.equal(cluster.dbState.characters[0].name, originalCharName);
+
+  const originalChatName = cluster.dbState.characters[0].chats[0].name;
+  assert.equal(await ctx.api.setChatToIndex(0, 0, { id: 'chat-main', name: 'Mutated', message: [] }), undefined);
+  assert.equal(cluster.dbState.characters[0].chats[0].name, originalChatName);
+
+  // Verify createInlay denies cleanly when inlay permission is denied.
+  const inlayDeniedCluster = createContractBackedHostCluster({
+    contractsDir,
+    strictContractedOnly: false,
+    denyPermissions: ['inlay']
+  });
+  const inlayDeniedCtx = inlayDeniedCluster.createHostForPlugin({ name: 'lia_persona_linker' });
+  assert.equal(await inlayDeniedCtx.api.requestPluginPermission('inlay'), false);
+  assert.equal(await inlayDeniedCtx.api.createInlay('data:text/plain,hi'), null);
+
+  // Verify assertPluginUrlAllowed hostname matching (exact/subdomain blocked, unrelated substring allowed).
+  await assert.rejects(() => ctx.api.nativeFetch('https://api.risuai.xyz/v1/test'), /blocked/i);
+  await assert.rejects(() => ctx.api.risuFetch('https://risuai.net/api'), /blocked/i);
+  await assert.rejects(() => ctx.api.nativeFetch('https://sub.sionyw.com/hook'), /blocked/i);
+  const allowedSub = await ctx.api.nativeFetch('https://example.com/path?next=risuai.xyz');
+  assert.equal(allowedSub.ok, true);
+});
+

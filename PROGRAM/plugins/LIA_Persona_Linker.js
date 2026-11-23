@@ -2386,8 +2386,8 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
 
   function personaDatabaseMutationError(operation, reason, code = "LIA_PERSONA_DATABASE_UNSAFE") {
     appendDebugLog("persona_db", "whole_array_mutation_blocked", { operation, reason }, "warn");
-    appendOperationLog("persona_safety", "RisuAI Persona 목록을 안전하게 확인하지 못해 변경을 중단했습니다. 데이터 접근 권한과 목록 상태를 확인한 뒤 다시 시도해 주세요.", { operation, reason }, "warn");
-    const error = new Error("RisuAI Persona 목록을 안전하게 확인하지 못해 변경을 중단했습니다. 데이터 접근 권한과 목록 상태를 확인한 뒤 다시 시도해 주세요.");
+    appendOperationLog("persona_safety", "RisuAI Persona 목록을 안전하게 확인하지 못해 변경을 중단했습니다. 데이터 읽기·쓰기(db/dbWrite) 권한과 목록 상태를 확인한 뒤 다시 시도해 주세요.", { operation, reason }, "warn");
+    const error = new Error("RisuAI Persona 목록을 안전하게 확인하지 못해 변경을 중단했습니다. 데이터 읽기·쓰기(db/dbWrite) 권한과 목록 상태를 확인한 뒤 다시 시도해 주세요.");
     error.code = code;
     error.reason = reason;
     return error;
@@ -3020,7 +3020,9 @@ const MemorySuiteStorageBridge = createLiaLocalStorage({
       const after = await this.read(ctx);
       const matched = after.personaId === expected;
       if (!matched) {
-        throw new Error(`RisuAI Persona 바인딩 검증 실패: expected=${expected || "(none)"}, actual=${after.personaId || "(none)"}`);
+        const unchanged = after.personaId === before.personaId && before.personaId !== expected;
+        const permissionHint = unchanged ? " (데이터 쓰기[dbWrite] 권한 거부 여부 확인)" : "";
+        throw new Error(`RisuAI Persona 바인딩 검증 실패: expected=${expected || "(none)"}, actual=${after.personaId || "(none)"}${permissionHint}`);
       }
       if (ctx && typeof ctx === "object") ctx.chat = after.chat || nextChat;
       if (before.personaId !== expected) {

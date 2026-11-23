@@ -1,7 +1,7 @@
 {
   "schema": "librarian.risu-runtime-semantics.v1",
   "repository": "kwaroran/Risuai",
-  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "commit": "996a5535fdb4629258331955982693a74ea209de",
   "driftFailureCode": "RISUAI_UPSTREAM_SEMANTIC_DRIFT",
   "methods": {
     "addRisuChatListener": {
@@ -72,10 +72,11 @@
       "method": "setChatToIndex",
       "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
       "semanticContract": [
+        "requires_dbWrite_permission",
         "resolves_character_by_index_and_chat_by_chatIndex",
         "assigns_chat_when_character_and_chat_exist"
       ],
-      "implementationFingerprint": "e3a23e9d0631599e681bac45cb779c960e093da1ad1320ffc2b4089253722a55"
+      "implementationFingerprint": "21bf8d0908c030376dbf99a27c07d3df5256789d95fb53492d07ee84475cc40b"
     },
     "getCurrentCharacterIndex": {
       "method": "getCurrentCharacterIndex",
@@ -184,20 +185,20 @@
       "method": "nativeFetch",
       "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
       "semanticContract": [
-        "blocks_urlBlacklist_domains",
+        "validates_url_and_blocks_urlBlacklist_hostnames",
         "delegates_to_oldApis_nativeFetch"
       ],
-      "implementationFingerprint": "4943c776cd2a65b02fc02c0fdd091402ce149120cef2747ea2fe0843cb2eb7a8"
+      "implementationFingerprint": "7cba5e4224c57d78ad2e85a16f6c18be50eb9d34417e800c7b72b11e75717639"
     },
     "risuFetch": {
       "method": "risuFetch",
       "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
       "semanticContract": [
         "deprecated_in_favor_of_nativeFetch",
-        "blocks_urlBlacklist_domains",
+        "validates_url_and_blocks_urlBlacklist_hostnames",
         "delegates_to_oldApis_risuFetch"
       ],
-      "implementationFingerprint": "91e1a1aa77c52f39c062db77215bcdbb5a81e3745f6d28a6cc739d1f8ea36217"
+      "implementationFingerprint": "3b4f9903fe43f8ced71f415ca5b31a1b1e282ee04d6b0650d18da55e8f9a20c3"
     },
     "registerSetting": {
       "method": "registerSetting",

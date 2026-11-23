@@ -12528,17 +12528,20 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       if (saved === false || saved?.ok === false) throw new Error('setCharacter 저장이 거부되었습니다.');
       receipt = { writer: 'setCharacter', characterIndex };
     }
-    if (expected) {
-      const reader = liveApi(['getCharacterFromIndex']);
-      const readback = characterIndex >= 0 && typeof reader?.getCharacterFromIndex === 'function'
-        ? await reader.getCharacterFromIndex(characterIndex) : (await getCurrentContext()).character;
-      // Never try a whole-character rollback after a conflict: that could destroy
-      // another edit. Leave the target journal pending and report the mismatch.
-      if (!readback || handoffHostValueFingerprint(readback.chats) !== handoffHostValueFingerprint(payload.chats)) {
-        throw handoffHostConflict('캐릭터 저장 후 채팅 readback이 일치하지 않습니다. 원본 rollback 없이 승계 검증을 중단합니다.');
-      }
-      receipt.hostReadbackVerified = true;
+    const reader = liveApi(['getCharacterFromIndex']);
+    const readback = characterIndex >= 0 && typeof reader?.getCharacterFromIndex === 'function'
+      ? await reader.getCharacterFromIndex(characterIndex) : (await getCurrentContext()).character;
+    // Never try a whole-character rollback after a conflict: that could destroy
+    // another edit. Leave the target journal pending and report the mismatch.
+    if (!readback || handoffHostValueFingerprint(readback.chats) !== handoffHostValueFingerprint(payload.chats)) {
+      const unchangedFromExpected = expected && readback
+        && handoffHostValueFingerprint(readback.chats) === handoffHostValueFingerprint(expected.chats);
+      const hint = unchangedFromExpected
+        ? ' RisuAI 데이터 쓰기(dbWrite) 권한이 거부되었거나 호스트 저장이 무시되었을 수 있습니다.'
+        : '';
+      throw handoffHostConflict(`캐릭터 저장 후 채팅 readback이 일치하지 않습니다. 원본 rollback 없이 승계 검증을 중단합니다.${hint}`);
     }
+    receipt.hostReadbackVerified = true;
     return receipt;
   };
 
