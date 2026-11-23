@@ -165,9 +165,15 @@ test('Stage 4E: release_version archives published releases (not drafts) and CI 
   }
 
   const gateYml = fs.readFileSync(path.join(ROOT, '.github/workflows/release-builder-gate.yml'), 'utf8');
-  assert.match(gateYml, /risu-compatibility-gate:/);
+  assert.doesNotMatch(gateYml, /risu-compatibility-gate:/);
   assert.match(gateYml, /audit_p0a_cache_ai_embedding_fixes_test\.cjs/);
   assert.match(gateYml, /audit_p2_perf_logs_css_provenance_fixes_test\.cjs/);
+
+  const risuGateYml = fs.readFileSync(path.join(ROOT, '.github/workflows/risu-compatibility-gate.yml'), 'utf8');
+  assert.match(risuGateYml, /uses:\s+\.\/\.github\/workflows\/_risu-compatibility-check\.yml/);
+
+  const manualReleaseYml = fs.readFileSync(path.join(ROOT, '.github/workflows/manual-release.yml'), 'utf8');
+  assert.match(manualReleaseYml, /uses:\s+\.\/\.github\/workflows\/_risu-compatibility-check\.yml/);
 
   const compatYml = fs.readFileSync(path.join(ROOT, '.github/workflows/_risu-compatibility-check.yml'), 'utf8');
   assert.match(compatYml, /UPSTREAM_REPO: \$\{\{ steps\.lock\.outputs\.repository \}\}/);

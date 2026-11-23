@@ -1,7 +1,7 @@
 7513a927947fd3138a9697173c2654ca5fcf636d9b6e17d5a8cbe459839442c9  ./.gitattributes
 85947218c3c70b25a9352bc78cf407d544a4d4e7ff432888164129cadaa01770  ./.github/workflows/_risu-compatibility-check.yml
 7f36f51644919a7285791f9e7651ef7ab9af52f57d6e09ad6408fd1d5dc807b8  ./.github/workflows/manual-release.yml
-bc07865ec6811bd07430b183c1f62db3ee858839e52b41955c41541266517a21  ./.github/workflows/release-builder-gate.yml
+27dbaf69275e0f4484934b3a48442a0efc68697291a77e36a549cce34f576cca  ./.github/workflows/release-builder-gate.yml
 32c64eaa2c28ce1b29d6d9d56dc7d5bbf7e73b2596bd0c57a17f1d3d31fa5f19  ./.github/workflows/risu-compatibility-gate.yml
 07e6e7cf762fe46abc867138b2dbea5110d13499f79b9400daa497d4f12430f5  ./.github/workflows/risu-upstream-drift.yml
 2fd1140895b1093e5c05591bb4414ffb190586b9a7e849de25f45aabbbeeb811  ./.gitignore
@@ -735,7 +735,7 @@ f7f927e60e40fa34a727669f21e835493e86093000e4306dcce2a53ff83d6522  ./PROGRAM/plug
 4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088  ./PROGRAM/plugins/LIA_Persona_Linker.js
 756da455046e4f26d0beb32922a1ffbebac0dd719f379221ed46a3e6512cc4a9  ./PROGRAM/plugins/LIBRA.js
 61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c  ./PROGRAM/plugins/RETRACE.js
-bc146d503aa16a0e4dddfdbcc6c62beabd06d38b458a102480b4e9f3679a5738  ./PROGRAM/program-manifest.json
+5246525f6de1cb479fab6666578849ab58fd252c952055401097dfccf166fda1  ./PROGRAM/program-manifest.json
 26e70bb033c5526671c9d3156f24f74117e89720bbfab3f4aeffb61b52b86247  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -828,7 +828,7 @@ fe9f4503aeddf7ddd49659de29093413124b048b2a33b1de65044bd2c7cfe5cd  ./PROGRAM/test
 028a96951026fa7811b1219cf244d0f160881e2ad5f8e9fb34abcfcab01393f6  ./PROGRAM/tests/audit_p0a_cache_ai_embedding_fixes_test.cjs
 665b6810932eac0bbf5696425045f0d9e6ffa5a55899e81d0e0449ef3a208760  ./PROGRAM/tests/audit_p0b_tag_filter_and_scope_fixes_test.cjs
 c454638c5044af634737ebf5044d870de4b573aec1d70015ae42e0f1fb82866e  ./PROGRAM/tests/audit_p1_server_security_and_updater_fixes_test.cjs
-436499a97305f11c97a017f53a0f777f78b5c4d3a0146732d061e4496b609ad3  ./PROGRAM/tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs
+7e03e34971e5b4c6c9ecca3b5d446e0be542f50671c700eda832629d7ca071b7  ./PROGRAM/tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs
 bb42c7512a03402d793cc4e25cbc5954007f69eba92048ecbf0d8a2559c0686d  ./PROGRAM/tests/authority_backup_worker_settlement.test.cjs
 70f5b6c1940993dff7c014f0d4825f7c2a8781cef07c6408b54130544207377c  ./PROGRAM/tests/authority_core3_profile.test.cjs
 a033540485672b309e46ccc4567fdf081e2753944195842410809f07c9d24874  ./PROGRAM/tests/authority_core3_runtime.test.cjs
@@ -1393,7 +1393,7 @@ e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829  ./PROGRAM/test
 4f986f8da235773a81a8ee4b980e985711e7903dbce6a655d5d3774285bd5914  ./PROGRAM/tests/gradia/bianca-injection.test.cjs
 d85f9204bc5a6be3f5126c33b72f973ab353a9dbe58a01854a97150b7084aa33  ./PROGRAM/tests/gradia/bond-beat-intent.test.cjs
 f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/tests/gradia/context-degradation-gui.test.cjs
-03b7300896dca281d0b2be53c549af6b3dd382d6d5bc81807ea73268112803f4  ./PROGRAM/tests/gradia/context-degradation.test.cjs
+61ba3ad0f6b16bd122e8720b8018799b5a00d8fea3d3f92f637d20487a17e8b0  ./PROGRAM/tests/gradia/context-degradation.test.cjs
 e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc  ./PROGRAM/tests/gradia/creative-direction-clear.test.cjs
 83431d603cac045210049bfa9fccae408b1aec5e61317456e70167c732b80549  ./PROGRAM/tests/gradia/dialogue-aide.test.cjs
 fb9260201a066496b09b6b986ab3bdea4db4942e96a50da8e1ec8c0a6c13be40  ./PROGRAM/tests/gradia/dialogue-repair-apply.test.cjs
@@ -1415,13 +1415,13 @@ bf3aebedd8a685b93c1fcfd70c288ef0d59bc8d63380c0d4e940914311780f0b  ./PROGRAM/test
 a2c363f80642c0f07d916716b3940ff030121f3b5cef72b2c5bd1d4f64c14fb8  ./PROGRAM/tests/gradia/fixtures/vendor/risuai/src/etc/o200k_base.json
 ac4abc333a1497ed5260f3dfab52b3dc65c8a964b5dc38272e8d17125259b0cc  ./PROGRAM/tests/gradia/fixtures/vendor/risuai/src/ts/tokenizer.ts
 983a35ee4e7bb50bc6ec7f25e34651400359969823c77d09a85bc9f52e2ed159  ./PROGRAM/tests/gradia/gui_cleanup.test.cjs
-f86be499ad44304dceb355d4eb3868f7969ed6513ce3965c5f97091fd1af2af7  ./PROGRAM/tests/gradia/host.cjs
+e5bb1645edfab2d500bd824fbeedb582d70c18f55f38ec042b30c44d77e8917d  ./PROGRAM/tests/gradia/host.cjs
 821002f0785a35ea38efc64e36cb7fed1818942599028dfcbbbe5a327ba8d03a  ./PROGRAM/tests/gradia/hypav3-removal.test.cjs
 d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/tests/gradia/input-assist-reference-cap.test.cjs
 6e4a6949095291006f54f8f4e26954238d658a68c9a5f0228d887dda9063ced2  ./PROGRAM/tests/gradia/input-choice-envelope.test.cjs
 f88a317e66f8b0b1c00c82fc73be9ebde8b0f59bd90c05c2a6392270885adcdd  ./PROGRAM/tests/gradia/intimacy-attribution.test.cjs
 9f8ef0734f45949b1e693b93f849f8db77e9250c050b36eb1df4ab32f206b444  ./PROGRAM/tests/gradia/intimacy-gender-source.test.cjs
-f1480b14117e0c351f0307ffa01a57a8547e2018101138bb9012be55b03eb8c6  ./PROGRAM/tests/gradia/ipc_connection_fixture.cjs
+a367e82cc15714b971a36805540943fecbe63081416c2cacd5d4e6b24edd5a35  ./PROGRAM/tests/gradia/ipc_connection_fixture.cjs
 0e7e80ea52f036dd3e039a94e5df8e6aa07ba23734b91fd902de54103d8ba523  ./PROGRAM/tests/gradia/knowledge-boundary-aide.test.cjs
 2228e6aacf91adcb81a5ff5c52152dc6dcdd293d43d9be0bc022ded930533174  ./PROGRAM/tests/gradia/ladder-stage-panel.test.cjs
 890b443b6eb663cc43c06246f945f7fa044b086269762206c3d577c11b2ec02c  ./PROGRAM/tests/gradia/legacy-removal.test.cjs
@@ -1450,7 +1450,7 @@ b7b796b8618ec238fc19596dddaecd114ef150d258cfabe231abe34d462375aa  ./PROGRAM/test
 a99d4dccf69ec4fce716ae453a0a01da58759b654825ea58c7fb414fa6d2b122  ./PROGRAM/tests/gradia/server-read-adapter.test.cjs
 65f04e9a2f50093cfd1d78ff6a9f65d6b7e3e80aefaa7e76bfe70bfaacb8c785  ./PROGRAM/tests/gradia/server-read-public.test.cjs
 dd882dd1dbef4d4284b74e482365f0202c63a4d5c31a49e09ba9dbf8d08549f7  ./PROGRAM/tests/gradia/settings_status_feedback.test.cjs
-7dd6926cc06b1900403289cf1140dddfee96b535227bef3207541a093bf1398c  ./PROGRAM/tests/gradia/settings-backup.test.cjs
+baea8a83407048a0bce6412f519cbd2a3627d5149fb9f8a0d2d0070d47524969  ./PROGRAM/tests/gradia/settings-backup.test.cjs
 d24734d7d2fdf2030730461f753f0f9444ff9fca1155b92c4198f0233f036e93  ./PROGRAM/tests/gradia/sleep-state-continuity.test.cjs
 42f1cf2db7a71b23802b972150a4e7d7355db69684443ec959075f46ab15b6ab  ./PROGRAM/tests/gradia/suite-inventory.json
 3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0  ./PROGRAM/tests/gradia/turn-eligibility.test.cjs
@@ -2724,7 +2724,7 @@ fee4ff7a53f14ea0d7828a873c6b3b7d5ecad417e1c2cd484c3afb206a3f70df  ./PROGRAM/tool
 89a4088c95d5604b4f28eee1736825ab5e1a2efaa6a43f01475150275e98099b  ./PROGRAM/tools/_verify_lore_index_equivalence.cjs
 b24f5eeafa43c4491526bcef98cab8a5999bf584f39910c385ba0e68fbb4484a  ./PROGRAM/tools/_why_rejected.cjs
 50b7d78b49b670aebabdf3cc206365c2256d8a608f4bc11c142e17f763ed50b5  ./PROGRAM/tools/audit_flashback_manifest_locks.cjs
-373035fc03081f3cfcdb25bdd5a612f3644fc50815e8f7c765e6e34e3be9eba3  ./PROGRAM/tools/build_distribution.cjs
+4e7334a86f9e2629cc8228cf613ecbf909703e2fe99bc5815e68976c06f7c1ae  ./PROGRAM/tools/build_distribution.cjs
 03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360  ./PROGRAM/tools/build_offline_candidate.cjs
 9ff1b1289a0f79fb8a08a06c8dfa8915e372d611d9af89852494bb232cb8f580  ./PROGRAM/tools/build_plugins.cjs
 62f12582d3dfa5949fcbc6b19d07480508d35ad75e7e86e37e6cc73010754c3c  ./PROGRAM/tools/build_storage_mode_matrix.cjs

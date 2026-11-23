@@ -10,10 +10,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  risu-compatibility-gate:
-    name: risu-compatibility-gate
-    uses: ./.github/workflows/_risu-compatibility-check.yml
-
   release-builder-gate:
     name: release-builder-gate
     runs-on: ubuntu-latest

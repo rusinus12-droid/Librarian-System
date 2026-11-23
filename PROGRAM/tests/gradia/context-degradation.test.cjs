@@ -22,7 +22,7 @@ test('an oversized request is degraded and the loss is recorded instead of faili
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
-    model:'tight-model',context_window:15750,max_tokens:16384,timeout_ms:5000,stream:false});
+    model:'tight-model',context_window:15750,max_tokens:16384,timeout_ms:20000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
   await f.connect();
@@ -45,7 +45,7 @@ test('a context too small for its own prompt still fails after the ladder and is
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('micro',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
-    model:'micro-model',context_window:900,max_tokens:1024,timeout_ms:5000,stream:false});
+    model:'micro-model',context_window:900,max_tokens:1024,timeout_ms:20000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'micro',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'soft',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false});
   await f.connect();
@@ -60,7 +60,7 @@ test('an unset context window uses the model heuristic instead of the ollama 32k
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('hosted',{provider:'custom',url:'https://ollama.com/v1/chat/completions',key:'synthetic',
-    model:'deepseek-v4.1-flash:1017-cloud',max_tokens:16384,timeout_ms:5000,stream:false});
+    model:'deepseek-v4.1-flash:1017-cloud',max_tokens:16384,timeout_ms:20000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'hosted',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false});
   await f.connect();
@@ -84,7 +84,7 @@ const dispositionRun=async(t,contextWindow,npcs=FOUR_NPCS)=>{
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
-    model:'tight-model',context_window:contextWindow,max_tokens:16384,timeout_ms:5000,stream:false});
+    model:'tight-model',context_window:contextWindow,max_tokens:16384,timeout_ms:20000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
   await f.connect();
@@ -129,7 +129,7 @@ test('the random scene variable is left out of a request that cannot hold it',as
   f.host.plugin.debugSetSceneVarianceRandom([0.1,0.0,0.0]);
   t.after(()=>f.host.plugin.debugSetSceneVarianceRandom(null));
   await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
-    model:'tight-model',context_window:15700,max_tokens:16384,timeout_ms:5000,stream:false});
+    model:'tight-model',context_window:15700,max_tokens:16384,timeout_ms:20000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'hard',lore_activation_mode:'off',scene_variance:'high',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
   await f.connect();

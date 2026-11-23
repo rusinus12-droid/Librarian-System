@@ -706,12 +706,14 @@ function runReleaseSmokeFromSource() {
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
+  smokeEnv.GRADIA_SUITE_CONCURRENCY = process.env.GRADIA_SUITE_CONCURRENCY || '2';
+  const smokeConcurrency = Math.max(1, Number(process.env.RELEASE_SMOKE_CONCURRENCY) || 2);
   // A hang guard, not a speed target. gradia_suite_test alone runs the whole gradia test
   // directory serially inside one test slot and exceeded a 10-minute per-test ceiling on this
   // host (measured 2026-11-22, cancelled at 600s), so the guard is scaled to that shape: a
   // per-test ceiling that still names a genuine hang instead of letting the wall budget swallow
   // the whole run, and a wall budget above it.
-  const smoke=runNodeProcess(['--test','--test-concurrency=4','--test-timeout=2700000',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:3600000,env:smokeEnv});
+  const smoke=runNodeProcess(['--test',`--test-concurrency=${smokeConcurrency}`,'--test-timeout=2700000',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:3600000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;
