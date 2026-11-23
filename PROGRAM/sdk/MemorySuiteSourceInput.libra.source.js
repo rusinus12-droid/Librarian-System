@@ -50,11 +50,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
-const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {

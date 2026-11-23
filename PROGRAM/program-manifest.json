@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-23T13:43:15.361Z",
+  "generatedAt": "2026-11-23T14:14:29.090Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "21c23d49fe78a1b415f5c951ddc99447a4b5d90d341b1e2c80c67836715890b1",
+      "sha256": "f05bcba5291050cc850038b5c007b03b4993f8de96d3de4a6bd961e273330188",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4336,24 +4336,24 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "943fa479853fb4aa0daad4065feb21c1f501a30a96d0b670b7036e1badec3888",
-      "bytes": 4025670
+      "sha256": "29f836881628cac0237900b837d4586b11782d3ff4202c2244326d4c17234c04",
+      "bytes": 4032685
     },
     "plugins/GRADIA.js": {
-      "sha256": "a03e89466c0fb384710dd84f632b11c0c42914c5091465412fb81e823063a670",
-      "bytes": 4401585
+      "sha256": "19dc50acf2aa6ad03894e996636f85fce6022d2270705a7022292b939fb83361",
+      "bytes": 4403152
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "6f6972f1d5deac962824edca7117e7aab48095dfc7416cd1a23a53d82fbc140b",
-      "bytes": 4482255
+      "sha256": "31d599d0867834f63c0603302213aeed5d14121221d9ec062717852720a57bbf",
+      "bytes": 4482958
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088",
       "bytes": 889115
     },
     "plugins/LIBRA.js": {
-      "sha256": "54ab3f0cbf4d75384bd22bef279615890392b2e2435e675bb6046079d0dc96c3",
-      "bytes": 7096604
+      "sha256": "a4ae56fd9ed05134d48a939e8adfed5d81882132a0beb5c89ca2184dad30c1bd",
+      "bytes": 7101577
     },
     "plugins/RETRACE.js": {
       "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
@@ -4460,8 +4460,8 @@
       "bytes": 91215
     },
     "sdk/MemorySuiteSourceInput.libra.source.js": {
-      "sha256": "6bc5e5042d260f6f93e47e9b10ff0bed1e5e8d822280c4dc367c206e1f373e70",
-      "bytes": 42151
+      "sha256": "eb8458a245079c93c9878bf3abcf4513b3c3e62c27c2b64565b0d81492d0fb14",
+      "bytes": 42315
     },
     "sdk/MemorySuiteSourceInputControls.source.js": {
       "sha256": "5884ac367dfdb7a18f0e9e5409ff5c4ba6d20a343ad1776cb717bd416f2b1131",

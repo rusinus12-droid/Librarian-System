@@ -5604,7 +5604,11 @@ ${BIANCA_PERSONA_TEXT}`;
       },
       setBudgetProfile(preset, name) {
         if (!budgetMeter) return;
-        if (text(preset.extra_body_json || '').trim()) throw this.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
+        const rawExtraBody = text(preset.extra_body_json || '').trim();
+        if (rawExtraBody) {
+          const parsedExtraBody = tryJsonParse(rawExtraBody, null);
+          if (!isSafeEvidenceExtraBody(parsedExtraBody)) throw this.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
+        }
         this.budgetProfile = libModelContextProfile(preset, name);
         if (!this.budgetProfile) throw this.fail('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
         // Which context number the evidence gate used, and where it came from.
@@ -5760,6 +5764,31 @@ ${BIANCA_PERSONA_TEXT}`;
     const value = text(raw).trim();
     if (!value) return fallback;
     try { return JSON.parse(value); } catch (_) { return fallback; }
+  };
+
+  const EVIDENCE_SAFE_EXTRA_BODY_KEYS = new Set([
+    'num_ctx', 'top_p', 'top_k', 'min_p', 'repeat_penalty', 'presence_penalty', 'frequency_penalty', 'seed'
+  ]);
+  const isSafeEvidenceExtraBody = (parsed) => {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const isValidNumericScalar = (key, val) => {
+      if (typeof val !== 'number' || !Number.isFinite(val)) return false;
+      if (key === 'num_ctx') return Number.isInteger(val) && val > 0;
+      return true;
+    };
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k === 'options') {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+        const optEntries = Object.entries(v);
+        if (!optEntries.length) return false;
+        for (const [ok, ov] of optEntries) {
+          if (!EVIDENCE_SAFE_EXTRA_BODY_KEYS.has(ok) || !isValidNumericScalar(ok, ov)) return false;
+        }
+        continue;
+      }
+      if (!EVIDENCE_SAFE_EXTRA_BODY_KEYS.has(k) || !isValidNumericScalar(k, v)) return false;
+    }
+    return true;
   };
 
   const ArgumentCache = new Map();
@@ -21254,11 +21283,13 @@ ${passage.text || ''}`, 420));
       ...basePreset,
       reasoning_effort: options.reasoningEffortOverride || reasoningPolicy.effort || basePreset.reasoning_effort
     });
-    // The first bridge unit cannot certify arbitrary provider-specific body overrides.
-    // Native-only calls retain their existing extra-body behavior.
-    if (evidenceRun && text(preset.extra_body_json || '').trim()
-      && Object.keys(tryJsonParse(preset.extra_body_json, { invalid: true }) || {}).length) {
-      throw evidenceRun.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
+    // The first bridge unit restricts arbitrary provider body overrides.
+    // Safe tuning scalars (e.g. Ollama num_ctx) are allowlisted; prompt/tool/token-cap overrides stay rejected.
+    if (evidenceRun && text(preset.extra_body_json || '').trim()) {
+      const parsedExtraBody = tryJsonParse(preset.extra_body_json, null);
+      if (!isSafeEvidenceExtraBody(parsedExtraBody)) {
+        throw evidenceRun.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
+      }
     }
     if (!providerConfigured(preset)) {
       finishTelemetryLogicalCall(telemetryLogicalCallId, 'skipped_unconfigured');
@@ -34677,11 +34708,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
-const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -60946,6 +60978,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     displayName: PUBLIC_DISPLAY_NAME,
     internalCodeName: INTERNAL_CODE_NAME,
     version: PLUGIN_VERSION,
+    debugIsSafeEvidenceExtraBody: value => isSafeEvidenceExtraBody(value),
     providers: Array.from(new Set([...PROVIDERS, ...Object.keys(DIRECT_LLM_PROVIDER_REGISTRY)])),
     providerPresets: JSON.parse(JSON.stringify(PROVIDER_PRESETS)),
     directProviderRegistry: JSON.parse(JSON.stringify(DIRECT_LLM_PROVIDER_REGISTRY)),

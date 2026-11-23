@@ -28005,6 +28005,7 @@ function summarizeAgentCbsTag(rawContent) {
     const base = {
       schema: PROMPT_CACHE_SCHEMA,
       enabled: false,
+      systemOnly: false,
       strategy: 'off',
       reason: '',
       provider,
@@ -28017,8 +28018,41 @@ function summarizeAgentCbsTag(rawContent) {
       cacheKeySeed: text(context?.cacheKeySeed || ''),
       estimatedPrefixTokens: Number(envelope?.estimatedPrefixTokens || 0)
     };
-    if (!context || !envelope) return { ...base, reason: 'no_cacheable_memory_prefix' };
     if (promptCachePolicy(preset) === 'off' || options.disablePromptCache === true) return { ...base, reason: 'disabled' };
+    if (!context || !envelope) {
+      const isSingleStageMemory = ['canonical_memory', 'micro_memory', 'lens_analysis'].includes(options.taskKind)
+        || stageName === LIBRARIAN_STAGE_ID
+        || stageName === 'lens_analysis';
+      if (!isSingleStageMemory) return { ...base, reason: 'no_cacheable_memory_prefix' };
+      const systemText = stripPromptCacheMarkers(String(systemPrompt || ''));
+      const systemTokens = estimateTokensFromText(systemText);
+      const sysHash = createTextHasher().update(systemText).digest();
+      const sysCacheKey = `libra:system:${providerModelLeaf(preset?.model || 'model').slice(0, 40)}:${stageName}:${sysHash.slice(0, 16)}`;
+      const systemOut = { ...base, reuseCount: 1, cacheKey: sysCacheKey, estimatedPrefixTokens: systemTokens, systemOnly: true };
+      if (providerMode === 'anthropic') {
+        const minTokens = claudePromptCacheMinimumTokens(preset?.model);
+        if (PromptCacheRuntime.unsupported.has(promptCacheUnsupportedKey(preset, providerMode, 'anthropic_explicit'))) {
+          return { ...base, estimatedPrefixTokens: systemTokens, reason: 'session_cached_unsupported' };
+        }
+        if (systemTokens >= minTokens) {
+          return { ...systemOut, enabled: true, strategy: 'anthropic_system_explicit', reason: 'stable_system_prompt_reused' };
+        }
+        return { ...base, estimatedPrefixTokens: systemTokens, reason: `prefix_below_${minTokens}` };
+      }
+      if (provider === 'openai') {
+        if ((openAIExplicitPromptCacheModel(preset?.model) || openAIAutomaticPromptCacheModel(preset?.model)) && systemTokens >= 1024) {
+          return { ...systemOut, enabled: true, strategy: 'openai_system_implicit', reason: 'stable_system_prompt_reused' };
+        }
+        return { ...base, estimatedPrefixTokens: systemTokens, reason: systemTokens < 1024 ? 'prefix_below_1024' : 'model_cache_capability_unknown' };
+      }
+      if (providerMode === 'gemini' || providerMode === 'vertex_gemini') {
+        if (systemTokens >= 1024) {
+          return { ...systemOut, enabled: true, strategy: 'gemini_implicit', reason: 'stable_system_prompt_reused' };
+        }
+        return { ...base, estimatedPrefixTokens: systemTokens, reason: 'prefix_below_1024' };
+      }
+      return { ...base, estimatedPrefixTokens: systemTokens, reason: 'no_cacheable_memory_prefix' };
+    }
     const explicitStrategy = provider === 'openai' && openAIExplicitPromptCacheModel(preset.model)
       ? 'openai_explicit'
       : providerMode === 'anthropic' ? 'anthropic_explicit' : '';
@@ -28276,7 +28310,7 @@ function summarizeAgentCbsTag(rawContent) {
       temperature: options.temp ?? preset.temp,
       stream: !!preset.stream
     };
-    if (useOpenAICacheEnvelope && cacheDecision.cacheKey) body.prompt_cache_key = cacheDecision.cacheKey;
+    if ((useOpenAICacheEnvelope || (cacheDecision?.enabled && cacheDecision.strategy === 'openai_system_implicit')) && cacheDecision.cacheKey) body.prompt_cache_key = cacheDecision.cacheKey;
     if (cacheDecision?.strategy === 'openai_explicit') body.prompt_cache_options = { mode: 'explicit', ttl: '30m' };
     if (shouldUseMaxCompletionTokens(preset, family)) body.max_completion_tokens = budget.providerMaxTokens;
     else body.max_tokens = budget.providerMaxTokens;
@@ -28441,7 +28475,7 @@ function summarizeAgentCbsTag(rawContent) {
     };
     if (useOpenAICacheEnvelope) body.instructions = cacheEnvelope.commonSystem;
     else if (String(systemPrompt || '').trim()) body.instructions = stripPromptCacheMarkers(String(systemPrompt));
-    if (useOpenAICacheEnvelope && cacheDecision.cacheKey) body.prompt_cache_key = cacheDecision.cacheKey;
+    if ((useOpenAICacheEnvelope || (cacheDecision?.enabled && cacheDecision.strategy === 'openai_system_implicit')) && cacheDecision.cacheKey) body.prompt_cache_key = cacheDecision.cacheKey;
     if (cacheDecision?.strategy === 'openai_explicit') body.prompt_cache_options = { mode: 'explicit', ttl: '30m' };
     if (options.jsonMode === true && options.omitNativeJsonMode !== true) {
       body.text = {
@@ -28541,9 +28575,14 @@ function summarizeAgentCbsTag(rawContent) {
     const budget = resolveProviderOutputBudget(preset, options, family);
     const cacheDecision = options.promptCacheDecision;
     const cacheEnvelope = cacheDecision?.enabled && cacheDecision.strategy === 'anthropic_explicit' ? cacheDecision.envelope : null;
+    const useAnthropicSystemCache = cacheDecision?.enabled && cacheDecision.strategy === 'anthropic_system_explicit';
     let body = {
       model: preset.model,
-      system: cacheEnvelope ? [{ type: 'text', text: cacheEnvelope.commonSystem }] : stripPromptCacheMarkers(systemPrompt),
+      system: cacheEnvelope
+        ? [{ type: 'text', text: cacheEnvelope.commonSystem }]
+        : useAnthropicSystemCache
+          ? [{ type: 'text', text: stripPromptCacheMarkers(systemPrompt), cache_control: { type: 'ephemeral' } }]
+          : stripPromptCacheMarkers(systemPrompt),
       messages: cacheEnvelope ? [{ role: 'user', content: [
         { type: 'text', text: cacheEnvelope.stablePrefix, cache_control: { type: 'ephemeral' } },
         { type: 'text', text: cacheEnvelope.dynamicTail }
@@ -29042,7 +29081,7 @@ function summarizeAgentCbsTag(rawContent) {
       await assertConsumerOperationReady(options.consumerOperation, stageName, options.taskKind);
       options = { ...options, maxCorrectiveRetries: 0, promptCacheUnsupportedRetry: true, thinkingUnsupportedRetry: true, nativeJsonUnsupportedRetry: true, contextRetry: true, transientRetry: true, lengthLimitRetry: true, noThinkingRetry: true };
     }
-    if (stageName===LIBRARIAN_STAGE_ID || stageName==='lens_analysis') options={...options,disablePromptCache:true,promptCacheUnsupportedRetry:true,thinkingUnsupportedRetry:true,nativeJsonUnsupportedRetry:true,contextRetry:true,transientRetry:true,lengthLimitRetry:true,noThinkingRetry:true};
+    if (stageName===LIBRARIAN_STAGE_ID || stageName==='lens_analysis') options={...options,promptCacheUnsupportedRetry:true,thinkingUnsupportedRetry:true,nativeJsonUnsupportedRetry:true,contextRetry:true,transientRetry:true,lengthLimitRetry:true,noThinkingRetry:true};
     if (!options.__providerRetryGovernor) options = { ...options, __providerRetryGovernor: providerRetryGovernor(options) };
     throwIfProviderAborted(options.signal);
     if (settings?.ragCbsContext) {
@@ -29118,7 +29157,7 @@ function summarizeAgentCbsTag(rawContent) {
     // Native structured-output/tool schemas become part of the provider-side prefix on GPT/Claude.
     // When the same five-turn evidence is explicitly cached across ito stages, prompt-enforced JSON
     // keeps that prefix stable; LIBRA already validates and retries malformed JSON patches.
-    if (promptCacheDecision.enabled && options.jsonMode === true && (provider === 'openai' || mode === 'anthropic')) {
+    if (promptCacheDecision.enabled && !promptCacheDecision.systemOnly && options.jsonMode === true && (provider === 'openai' || mode === 'anthropic')) {
       effectiveOptions.omitNativeJsonMode = true;
     }
     if(preset.stream && mode==='anthropic' && options.jsonMode && !options.jsonSchema)effectiveOptions.omitNativeJsonMode=true;
@@ -40621,57 +40660,67 @@ function createLibraReadonlySourceContext(owner) {
         lastKnownExplicitChatIdByChar.delete(oldest);
       }
     };
+    let inflightResolveContextPromise = null;
     const resolveContext = async (force = false) => {
       if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
-      const characterInfo = await loadCurrentCharacterForRisuContext(force);
-      const character = characterInfo.character;
-      const chatInfo = await loadCurrentChatForRisuContext(character, force);
-      const chat = chatInfo.chat;
-      if (!character || !chat) throw new Error('현재 캐릭터와 채팅을 읽을 수 없습니다.');
-      const identity = chatInfo.identity || await loadCurrentChatIdentity(force) || `${contextId(character, 'character')}:${contextId(chat, 'chat')}`;
-      const characterId = contextId(character, 'character');
-      const explicitChatId = string(chat?.id || chat?.chatId || chat?.uuid || chat?.key || '');
-      if (explicitChatId) rememberExplicitChatId(characterId, explicitChatId);
-      const hasChatsWithExplicitIds = Array.isArray(character?.chats)
-        && character.chats.some(item => Boolean(string(item?.id || item?.chatId || item?.uuid || item?.key || '')));
-      const transientUnstableChatIdentity = !explicitChatId
-        && (lastKnownExplicitChatIdByChar.has(characterId) || hasChatsWithExplicitIds);
-      const chatId = contextId(chat, identity || 'chat');
-      if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
-      const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
-      const scope = { characterId, chatId, scopeKey };
-      const hostLineage = MemorySuiteHostLineage.inspect(character, chat);
-      let hostWorldlineMeta = defaultHostWorldlineMeta(scope);
-      if (hostLineage.kind === 'native_branch' && hostLineage.inheritanceEligible === true && hostLineage.parentChatId) {
-        const parentScopeKey = await resolveStableScopeKey(characterId, hostLineage.parentChatId, `${characterId}:${hostLineage.parentChatId}`);
-        hostWorldlineMeta = hostWorldlineMetaForNativeBranch(
-          scope,
-          null,
-          { characterId, chatId: hostLineage.parentChatId, scopeKey: parentScopeKey },
-          hostLineage
-        );
+      if (force !== true && inflightResolveContextPromise) return await inflightResolveContextPromise;
+      const run = (async () => {
+        const characterInfo = await loadCurrentCharacterForRisuContext(force);
+        const character = characterInfo.character;
+        const chatInfo = await loadCurrentChatForRisuContext(character, force);
+        const chat = chatInfo.chat;
+        if (!character || !chat) throw new Error('현재 캐릭터와 채팅을 읽을 수 없습니다.');
+        const identity = chatInfo.identity || await loadCurrentChatIdentity(force) || `${contextId(character, 'character')}:${contextId(chat, 'chat')}`;
+        const characterId = contextId(character, 'character');
+        const explicitChatId = string(chat?.id || chat?.chatId || chat?.uuid || chat?.key || '');
+        if (explicitChatId) rememberExplicitChatId(characterId, explicitChatId);
+        const hasChatsWithExplicitIds = Array.isArray(character?.chats)
+          && character.chats.some(item => Boolean(string(item?.id || item?.chatId || item?.uuid || item?.key || '')));
+        const transientUnstableChatIdentity = !explicitChatId
+          && (lastKnownExplicitChatIdByChar.has(characterId) || hasChatsWithExplicitIds);
+        const chatId = contextId(chat, identity || 'chat');
+        if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
+        const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
+        const scope = { characterId, chatId, scopeKey };
+        const hostLineage = MemorySuiteHostLineage.inspect(character, chat);
+        let hostWorldlineMeta = defaultHostWorldlineMeta(scope);
+        if (hostLineage.kind === 'native_branch' && hostLineage.inheritanceEligible === true && hostLineage.parentChatId) {
+          const parentScopeKey = await resolveStableScopeKey(characterId, hostLineage.parentChatId, `${characterId}:${hostLineage.parentChatId}`);
+          hostWorldlineMeta = hostWorldlineMetaForNativeBranch(
+            scope,
+            null,
+            { characterId, chatId: hostLineage.parentChatId, scopeKey: parentScopeKey },
+            hostLineage
+          );
+        }
+        const context = { character, chat, identity, hostLineage, hostWorldlineMeta, scope, transientUnstableChatIdentity };
+        const previous = state.lastResolvedContext;
+        if (previous?.scope?.chatId && string(previous.scope.chatId) !== string(chatId)) {
+          state.previousResolvedContext = {
+            scope: previous.scope ? { ...previous.scope } : null,
+            identity: previous.identity || '',
+            chat: previous.chat ? {
+              id: previous.chat.id,
+              chatId: previous.chat.chatId,
+              uuid: previous.chat.uuid,
+              name: previous.chat.name,
+              title: previous.chat.title,
+              chatName: previous.chat.chatName,
+              filename: previous.chat.filename,
+              ...(Array.isArray(previous.chat.message) ? { message: previous.chat.message } : {}),
+              ...(Array.isArray(previous.chat.messages) ? { messages: previous.chat.messages } : {})
+            } : null
+          };
+        }
+        state.lastResolvedContext = context;
+        return context;
+      })();
+      if (force !== true) inflightResolveContextPromise = run;
+      try {
+        return await run;
+      } finally {
+        if (inflightResolveContextPromise === run) inflightResolveContextPromise = null;
       }
-      const context = { character, chat, identity, hostLineage, hostWorldlineMeta, scope, transientUnstableChatIdentity };
-      const previous = state.lastResolvedContext;
-      if (previous?.scope?.chatId && string(previous.scope.chatId) !== string(chatId)) {
-        state.previousResolvedContext = {
-          scope: previous.scope ? { ...previous.scope } : null,
-          identity: previous.identity || '',
-          chat: previous.chat ? {
-            id: previous.chat.id,
-            chatId: previous.chat.chatId,
-            uuid: previous.chat.uuid,
-            name: previous.chat.name,
-            title: previous.chat.title,
-            chatName: previous.chat.chatName,
-            filename: previous.chat.filename,
-            ...(Array.isArray(previous.chat.message) ? { message: previous.chat.message } : {}),
-            ...(Array.isArray(previous.chat.messages) ? { messages: previous.chat.messages } : {})
-          } : null
-        };
-      }
-      state.lastResolvedContext = context;
-      return context;
     };
 
     const RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS = 30000;
@@ -48934,7 +48983,13 @@ function createLibraReadonlySourceContext(owner) {
       return { key: ref.key, proofs: value.proofs, assertCurrent: value.assertCurrent, rows: value.rows.map((row, n) => ({ ...row,
         id: 'canonical:' + native.fingerprint([ref.key, ref.revision, n]), family: 'canonical', axis: engine.axisFor(row.domain),
         // A canonical memory covers a turn span; its facts are dated by that whole span, not by its last turn.
-        sourceKey: ref.key, turn: Number(ref.turnRange?.end || 0), turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0) })) };
+        sourceKey: ref.key,
+        memoryId: ref.memoryId || '',
+        revision: Number(ref.revision || 0),
+        sessionEpoch: Number(ref.sessionEpoch || 0),
+        sourceDigest: ref.sourceDigest || '',
+        artifactDigest: ref.artifactDigest || '',
+        turn: Number(ref.turnRange?.end || 0), turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0) })) };
     };
     const micro = async turn => {
       const value = await native.micro(context, snapshot, turn); check();
@@ -49284,8 +49339,23 @@ function createLibraReadonlySourceContext(owner) {
             .map(row => row.reason).filter(Boolean))] } : {}) }])) },
       guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
-    authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
-      scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turnStart || item.turn, end: item.turn } })) });
+    authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => {
+      const raw = rawById.get(item.id);
+      return {
+        ...item,
+        memoryKey: item.sourceKey,
+        ...(raw?.memoryId ? {
+          memoryId: raw.memoryId,
+          revision: Number(raw.revision || 0),
+          sessionEpoch: Number(raw.sessionEpoch || 0),
+          ...(raw.sourceDigest ? { sourceDigest: raw.sourceDigest } : {}),
+          ...(raw.artifactDigest ? { artifactDigest: raw.artifactDigest } : {})
+        } : {}),
+        scopeKey: frame.scope.scopeKey,
+        worldlineId: frame.worldlineId,
+        turnRange: { start: item.turnStart || item.turn, end: item.turn }
+      };
+    }) });
     try {
       await validatePacket(packet);
       // A frame that saw a concurrent change is closed by settle; prove once more without it.
@@ -50524,7 +50594,6 @@ function createLibraReadonlySourceContext(owner) {
             ...(budget ? {
               // Canonical jobs admit every extra physical request through one
               // shared retry ledger instead of stacking provider-local retries.
-              disablePromptCache: true,
               promptCacheUnsupportedRetry: true,
               thinkingUnsupportedRetry: true,
               nativeJsonUnsupportedRetry: true,
@@ -52450,11 +52519,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
-const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -54634,7 +54704,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           __executionState: executionState,
           validateMicroSubmission: options.validateSubmission,
           jsonMode: true, structuredTask: true,
-          forceNonStreaming: true, disablePromptCache: true, temp: 0.1
+          forceNonStreaming: true, temp: 0.1
         });
         const firstRequests = Math.max(1, Number(result?.execution?.requestCount || 1));
         const firstParsed = result?.ok === true ? parseMicroProducerEnvelope(result.content) : null;
@@ -54646,7 +54716,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               timeoutMs:microTimeoutMs,deadlineAt,extraCalls:0,maxCorrectiveRetries:0,jsonMode:true,structuredTask:true,
               __executionState: executionState,
               validateMicroSubmission: options.validateSubmission,
-              forceNonStreaming:true,disablePromptCache:true,temp:0
+              forceNonStreaming:true,temp:0
             });
         }
       } catch (error) {
@@ -61919,7 +61989,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       applyUnifiedLegacyCoverage(head,legacyRefs,typedCount);
       head.worldlineId=activeId;
       head.unifiedReplay={schema:'libra.unified_replay.v1',canonicalCount:replayed.length,chainDigest:digest(replayed),providerCalls:0};
-      return {head,registry,lastMemory,pendingBoundary,appliedRefs:refs.slice(0,replayed.length),appliedCorrections:[...new Set(appliedCorrections)],appliedDeltas:0,canonicalCount:replayed.length,store:journal,identityTrace};
+      return {head,registry,lastMemory,pendingBoundary,appliedRefs:refs.slice(0,replayed.length),appliedCorrections:[...new Set(appliedCorrections)],appliedDeltas:0,canonicalCount:replayed.length,store:journal,identityTrace,livePairs};
     };
     // A pending fact concerns its own field, never the whole domain. Measured on real chats, one past fact
     // marked a whole domain stale, and that in turn stopped Micro from applying. An unreadable identity, a
@@ -62109,7 +62179,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const head=candidate.head;
         const appliedManifest=allowIncompletePrefix?statePipelineManifestForExactRefs(manifest,candidate.appliedRefs):manifest;
         head.basis=continuityStateBasis(continuityStateRefs(appliedManifest).filter(r=>r.inherited||r.sessionEpoch<0||r.end<=cutoff),{replayFingerprint});head.updatedAt=nowIso();
-        const livePairsForBindings=allowIncompletePrefix?buildPairs(context.chat,context.scope.scopeKey):null;
+        const livePairsForBindings=allowIncompletePrefix?(Array.isArray(candidate?.livePairs)?candidate.livePairs:buildPairs(context.chat,context.scope.scopeKey)):null;
         const result={ok:true,head:clone(head),registry:clone(candidate.registry),worldlineId:activeId,appliedDeltas:0,appliedCorrections:candidate.appliedCorrections,canonicalCount:candidate.canonicalCount,
           reason,replayFingerprint,replayJournalDigest:stateCorrectionReplayJournalDigest(store),providerCalls:0,localReplay:true,
           ...(allowIncompletePrefix?{pendingBoundary:candidate.pendingBoundary,sourceBindings:candidate.appliedRefs.filter(r=>!unifiedInheritedRef(r)).map(r=>{const liveBatch=batchForStart(livePairsForBindings,r.turnRange.start);return {startTurn:r.turnRange.start,sourceDigest:r.sourceDigest,liveSourceDigest:liveBatch.length===BATCH_SIZE?sourceDigest(liveBatch):''};})}:{})};
@@ -64363,6 +64433,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           await refreshSnapshot(context, {
             cloneResult: false,
             suppressGuiSchedule: options.suppressGuiSchedule === true,
+            summaryOnly: options.summaryOnly ?? !(typeof Gui !== 'undefined' && Gui?.visible),
             limits: options.snapshotLimits || state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS
           });
           return { ok: !cleanupFailed, skipped: true, state: cleanupFailed ? 'cancelled_cleanup_failed' : 'cancelled',
@@ -64386,6 +64457,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await refreshSnapshot(context, {
           cloneResult: false,
           suppressGuiSchedule: options.suppressGuiSchedule === true,
+          summaryOnly: options.summaryOnly ?? !(typeof Gui !== 'undefined' && Gui?.visible),
           limits: options.snapshotLimits || state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS
         });
         const noEligibleReason = eligibleStarts.length === 0
@@ -73020,7 +73092,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           return { rows, proofs, assertCurrent };
         },
         async micro(context, source, turn) {
-          const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
+          const pairs = Array.isArray(source?.pairs) ? source.pairs : buildPairs(context.chat, context.scope.scopeKey);
+          const worldline = hostWorldlineIdForScope(context.scope);
           // The enclosing selection validates its captured context and source proofs
           // again before delivery; avoid another host context read for every candidate.
           const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true });
@@ -78106,7 +78179,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       let result = await LibraProviderBridge.callTask('lens_analysis', systemPrompt, userPrompt, {
         taskKind: 'lens_analysis', presetName, signal, label,
         maxTokens: requestedMaxTokens, temp: temperature, timeoutMs: 120000,
-        jsonMode: true, structuredTask: true, forceNonStreaming: true, disablePromptCache: true
+        jsonMode: true, structuredTask: true, forceNonStreaming: true
       });
       const truncatedReason = result?.reason === 'output_limit_before_final'
         || result?.reason === 'reasoning_only'
@@ -78118,7 +78191,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         result = await LibraProviderBridge.callTask('lens_analysis', systemPrompt, userPrompt, {
           taskKind: 'lens_analysis', presetName, signal, label: `${label} (재시도)`,
           maxTokens: retryMaxTokens, temp: temperature, timeoutMs: 180000,
-          jsonMode: true, structuredTask: true, forceNonStreaming: true, disablePromptCache: true,
+          jsonMode: true, structuredTask: true, forceNonStreaming: true,
           forceNoThinking: true
         });
       }
@@ -96865,6 +96938,15 @@ advanced
     debugCanonicalProviderBudgetScenario(spec = {}) { return safeClone(LibraMemoryCore.debugCanonicalProviderBudgetScenario(spec)); },
     debugCanonicalProviderBudgetSequence(spec = {}) { return safeClone(LibraMemoryCore.debugCanonicalProviderBudgetSequence(spec)); },
     debugProviderModelCapability(provider, model) { return safeClone(providerModelCapabilityProfile(provider, model)); },
+    debugBuildPromptCacheDecision(settings, stageName, preset, systemPrompt, userPrompt, options = {}) {
+      return safeClone(buildPromptCacheDecision(settings || {}, stageName || LIBRARIAN_STAGE_ID, preset || {}, systemPrompt || '', userPrompt || '', options || {}));
+    },
+    debugBuildAnthropicPayload(preset, systemPrompt, userPrompt, options = {}) {
+      return safeClone(buildAnthropicPayload(preset || {}, systemPrompt || '', userPrompt || '', options || {}));
+    },
+    debugBuildOpenAICompatPayload(preset, systemPrompt, userPrompt, options = {}) {
+      return safeClone(buildOpenAICompatPayload(preset || {}, systemPrompt || '', userPrompt || '', options || {}));
+    },
     // Qwen3.5 work: the behavior family decides which adapter text (if any) reaches the model, so the
     // family decision is exposed for the regression that keeps it — and the adapter text itself, because
     // an empty adapter for a family that exists is the failure mode worth catching.

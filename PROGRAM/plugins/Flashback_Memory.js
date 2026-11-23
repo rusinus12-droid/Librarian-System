@@ -18646,11 +18646,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return configured;
   };
 
-  const vertexEmbeddingUrl = (settings) => {
+  const vertexEmbeddingUrl = (settings, keyOverride = '') => {
     const configured = text(settings.embeddingUrl || '').trim();
-    if (!configured) return '';
-    if (/:predict(?:\?|$)/i.test(configured)) return configured;
     const model = encodeURIComponent(settings.embeddingModel || defaultModelForProvider('vertex'));
+    if (!configured) {
+      const credentials = tryJsonParse(text(keyOverride || settings.embeddingKey || '').trim(), null);
+      const projectId = text(credentials?.project_id || '').trim();
+      if (!projectId) return '';
+      const location = encodeURIComponent(text(credentials?.location || settings.embeddingRegion || 'us-central1').trim() || 'us-central1');
+      return `https://${location}-aiplatform.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/locations/${location}/publishers/google/models/${model}:predict`;
+    }
+    if (/:predict(?:\?|$)/i.test(configured)) return configured;
     if (/\/models\/[^/?]+\/?$/i.test(configured)) return `${configured.replace(/\/+$/, '')}:predict`;
     if (/\/locations\/[^/?]+\/?$/i.test(configured)) return joinUrl(configured, `publishers/google/models/${model}:predict`);
     return '';
@@ -19130,6 +19136,82 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return { ...headers, Authorization: `Bearer ${raw}` };
   };
 
+  const FlashbackVertexTokenCache = { cache: new Map() };
+  const vertexPemToArrayBuffer = (pem) => {
+    const b64 = String(pem || '').replace(/\\n/g, '\n').replace(/-----BEGIN PRIVATE KEY-----/g, '').replace(/-----END PRIVATE KEY-----/g, '').replace(/\s+/g, '');
+    if (typeof atob === 'function') {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    }
+    if (typeof Buffer !== 'undefined') return Uint8Array.from(Buffer.from(b64, 'base64')).buffer;
+    throw new Error('No base64 decoder available for Vertex service account key.');
+  };
+  const vertexBase64url = (bytes) => {
+    let binary = '';
+    const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    for (let i = 0; i < arr.length; i += 1) binary += String.fromCharCode(arr[i]);
+    let encoded = '';
+    if (typeof btoa === 'function') encoded = btoa(binary);
+    else if (typeof Buffer !== 'undefined') encoded = Buffer.from(arr).toString('base64');
+    else throw new Error('No base64 encoder available.');
+    return encoded.replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  };
+  const generateFlashbackVertexAccessToken = async (clientEmail, privateKey) => {
+    if (!globalThis.crypto?.subtle) throw new Error('crypto.subtle is unavailable; use a direct Vertex Bearer token or access_token JSON.');
+    const nowSec = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const claimSet = {
+      iss: clientEmail,
+      scope: 'https://www.googleapis.com/auth/cloud-platform',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: nowSec + 3600,
+      iat: nowSec
+    };
+    const encodedHeader = vertexBase64url(new TextEncoder().encode(JSON.stringify(header)));
+    const encodedClaimSet = vertexBase64url(new TextEncoder().encode(JSON.stringify(claimSet)));
+    const cryptoKey = await globalThis.crypto.subtle.importKey('pkcs8', vertexPemToArrayBuffer(privateKey), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const signature = await globalThis.crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(`${encodedHeader}.${encodedClaimSet}`));
+    const jwt = `${encodedHeader}.${encodedClaimSet}.${vertexBase64url(new Uint8Array(signature))}`;
+    const response = await RisuCompat.nativeFetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${encodeURIComponent(jwt)}`
+    }, 45000);
+    const data = await responseToJsonOrText(response, 45000);
+    const token = text(data?.access_token || '').trim();
+    if (!token) throw new Error(`No access_token in Vertex token response: ${compact(data, 500)}`);
+    return token;
+  };
+  const resolveFlashbackVertexAccessToken = async (rawKey) => {
+    const cacheKey = text(rawKey || '').trim();
+    const cached = FlashbackVertexTokenCache.cache.get(cacheKey);
+    if (cached?.token && Date.now() < cached.expiry) return cached.token;
+    const credentials = tryJsonParse(cacheKey, null);
+    if (credentials && typeof credentials === 'object') {
+      if (credentials.access_token || credentials.token) {
+        const token = text(credentials.access_token || credentials.token).trim();
+        if (!token) throw new Error('Vertex access_token is empty.');
+        const expiresAtRaw = Number(credentials.expires_at || credentials.expiry || credentials.expiration_time || 0) || 0;
+        const expiresAtMs = expiresAtRaw > 100000000000 ? expiresAtRaw : expiresAtRaw > 1000000000 ? expiresAtRaw * 1000 : 0;
+        const expiresIn = Number(credentials.expires_in || 0) || 0;
+        const expiry = expiresAtMs || (expiresIn ? Date.now() + Math.max(30, expiresIn - 60) * 1000 : Date.now() + 50 * 60 * 1000);
+        FlashbackVertexTokenCache.cache.set(cacheKey, { token, expiry });
+        return token;
+      }
+      const clientEmail = text(credentials.client_email || '').trim();
+      const privateKey = text(credentials.private_key || '').trim();
+      if (!clientEmail || !privateKey) throw new Error('Vertex credentials missing client_email/private_key or access_token.');
+      const token = await generateFlashbackVertexAccessToken(clientEmail, privateKey);
+      FlashbackVertexTokenCache.cache.set(cacheKey, { token, expiry: Date.now() + 3500 * 1000 });
+      return token;
+    }
+    const directToken = cacheKey.replace(/^Bearer\s+/i, '').trim();
+    if (!directToken) throw new Error('Vertex token missing.');
+    return directToken;
+  };
+
   const effectiveEmbeddingPrefix = (settings = DEFAULTS, purpose = 'document', providerOverride = '') => {
     const provider = normalizeProvider(providerOverride || settings.embeddingProvider);
     const explicit = text(purpose === 'query' ? settings.embeddingQueryPrefix : settings.embeddingDocumentPrefix);
@@ -19399,7 +19481,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const requestedTaskType = providerTask(cfg, purpose, purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT');
         const taskType = isGeminiEmbedding2Model(cfg.embeddingModel) ? '' : requestedTaskType;
         return {
-          url: text(cfg.embeddingEndpoint || '') || vertexEmbeddingUrl(cfg),
+          url: text(cfg.embeddingEndpoint || '') || vertexEmbeddingUrl(cfg, key),
           headers: vertexAuthHeaders(key),
           body: {
             instances: [{ content: texts[0], ...(taskType ? { task_type: taskType } : {}) }],
@@ -19714,7 +19796,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const capabilities = provider === 'hash'
       ? { batch: true, queryDocument: true, dimensions: true, remote: false }
       : (handler?.capabilities || { batch: false, queryDocument: false, dimensions: false, remote: true });
-    const validateConfig = () => {
+    const validateConfig = ({ allowDeferredVertexUrl = false } = {}) => {
       if (!configuredModelEmbedding(cfg)) throw new EmbeddingAdapterError('EMBEDDING_UNCONFIGURED', 'Configure an enabled embedding model before indexing or recall. Raw source remains stored.');
       if (provider !== 'hash' && !handler) throw new EmbeddingAdapterError('INVALID_MODEL', `Unsupported embedding provider: ${provider}`);
       if (provider !== 'hash' && !text(cfg.embeddingModel).trim()) throw new EmbeddingAdapterError('INVALID_MODEL', 'Embedding model is empty.');
@@ -19722,12 +19804,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         throw new EmbeddingAdapterError('INVALID_MODEL', 'The Bedrock adapter supports Amazon Titan Text Embeddings V2 request and response schema only.');
       }
       validateProviderEmbeddingDimensions(cfg);
-      const requestUrl = provider === 'hash' ? '' : (provider === 'vertex' || provider === 'vertex-embedding' ? (cfg.embeddingEndpoint || vertexEmbeddingUrl(cfg)) : provider === 'custom_http' ? (cfg.embeddingEndpoint || cfg.embeddingUrl) : 'deferred');
-      if (provider !== 'hash' && requestUrl !== 'deferred' && !requestUrl) throw new EmbeddingAdapterError('NETWORK_ERROR', 'Embedding endpoint is empty or incomplete.');
+      const isVertex = isVertexProvider(provider);
+      const requestUrl = provider === 'hash' ? '' : (isVertex ? (cfg.embeddingEndpoint || vertexEmbeddingUrl(cfg)) : provider === 'custom_http' ? (cfg.embeddingEndpoint || cfg.embeddingUrl) : 'deferred');
+      if (provider !== 'hash' && requestUrl !== 'deferred' && !requestUrl && !(isVertex && allowDeferredVertexUrl)) {
+        throw new EmbeddingAdapterError('NETWORK_ERROR', 'Embedding endpoint is empty or incomplete.');
+      }
       return true;
     };
     const embedResult = async (rawTexts, options = {}) => {
-      validateConfig();
+      validateConfig({ allowDeferredVertexUrl: true });
       const startedAt = Date.now();
       const purpose = options.purpose === 'query' || options.taskType === 'query' ? 'query' : 'document';
       const bypassCache = options.cacheMode === 'bypass' || options.bypassCache === true;
@@ -19763,6 +19848,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         restore.push(uniqueIndex.get(item));
       }
       const key = await readEmbeddingExecutionKey(options);
+      const isVertex = isVertexProvider(provider);
+      const resolvedVertexUrl = isVertex ? (cfg.embeddingEndpoint || vertexEmbeddingUrl(cfg, key)) : '';
+      if (isVertex && !resolvedVertexUrl) throw new EmbeddingAdapterError('NETWORK_ERROR', 'Embedding endpoint is empty or incomplete.');
       const authority = MemorySuiteExecutionContract.authorityEpoch([key, cfg.embeddingCustomHeaders]);
       const profileFamily = embeddingProfileId(cfg, cfg.embeddingDimensions || 0);
       const cache = purpose === 'query' ? Runtime.queryEmbeddingCache : Runtime.documentEmbeddingCache;
@@ -19802,6 +19890,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const limits = MemorySuiteExecutionContract.inputLimits(provider, cfg.embeddingModel, safeInputTokenLimit);
       const batches = MemorySuiteExecutionContract.makeBatches(expandedPending, limits, maxBatch);
       const checkpoint = batches.length ? await createEmbeddingCheckpoint(cfg,purpose,options,uniqueTexts,key) : null;
+      const effectiveRequestKey = batches.length && isVertex && text(key).trim().startsWith('{')
+        ? await resolveFlashbackVertexAccessToken(key)
+        : key;
+      const effectiveRequestCfg = isVertex && !text(cfg.embeddingEndpoint || cfg.embeddingUrl || '').trim()
+        ? { ...cfg, embeddingUrl: resolvedVertexUrl }
+        : cfg;
       const cachedVectors = uniqueVectors.filter(Array.isArray);
       let expectedDim = validateRemoteEmbeddingBatch(cachedVectors, cachedVectors.length, cfg.embeddingDimensions || (options.probe ? 0 : flashbackResolvedDimensions.get(profileFamily)) || 0);
       const cacheWrites = new Map();
@@ -19809,7 +19903,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
         if (options.signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Embedding request was cancelled.');
         const batch = batches[batchIndex];
-        const request = handler.request(batch.map(item => item.text), cfg, purpose, key);
+        const request = handler.request(batch.map(item => item.text), effectiveRequestCfg, purpose, effectiveRequestKey);
         if (!request?.url) throw new EmbeddingAdapterError('NETWORK_ERROR', 'Embedding endpoint is empty.');
         const batchBinding = batch.map(item=>({text:item.text,index:item.index,start:item.sourceStart,end:item.sourceEnd}));
         const saved = await checkpoint?.get(batchBinding,batch.length,expectedDim);
@@ -30724,6 +30818,12 @@ const MemorySuiteSnapshotCache = (() => {
         flush();
         current = { startIndex: message.index, user: message, assistants: [] };
       } else if (message.role === 'assistant') {
+        const cleanVisible = sanitizeAssistantForMemory(stripIllustrationOnlyCarriers(message.content || ''));
+        if (!cleanVisible && text(message.rawContent ?? message.content ?? '').trim().length > 0) {
+          flush();
+          current = null;
+          continue;
+        }
         if (!current) current = { startIndex: message.index, user: null, assistants: [] };
         current.assistants.push(message);
       }
@@ -30814,7 +30914,14 @@ const MemorySuiteSnapshotCache = (() => {
       }
       if (role !== 'assistant') continue;
       const assistantText = canonicalChatResponseText(body);
-      if (assistantText && pendingUser?.text) assistantFragments.push({
+      if (!assistantText) {
+        if (text(message?.rawContent ?? body).trim().length > 0 && pendingUser?.text) {
+          flushPair();
+          pendingUser = null;
+        }
+        continue;
+      }
+      if (pendingUser?.text) assistantFragments.push({
         position,
         text: assistantText,
         rawText:text(message?.rawContent??body).replace(/\r\n/g,'\n').trim(),
@@ -32164,11 +32271,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
-const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis']);
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -57401,6 +57509,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   publicApi._test.isGeminiEmbedding2Model = isGeminiEmbedding2Model;
   publicApi._test.isGeminiEmbedding001Model = isGeminiEmbedding001Model;
   publicApi._test.vertexAuthHeaders = vertexAuthHeaders;
+  publicApi._test.vertexEmbeddingUrl = vertexEmbeddingUrl;
+  publicApi._test.resolveFlashbackVertexAccessToken = resolveFlashbackVertexAccessToken;
+  publicApi._test.liveChatPairsFromNormalized = liveChatPairsFromNormalized;
+  publicApi._test.collectLiveChatTurnPairSourcesFromSnapshot = collectLiveChatTurnPairSourcesFromSnapshot;
   publicApi._test.ollamaModelPolicy = ollamaModelPolicy;
   publicApi._test.ollamaSuggestedModelNames = ollamaSuggestedModelNames;
   publicApi._test.ollamaApiUrl = ollamaApiUrl;
