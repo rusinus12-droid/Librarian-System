@@ -534,4 +534,42 @@ test('Book Canonical Reader defaults to connected flow view, groups linked & leg
   assert.equal(plainTree.dataset.canonicalReadingMode, undefined);
   assert.ok(!flatDom(plainTree).some(n => n.dataset?.canonicalReadingTab));
   assert.ok(domText(plainTree).includes('단순 본문'));
+
+  // Untruncated connected-flow summary when artifact.summary is absent and detail.summary carries a 900-char …[truncated] slice
+  guiState.canonicalReadingView = 'flow';
+  const longDetail = {
+    memoryId: 'mem-coh-long',
+    summary: '# 종합 기억\n## 시간순 사건\n- 푸딩이 콘돔을 벗겨 버리고...\n…[truncated]',
+    text: [
+      '# 종합 기억',
+      '## 시간순 사건',
+      '- 푸딩이 콘돔을 벗겨 버리고 소연을 눕혀 새 콘돔을 꺼내 관계를 시작했다. (근거: t55-u, t55-a)',
+      '- 소연이 새 콘돔을 직접 씌웠고 푸딩이 천천히 들어가자 소연이 손등으로 입을 막았다. (근거: t55-a)',
+      '- 소연이 끝난 뒤의 여운 속에서 조용히 숨을 고르며 푸딩을 바라보았다. (근거: t55-a)',
+      '## 회상 키워드',
+      '- 푸딩, 소연, 콘돔'
+    ].join('\n'),
+    canonicalArtifact: {
+      schema: 'libra.canonical_artifact.v5',
+      entities: [{ tempId: 'soyeon', name: '소연', type: 'person', kind: 'person' }],
+      facts: [{
+        tempFactId: 'f_long_evt',
+        domain: 'event',
+        claimKind: 'event',
+        subjectTempRef: 'soyeon',
+        text: '소연과의 밤이 이어졌다.',
+        temporalRole: 'current_sequence',
+        certainty: 'confirmed',
+        evidenceSpans: [{ ref: 'turn:55', quote: '숨을 고르며' }],
+        dependsOn: []
+      }]
+    }
+  };
+  const longFlowTree = buildBookMemoryReadingBody(longDetail);
+  const longSummaryNode = flatDom(longFlowTree).find(n => n.dataset?.canonicalFlowSummary === 'true');
+  assert.ok(longSummaryNode, 'canonical flow summary card renders');
+  const longSummaryText = domText(longSummaryNode);
+  assert.ok(!longSummaryText.includes('[truncated]'), 'summary card must never render [truncated]');
+  assert.ok(longSummaryText.includes('여운 속에서 조용히 숨을 고르며 푸딩을 바라보았다'), 'last bullet of full canonical text is completely preserved');
+  assert.ok(longSummaryText.includes('푸딩, 소연, 콘돔'), 'trailing recall keyword section is completely preserved');
 });

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-24T02:53:32.525Z",
+  "generatedAt": "2026-11-24T05:29:16.374Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "d45a4f8d3b37757ea6ed3202068c5b19fa0466840d61229f09c1a0784fd73017",
+      "sha256": "e5164996db67b4154201b699c3948482983d3c11aa2d5b7f97975cc20b6ed9de",
       "bytes": 20734
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,20 +4340,20 @@
       "bytes": 4036575
     },
     "plugins/GRADIA.js": {
-      "sha256": "f144de7cd7fb843e5cd2b76ed4e78ccfae59b86cbafe878768cb87b426478d8f",
-      "bytes": 4545619
+      "sha256": "6c0da86291fabfa95f8b5546063e95ec9e11b62f8ee6af5f886a0c38bf164692",
+      "bytes": 4645585
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "91fa610e3bd052ce4c60bfe322edee28d5160bc43cf51f832002ef787b26b056",
-      "bytes": 4489245
+      "sha256": "065aa37172d0aa536f5d8e257d6e4d1bd40b497e1135ac5afa3926ce395afa39",
+      "bytes": 4489413
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088",
       "bytes": 889115
     },
     "plugins/LIBRA.js": {
-      "sha256": "61105263bc9cb24f90cb08e70b25fc585473c1d5c1e56542f6841e751f316877",
-      "bytes": 7105476
+      "sha256": "15cc5487ffc0a6bd7b67b0b104180f3e19cce99951878143e6db29e6a38669ed",
+      "bytes": 7107059
     },
     "plugins/RETRACE.js": {
       "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
@@ -6748,8 +6748,8 @@
       "bytes": 23237
     },
     "tests/gradia_forced_bond_aide_test.cjs": {
-      "sha256": "e1666cb8853ff43cabcaa4063dc4fe8e0e0a6a69d484361c5ebb13f026793fdd",
-      "bytes": 24436
+      "sha256": "b045f2adf4c2525837cc764d7109e7f7b7b0f0959a1331d052e24eac8e7024ff",
+      "bytes": 25036
     },
     "tests/gradia_four_plugin_chain_order_test.cjs": {
       "sha256": "8719ffac0c36604c3e1699ec5f5f52bef5de73f74625b505e9b3d70f96918ef7",
@@ -6952,8 +6952,8 @@
       "bytes": 27160
     },
     "tests/gradia_unified_bond_relsim_and_dialogue_test.cjs": {
-      "sha256": "f1487b5902d7c6c00b63900b658a8e86730bf1fdec42203ec9a4f9ce9a0cd490",
-      "bytes": 18660
+      "sha256": "37c0b1585344587b065d41d4ab163fc2229442985399579313a35963468d221c",
+      "bytes": 23830
     },
     "tests/gradia_work_scale_gui_test.cjs": {
       "sha256": "e39c45b904a862a3adf3d4ea3eb9a852cdc65ac4b4f671d5062b773862735a51",
@@ -6964,8 +6964,8 @@
       "bytes": 30982
     },
     "tests/gradia_world_sim_and_intimacy_fixes_test.cjs": {
-      "sha256": "cf027cb13fe2d2d5dbd60082fae95e34f5b023662ebb496e7735e2d06f6852d2",
-      "bytes": 49776
+      "sha256": "18548e2820758531bde442c87e98a5fa916f171b679c54cbc6e931f7dc520e56",
+      "bytes": 92315
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",
@@ -7352,8 +7352,8 @@
       "bytes": 12420
     },
     "tests/hayaku_capture_delta_runtime_test.cjs": {
-      "sha256": "c7cb236f0a445136df6a946952db5996f1a012be0fc0e389c871ec5850a75951",
-      "bytes": 38394
+      "sha256": "c8b802da9e9b622446efe1771fa2ae94f993dee1a907af30ca942c1ed64377c6",
+      "bytes": 42601
     },
     "tests/hayaku_cold_start_automatic_retry_runtime_test.cjs": {
       "sha256": "064fe715276e8aa877175119d573641342fcd9005138d593ca4127ddac242314",
@@ -8416,8 +8416,8 @@
       "bytes": 12904
     },
     "tests/libra_canonical_cohesion_runtime_test.cjs": {
-      "sha256": "f2c0b31a48f69622c5ca191dae97528bec7cf665c67f33ab7b8d46c8b7335888",
-      "bytes": 28731
+      "sha256": "332fdafd34659513d14d4849129ca2e23004a28cd50ac2ff7ee25daaaaaa2a70",
+      "bytes": 30833
     },
     "tests/libra_canonical_coverage_audit_test.cjs": {
       "sha256": "6ff23fa6d7c85f800dcdf0c4cd249965291fa37fcb8de75998a1f1bda7bcf511",

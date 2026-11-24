@@ -373,3 +373,65 @@ test('inline legacy migration shares receipt admission with a concurrent pending
     assert.equal(h.llmCalls.length,0);assert.equal(h.fetchCalls.length,0);
   }finally{release();await h.dispose();}
 });
+test('finalized capture monitor aligns timeout to CAPTURE_ORIGIN_TTL_MS and keeps pendingCapture across slow responses',async()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const src=fs.readFileSync(path.resolve(__dirname,'..','plugins','HAYAKU_Locator_Continuity.js'),'utf8');
+  assert.match(src,/const FINALIZED_CAPTURE_MAX_AGE_MS\s*=\s*CAPTURE_ORIGIN_TTL_MS\s*;/);
+  const timeoutIdx=src.indexOf('if (now() - state.startedAt > FINALIZED_CAPTURE_MAX_AGE_MS) {');
+  assert.notEqual(timeoutIdx,-1,'finalized timeout guard present');
+  const timeoutBlock=src.slice(timeoutIdx,src.indexOf('return;',timeoutIdx)+7);
+  assert.match(timeoutBlock,/stopFinalizedCaptureMonitor\(key\)/);
+  assert.match(timeoutBlock,/prunePendingCaptures\(\)/);
+  assert.doesNotMatch(timeoutBlock,/removePendingCapture\(pending\)/);
+
+  const store=createStore(),messages=[{role:'user',chatId:'slow-user',data:'Alice-1 waits through a five-minute response.'}];
+  const t0=1700000000000;let fakeNow=t0;
+  const h=await createHayakuRuntime({
+    messages,pluginStorage:store,autoRepair:false,afterRequestAutoRepair:false,backgroundAutoRepair:false,
+    pluginSourceFile:process.env.HAYAKU_TEST_SOURCE||undefined,
+    arguments:{hayaku_packet_recovery:'false'},
+    llmResponder:async()=>{throw Error('MODEL_PROHIBITED');},
+    transformSource:code=>code
+      .replace('const now = () => Date.now();','const now = () => (typeof globalThis.__testNow === \'number\' ? globalThis.__testNow : Date.now());')
+      .replace('const FINALIZED_CAPTURE_POLL_MS = 900;','const FINALIZED_CAPTURE_POLL_MS = 50;')
+      .replace('const FINALIZED_CAPTURE_IDLE_POLL_MS = 2200;','const FINALIZED_CAPTURE_IDLE_POLL_MS = 50;')
+  });
+  h.context.__testNow=fakeNow;
+  try{
+    await h.callBeforeRequest([{role:'system',content:'Continue the story.'},...messages]);
+    const scope=await h.hayaku._test.currentChatScope();
+    const pending=h.hayaku._test.selectPendingCapture([],scope,'model');
+    assert.ok(pending,'pending capture registered');
+    assert.equal(h.hayaku._test.scheduleFinalizedCaptureMonitor(pending),true);
+    assert.equal(h.hayaku.lastDebug().finalizedCaptureMonitors,1);
+
+    // 5 minutes elapsed (> legacy 4m, < 10m): monitor and pendingCapture both remain active
+    fakeNow=t0+5*60*1000;
+    h.context.__testNow=fakeNow;
+    await new Promise(r=>setTimeout(r,180));
+    assert.equal(h.hayaku.lastDebug().finalizedCaptureMonitors,1,'monitor must survive past 4m (at 5m)');
+    assert.equal(h.hayaku._test.selectPendingCapture([],scope,'model')?.lineage?.requestNonce,pending.lineage.requestNonce);
+    assert.notEqual(h.hayaku.lastDebug().lastStorageCapture?.reason,'finalized_response_not_observed');
+
+    // Monitor crosses 10m from startedAt while pending.createdAt (refreshed at +2m) stays within 10m TTL
+    pending.createdAt=t0+2*60*1000;
+    fakeNow=t0+10*60*1000+1000;
+    h.context.__testNow=fakeNow;
+    await waitFor(()=>h.hayaku.lastDebug().finalizedCaptureMonitors===0,'finalized monitor stops after 10m');
+    assert.equal(h.hayaku.lastDebug().lastStorageCapture?.reason,'finalized_response_not_observed');
+    assert.equal(h.hayaku._test.selectPendingCapture([],scope,'model')?.lineage?.requestNonce,pending.lineage.requestNonce,'pendingCapture remains eligible within CAPTURE_ORIGIN_TTL_MS after monitor timeout');
+
+    // Late response after monitor stopped still binds to the retained pendingCapture and commits durably
+    const visible='Alice-1 completed the established event after a long wait.';
+    const packet=createValidPacket({summary:visible}),l=pending.lineage;
+    packet.meta.lineage={request_nonce:l.requestNonce,parent_turn_node_id:l.parentTurnNodeId,logical_turn_id:l.logicalTurnId,
+      identity_version:l.identityVersion,lineage_schema:l.lineageSchema,turn_owner_key:l.turnOwnerKey,generation_attempt_id:l.generationAttemptId};
+    const response=hiddenPacketMessage(visible,packet);
+    await emit(h,response);
+    await waitFor(()=>h.hayaku.lastDebug().lastStorageCapture?.durable===true,'late response captured durably');
+    assert.equal(h.llmCalls.length,0);assert.equal(h.fetchCalls.length,0);
+  }finally{
+    delete h.context.__testNow;
+    await h.dispose();
+  }
+});

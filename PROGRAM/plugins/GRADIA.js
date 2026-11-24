@@ -1891,11 +1891,14 @@
       `FIXED DRAFT LANGUAGE — ${def.englishName} (${def.nativeName}):`,
       phaseInstruction,
       `This is a hard output contract: source-language differences and optional style guidance cannot change ${def.englishName}.`,
+      language === 'korean'
+        ? 'STRICT NO ENGLISH CODE-SWITCHING IN KOREAN PROSE: Never slip stray English pronouns, articles, or function words (e.g., his, her, him, he, she, their, the, my, your, and, with) into Korean sentences — write every pronoun and modifier in pure Korean (그의, 그녀의, 그, 그녀 등). 한국어 본문 중간에 his, her 같은 영어 단어를 절대 섞지 말 것.'
+        : '',
       'Preserve exact proper nouns, JSON keys, enum values, IDs, tags, code, image commands, and intentional source quotations. Do not translate supplied evidence blocks.',
       phase === 'analysis' || phase === 'patch'
         ? 'Keep the required JSON schema unchanged.'
         : 'Begin directly with the in-world prose. Do not mention this language contract.'
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   };
   const INPUT_ASSIST_TARGET_CHAR_IDS = Object.freeze(['300', '500', '800', '1000', 'omakase']);
   const INPUT_ASSIST_TARGET_CHAR_CHOICES = Object.freeze([
@@ -4163,6 +4166,7 @@ ${BIANCA_PERSONA_TEXT}`;
     // 정사 AIDE preference cards: loaded from storage once, then written through on change.
     intimacyCards: null,
     intimacyMaleSizes: null,
+    intimacyMalePaces: null,
     // 관계 시뮬레이터: this run's readings (memory only), the loaded relationship state, and the run's prepared rolls.
     relationshipSimReadings: {},
     // 지식 경계: this run's verified leak and kept-line readings (memory only).
@@ -7620,6 +7624,7 @@ ${BIANCA_PERSONA_TEXT}`;
       enableKnowledgeBoundaryAide: asBool(await slotCfg('aide_knowledge_boundary', 'enabled', 'enable_knowledge_boundary_aide', 'false'), false),
       enableDialogueAide: asBool(await slotCfg('aide_dialogue', 'enabled', 'enable_dialogue_aide', 'false'), false),
       bodyStateReproduction: asBool(await runtimeCfg('body_state_reproduction', 'false'), false),
+      blockSameSexRomance: asBool(await runtimeCfg('block_same_sex_romance', 'true'), true),
       bodyStateCards: normalizeBodyStateCardMap(await runtimeCfg('body_state_cards', {})),
       worldSimulatorMaleRestriction: normalizeWorldSimMaleRestriction(await runtimeCfg('world_simulator_male_restriction', 'none')),
       forcedBondForceAppearance: asBool(await runtimeCfg('forced_bond_force_appearance', 'true'), true),
@@ -27850,7 +27855,47 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return `- ${label}: ${actor} → ${target} · ROLL ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · beat: ${beat}${push}`
       + ` · REQUIRED THIS TURN: ${intent} [${intentKo}]${offScene ? ' (off scene — a trace, never a full scene)' : ''}`;
   };
-  const forcedBondRomanticallyCharged = card => (card?.tones || []).some(t => ['affection', 'jealousy'].includes(t));
+  const FORCED_BOND_ROMANTIC_TONES = Object.freeze(['affection', 'longing', 'obsession', 'jealousy']);
+  const forcedBondRomanticallyCharged = card => (card?.tones || []).some(t => FORCED_BOND_ROMANTIC_TONES.includes(t));
+  const isSameSexRomanceBlocked = (settings = {}) => settings?.blockSameSexRomance !== false;
+  const resolveGenderForRomanceGuard = (rawName, scopeKey = '', settings = {}, recent = {}) => {
+    if (!rawName) return '';
+    const resolvedName = (bodyStateIsPersona(rawName) || rawName === FORCED_BOND_PERSONA)
+      ? (compact(Runtime.activePersonaName || '', 80) || rawName)
+      : compact(rawName, 80);
+    const activeScope = scopeKey || compact(Runtime.activeScopeKey || '', 512);
+    const iCards = typeof intimacyCardsForScope === 'function' ? intimacyCardsForScope(activeScope) : [];
+    const icard = iCards.find(c => c.name && (c.name === resolvedName || extensionSameOrGivenName(c.name, resolvedName))) || null;
+    const fromIntimacy = icard && typeof intimacyCardGender === 'function'
+      ? intimacyCardGender(icard, resolvedName, settings, activeScope)
+      : '';
+    if (fromIntimacy) return fromIntimacy;
+    const bCards = typeof bodyStateCardsForScope === 'function' ? bodyStateCardsForScope(settings, activeScope) : [];
+    const bcard = bCards.find(c => c.name && (c.name === resolvedName || extensionSameOrGivenName(c.name, resolvedName))) || null;
+    const fromBcard = bcard && typeof inferGenderFromBodyStateCard === 'function' ? inferGenderFromBodyStateCard(bcard) : '';
+    if (fromBcard) return fromBcard;
+    const fromProfile = typeof bodyStateProfileGender === 'function' ? bodyStateProfileGender(resolvedName, settings, activeScope) : '';
+    if (fromProfile) return fromProfile;
+    const fromLore = typeof inferGenderFromCachedRisuLore === 'function' ? inferGenderFromCachedRisuLore(resolvedName) : '';
+    if (fromLore) return fromLore;
+    if (recent && typeof inferGenderFromIntimacyText === 'function') {
+      const fromText = inferGenderFromIntimacyText(resolvedName, recent);
+      if (fromText) return fromText;
+    }
+    return '';
+  };
+  const isSameSexPair = (nameA, nameB, scopeKey = '', settings = {}, recent = {}) => {
+    const gA = resolveGenderForRomanceGuard(nameA, scopeKey, settings, recent);
+    const gB = resolveGenderForRomanceGuard(nameB, scopeKey, settings, recent);
+    return Boolean(gA && gB && gA === gB);
+  };
+  const sanitizeForcedBondCardForSameSex = (card, scopeKey, settings = {}, recent = {}) => {
+    if (!card || !isSameSexRomanceBlocked(settings) || !isSameSexPair(card.from, card.to, scopeKey, settings, recent)) return card;
+    const origTones = Array.isArray(card.tones) ? card.tones : [];
+    const nonRomantic = origTones.filter(t => !FORCED_BOND_ROMANTIC_TONES.includes(t));
+    if (origTones.length > 0 && nonRomantic.length === 0) return null;
+    return { ...card, tones: nonRomantic, sameSexNonRomantic: true };
+  };
   const computeForcedBondSimulator = (recent = {}, settings = {}, onSceneCards = []) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const gate = forcedBondModeGate(settings);
@@ -27860,6 +27905,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const chat = relsimChat(scopeKey, false);
     const identity = relsimRunIdentity(recent);
     const maleRestriction = normalizeWorldSimMaleRestriction(settings?.worldSimulatorMaleRestriction);
+    const sameSexBlocked = isSameSexRomanceBlocked(settings);
+    const sanitizeSameSexCard = card => sanitizeForcedBondCardForSameSex(card, scopeKey, settings, recent);
+    const effectiveOnSceneCards = (Array.isArray(onSceneCards) ? onSceneCards : []).map(sanitizeSameSexCard).filter(Boolean);
     const allCards = forcedBondCardsForScope(settings, scopeKey);
     const presentList = onScenePeopleNow(recent, settings);
     const present = new Set(presentList.map(n => normalizeContinuityAlias(n)));
@@ -27882,12 +27930,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!offSceneCandidates.length && settings.forcedBondAuto !== false) {
       const offCast = worldDynamicsOffSceneCast(recent, settings);
       if (offCast.length >= 2) {
+        let pairA = offCast[0], pairB = offCast[1];
+        if (sameSexBlocked) {
+          let foundOpposite = false;
+          for (let i = 0; i < offCast.length && !foundOpposite; i += 1) {
+            for (let j = i + 1; j < offCast.length; j += 1) {
+              if (!isSameSexPair(offCast[i], offCast[j], scopeKey, settings, recent)) {
+                pairA = offCast[i];
+                pairB = offCast[j];
+                foundOpposite = true;
+                break;
+              }
+            }
+          }
+        }
+        const sameSexFallback = sameSexBlocked && isSameSexPair(pairA, pairB, scopeKey, settings, recent);
         offSceneCandidates.push({
           id: 'auto-offscene-1',
-          from: offCast[0],
-          to: offCast[1],
+          from: pairA,
+          to: pairB,
           direction: 'mutual',
-          tones: ['curiosity', 'wariness'],
+          tones: sameSexFallback ? ['camaraderie', 'wariness'] : ['curiosity', 'wariness'],
           stage: 'aware',
           pressure: 'subtle',
           origin: 'auto',
@@ -27901,7 +27964,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (maleRestriction === 'no_interaction') return false;
       if (maleRestriction === 'no_romance' && forcedBondRomanticallyCharged(card)) return false;
       return true;
-    });
+    }).map(sanitizeSameSexCard).filter(Boolean);
     const recentLines = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .flatMap(message => forcedBondSentences(message?.content).map(line => `${message?.role === 'user' ? 'input' : 'scene'}: ${line}`));
     const scenePeople = extensionScenePeople(recent);
@@ -27926,10 +27989,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let stagePush = null;
       if (triggered) {
         const hasAbsentParty = !isPresentParty(card.from) || !isPresentParty(card.to);
-        const beatChoices = FORCED_BOND_BEAT_TYPES.filter(b => b !== 'absent_contact' || (!offScene && hasAbsentParty && settings.forcedBondForceAppearance !== false));
+        const beatChoices = FORCED_BOND_BEAT_TYPES.filter(b =>
+          (b !== 'absent_contact' || (!offScene && hasAbsentParty && settings.forcedBondForceAppearance !== false))
+          && (!card.sameSexNonRomantic || b !== 'stage_push')
+        );
         const beatRoll = relsimSeedRoll([scopeKey, 'bond_beat', card.id, identity.inputHash].join('|'));
         beatType = beatChoices[beatRoll % beatChoices.length];
-        const stageDef = FORCED_BOND_STAGE_NEXT[card.stage || 'aware'];
+        const stageDef = !card.sameSexNonRomantic ? FORCED_BOND_STAGE_NEXT[card.stage || 'aware'] : null;
         if (stageDef && (beatType === 'stage_push' || activeEventBoost > 0)) {
           const pair = chat ? relsimPairState(chat, card) : null;
           const moodBoost = pair?.mood ? Math.round((pair.mood / 100) * 15) : 0;
@@ -27960,6 +28026,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         settings,
         scopeKey
       });
+      if (card.sameSexNonRomantic) {
+        beatSynthesis.beatIntent = `${beatSynthesis.beatIntent} (strictly non-romantic collegial/rivalry/platonic interaction only)`;
+        beatSynthesis.beatIntentKo = `${beatSynthesis.beatIntentKo} (동성 간 연애 감정·성적 긴장 금지, 동료·견제·인간적 관계로만 묘사)`;
+        beatSynthesis.contextualDirectiveKo = `${beatSynthesis.contextualDirectiveKo} [동성 연애 금지: 동료·견제·업무/인간적 거리감으로만 표현하고 연애적 호감이나 성적 긴장으로 엮지 말 것]`;
+      }
       return {
         cardId: card.id,
         from: card.from,
@@ -27980,7 +28051,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ...beatSynthesis
       };
     };
-    for (const card of onSceneCards.slice(0, 4)) {
+    for (const card of effectiveOnSceneCards.slice(0, 4)) {
       rolls.push(rollCard(card, false));
     }
     for (const card of filteredOffScene.slice(0, 2)) {
@@ -28005,9 +28076,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const forcedBondStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = forcedBondStageActive(settings) ? extensionAideDuty('aide_forced_bond', stageName, FORCED_BOND_STAGE_DUTY, settings) : '';
     if (!duty) return '';
-    const cards = forcedBondCardsInPlay(settings, recent);
-    const sim = computeForcedBondSimulator(recent, settings, cards);
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const sameSexBlocked = isSameSexRomanceBlocked(settings);
+    const rawCards = forcedBondCardsInPlay(settings, recent);
+    const cards = rawCards.map(card => sanitizeForcedBondCardForSameSex(card, scopeKey, settings, recent)).filter(Boolean);
+    const sim = computeForcedBondSimulator(recent, settings, cards);
     const chat = scopeKey ? relsimChat(scopeKey, false) : null;
     const recentBondHistory = (chat?.bondHistory || []).slice(-4);
     const kind = forcedBondOutputKind(stageName, settings);
@@ -28022,13 +28095,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     const hasAuto = cards.some(card => card.origin === 'auto');
     const gate = forcedBondModeGate(settings);
+    const allCardsSameSex = sameSexBlocked && cards.length > 0 && cards.every(card => card.sameSexNonRomantic);
     const appearanceAllowed = gate !== 'staging' && settings.forcedBondForceAppearance !== false;
-    const tones = hasAuto || cards.some(card => !card.tones.length) ? Object.keys(FORCED_BOND_TONES) : Array.from(new Set(cards.flatMap(card => card.tones)));
+    const allowedToneList = Object.keys(FORCED_BOND_TONES).filter(tone => !allCardsSameSex || !FORCED_BOND_ROMANTIC_TONES.includes(tone));
+    const tones = hasAuto || cards.some(card => !card.tones.length) ? allowedToneList : Array.from(new Set(cards.flatMap(card => card.tones)));
     const priorChecks = forcedBondPriorChecks(ledger);
     return [
       '[FORCED BOND (억결) — RELATIONSHIP TENSION]',
       'The user wants the scene to keep forming and moving the relationships below: how these people relate, read, trust, test, owe, or resent each other. A bond’s tone can be trust, wariness, curiosity, rivalry, debt, affection, hatred, or a mix. Romance is one possibility among many: do not steer a bond toward romance unless the user or what has developed already points there.',
-      '- Gender never decides a bond. Different genders do not imply romance, and the same gender does not rule it out. The shape of a bond comes from what has actually happened between these people and what the user directs.',
+      sameSexBlocked
+        ? '- Different genders do not automatically imply romance, and same-sex romance is currently prohibited by option: same-gender bonds must stay strictly platonic/non-romantic (camaraderie, trust, wariness, rivalry, respect, grudge, etc. — never romantic affection, longing, obsession, or sexual tension).'
+        : '- Gender never decides a bond. Different genders do not imply romance, and the same gender does not rule it out. The shape of a bond comes from what has actually happened between these people and what the user directs.',
+      sameSexBlocked
+        ? '- [SAME-SEX ROMANCE PROHIBITION]: Same-sex romance is disabled. Never assign romantic tones (affection, longing, obsession, jealousy) or romantic tension between same-gender characters; never escalate a same-gender bond toward romance.'
+        : '',
       '- WHAT DECIDES A BOND’S DIRECTION, in order: (1) the user’s direction — the current input, the author note, the user’s cards, and any 억결 creative instruction; (2) what has actually developed between them in this story (recent scene, LIB memory); (3) canon and lore background. Lore describing a character’s feelings or preferences is background, not a script: it never overrides what the story and the user have made. Canon relationship facts and forms of address still stay fixed.',
       '- NARRATIVE: move each bond along its own arc in this story. Continue from where it actually stands now; do not reset it, skip its stages, or reopen a settled thread without a cause.',
       '- RECENT EMOTIONAL SIGNALS: the main bond’s beat grows out of its latest emotional signal in the packet, continuing its direction or turning it with a cause in the scene. Prefer as main bond the one with the freshest signal. A bond with no signal yet starts with one small, readable signal rather than a big move.',
@@ -29816,14 +29896,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return gender === 'male';
   };
   const worldSimRestrictionPromptBlock = (settings = {}) => {
+    const blocks = [];
     const mode = normalizeWorldSimMaleRestriction(settings?.worldSimulatorMaleRestriction);
     if (mode === 'no_romance') {
-      return '[OFF-SCENE MALE NPC RESTRICTION]\n- Off-scene male NPCs must NOT develop romantic or sexual relationships or have intimate encounters with any character other than the persona unless explicitly directed by the user. Female NPCs remain free to move.';
+      blocks.push('[OFF-SCENE MALE NPC RESTRICTION]\n- Off-scene male NPCs must NOT develop romantic or sexual relationships or have intimate encounters with any character other than the persona unless explicitly directed by the user. Female NPCs remain free to move.');
+    } else if (mode === 'no_interaction') {
+      blocks.push('[OFF-SCENE MALE NPC RESTRICTION]\n- Off-scene male NPCs must NOT act autonomously or interact with any character other than the persona without explicit user direction (RP-style restraint). Female NPCs remain free to move and interact normally.');
     }
-    if (mode === 'no_interaction') {
-      return '[OFF-SCENE MALE NPC RESTRICTION]\n- Off-scene male NPCs must NOT act autonomously or interact with any character other than the persona without explicit user direction (RP-style restraint). Female NPCs remain free to move and interact normally.';
+    if (isSameSexRomanceBlocked(settings)) {
+      blocks.push('[SAME-SEX ROMANCE PROHIBITION]\n- Same-sex romance and sexual pairing between same-gender characters are disabled by option (default ON). Do NOT pair same-gender characters romantically or sexually (platonic camaraderie, rivalry, or work interactions only).');
     }
-    return '';
+    return blocks.join('\n');
   };
   const computeWorldSimulator = (recent = {}, settings = {}, { hasDueMovement = false } = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 256);
@@ -29896,6 +29979,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
         let others = offSceneCast.filter(n => !extensionSamePerson(n, actor));
         if (maleRestriction === 'no_romance') {
           others = others.filter(n => !worldSimIsMaleNpc(n, scopeKey));
+        }
+        if (isSameSexRomanceBlocked(settings)) {
+          others = others.filter(n => !isSameSexPair(actor, n, scopeKey, settings, recent));
         }
         if (others.length) companion = others[actionRoll % others.length];
       }
@@ -30247,6 +30333,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const involvesMale = actors.some(name => worldSimIsMaleNpc(name, scopeKey));
       if (maleRestriction === 'no_interaction' && involvesMale) continue;
       if (maleRestriction === 'no_romance' && involvesMale && (occurredIntimate || item.kind === 'npc_pair_activity' || item.kind === 'offscene_intimacy')) continue;
+      if (isSameSexRomanceBlocked(settings)
+        && (occurredIntimate || item.kind === 'offscene_intimacy')
+        && actors.length >= 2
+        && actors.every((a, idx) => idx === 0 || isSameSexPair(actors[0], a, scopeKey, settings))) {
+        continue;
+      }
       let intimateRecord = null;
       if (occurredIntimate) {
         const rawZones = Array.isArray(item.intimateOutcome?.zones) ? item.intimateOutcome.zones : [];
@@ -30501,15 +30593,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
     && settings?.mode !== 'off'
     && dialogueModeGate(settings) !== 'skip';
   const DIALOGUE_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, situational fit (intimacy, date, work/service, public stealth, conflict), strict physical speech causality (characters currently deep-kissing, mouth-occupied, hand-muffled, or choking cannot speak crisp fluent lines without either separating lips/mouth first or slurring/muffling their words), mandatory involuntary climax vocalization dialogue matched to mouth state (when reaching orgasm with mouth covered by a hand, emit muffled cries like "으으음…!" / "흐읍…!" in quotes rather than silent narration; when uncovered, emit unrestrained cries like "아아…!"), and natural Korean contraception diction ("노콘"/"생으로" for unprotected sex; never force illogical "밖에." right after confirming condom wear).',
-    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, situational register, and conversational intent, obeys physical speech causality (no crisp fluent speech while locked in a deep kiss, hand-muffled, or mouth-occupied), emits involuntary vocalization dialogue during climax appropriate to mouth state and character voice, and flag any echo-loop repetition or flat voice blending.',
-    aide_world: 'World AIDE: verify physical speech causality (a mouth engaged in a deep kiss/tongue contact, oral act, or hand-cover cannot articulate normal clear dialogue unless lips/hand physically separate first or speech is muffled/slurred — yet at climax peak, involuntary vocalization must break through as muffled cries or open moans instead of pure silence) and verify that dialogue register (workplace/service vs private vs intimate vs date, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
-    aide_plot: 'Plot AIDE: verify that every spoken line moves the interaction (probe, tease, dodge, pressure, bargain, reassure, test a boundary) in character and situation rather than stalling in repetitive filler exchanges.',
-    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet (including [장면 상황·대화 톤] and [물리 발화 제약]), then inspect every spoken line in CURRENT_SAME_TURN_DRAFT. Enforce situational fit (intimacy, climax peak, date, work/customer service, public stealth, conflict, private), enforce physical speech causality (if a speaker is deep-kissing/mouth-occupied/hand-muffled and speaks crisp fluent dialogue without an explicit mouth-clearing beat before the quote, either insert a causal clearing beat right before the quote when not physically restrained OR rewrite the quote into muffled/slurred articulation), ensure climax/orgasm scenes never leave the climaxing character completely voiceless (insert muffled "으으음…!"/"흐읍…!" when hand-muffled or open "아아…!" cry when unobstructed), break echo-loop Q&A, cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext in edits. Report every grounded repair in dialogue_repairs. Return edits: [] only when the dialogue already fits both situation and physical causality, and say so in analysis.summary.'
+    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, situational fit (intimacy, date, work/service, public stealth, conflict), strict physical speech causality for ALL speakers including the persona when authored (anyone currently kissing/kissed, mouth-occupied, hand-muffled, or choking cannot speak crisp fluent lines without either separating lips/mouth first or slurring/muffling their words), factual/contextual reply coherence (answer accurately to who is actually involved and ban meaningless broken fragments like "중인데. 그거."), mandatory involuntary climax vocalization dialogue matched to mouth state (when reaching orgasm with mouth covered by a hand, emit muffled cries like "으으음…!" / "흐읍…!" in quotes rather than silent narration; when uncovered, emit unrestrained cries like "아아…!"), and natural Korean contraception diction ("노콘"/"생으로" for unprotected sex; never force illogical "밖에." right after confirming condom wear).',
+    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, situational register, contextual/factual coherence (no contradictory target replies or meaningless truncated fragments like "중인데. 그거."), and conversational intent, obeys physical speech causality for BOTH NPCs and persona when authored (no crisp fluent speech while locked in a deep kiss, hand-muffled, or mouth-occupied), emits involuntary vocalization dialogue during climax appropriate to mouth state and character voice, and flag any echo-loop repetition or flat voice blending.',
+    aide_world: 'World AIDE: verify physical speech causality for every speaker including persona when authored (both the kisser and the kissed party whose lips are locked or whose mouth is occupied/hand-covered cannot articulate normal clear dialogue unless lips/hand physically separate first or speech is muffled/slurred — yet at climax peak, involuntary vocalization must break through as muffled cries or open moans instead of pure silence), verify factual scene-state coherence of replies (never let a speaker verbally deny what is visibly happening right in front of witnesses), and verify that dialogue register (workplace/service vs private vs intimate vs date, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
+    aide_plot: 'Plot AIDE: verify that every spoken line makes logical sense in context, moves the interaction (probe, tease, dodge, pressure, bargain, reassure, test a boundary) in character and situation rather than stalling in repetitive filler or incoherent broken fragments ("중인데. 그거."), and reflects who is actually doing what to whom.',
+    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet (including [장면 상황·대화 톤] and [물리 발화 제약]), then inspect every spoken line in CURRENT_SAME_TURN_DRAFT (in Novel mode, explicitly INCLUDING the user persona’s lines as well as NPC lines). Enforce situational fit (intimacy, climax peak, date, work/customer service, public stealth, conflict, private), enforce physical speech causality on BOTH the kisser (including persona) and the kissed party (if either is deep-kissing/mouth-occupied/hand-muffled and speaks crisp fluent dialogue without an explicit mouth-clearing beat right before the quote, either insert a causal lip-separation beat before the quote when not physically restrained OR rewrite the quote into muffled/slurred articulation), enforce factual/contextual coherence (rewrite contradictory replies that ignore visible reality—e.g., claiming "너한테, 하고 있는 중인데." while visibly kissing her sister instead of "네 동생."—and replace meaningless truncated fragments like "중인데. 그거." with clear context-fitting dialogue), ensure climax/orgasm scenes never leave the climaxing character completely voiceless (insert muffled "으으음…!"/"흐읍…!" when hand-muffled or open "아아…!" cry when unobstructed), ensure all vocalizations stay inside quotation marks, break echo-loop Q&A, cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext in edits. Report every grounded repair in dialogue_repairs. Return edits: [] only when the dialogue already fits situation, coherence, and physical causality, and say so in analysis.summary.'
   });
-  const DIALOGUE_ISSUES = Object.freeze(['speech_causality', 'situational_fit', 'echo_loop', 'flat_filler', 'voice_blend', 'register_mismatch', 'on_the_nose', 'stiff_rhythm']);
+  const DIALOGUE_ISSUES = Object.freeze(['speech_causality', 'incoherent_line', 'situational_fit', 'echo_loop', 'flat_filler', 'voice_blend', 'register_mismatch', 'on_the_nose', 'stiff_rhythm']);
   const DIALOGUE_ISSUE_LABELS = Object.freeze({
     speech_causality: '발화 인과·물리 제약 위반',
+    incoherent_line: '문맥 불일치·의미 불명 대사',
     situational_fit: '상황·장면 부적합 대사',
     echo_loop: '메아리 문답 반복',
     flat_filler: '빈 추임새·의미 없는 대사',
@@ -30521,17 +30614,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const DIALOGUE_VERDICTS = Object.freeze(['confirm', 'adjust', 'uncertain']);
   const DIALOGUE_MAX_ITEMS = 8;
   const DIALOGUE_CRAFT_PRINCIPLES = Object.freeze([
-    '1. Physical Speech Causality & Articulation (발화 물리 인과·구강 제약): Never let a character who is deep-kissing (lips locked, tongue inside mouth, head held), mouth-occupied (oral act, hand over mouth, gag, mouth full), choking, or unconscious utter crisp, fluent sentences. Either (a) depict a clear physical beat breaking lip contact / freeing the mouth BEFORE the dialogue (only if not physically restrained), OR (b) render slurred, muffled, broken syllables (“으읍… 나, 중에…” / “흐, 잠…깐…”) or non-verbal action.',
+    '1. Physical Speech Causality & Articulation (발화 물리 인과·구강 제약 — 페르소나·키스 주체 포함 전원 적용): Apply strictly to EVERY speaker involved — BOTH the kisser (including the user persona in Novel mode or any authored persona beat) AND the person being kissed, mouth-occupied, hand-muffled, or choking. While lips remain joined (e.g., “입술은 떨어지지 않았다”), NEITHER party can utter crisp, fluent sentences. Either (a) depict a clear physical beat breaking lip contact / freeing the mouth BEFORE the dialogue (only if not physically restrained), OR (b) render slurred, muffled, broken syllables (“으읍… 나, 중에…” / “흐, 잠…깐…”) or non-verbal action.',
     '2. Involuntary Climax Vocalization (절정 시 비자발적 발화·소리 통제 상실): At climax/orgasm peak, pleasure overwhelms voluntary muscular and vocal control as the mind whites out. Never describe climax purely through silent narration while omitting spoken/vocalized dialogue: if the character’s mouth is covered or muffled by a hand, break through with muffled vocalization quotes (“으으음…!”, “흐읍…!”); if unobstructed, break through with unrestrained moans or ragged cries (“아아…!”, “하아, 으아…!”) rather than sterile silence, overriding general quietness/stealth.',
     '3. Situational Dialogue Fit & Natural Korean Intimacy Diction (상황·장면 맞춤 화술): Match tone, diction, line length, and social mask to the active scene — breathless/intimate fragments or muffled words in intimacy, warm teasing/tension on dates, polite role-bound register in workplace/customer service, hushed veiled phrasing around nearby third parties (except climax peak), sharp pressure in conflict. For unprotected intercourse, use natural Korean colloquial terms (“노콘”, “생으로”) rather than stiff phrasing, and never force illogical “밖에.” demands right after confirming a condom is worn.',
     '4. Break Echo-Loops (메아리 문답 금지): Real speakers almost never answer "~이야?" with "~이야.", "~거야?" with "~거야.", or "~맞아?" with "~맞아.". Answer obliquely — deflect, counter-question, address the unspoken motive, shift the frame, respond with silence/action, or move the beat one step forward.',
     '5. Subtext & Implicature (언외의 의미·함축): Convey desire, embarrassment, jealousy, reluctance, or tension through word choice, hesitation, teasing, understatement, or evasion — never flatly state obvious feelings or what both speakers already know.',
-    '6. Pragmatic Turn Function & Korean Spoken Rhythm (대사의 목적·구어체 호흡): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Cut empty filler; omit understood subjects.'
+    '6. Pragmatic Turn Function & Korean Spoken Rhythm (대사의 목적·구어체 호흡): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Cut empty filler; omit understood subjects.',
+    '7. Contextual/Referential Coherence & No Meaningless Fragments (상황·대상 정합성 및 의미 불명 대사 금지): Every spoken reply must accurately reflect who is physically doing what to whom right now and connect cleanly to the immediately preceding question or action — e.g., when asked “지금 누구한테 키스하는 거냐고.” while visibly kissing the sister, reply grounded in the actual target (“네 동생.”) rather than a factually absurd deflection (“너한테, 하고 있는 중인데.”). Never emit ungrammatical, truncated, or referent-less fragments whose meaning cannot be understood in context (e.g., “중인데. 그거.” or dangling “~는데. 그거.”); rewrite any such fragment into natural, context-grounded spoken Korean.'
   ]);
   const DIALOGUE_KISS_ACTIVE_RE = /키스(?:를|가)?\s*(?:나누|나눴|하|했|이어|계속|퍼부|파고들|깊어)|입술(?:을|이|에)?\s*(?:맞대|맞닿|부딪|포개|덮|삼키|물|빨|파고들)|혀(?:가|를|로|끝)?\s*(?:섞|얽|밀어\s*넣|파고들|들어왔|들어가|감아|감싸|훑)|입\s*(?:속|안)으로\s*혀|deep[- ]?kiss|tongues?\s+(?:entwined|tangled|inside|plunged)|lips?\s+(?:locked|pressed)/i;
   const DIALOGUE_KISS_LOCKED_RE = /물러나려고\s*해도[^\n.!?]{0,24}허락하지\s*않|뒤통수[^\n.!?]{0,24}(?:붙잡|눌러|감싸|고정)|고개(?:를|가)?\s*(?:고정|붙잡|놓지\s*않)|입술(?:을|이)?\s*떼지\s*못|놓아주지\s*않|escap(?:e|ing)\s+the\s+kiss|held\s+(?:her|his)\s+head/i;
-  const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이)?\s*(?:떼|떨어뜨|떨어졌|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:돌려|돌렸|젖혀|젖혔|빼내|뺐|뒤로\s*빼)|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
-  const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*못|풀지\s*못|못\s*하|못하|허락하지\s*않|떼지\s*않고/;
+  const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이|에서)?\s*(?:떼|떨어뜨|떨어졌|떨어지|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:젖혀|젖혔|빼내|뺐|뒤로\s*빼)|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
+  const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*(?:못|않)|떨어지지\s*않|떨어뜨리지\s*않|풀지\s*(?:못|않)|못\s*하|못하|허락하지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채|얼굴도\s*따라왔/;
+  const DIALOGUE_KISS_STILL_LOCKED_RE = /입술(?:은|이|을)?\s*(?:떨어지지\s*않|떼지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채)|입(?:을|이)?\s*떼지\s*않/i;
   const DIALOGUE_ORAL_ACTIVE_RE = /(?:페니스|자지|음경|귀두|남성기|손가락|재갈|입마개|손)(?:이|가|을|를|로)?[^\n.?!]{0,20}(?:입\s*(?:안|속)|목구멍|입을?\s*막|틀어막|물고\s*(?:있|빨)|삼키|파고들)|펠라(?:티오|치오)?|딥쓰롯|사까시|이라마|쿠니|커닐링구스|음핵(?:을|에)?\s*(?:입술|혀)(?:로|를)\s*(?:핥|빨|파묻)|mouth\s+(?:full|occupied|covered)|gag(?:ged)?|fellatio|deepthroat/i;
   const DIALOGUE_HAND_MUFFLED_RE = /(?:손(?:으로|등으로|바닥으로)?[^\n.?!]{0,20}입(?:을|이|으로)?\s*(?:갔|막|틀어막|가리|눌러)|입(?:으로|을)\s*(?:손이\s*갔|막은\s*손|틀어막)|손등으로\s*위를\s*막[^\n.?!]{0,24}손바닥|hand\s+over\s+(?:her|his)\s+mouth|clamped\s+(?:a|her|his)\s+hand\s+over\s+(?:her|his)\s+mouth)/i;
   const DIALOGUE_CLIMAX_PROSE_RE = /(?:절정(?:에|이|을)?\s*(?:달하|도달|맞|느끼|터지|밀려)|오르가즘|배가\s*위로\s*꺾|경련이\s*시작|전신(?:이|을)?\s*(?:경련|떨리며|굳었다가)|몸이\s*아래에서부터\s*들렸|climaxe[ds]|orgasm)/i;
@@ -30572,7 +30667,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         if (!clause.trim()) continue;
         if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissActive = true;
         if (DIALOGUE_KISS_LOCKED_RE.test(clause)) kissLocked = true;
-        if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
+        if (DIALOGUE_KISS_STILL_LOCKED_RE.test(clause)) {
+          kissActive = true;
+          kissLocked = true;
+        } else if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
           kissActive = false;
           kissLocked = false;
         }
@@ -30588,6 +30686,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     const targetDraft = stripNonProseSceneTags(text(draftText || ''));
     let draftHandMuffled = handMuffled;
+    const draftHasKissSignal = Boolean(targetDraft && (DIALOGUE_KISS_ACTIVE_RE.test(targetDraft) || DIALOGUE_KISS_STILL_LOCKED_RE.test(targetDraft)));
+    const draftHasOralSignal = Boolean(targetDraft && (DIALOGUE_ORAL_ACTIVE_RE.test(targetDraft) || DIALOGUE_HAND_MUFFLED_RE.test(targetDraft)));
     if (targetDraft) {
       for (const clause of targetDraft.split(/(?:\.(?!\d)|[!?;\n])+/)) {
         if (!clause.trim()) continue;
@@ -30610,7 +30710,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (asleep) constraints.push({ kind: 'asleep_or_drowsy', locked: false, label: '수면·반수면 발화 제한' });
 
     const violations = [];
-    if (targetDraft && (kissActive || oralActive || handMuffled || draftHandMuffled)) {
+    if (targetDraft && (kissActive || oralActive || handMuffled || draftHandMuffled || draftHasKissSignal || draftHasOralSignal)) {
       let kissOn = kissActive;
       let oralOn = oralActive;
       let handOn = handMuffled;
@@ -30627,8 +30727,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         } else {
           for (const clause of seg.split(/(?:\.(?!\d)|[!?;\n])+/)) {
             if (!clause.trim()) continue;
-            if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissOn = true;
-            if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) kissOn = false;
+            if (DIALOGUE_KISS_ACTIVE_RE.test(clause) || DIALOGUE_KISS_STILL_LOCKED_RE.test(clause)) kissOn = true;
+            else if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) kissOn = false;
             if (DIALOGUE_HAND_MUFFLED_RE.test(clause)) handOn = true;
             else if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralOn = true;
             if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
@@ -30795,18 +30895,28 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (shortRunMax >= 5) {
       flags.push(`Short ping-pong run: ${shortRunMax} consecutive ultra-short lines (≤10 chars)`);
     }
+    const DIALOGUE_UNQUOTED_VOCAL_RE = /^(?:으+읍|으+음|흐+읍|으+윽|흐+윽|하+아|아+아|으+아|흐+으|응+으|읏[—\-~]*하)[.!?…~]*$/;
+    const DIALOGUE_INCOHERENT_FRAGMENT_RE = /^(?:중인데|거인데|는데|인데|면서)(?:[.,!?\s…~]+(?:그거|이거|저거))?[.!?…~]*$|^(?:그거|이거|저거)[.,\s]+(?:중인데|거인데|는데|거든|인데)[.!?…~]*$/;
     const unquotedLines = [];
     if (targetText) {
       const cleaned = stripNonProseSceneTags(targetText);
       for (const rawLine of cleaned.split(/\r?\n/)) {
         const line = rawLine.trim();
         if (!line || line.length > 48 || /["“”「」『』]/.test(line)) continue;
-        if (DIALOGUE_UNQUOTED_END_RE.test(line)) {
+        if (DIALOGUE_UNQUOTED_END_RE.test(line) || DIALOGUE_UNQUOTED_VOCAL_RE.test(line)) {
           unquotedLines.push(line);
         }
       }
       if (unquotedLines.length) {
         flags.push(`Possible unquoted dialogue (${unquotedLines.length}): "${compact(unquotedLines[0], 48)}"`);
+      }
+    }
+    let incoherentCount = 0;
+    for (const q of targetQuotes) {
+      const stripped = q.replace(/^["“「]+|["”」]+$/g, '').trim();
+      if (stripped && DIALOGUE_INCOHERENT_FRAGMENT_RE.test(stripped)) {
+        incoherentCount += 1;
+        flags.push(`Incoherent/broken dialogue fragment: "${compact(stripped, 48)}"`);
       }
     }
     const causality = dialogueDetectSpeechConstraints(recent, targetText);
@@ -30815,6 +30925,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       quoteCount: targetQuotes.length,
       ellipsisCount,
       unquotedCount: unquotedLines.length,
+      incoherentCount,
       causalityViolations: causality.violations.length,
       shortRunMax,
       flags: [...new Set(flags)].slice(0, 10)
@@ -30838,8 +30949,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const remedyParts = [];
       if (causality.kissActive || causality.oralActive) {
         remedyParts.push(causality.kissLocked
-          ? '상대가 고개를 고정해 입술을 떼기 어려운 상태이므로, 발화가 나온다면 반드시 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음이나 비언어 반응으로 묘사할 것(또는 먼저 물리적으로 고개를 돌려 입을 떼어내는 명확한 동작 뒤에 대사할 것).'
-          : '키스/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.');
+          ? '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술이 맞닿아 떨어지지 않은 상태이므로, 누가 말하든 또렷한 문장을 쓰지 말고 말하기 직전에 입술을 떼는 명확한 동작을 먼저 서술하거나 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음·비언어 반응으로 고칠 것.'
+          : '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.');
       }
       if (causality.handMuffled) {
         remedyParts.push('손으로 입을 막아 소리를 틀어막은 상태이므로, 또렷한 문장 대신 손을 치우거나 손 아래·목구멍으로 새어 나오는 억눌린 발화("으으음…!", "흐읍…!")로 묘사할 것.');
@@ -30857,7 +30968,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     lines.push(
       scan.flags.length
         ? `Detected dialogue anti-patterns & causality flags (MUST fix if present in draft):\n${scan.flags.map(f => `- ${f}`).join('\n')}`
-        : 'Recent turns scan: no mechanical echo-loop or speech-causality break detected; still enforce character voice, subtext, situational fit, and natural rhythm on the current draft.'
+        : 'Recent turns scan: no mechanical echo-loop or speech-causality break detected; still enforce character voice, subtext, situational fit, contextual/factual coherence, and natural rhythm on the current draft.'
     );
     return compact(lines.join('\n'), 3200);
   };
@@ -30874,9 +30985,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const outputKind = phase === 'writing' ? '' : dialogueOutputKind(stageName, settings);
     return [
       '[DIALOGUE & SPEECHCRAFT (화술·대화) — HUMAN SPOKEN DIALOGUE & CAUSALITY]',
-      'Write and repair spoken dialogue so every character sounds like a real, distinct person in their exact physical & situational moment — never crisp fluent Q&A while deep-kissing or mismatching the scene.',
+      'Write and repair spoken dialogue so every character sounds like a real, distinct person in their exact physical & situational moment — never crisp fluent Q&A while deep-kissing, factually contradicting visible reality, or uttering meaningless broken fragments.',
       gate === 'novel'
-        ? '- Novel mode: apply to every character, the persona included. Author-specified lines stay intact.'
+        ? '- Novel mode: apply physical speech causality, factual/contextual coherence, and incoherent-fragment repair to EVERY speaker including the user persona (author-specified exact quotes stay intact).'
         : gate === 'staging'
           ? '- Scene-staging RP mode: lines the input wrote stay as written. Check and refine only NPC lines the draft adds.'
           : '- RP mode: apply to NPCs only. The persona’s spoken lines belong to the user; never edit or rewrite them.',
@@ -30885,7 +30996,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       `DIALOGUE PACKET:\n${packet}`,
       priorChecks.length
-        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names a line to rewrite; an "uncertain" note means check it against character voice, situational fit, and physical speech causality before keeping it.`
+        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names a line to rewrite; an "uncertain" note means check it against character voice, situational fit, contextual coherence, and physical speech causality before keeping it.`
         : '',
       outputKind === 'check'
         ? `OUTPUT: add a top-level "dialogue_check" array with one item per spoken line in this draft that suffers from ${DIALOGUE_ISSUES.join(', ')}, judged from your own duty. Item fields: character; issue (${DIALOGUE_ISSUES.join(', ')}); verdict (confirm, adjust, or uncertain); claim (the quoted line); reason. Use an empty array when dialogue is already sharp and causally valid.`
@@ -30942,6 +31053,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         quoteCount: scan.quoteCount,
         ellipsisCount: scan.ellipsisCount,
         unquotedCount: scan.unquotedCount,
+        incoherentCount: scan.incoherentCount || 0,
         causalityViolations: scan.causalityViolations,
         shortRunMax: scan.shortRunMax
       }
@@ -30993,9 +31105,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!flag) return '';
     let m = flag.match(/^Speech causality violation \(([^)]+)\):\s*clear speech "([^"]+)" without separating lips\/mouth first or slurring$/i);
     if (m) {
-      const kindKo = m[1] === 'mouth_occupied' ? '구강 점유' : '딥키스 중';
+      const kindKo = m[1] === 'mouth_occupied' ? '구강 점유' : (m[1] === 'hand_muffled' ? '손으로 입 막힘' : '딥키스 중');
       return `발화 인과 위반 (${kindKo}): 입술/입을 떼거나 발음이 뭉개지지 않은 채 정상 대사 "${m[2]}"`;
     }
+    m = flag.match(/^Incoherent\/broken dialogue fragment:\s*(.+)$/i);
+    if (m) return `의미 불명·문맥 단절 단편 대사: ${m[1]}`;
     m = flag.match(/^Echo-loop pair:\s*(.+)$/i);
     if (m) return `메아리 문답 반복: ${m[1]}`;
     m = flag.match(/^Ending convergence:\s*"([^"]+)"\s*repeated\s*(\d+)\s*times across recent lines$/i);
@@ -31457,6 +31571,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ]);
   const INTIMACY_PENETRATIVE_ACT_RE = /(?:삽입(?:한|하|해|후|중|된|되|을|이|하며)?|짧게\s*뺐다\s*(?:깊게\s*)?넣|깊숙이\s*(?:밀어\s*넣|박|찌르)|피스톤(?:\s*운동)?|왕복|박아\s*(?:넣|대|주)|질내(?:에|로)\s*(?:넣|박|밀)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:질|보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:놀|흔들|흔드|움직|쳐|치|박|튕|넣|빼)|정상위|후배위|기승위|측위|굴곡위|입위|좌위|penetrat|thrust(?:ing|s)?\s+(?:in(?:to)?|deep)|inside\s+her)/i;
   const INTIMACY_PACING_RESTRAINT_RE = /(?:박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|참으려|페이스\s*조절|slow(?:ed|ing)?\s+(?:down|the pace)|hold(?:ing)?\s+back)/i;
+  const INTIMACY_EJAC_FORCED_HOLD_RE = /억지로\s*참|이를?\s*(?:악)?물고\s*(?:참|버티|견디)|사정(?:을|이)?\s*(?:억지로\s*)?(?:참|억누르|억제|미루|지연|견디)|싸지\s*않으려|참아\s*내|겨우\s*참|참고\s*버티|참으려|박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|페이스\s*조절|holding\s+back|trying\s+not\s+to\s+cum|staving\s+off|forcing\s+(?:himself\s+)?to\s+hold/i;
   const INTIMACY_ACTIVE_THRUST_RE = /(?:움직임(?:이|을)?\s*(?:격해|빨라|거칠|세지|세졌|몰아|깊어|강해|높아)|속도(?:가|를)?\s*(?:높|올리|올렸|빨라|붙|더하|더했)|박자(?:가|를)?\s*(?:빨라|거칠|몰아|높)|거칠게\s*(?:움직|몰아|쳐|밀|박|흔들)|더\s*(?:세게|깊게|빠르게|거칠게)|몰아(?:붙|치|쳤)|격렬하게|faster|harder|deeper|pounding|picking\s+up\s+(?:speed|pace)|thrusts?\s+(?:grow|growing|get|getting)\s+(?:faster|harder|rougher))/i;
   const INTIMACY_EJACULATION_BRINK_RE = /(?:곧\s*(?:사정|쌀|싸|분출|터질)|사정(?:할\s*듯|할\s*것\s*같|직전|이\s*가까|이\s*임박|을\s*참기)|싸(?:기\s*직전|려\s*하|ㄹ\s*것\s*같|버릴\s*(?:것\s*같|듯))|한계(?:에\s*(?:달|다다|가까)|가\s*(?:오|왔|가까))|about\s+to\s+(?:cum|ejaculate|finish)|close\s+to\s+(?:cumming|ejaculating)|on\s+the\s+brink\s+of\s+(?:cumming|ejaculating))/i;
   const INTIMACY_CLIMAX_BRINK_RE = /(?:곧\s*(?:절정|갈\s*것|가버릴|올\s*것)|절정(?:이\s*(?:가까|임박|다가)|에\s*(?:가까|다다)|직전|할\s*듯|할\s*것\s*같)|가버릴\s*(?:것\s*같|듯)|갈\s*것\s*같|오르가[즘슴]\s*(?:직전|이\s*가까)|about\s+to\s+(?:cum|climax|orgasm)|on\s+the\s+edge|close\s+to\s+climax)/i;
@@ -31662,6 +31777,443 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return { name: compact(name, 80), size: 'average', cm: INTIMACY_MALE_SIZE_META.average.defaultCm, basis: '로어 명시 없음 · 평균 기준 추정', origin: 'lore' };
   };
+  const INTIMACY_MALE_EJAC_PACES = Object.freeze(['very_fast', 'fast', 'average', 'slow', 'very_slow']);
+  const INTIMACY_MALE_EJAC_PACE_META = Object.freeze({
+    very_fast: Object.freeze({ label: '극조루 · 매우 빠름', defaultPace: 75, effectLabel: '자극 대폭 증폭·참을성 매우 낮음', directive: '자극을 극도로 강하게 느끼며 참을성이 매우 낮아 금방 한계에 다다른다(억지로 이를 악물고 참으려 하면 힘겹게 지연될 수는 있다).' }),
+    fast: Object.freeze({ label: '조루 · 빠름', defaultPace: 40, effectLabel: '자극 증폭·참을성 낮음', directive: '평균보다 자극을 빠르게 받아들이고 참을성이 낮아 금세 숨이 거칠어지며 쉽게 사정감이 치밀어 오른다(억지로 참으면 지연 가능).' }),
+    average: Object.freeze({ label: '평균', defaultPace: 0, effectLabel: '표준(×1.00)', directive: '평균적인 민감도와 사정 인내력을 유지한다.' }),
+    slow: Object.freeze({ label: '지루 · 느림', defaultPace: -40, effectLabel: '자극 감쇠·참을성 좋음', directive: '자극 수용이 완만하고 참을성과 지구력이 좋아 쉽사리 무너지지 않으며 오래 버틴다.' }),
+    very_slow: Object.freeze({ label: '극지루 · 매우 느림', defaultPace: -75, effectLabel: '자극 대폭 감쇠·참을성 매우 높음', directive: '자극을 평균보다 훨씬 적게 받아들이고 참을성이 매우 뛰어나 웬만한 자극에도 오랫동안 평정과 페이스를 유지한다.' })
+  });
+  const intimacyClampEjacPace = value => Math.max(-100, Math.min(100, Math.round(Number(value) || 0)));
+  const normalizeIntimacyMaleEjacPaceValue = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return intimacyClampEjacPace(n);
+  };
+  const normalizeIntimacyMaleEjacPaceTier = value => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (INTIMACY_MALE_EJAC_PACES.includes(raw)) return raw;
+    if (/^(?:very[_\s-]*fast|severe[_\s-]*premature)$|극조루|심한\s*조루|매우\s*빠/.test(raw)) return 'very_fast';
+    if (/^(?:fast|premature|quick)$|조루|빠름|빠르/.test(raw)) return 'fast';
+    if (/^(?:average|avg|normal|medium|standard)$|평균|보통|평범/.test(raw)) return 'average';
+    if (/^(?:very[_\s-]*slow|severe[_\s-]*delayed)$|극지루|심한\s*지루|매우\s*느/.test(raw)) return 'very_slow';
+    if (/^(?:slow|delayed|high[_\s-]*stamina)$|지루|느림|느리/.test(raw)) return 'slow';
+    return '';
+  };
+  const intimacyMaleEjacPaceTierFromScore = pace => {
+    const p = intimacyClampEjacPace(pace);
+    if (p >= 60) return 'very_fast';
+    if (p >= 25) return 'fast';
+    if (p <= -60) return 'very_slow';
+    if (p <= -25) return 'slow';
+    return 'average';
+  };
+  const intimacyMaleEjacPaceMult = pace => {
+    const p = intimacyClampEjacPace(pace);
+    return p >= 0
+      ? Number((1 + (p / 100) * 0.75).toFixed(2))
+      : Number((1 + (p / 100) * 0.55).toFixed(2));
+  };
+  const intimacyMaleEjacPaceModifier = paceOrTier => {
+    let pace = null;
+    if (typeof paceOrTier === 'string' && paceOrTier.trim() && !/^-?\d+(?:\.\d+)?$/.test(paceOrTier.trim())) {
+      const t = normalizeIntimacyMaleEjacPaceTier(paceOrTier);
+      if (t) pace = INTIMACY_MALE_EJAC_PACE_META[t].defaultPace;
+    }
+    if (pace === null) {
+      const n = normalizeIntimacyMaleEjacPaceValue(paceOrTier);
+      pace = n !== null ? n : 0;
+    }
+    const tier = intimacyMaleEjacPaceTierFromScore(pace);
+    const meta = INTIMACY_MALE_EJAC_PACE_META[tier] || INTIMACY_MALE_EJAC_PACE_META.average;
+    const mult = intimacyMaleEjacPaceMult(pace);
+    return {
+      pace,
+      tier,
+      label: meta.label,
+      mult,
+      effectLabel: meta.effectLabel,
+      directive: meta.directive
+    };
+  };
+  const normalizeIntimacyMalePaceEntry = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const name = compact(value.name || '', 80);
+    const tierRaw = normalizeIntimacyMaleEjacPaceTier(value.tier ?? value.ejaculationPaceTier ?? value.ejaculation_pace_tier ?? '');
+    const paceVal = normalizeIntimacyMaleEjacPaceValue(value.pace ?? value.ejaculationPace ?? value.ejaculation_pace);
+    const pace = paceVal !== null ? paceVal : (tierRaw ? INTIMACY_MALE_EJAC_PACE_META[tierRaw].defaultPace : null);
+    if (!name || pace === null) return null;
+    const tier = tierRaw || intimacyMaleEjacPaceTierFromScore(pace);
+    return {
+      name,
+      pace,
+      tier,
+      basis: compact(value.basis ?? value.ejaculationPaceBasis ?? value.ejaculation_pace_basis ?? '', 240),
+      origin: value.origin === 'user' ? 'user' : 'lore',
+      updatedAt: compact(value.updatedAt || value.createdAt || '', 40)
+    };
+  };
+  const normalizeIntimacyMalePaceMap = value => {
+    const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [rawScope, rawBucket] of Object.entries(parsed)) {
+      const scopeKey = compact(rawScope, 512);
+      if (!scopeKey || !rawBucket || typeof rawBucket !== 'object' || Array.isArray(rawBucket)) continue;
+      const bucket = {};
+      for (const [rawPersonKey, rawEntry] of Object.entries(rawBucket)) {
+        const normKey = compact(normalizeContinuityAlias(rawEntry?.name || rawPersonKey) || rawPersonKey, 80).toLowerCase();
+        const entry = normalizeIntimacyMalePaceEntry(rawEntry);
+        if (normKey && entry) bucket[normKey] = entry;
+      }
+      if (Object.keys(bucket).length) out[scopeKey] = bucket;
+    }
+    return out;
+  };
+  const estimateMaleEjacPaceFromLore = (name = '', loreText = '') => {
+    const raw = String(loreText || '');
+    if (!raw.trim()) {
+      return { name: compact(name, 80), pace: 0, tier: 'average', basis: '로어 명시 없음 · 평균 기준 추정', origin: 'lore' };
+    }
+    if (/극조루|심한\s*조루|스치기만\s*해도\s*(?:싸|사정)|몇\s*초\s*못\s*버|severe\s+premature/i.test(raw)) {
+      return { name: compact(name, 80), pace: 75, tier: 'very_fast', basis: '로어 직접 묘사 (극조루·즉각 과민)', origin: 'lore' };
+    }
+    if (/조루|사정이?\s*빠르|빨리\s*(?:싸|사정|가버)|참을성(?:이|은)?\s*(?:없|약|부족|짧)|민감해서\s*금방|경험(?:이|은)?\s*(?:없|적|부족|서툴)|동정|숫총각|premature|quick\s+to\s+(?:cum|finish)|hair[- ]?trigger|low\s+stamina/i.test(raw)) {
+      return { name: compact(name, 80), pace: 45, tier: 'fast', basis: '로어 묘사 (조루·참을성 부족·빠른 사정)', origin: 'lore' };
+    }
+    if (/극지루|심한\s*지루|사정이?\s*(?:안\s*됨|거의\s*안|매우\s*느)|절륜|밤새도록\s*지치지|severe\s+delayed|iron\s+stamina/i.test(raw)) {
+      return { name: compact(name, 80), pace: -75, tier: 'very_slow', basis: '로어 직접 묘사 (극지루·강인한 인내력)', origin: 'lore' };
+    }
+    if (/지루|사정이?\s*느리|오래\s*(?:버티|가|견디|참)|참을성(?:이|은)?\s*(?:좋|강|뛰어|길)|정력(?:이|은)?\s*(?:좋|강|넘치|뛰어)|지구력|delayed\s+ejaculation|high\s+stamina|lasts?\s+(?:long|forever)/i.test(raw)) {
+      return { name: compact(name, 80), pace: -45, tier: 'slow', basis: '로어 묘사 (지루·좋은 참을성·느린 사정)', origin: 'lore' };
+    }
+    return { name: compact(name, 80), pace: 0, tier: 'average', basis: '로어 명시 없음 · 평균 기준 추정', origin: 'lore' };
+  };
+  const INTIMACY_CONSENT_STYLES = Object.freeze(['', 'requires_consent', 'likes_unannounced', 'flexible']);
+  const INTIMACY_CONSENT_STYLE_LABELS = Object.freeze({
+    '': '자동(로어 추정)',
+    requires_consent: '사전 동의 필수 (무단 시작 시 식음)',
+    likes_unannounced: '동의 없는 즉각 돌입 선호',
+    flexible: '유연(맥락 따름)'
+  });
+  const INTIMACY_INITIATIVE_STYLES = Object.freeze(['', 'dominant', 'submissive', 'switch']);
+  const INTIMACY_INITIATIVE_STYLE_LABELS = Object.freeze({
+    '': '자동(로어 추정)',
+    dominant: '직접 주도 선호 (스스로 주도 시도)',
+    submissive: '이끌림 선호 (주도 요구 시 식음·거부)',
+    switch: '유연(리드/수용 모두 가능)'
+  });
+  const INTIMACY_RESTRAINT_TOY_STYLES = Object.freeze(['', 'likes', 'dislikes', 'neutral']);
+  const INTIMACY_RESTRAINT_TOY_STYLE_LABELS = Object.freeze({
+    '': '자동(로어 추정)',
+    likes: '도구·구속·눈가리개 선호',
+    dislikes: '도구·구속·억압 싫어함',
+    neutral: '보통(상황에 따름)'
+  });
+  const intimacyClampExcitement = value => Math.max(-100, Math.min(100, Math.round(Number(value) || 0)));
+  const intimacyExcitementStimMult = excitement => {
+    const e = intimacyClampExcitement(excitement);
+    return e >= 0
+      ? Number((1 + (e / 100) * 0.45).toFixed(2))
+      : Number((1 + (e / 100) * 0.50).toFixed(2));
+  };
+  const intimacyExcitementTier = excitement => {
+    const e = intimacyClampExcitement(excitement);
+    if (e >= 70) return { id: 'fervent', label: '열광·적극 몰입', badgeTone: 'ok', directive: '매우 흥분해 먼저 적극적으로 다가가 매달리며 감각이 예민하게 증폭되고 상대를 강하게 갈망한다.' };
+    if (e >= 30) return { id: 'aroused', label: '고조·적극 반응', badgeTone: 'ok', directive: '흥분이 높아져 숨결·시선·손길이 적극적이고 작은 자극에도 잘 느끼며 상대에게 더 밀착한다.' };
+    if (e >= -14) return { id: 'neutral', label: '보통·탐색', badgeTone: 'info', directive: '현재 관계와 로어 기질에 따른 기본 반응 수위를 유지한다.' };
+    if (e >= -49) return { id: 'cooled', label: '식음·소극 반응', badgeTone: 'warn', directive: '흥분이 식어 반응이 줄고 자극 감도가 떨어지며, 느껴도 표정·소리를 최대한 억누르려 한다.' };
+    return { id: 'frozen', label: '냉각·목석화', badgeTone: 'warn', directive: '흥분이 크게 식어 목석처럼 굳고 반응이 거의 없으며, 느껴도 최대한 티를 안 내려 버틴다(자극도는 반감되지만 계속 유입되므로 절정도가 오르면 생리적 절정 반응은 끝내 드러난다).' };
+  };
+  const inferIntimacyExcitementPrefs = (card = null, loreText = '') => {
+    const corpus = [
+      card?.turnOns || '',
+      card?.turnOffs || '',
+      card?.foreplayStyle || '',
+      card?.intercourseStyle || '',
+      card?.afterplayStyle || '',
+      card?.basis || '',
+      loreText || ''
+    ].filter(Boolean).join('\n');
+    let consentStyle = INTIMACY_CONSENT_STYLES.includes(card?.consentStyle) ? card.consentStyle : '';
+    if (!consentStyle && corpus) {
+      if (/(?:동의|허락)[^\n.?!]{0,16}(?:필수|반드시|받아야)|(?:동의|허락)\s*없[^\n.?!]{0,16}(?:싫|식|거부|기분|불쾌|안\s*됨)|합의\s*중시|requires?\s+consent/i.test(corpus)) {
+        consentStyle = 'requires_consent';
+      } else if (/(?:동의|허락)\s*없[^\n.?!]{0,18}(?:좋아|선호|흥분|바로|원함)|기습[^\n.?!]{0,14}(?:좋아|선호|흥분)|다짜고짜[^\n.?!]{0,14}(?:좋아|선호)|likes?\s+unannounced/i.test(corpus)) {
+        consentStyle = 'likes_unannounced';
+      }
+    }
+    let initiativeStyle = INTIMACY_INITIATIVE_STYLES.includes(card?.initiativeStyle) ? card.initiativeStyle : '';
+    if (!initiativeStyle && corpus) {
+      if (/(?:직접|본인이|스스로)\s*주도|주도해야\s*성이|주도권[^\n.?!]{0,16}(?:좋아|잡아야|원함|선호)|능동적[^\n.?!]{0,12}(?:주도|리드)|dominant/i.test(corpus)) {
+        initiativeStyle = 'dominant';
+      } else if (/주도[^\n.?!]{0,16}(?:싫|부담|원치\s*않|못하)|수동적|이끌리는\s*(?:걸|편)|리드[^\n.?!]{0,16}(?:싫|부담)|submissive/i.test(corpus)) {
+        initiativeStyle = 'submissive';
+      } else if (/기승위/.test(String(card?.dislikedPositions || '')) || /매팅프레스|스푸닝|풀넬슨/.test(String(card?.likedPositions || ''))) {
+        initiativeStyle = 'submissive';
+      } else if (/기승위/.test(String(card?.likedPositions || '')) && !/기승위/.test(String(card?.dislikedPositions || ''))) {
+        initiativeStyle = 'dominant';
+      }
+    }
+    let restraintToyStyle = INTIMACY_RESTRAINT_TOY_STYLES.includes(card?.restraintToyStyle) ? card.restraintToyStyle : '';
+    if (!restraintToyStyle && corpus) {
+      if (/(?:도구|수갑|결박|구속|속박|억압|눈가리개|안대|강압)[^\n.?!]{0,18}(?:싫|거부|혐오|식|불편|무서)/.test(corpus)) {
+        restraintToyStyle = 'dislikes';
+      } else if (/(?:눈가리개|안대|수갑|결박|구속|속박|도구|성인용품|예상치\s*못한)[^\n.?!]{0,18}(?:좋아|즐기|선호|흥분|원함)/.test(corpus)) {
+        restraintToyStyle = 'likes';
+      }
+    }
+    return {
+      consentStyle,
+      initiativeStyle,
+      restraintToyStyle,
+      turnOns: compact(card?.turnOns || '', 240),
+      turnOffs: compact(card?.turnOffs || '', 240)
+    };
+  };
+  const INTIMACY_ZONE_KO_LABELS = Object.freeze({
+    lips_mouth: '입술',
+    ears: '귀',
+    neck_collarbone: '목덜미',
+    breasts_nipples: '유두',
+    abdomen_waist: '허리',
+    hips_buttocks: '엉덩이',
+    inner_thighs: '허벅지',
+    clitoris_vulva: '음핵',
+    vaginal_canal: '질내',
+    cervix: '자궁구',
+    penis_glans: '귀두',
+    penis_shaft_scrotum: '음경 기둥',
+    anal_perineum: '후구'
+  });
+  const inferIntimacyLoreProfileFields = (card = null, loreText = '', genderHint = '') => {
+    const baseCorpus = [
+      loreText || '',
+      card?.basis || '',
+      card?.foreplayStyle || '',
+      card?.intercourseStyle || '',
+      card?.afterplayStyle || '',
+      card?.likedPositions ? `선호 체위: ${card.likedPositions}` : '',
+      card?.dislikedPositions ? `비선호 체위: ${card.dislikedPositions}` : ''
+    ].filter(Boolean).join('\n');
+    const turnOnCorpus = [baseCorpus, card?.turnOns || ''].filter(Boolean).join('\n');
+    const turnOffCorpus = [baseCorpus, card?.turnOffs || ''].filter(Boolean).join('\n');
+    const corpus = [baseCorpus, card?.turnOns || '', card?.turnOffs || ''].filter(Boolean).join('\n');
+    const prefs = inferIntimacyExcitementPrefs(card, loreText);
+    const gender = intimacyNormalizeGender(genderHint || card?.gender || card?.anatomyView || '');
+    const tones = typeof extractLorePersonalityToneTags === 'function' ? extractLorePersonalityToneTags(baseCorpus) : [];
+    const hasTone = label => tones.some(t => t.includes(label));
+
+    const pushUnique = (list, value, max = 5) => {
+      const clean = compact(value || '', 48);
+      if (!clean || list.length >= max || list.includes(clean)) return;
+      list.push(clean);
+    };
+
+    const dislikesRestraintCue = prefs.restraintToyStyle === 'dislikes'
+      || /(?:눈가리개|안대|수갑|결박|구속|속박|도구)[^\n.?!]{0,18}(?:싫|거부|혐오|선호하지\s*않|원치\s*않)/.test(turnOnCorpus);
+    const dislikesRoughCue = /(?:거친|강압)[^\n.?!]{0,16}(?:싫|거부|혐오|선호하지\s*않|원치\s*않)/.test(turnOnCorpus);
+    const turnOnCandidates = [];
+    const turnOnPatterns = [
+      [/키스|입맞춤|입술\s*맞/, '키스·입맞춤'],
+      [/귓가|귀\s*(?:애무|속삭|핥|물)|속삭이/, '귓가 속삭임'],
+      [/목덜미|목선|쇄골/, '목덜미 애무'],
+      [/눈가리개|안대/, '눈가리개'],
+      [/수갑|결박|구속|손목/, '수갑·구속'],
+      [/포옹|안기|품에|밀착|감싸/, '밀착 포옹'],
+      [/칭찬|사랑해|다정|예쁘다|귀엽다/, '다정한 칭찬'],
+      [/눈\s*맞춤|시선|응시|바라보/, '시선 맞춤'],
+      [/전희|천천히|부드럽|애무/, '충분한 전희'],
+      [/깊숙|깊은\s*삽입|안쪽까지/, '깊은 삽입'],
+      [/거칠|강압|세게|몰아/, '거친 리드'],
+      [/후희|여운|쓰다듬|껴안/, '다정한 후희']
+    ];
+    for (const [pat, label] of turnOnPatterns) {
+      if ((label === '눈가리개' || label === '수갑·구속') && dislikesRestraintCue) continue;
+      if (label === '거친 리드' && dislikesRoughCue) continue;
+      if (pat.test(turnOnCorpus)) pushUnique(turnOnCandidates, label, 5);
+    }
+    if (prefs.consentStyle === 'requires_consent') pushUnique(turnOnCandidates, '사전 동의 확인', 5);
+    else if (prefs.consentStyle === 'likes_unannounced') pushUnique(turnOnCandidates, '예고 없는 기습 접촉', 5);
+    if (prefs.restraintToyStyle === 'likes') {
+      pushUnique(turnOnCandidates, '눈가리개', 5);
+      pushUnique(turnOnCandidates, '수갑·구속', 5);
+    }
+    if (prefs.initiativeStyle === 'dominant') pushUnique(turnOnCandidates, '직접 주도', 5);
+    else if (prefs.initiativeStyle === 'submissive') {
+      pushUnique(turnOnCandidates, '상대의 확실한 리드', 5);
+      pushUnique(turnOnCandidates, '밀착 포옹', 5);
+    }
+    if (/매팅프레스|풀넬슨/.test(baseCorpus)) pushUnique(turnOnCandidates, '깊고 밀착된 압박', 5);
+    if (/스푸닝/.test(baseCorpus)) pushUnique(turnOnCandidates, '뒤에서 감싸 안는 밀착', 5);
+    if (card?.foreplayStance === 'likes') pushUnique(turnOnCandidates, '충분한 전희', 5);
+    if (card?.afterplayStance === 'likes') pushUnique(turnOnCandidates, '다정한 후희', 5);
+    if (turnOnCandidates.length < 3) {
+      if (hasTone('수줍음') || hasTone('다정')) {
+        pushUnique(turnOnCandidates, '부드러운 키스', 5);
+        pushUnique(turnOnCandidates, '다정한 속삭임', 5);
+        pushUnique(turnOnCandidates, '밀착 포옹', 5);
+      } else if (hasTone('도도')) {
+        pushUnique(turnOnCandidates, '목덜미 애무', 5);
+        pushUnique(turnOnCandidates, '시선 맞춤', 5);
+        pushUnique(turnOnCandidates, '진심 어린 애정 표현', 5);
+      } else if (hasTone('원칙') || hasTone('책임감')) {
+        pushUnique(turnOnCandidates, '차분한 확인', 5);
+        pushUnique(turnOnCandidates, '신뢰감 있는 리드', 5);
+        pushUnique(turnOnCandidates, '깊은 눈맞춤', 5);
+      } else if (hasTone('나른')) {
+        pushUnique(turnOnCandidates, '느긋한 전희', 5);
+        pushUnique(turnOnCandidates, '귓가 속삭임', 5);
+        pushUnique(turnOnCandidates, '밀착 스킨십', 5);
+      } else if (hasTone('솔직')) {
+        pushUnique(turnOnCandidates, '대담한 스킨십', 5);
+        pushUnique(turnOnCandidates, '적극적인 애무', 5);
+        pushUnique(turnOnCandidates, '거친 숨결', 5);
+      } else {
+        pushUnique(turnOnCandidates, '부드러운 키스', 5);
+        pushUnique(turnOnCandidates, '목덜미 애무', 5);
+        pushUnique(turnOnCandidates, '밀착 포옹', 5);
+      }
+    }
+
+    const turnOffCandidates = [];
+    if (prefs.consentStyle === 'requires_consent') pushUnique(turnOffCandidates, '동의 없는 시작', 4);
+    if (prefs.restraintToyStyle === 'dislikes') pushUnique(turnOffCandidates, '도구·구속·억압', 4);
+    if (prefs.initiativeStyle === 'submissive') pushUnique(turnOffCandidates, '원치 않는 주도 요구', 4);
+    else if (prefs.initiativeStyle === 'dominant') pushUnique(turnOffCandidates, '일방적 통제', 4);
+    const turnOffPatterns = [
+      [/(?:거친|험한|상스러운)\s*(?:말투|언행|욕설)|모욕|비하/, '거친 말투·모욕'],
+      [/무례|무시|막무가내|배려\s*없/, '무례하고 배려 없는 태도'],
+      [/시선|타인|남의\s*눈|들킬|공개|노출|소란/, '노출·발각 위험'],
+      [/강압|억지|강요/, '강압적 진행']
+    ];
+    for (const [pat, label] of turnOffPatterns) {
+      if (pat.test(turnOffCorpus)) pushUnique(turnOffCandidates, label, 4);
+    }
+    if (card?.foreplayStance === 'likes') pushUnique(turnOffCandidates, '전희 생략·성급한 진행', 4);
+    if (card?.afterplayStance === 'likes') pushUnique(turnOffCandidates, '끝난 직후 무관심', 4);
+    if (turnOffCandidates.length < 2) {
+      if (hasTone('원칙') || hasTone('책임감')) {
+        if (prefs.consentStyle !== 'likes_unannounced') pushUnique(turnOffCandidates, '동의 없는 강행', 4);
+        pushUnique(turnOffCandidates, '무례한 태도', 4);
+      } else if (hasTone('도도')) {
+        pushUnique(turnOffCandidates, '무시하는 태도', 4);
+        pushUnique(turnOffCandidates, '성의 없는 접촉', 4);
+      } else if (hasTone('수줍음') || hasTone('다정')) {
+        pushUnique(turnOffCandidates, '강압적 태도', 4);
+        pushUnique(turnOffCandidates, '거친 말투', 4);
+      } else if (hasTone('나른')) {
+        pushUnique(turnOffCandidates, '지나친 재촉', 4);
+        pushUnique(turnOffCandidates, '산만한 분위기', 4);
+      } else if (hasTone('솔직')) {
+        pushUnique(turnOffCandidates, '맥 끊는 망설임', 4);
+        pushUnique(turnOffCandidates, '소극적 방치', 4);
+      } else {
+        if (prefs.consentStyle !== 'likes_unannounced') pushUnique(turnOffCandidates, '동의 없는 강행', 4);
+        pushUnique(turnOffCandidates, '무성의한 태도', 4);
+      }
+    }
+    const splitConflictTokens = raw => String(raw || '').split(/[,·/|;\s\n]+/).map(s => s.trim().toLowerCase()).filter(s => s.length >= 2);
+    const turnOffTokenSet = new Set([...splitConflictTokens(card?.turnOffs || ''), ...turnOffCandidates.flatMap(splitConflictTokens)]);
+    const filteredTurnOns = turnOnCandidates.filter(item => !splitConflictTokens(item).some(tok => turnOffTokenSet.has(tok)));
+    const finalTurnOns = filteredTurnOns.length ? filteredTurnOns : ['다정한 대화', '신뢰감 있는 태도'];
+    const turnOnTokenSet = new Set([...splitConflictTokens(card?.turnOns || ''), ...finalTurnOns.flatMap(splitConflictTokens)]);
+    const filteredTurnOffs = turnOffCandidates.filter(item => !splitConflictTokens(item).some(tok => turnOnTokenSet.has(tok)));
+    const finalTurnOffs = filteredTurnOffs.length ? filteredTurnOffs : turnOffCandidates;
+
+    const allowedZoneIds = INTIMACY_BODY_PARTS
+      .map(([id]) => id)
+      .filter(id => intimacyZoneAllowedForGender(id, gender));
+    const allowedSet = new Set(allowedZoneIds);
+    const sensZoneIds = [];
+    const dullZoneIds = [];
+    const pushZone = (list, zoneId, oppositeList, max = 4) => {
+      if (!zoneId || !allowedSet.has(zoneId) || list.length >= max || list.includes(zoneId) || oppositeList.includes(zoneId)) return;
+      list.push(zoneId);
+    };
+    if (card?.zoneStats && !intimacyZoneStatsAllZero(card.zoneStats)) {
+      for (const zoneId of allowedZoneIds) {
+        const s = Number(card.zoneStats[zoneId]?.sensitivity || 0);
+        if (s >= 20) pushZone(sensZoneIds, zoneId, dullZoneIds, 5);
+        else if (s <= -20) pushZone(dullZoneIds, zoneId, sensZoneIds, 4);
+      }
+    }
+    const zoneKeywords = [
+      ['ears', /귀(?:에|가|를|가\s*약)?|귓불|귓가/],
+      ['neck_collarbone', /목덜미|목선|쇄골/],
+      ['lips_mouth', /입술|입안|혀/],
+      ['breasts_nipples', /유두|젖꼭지|가슴(?:이|에|을)?/],
+      ['abdomen_waist', /허리|옆구리|아랫배|복부/],
+      ['hips_buttocks', /엉덩이|골반|둔부/],
+      ['inner_thighs', /허벅지|안쪽\s*살|내전근/],
+      ['clitoris_vulva', /음핵|클리토리스|외음부/],
+      ['vaginal_canal', /질내|질\s*안|질벽|지스팟|G스팟/i],
+      ['cervix', /자궁구|심부|안쪽\s*깊이/],
+      ['penis_glans', /귀두|소대/],
+      ['penis_shaft_scrotum', /음경|기둥|고환/],
+      ['anal_perineum', /후구|애널|항문|뒷구멍|회음부|전립선/]
+    ];
+    for (const clause of corpus.split(/[\n.?!。！？]+/)) {
+      const cleanClause = clause.trim();
+      if (!cleanClause) continue;
+      const isSensClause = /민감|성감대|약하|약함|예민|잘\s*느끼|달아오르|전율/.test(cleanClause);
+      const isDullClause = /둔감|무감|싫어|거부감|안\s*느끼|감각이?\s*(?:무디|덜하)/.test(cleanClause);
+      if (!isSensClause && !isDullClause) continue;
+      for (const [zoneId, zRe] of zoneKeywords) {
+        if (!zRe.test(cleanClause)) continue;
+        if (isDullClause) pushZone(dullZoneIds, zoneId, sensZoneIds, 4);
+        else if (isSensClause) pushZone(sensZoneIds, zoneId, dullZoneIds, 4);
+      }
+    }
+    if (!sensZoneIds.length) {
+      if (/매팅프레스|풀넬슨/.test(baseCorpus)) {
+        pushZone(sensZoneIds, gender === 'male' ? 'penis_glans' : 'vaginal_canal', dullZoneIds, 4);
+        pushZone(sensZoneIds, gender === 'male' ? 'neck_collarbone' : 'cervix', dullZoneIds, 4);
+      }
+      if (/스푸닝/.test(baseCorpus)) {
+        pushZone(sensZoneIds, 'ears', dullZoneIds, 4);
+        pushZone(sensZoneIds, 'neck_collarbone', dullZoneIds, 4);
+        pushZone(sensZoneIds, 'abdomen_waist', dullZoneIds, 4);
+      }
+      if (gender === 'male') {
+        pushZone(sensZoneIds, 'penis_glans', dullZoneIds, 4);
+        pushZone(sensZoneIds, 'neck_collarbone', dullZoneIds, 4);
+        pushZone(sensZoneIds, 'ears', dullZoneIds, 4);
+      } else {
+        if (hasTone('도도') || hasTone('나른')) {
+          pushZone(sensZoneIds, 'neck_collarbone', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'ears', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'clitoris_vulva', dullZoneIds, 4);
+        } else if (hasTone('수줍음') || hasTone('다정')) {
+          pushZone(sensZoneIds, 'ears', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'breasts_nipples', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'clitoris_vulva', dullZoneIds, 4);
+        } else {
+          pushZone(sensZoneIds, 'neck_collarbone', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'ears', dullZoneIds, 4);
+          pushZone(sensZoneIds, 'lips_mouth', dullZoneIds, 4);
+        }
+      }
+    }
+    if (!dullZoneIds.length) {
+      pushZone(dullZoneIds, 'anal_perineum', sensZoneIds, 3);
+      pushZone(dullZoneIds, 'inner_thighs', sensZoneIds, 3);
+      if (dullZoneIds.length < 2) pushZone(dullZoneIds, 'abdomen_waist', sensZoneIds, 3);
+    }
+
+    return {
+      consentStyle: prefs.consentStyle,
+      initiativeStyle: prefs.initiativeStyle,
+      restraintToyStyle: prefs.restraintToyStyle,
+      turnOns: compact(finalTurnOns.join(', '), 240),
+      turnOffs: compact(finalTurnOffs.join(', '), 240),
+      sensitiveZones: compact(sensZoneIds.map(id => INTIMACY_ZONE_KO_LABELS[id] || id).join(', '), 240),
+      dullZones: compact(dullZoneIds.map(id => INTIMACY_ZONE_KO_LABELS[id] || id).join(', '), 240)
+    };
+  };
   const normalizeIntimacyCard = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const name = compact(value.name || '', 80);
@@ -31670,6 +32222,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const dullZones = compact(value.dullZones ?? value.dull_zones ?? '', 240);
     const maleSizeCm = gender === 'female' ? null : normalizeIntimacyMaleSizeCm(value.maleSizeCm ?? value.male_size_cm);
     const maleSize = gender === 'female' ? '' : (normalizeIntimacyMaleSizeTier(value.maleSize ?? value.male_size) || intimacyMaleSizeFromCm(maleSizeCm));
+    const ejaculationPace = gender === 'female' ? null : normalizeIntimacyMaleEjacPaceValue(value.ejaculationPace ?? value.ejaculation_pace);
+    const rawConsent = compact(value.consentStyle ?? value.consent_style ?? '', 32);
+    const rawInitiative = compact(value.initiativeStyle ?? value.initiative_style ?? '', 32);
+    const rawRestraint = compact(value.restraintToyStyle ?? value.restraint_toy_style ?? '', 32);
+    const userClearedFields = Array.isArray(value.userClearedFields)
+      ? [...new Set(value.userClearedFields.map(v => compact(v, 32)).filter(Boolean))].slice(0, 12)
+      : [];
     const card = {
       id: compact(value.id || '', 64),
       name,
@@ -31677,11 +32236,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
       maleSize,
       maleSizeCm: maleSize ? (maleSizeCm !== null ? maleSizeCm : (INTIMACY_MALE_SIZE_META[maleSize]?.defaultCm ?? null)) : null,
       maleSizeBasis: gender === 'female' ? '' : compact(value.maleSizeBasis ?? value.male_size_basis ?? '', 240),
+      ejaculationPace,
+      ejaculationPaceBasis: gender === 'female' ? '' : compact(value.ejaculationPaceBasis ?? value.ejaculation_pace_basis ?? '', 240),
       likedPositions: compact(value.likedPositions || '', 240),
       dislikedPositions: compact(value.dislikedPositions || '', 240),
       sensitiveZones,
       dullZones,
       zoneStats: normalizeIntimacyZoneStats(value.zoneStats ?? value.zone_defaults, sensitiveZones, dullZones),
+      consentStyle: INTIMACY_CONSENT_STYLES.includes(rawConsent) ? rawConsent : '',
+      initiativeStyle: INTIMACY_INITIATIVE_STYLES.includes(rawInitiative) ? rawInitiative : '',
+      restraintToyStyle: INTIMACY_RESTRAINT_TOY_STYLES.includes(rawRestraint) ? rawRestraint : '',
+      turnOns: compact(value.turnOns ?? value.turn_ons ?? '', 240),
+      turnOffs: compact(value.turnOffs ?? value.turn_offs ?? '', 240),
+      userClearedFields,
       anatomyView: value.anatomyView === 'male' ? 'male' : value.anatomyView === 'female' ? 'female' : '',
       lastZoneUpdateHash: compact(value.lastZoneUpdateHash || '', 40),
       lastAssistantZoneUpdateHash: compact(value.lastAssistantZoneUpdateHash || '', 40),
@@ -31728,12 +32295,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
       climax: Math.max(0, Math.min(100, Number(raw.climax) || 0)),
       ejaculation: Math.max(0, Math.min(100, Number(raw.ejaculation) || 0)),
       lubrication: Math.max(0, Math.min(100, Number(raw.lubrication) || 0)),
+      excitement: intimacyClampExcitement(raw.excitement),
       climaxTriggered: raw.climaxTriggered === true,
       ejaculationTriggered: raw.ejaculationTriggered === true,
       interruptedBrink: raw.interruptedBrink === true,
+      haltedByNpc: raw.haltedByNpc === true,
+      haltedThisTurn: raw.haltedThisTurn === true,
+      resumedAfterHalt: raw.resumedAfterHalt === true,
+      haltChance: Math.max(0, Math.min(100, Math.round(Number(raw.haltChance) || 0))),
+      haltRoll: raw.haltRoll !== null && raw.haltRoll !== undefined && Number.isFinite(Number(raw.haltRoll)) ? Math.max(0, Math.min(99, Math.round(Number(raw.haltRoll)))) : null,
       lastDeltaClimax: Number(raw.lastDeltaClimax) || 0,
       lastDeltaEjac: Number(raw.lastDeltaEjac) || 0,
       lastDeltaLubrication: Number(raw.lastDeltaLubrication) || 0,
+      lastDeltaExcitement: Math.max(-100, Math.min(100, Math.round(Number(raw.lastDeltaExcitement) || 0))),
+      excitementReasons: Array.isArray(raw.excitementReasons) ? raw.excitementReasons.map(s => compact(s || '', 80)).filter(Boolean).slice(0, 6) : [],
       stimulatedParts: Array.isArray(raw.stimulatedParts) ? raw.stimulatedParts.map(s => compact(s || '', 60)).filter(Boolean).slice(0, 8) : [],
       lastMatchedIds: Array.isArray(raw.lastMatchedIds) ? raw.lastMatchedIds.map(s => compact(s || '', 40)).filter(Boolean).slice(0, 12) : [],
       ...(Object.keys(zoneDeltas).length ? { zoneDeltas } : {})
@@ -31791,12 +32366,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const hydrateIntimacyTelemetryFromStorage = () => {
     for (const [scopeKey, scopeData] of Object.entries(Runtime.intimacyGauges || {})) {
       const entries = Object.entries(scopeData?.settled || {})
-        .filter(([, v]) => v && (v.climax > 0 || v.ejaculation > 0 || v.lubrication > 0));
+        .filter(([, v]) => v && (v.climax > 0 || v.ejaculation > 0 || v.lubrication > 0 || (v.excitement || 0) !== 0 || v.haltedByNpc));
       if (!entries.length) continue;
       if (Runtime.intimacyTelemetry?.[scopeKey]?.gauges?.length) continue;
       const gauges = entries.map(([normKey, v]) => {
         const showClimax = v.gender !== 'male';
         const showEjac = v.gender === 'male';
+        const ex = intimacyClampExcitement(v.excitement);
         return {
           name: v.name || normKey,
           gender: v.gender || '',
@@ -31806,9 +32382,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
           climaxGauge: showClimax ? v.climax : 0,
           ejaculationGauge: showEjac ? v.ejaculation : 0,
           lubricationGauge: showClimax ? v.lubrication : 0,
+          excitementGauge: ex,
           lastTurnDeltaClimax: v.lastDeltaClimax || 0,
           lastTurnDeltaEjac: v.lastDeltaEjac || 0,
           lastTurnDeltaLubrication: v.lastDeltaLubrication || 0,
+          lastTurnDeltaExcitement: v.lastDeltaExcitement || 0,
+          excitementTier: intimacyExcitementTier(ex),
+          excitementStimMult: intimacyExcitementStimMult(ex),
+          excitementReasons: Array.isArray(v.excitementReasons) ? v.excitementReasons : [],
+          haltedByNpc: v.haltedByNpc === true,
+          haltedThisTurn: v.haltedThisTurn === true,
+          resumedAfterHalt: v.resumedAfterHalt === true,
+          haltChance: v.haltChance || 0,
+          haltRoll: v.haltRoll ?? null,
           climaxTriggeredThisTurn: v.climaxTriggered === true,
           ejaculationTriggeredThisTurn: v.ejaculationTriggered === true,
           interruptedBrink: v.interruptedBrink === true,
@@ -31830,6 +32416,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     Runtime.intimacyCards = normalizeIntimacyCardMap(stored.cards || {});
     Runtime.intimacyGauges = normalizeIntimacyGaugeMap(stored.gauges || {});
     Runtime.intimacyMaleSizes = normalizeIntimacyMaleSizeMap(stored.maleSizes || {});
+    Runtime.intimacyMalePaces = normalizeIntimacyMalePaceMap(stored.malePaces || {});
     hydrateIntimacyTelemetryFromStorage();
     return Runtime.intimacyCards;
   };
@@ -31838,9 +32425,73 @@ Begin directly with the in-world response and finish the complete same-turn draf
     savedAt: new Date().toISOString(),
     cards: normalizeIntimacyCardMap(Runtime.intimacyCards || {}),
     gauges: normalizeIntimacyGaugeMap(Runtime.intimacyGauges || {}),
-    maleSizes: normalizeIntimacyMaleSizeMap(Runtime.intimacyMaleSizes || {})
+    maleSizes: normalizeIntimacyMaleSizeMap(Runtime.intimacyMaleSizes || {}),
+    malePaces: normalizeIntimacyMalePaceMap(Runtime.intimacyMalePaces || {})
   });
   const intimacyCardsForScope = (scopeKey = '') => (scopeKey ? (Runtime.intimacyCards?.[scopeKey] || []) : []);
+  const autoPopulateIntimacyCardsFromLore = (scopeKey = '', settings = {}, recent = {}, { persist = true } = {}) => {
+    const scope = compact(scopeKey, 512);
+    if (!scope || !Runtime.intimacyCards) return false;
+    const current = intimacyCardsForScope(scope);
+    if (!current.length) return false;
+    let changed = false;
+    const nextCards = current.map(card => {
+      if (!card?.name) return card;
+      const cleared = new Set(Array.isArray(card.userClearedFields) ? card.userClearedFields : []);
+      const needsTextFill = ['turnOns', 'turnOffs', 'sensitiveZones', 'dullZones'].some(f => !String(card[f] || '').trim() && !cleared.has(f));
+      const needsAxisFill = card.origin !== 'user' && ['consentStyle', 'initiativeStyle', 'restraintToyStyle'].some(f => !String(card[f] || '').trim() && !cleared.has(f));
+      if (!needsTextFill && !needsAxisFill) return card;
+      const resolvedGender = (typeof intimacyCardGender === 'function' ? intimacyCardGender(card, card.name, settings, scope) : '')
+        || card.gender
+        || card.anatomyView
+        || '';
+      const loreText = typeof collectSafeCharacterLoreText === 'function'
+        ? collectSafeCharacterLoreText(card.name, scope, settings, recent)
+        : '';
+      const inferred = inferIntimacyLoreProfileFields(card, loreText, resolvedGender);
+      const next = { ...card };
+      let cardChanged = false;
+      let zonesFilled = false;
+      if (!next.gender && resolvedGender) { next.gender = resolvedGender; cardChanged = true; }
+      for (const f of ['turnOns', 'turnOffs']) {
+        if (!String(next[f] || '').trim() && !cleared.has(f) && inferred[f]) {
+          next[f] = inferred[f];
+          cardChanged = true;
+        }
+      }
+      for (const f of ['sensitiveZones', 'dullZones']) {
+        if (!String(next[f] || '').trim() && !cleared.has(f) && inferred[f]) {
+          next[f] = inferred[f];
+          cardChanged = true;
+          zonesFilled = true;
+        }
+      }
+      if (next.origin !== 'user') {
+        for (const f of ['consentStyle', 'initiativeStyle', 'restraintToyStyle']) {
+          if (!String(next[f] || '').trim() && !cleared.has(f) && inferred[f]) {
+            next[f] = inferred[f];
+            cardChanged = true;
+          }
+        }
+      }
+      if (zonesFilled && intimacyZoneStatsAllZero(next.zoneStats)) {
+        const seededStats = normalizeIntimacyZoneStats(null, next.sensitiveZones || '', next.dullZones || '');
+        if (resolvedGender) {
+          for (const [zId] of INTIMACY_BODY_PARTS) {
+            if (!intimacyZoneAllowedForGender(zId, resolvedGender)) seededStats[zId] = { sensitivity: 0, development: 0 };
+          }
+        }
+        next.zoneStats = seededStats;
+        cardChanged = true;
+      }
+      if (cardChanged) changed = true;
+      return cardChanged ? next : card;
+    });
+    if (!changed) return false;
+    Runtime.intimacyCards = { ...Runtime.intimacyCards, [scope]: nextCards };
+    if (persist) saveIntimacyCards().catch(error => warn('[intimacy auto-populate save failed]', error));
+    return true;
+  };
   const intimacyMaleSizeScope = (scopeKey = '', create = false) => {
     if (!scopeKey) return null;
     if (!Runtime.intimacyMaleSizes) Runtime.intimacyMaleSizes = {};
@@ -31931,6 +32582,96 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const est = estimateMaleSizeFromLore(label, loreText);
     if (!scopeKey) return est;
     return setRecordedIntimacyMaleSize(scopeKey, label, est, { persist: true, syncCard: true }) || est;
+  };
+  const intimacyMalePaceScope = (scopeKey = '', create = false) => {
+    if (!scopeKey) return null;
+    if (!Runtime.intimacyMalePaces) Runtime.intimacyMalePaces = {};
+    if (!Runtime.intimacyMalePaces[scopeKey] && create) Runtime.intimacyMalePaces[scopeKey] = {};
+    return Runtime.intimacyMalePaces[scopeKey] || null;
+  };
+  const getRecordedIntimacyMalePace = (scopeKey = '', name = '', card = null) => {
+    const scope = compact(scopeKey, 512);
+    const label = compact(name || card?.name || '', 80);
+    if (!label) return null;
+    const bucket = scope ? intimacyMalePaceScope(scope, false) : null;
+    const key = intimacyMaleSizeLookupKey(label);
+    const stored = (key && bucket?.[key])
+      || (bucket && Object.values(bucket).find(item => item?.name && extensionSameOrGivenName(item.name, label)))
+      || null;
+    const cardPaceVal = (card && card.gender !== 'female') ? normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace) : null;
+    const cardEntry = cardPaceVal !== null
+      ? normalizeIntimacyMalePaceEntry({
+          name: card.name || label,
+          pace: cardPaceVal,
+          basis: card.ejaculationPaceBasis || card.basis,
+          origin: card.origin
+        })
+      : null;
+    if (cardEntry && cardEntry.origin === 'user') return cardEntry;
+    if (stored && stored.origin === 'user') return stored;
+    return cardEntry || stored || null;
+  };
+  const setRecordedIntimacyMalePace = (scopeKey = '', name = '', entryInput = {}, options = {}) => {
+    const scope = compact(scopeKey, 512);
+    const label = compact(name || entryInput?.name || '', 80);
+    if (!scope || !label) return null;
+    const existing = getRecordedIntimacyMalePace(scope, label);
+    if (existing?.origin === 'user' && options.force !== true && entryInput?.origin !== 'user') return existing;
+    const entry = normalizeIntimacyMalePaceEntry({
+      name: label,
+      pace: entryInput?.pace ?? entryInput?.ejaculationPace ?? entryInput?.ejaculation_pace,
+      tier: entryInput?.tier ?? entryInput?.ejaculationPaceTier ?? entryInput?.ejaculation_pace_tier,
+      basis: entryInput?.basis ?? entryInput?.ejaculationPaceBasis ?? entryInput?.ejaculation_pace_basis,
+      origin: entryInput?.origin === 'user' ? 'user' : 'lore',
+      updatedAt: new Date().toISOString()
+    });
+    if (!entry) return null;
+    const bucket = intimacyMalePaceScope(scope, true);
+    const key = intimacyMaleSizeLookupKey(label);
+    if (bucket && key) {
+      for (const k of Object.keys(bucket)) {
+        if (k !== key && bucket[k]?.name && extensionSameOrGivenName(bucket[k].name, label)) delete bucket[k];
+      }
+      bucket[key] = entry;
+    }
+    let cardChanged = false;
+    if (options.syncCard !== false && Runtime.intimacyCards?.[scope]) {
+      const idx = Runtime.intimacyCards[scope].findIndex(c => c.name && extensionSameOrGivenName(c.name, label));
+      if (idx >= 0) {
+        const card = Runtime.intimacyCards[scope][idx];
+        const cardHasPace = normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace) !== null;
+        if (card.gender !== 'female' && (entry.origin === 'user' || !cardHasPace)) {
+          Runtime.intimacyCards[scope][idx] = normalizeIntimacyCard({
+            ...card,
+            gender: card.gender || 'male',
+            ejaculationPace: entry.pace,
+            ejaculationPaceBasis: entry.basis || card.ejaculationPaceBasis
+          });
+          cardChanged = true;
+        }
+      }
+    }
+    if (options.persist !== false) void saveIntimacyCards().catch(() => {});
+    return { ...entry, _cardChanged: cardChanged };
+  };
+  const resolveIntimacyMalePace = (name = '', scopeKey = '', card = null, settings = {}, recent = {}) => {
+    const label = compact(name || card?.name || '', 80);
+    if (!label) return null;
+    const existing = getRecordedIntimacyMalePace(scopeKey, label, card);
+    if (existing) {
+      if (scopeKey && card && card.gender === 'male' && normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace) === null) {
+        setRecordedIntimacyMalePace(scopeKey, label, existing, { persist: false, syncCard: true });
+      } else if (scopeKey && !intimacyMalePaceScope(scopeKey, false)?.[intimacyMaleSizeLookupKey(label)]) {
+        setRecordedIntimacyMalePace(scopeKey, label, existing, { persist: false, syncCard: false });
+      }
+      return existing;
+    }
+    const loreText = typeof collectSafeCharacterLoreText === 'function'
+      ? collectSafeCharacterLoreText(label, scopeKey, settings, recent)
+      : '';
+    const est = estimateMaleEjacPaceFromLore(label, loreText);
+    if (!scopeKey) return est;
+    return setRecordedIntimacyMalePace(scopeKey, label, est, { persist: true, syncCard: true }) || est;
   };
   const intimacyGaugeScope = (scopeKey = '', create = false) => {
     if (!scopeKey) return null;
@@ -32023,13 +32764,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const sizeLine = sizeMod
       ? `male size: ${sizeMod.label}${sizeMod.cm ? ` (${sizeMod.cm}cm)` : ''} [penetrative stim: ${sizeMod.effectLabel}].`
       : '';
+    const paceVal = card?.gender === 'male' ? normalizeIntimacyMaleEjacPaceValue(card?.ejaculationPace) : null;
+    const paceMod = (paceVal !== null && paceVal !== 0) ? intimacyMaleEjacPaceModifier(paceVal) : null;
+    const paceLine = paceMod
+      ? `ejaculation pace: ${paceMod.label} (${paceMod.pace > 0 ? `+${paceMod.pace}` : paceMod.pace} · stim×${paceMod.mult} · ${paceMod.effectLabel}).`
+      : '';
+    const prefBits = [
+      card?.consentStyle ? `consent: ${INTIMACY_CONSENT_STYLE_LABELS[card.consentStyle] || card.consentStyle}` : '',
+      card?.initiativeStyle ? `initiative: ${INTIMACY_INITIATIVE_STYLE_LABELS[card.initiativeStyle] || card.initiativeStyle}` : '',
+      card?.restraintToyStyle ? `restraints/toys: ${INTIMACY_RESTRAINT_TOY_STYLE_LABELS[card.restraintToyStyle] || card.restraintToyStyle}` : '',
+      card?.turnOns ? `turn-ons: ${card.turnOns}` : '',
+      card?.turnOffs ? `turn-offs: ${card.turnOffs}` : ''
+    ].filter(Boolean);
     return [
       `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
       `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
       sizeLine,
+      paceLine,
       `erogenous sensitivity — sensitive (×1.5): ${card.sensitiveZones || 'none on record'}; dull/resistant (×0.6): ${card.dullZones || 'none on record'}.`,
       zoneSummary ? `zone stats (sensitivity -100..+100 / development 0..100): ${zoneSummary}.` : '',
-      ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
+      ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`),
+      prefBits.length ? `excitement triggers — ${prefBits.join('; ')}.` : ''
     ].filter(Boolean).join(' ');
   };
   const INTIMACY_PASSIVE_DECAY_CLIMAX = 16;
@@ -32276,6 +33031,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     await saveIntimacyCards();
     return gender;
   };
+  const INTIMACY_EXPLICIT_CONSENT_ASK_RE = /해도\s*될까|괜찮을까|괜찮아\?|허락(?!\s*(?:도|조차|은|는|을)?\s*(?:없|안\s*받|받지\s*않))|동의(?!\s*(?:도|조차|은|는|를)?\s*(?:없|안\s*받|받지\s*않))(?:를|을|해)?|원해\?|좋아\?|물어봤|물었다|확인했|ask(?:ed)?\s+(?:for\s+)?(?:consent|permission)|is\s+this\s+okay/i;
+  const INTIMACY_UNANNOUNCED_START_RE = /(?:말|묻|확인|동의|허락)\s*(?:도|조차)?\s*없이|갑자기|다짜고짜|기습|덮쳤|밀어붙였|바로\s*(?:삽입|넣|벗기|만지|키스|시작|행위)|without\s+asking|unannounced|suddenly\s+(?:grabbed|pushed|kissed|entered)/i;
+  const INTIMACY_RESTRAINT_TOY_RE = /눈가리개|안대|눈(?:을|이)?\s*(?:가리|가렸|묶)|예상치\s*못한\s*(?:자극|접촉|행위)|수갑|밧줄|끈(?:으로)?\s*묶|결박|구속|속박|손목(?:을)?\s*(?:묶|고정|채웠)|재갈|바이브|로터|딜도|도구|성인용품|채찍|초커|목줄|blindfold|handcuff|restraint|bondage|tied\s+(?:her|his)\s+(?:hands|wrists)|sex\s+toy|vibrator/i;
+  const INTIMACY_USER_ASKS_NPC_LEAD_RE = /(?:네가|너가|직접|스스로)\s*(?:위(?:로|에)|올라와|움직여|주도|리드|이끌|해\s*줘|해봐|먼저)|기승위(?:로)?\s*(?:해|올라와|움직여)|위로\s*올라(?:와|오라고)|주도(?:해|하라고|해\s*보라고|해보라고|권)|리드(?:해|하라고)|이끌어\s*(?:줘|보라고)|take\s+the\s+lead|be\s+on\s+top|ride\s+me|you\s+lead/i;
+  const INTIMACY_NPC_TAKES_LEAD_RE = /(?:먼저|직접|스스로)\s*(?:올라타|올라앉|이끌|주도|움직이|리드|덮쳤|밀어\s*눕)|주도권(?:을)?\s*(?:잡|가져|쥐)/i;
+  const INTIMACY_USER_FORCES_PASSIVE_RE = /가만히\s*(?:있어|누워|대고)|움직이지\s*마|시키는\s*대로|내가\s*(?:알아서|다\s*할|주도)|stay\s+still|don't\s+move|let\s+me\s+control/i;
+  const INTIMACY_NPC_REFUSAL_IN_PRIOR_RE = /(?:그만|멈춰|싫어|하지\s*마|놔|떨어져|안\s*돼|중단|거부)(?:해|요|라고|라며)?|밀어냈|뿌리쳤|몸을\s*뺐|행위를\s*중단|stop\s+it|get\s+off/i;
+  const INTIMACY_USER_STOPS_RE = /멈췄다|그만뒀다|손을\s*뗐다|물러났다|빠져나왔다|중단했다|미안|사과|stopped|pulled\s+away|apologized/i;
   const computeIntimacyParticipantGauges = (recent = {}, cards = [], scene = null, externalReaction = null, settings = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const input = text(recent.latestUser || '');
@@ -32301,7 +33064,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const settleInfo = scopeKey ? intimacySettleGauges(scopeKey, recent, messages) : null;
     const settledMap = settleInfo?.activeSettled || {};
     if (scene && !scene.engaged && !inputHasStim) {
-      const hasNonZeroSettled = Object.values(settledMap).some(v => (v?.climax || 0) > 0 || (v?.ejaculation || 0) > 0 || (v?.lubrication || 0) > 0);
+      const hasNonZeroSettled = Object.values(settledMap).some(v => (v?.climax || 0) > 0 || (v?.ejaculation || 0) > 0 || (v?.lubrication || 0) > 0 || (v?.excitement || 0) !== 0 || v?.haltedByNpc);
       if (!hasNonZeroSettled) return [];
       if (settleInfo?.chat) {
         settleInfo.chat.idleTurns = (settleInfo.chat.idleTurns || 0) + 1;
@@ -32356,8 +33119,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     );
     const effectiveSettings = (settings && Object.keys(settings).length) ? settings : (Runtime.settings || Gui?.state?.runtime || {});
     let assistantCardsDirty = false;
+    if (scopeKey && autoPopulateIntimacyCardsFromLore(scopeKey, effectiveSettings, recent, { persist: false })) {
+      cards = intimacyCardsForScope(scopeKey);
+      assistantCardsDirty = true;
+    }
     const resolvedGenderByName = new Map();
     const maleSizeByName = new Map();
+    const malePaceByName = new Map();
     for (const n of names) {
       const c = cards.find(item => item.name && (item.name === n || extensionSameOrGivenName(item.name, n))) || null;
       const g = intimacyResolveGender(n, c, recent);
@@ -32367,6 +33135,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         if (sizeEntry) {
           maleSizeByName.set(n, sizeEntry);
           if (sizeEntry._cardChanged) assistantCardsDirty = true;
+        }
+        const paceEntry = resolveIntimacyMalePace(n, scopeKey, c, effectiveSettings, recent);
+        if (paceEntry) {
+          malePaceByName.set(n, paceEntry);
+          if (paceEntry._cardChanged) assistantCardsDirty = true;
         }
       }
     }
@@ -32378,8 +33151,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const multMap = Object.fromEntries(INTIMACY_BODY_PARTS.map(([id]) => [id, intimacyZoneMultiplier(zoneStats[id])]));
       const gender = resolvedGenderByName.get(name) || intimacyResolveGender(name, card, recent);
       const ownMaleSize = gender === 'male' ? (maleSizeByName.get(name) || resolveIntimacyMaleSize(name, scopeKey, card, effectiveSettings, recent)) : null;
+      const ownMalePace = gender === 'male' ? (malePaceByName.get(name) || resolveIntimacyMalePace(name, scopeKey, card, effectiveSettings, recent)) : null;
+      const ejacPaceVal = gender === 'male' ? intimacyClampEjacPace(ownMalePace?.pace ?? card?.ejaculationPace ?? 0) : 0;
+      const ejacPaceMod = intimacyMaleEjacPaceModifier(ejacPaceVal);
       const showClimax = gender !== 'male';
       const showEjac = gender === 'male';
+      let forcedHoldThisTurn = false;
+      let ejacDelayedByHold = false;
       const normKey = compact(name, 80).toLowerCase();
       const settled = settledMap[normKey]
         || Object.values(settledMap).find(v => v?.name && extensionSameOrGivenName(v.name, name))
@@ -32392,6 +33170,129 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let climaxGauge = settled && showClimax ? (settled.climax || 0) : 0;
       let ejaculationGauge = settled && showEjac ? (settled.ejaculation || 0) : 0;
       let lubricationGauge = settled && showClimax ? (settled.lubrication || 0) : 0;
+      const isPersonaParticipant = bodyStateIsPersona(name) || !!(personaName && extensionSameOrGivenName(name, personaName));
+      const evaluateExcitementNow = !isPersonaParticipant || intimacyModeGate(effectiveSettings) === 'novel';
+      const loreTextForExcitement = typeof collectSafeCharacterLoreText === 'function' ? collectSafeCharacterLoreText(name, scopeKey, effectiveSettings, recent) : '';
+      const prefs = inferIntimacyExcitementPrefs(card, loreTextForExcitement);
+      let excitementGauge = settled ? intimacyClampExcitement(settled.excitement) : 0;
+      const startExcitementGauge = excitementGauge;
+      const priorAssistantHalted = !isPersonaParticipant && !!lastAssistant && INTIMACY_NPC_REFUSAL_IN_PRIOR_RE.test(lastAssistant)
+        && (extensionTextMentionsName(lastAssistant, name) || names.filter(n => !bodyStateIsPersona(n) && !(personaName && extensionSameOrGivenName(n, personaName))).length <= 1);
+      let wasAlreadyHalted = !isPersonaParticipant && (Boolean(settled?.haltedByNpc) || (!settled && priorAssistantHalted));
+      let haltedByNpc = wasAlreadyHalted;
+      let haltedThisTurn = false;
+      let resumedAfterHalt = false;
+      let unwantedRequestThisTurn = false;
+      let excitementDelta = 0;
+      const excitementReasons = [];
+      let haltChance = 0;
+      let haltRoll = null;
+      const evalExcitementText = input || (!settled ? lastAssistant : '') || '';
+      if (evaluateExcitementNow && evalExcitementText) {
+        const hasAnyIntimateAct = INTIMACY_PENETRATIVE_ACT_RE.test(evalExcitementText) || intimacyMatchedBodyParts(evalExcitementText).length > 0;
+        const explicitConsentAsk = INTIMACY_EXPLICIT_CONSENT_ASK_RE.test(evalExcitementText);
+        const unannouncedStart = INTIMACY_UNANNOUNCED_START_RE.test(evalExcitementText);
+        if (prefs.consentStyle === 'requires_consent') {
+          if (explicitConsentAsk && !unannouncedStart) {
+            excitementDelta += 12;
+            excitementReasons.push('사전 동의 확인 (+12)');
+          } else if (unannouncedStart || (hasAnyIntimateAct && climaxGauge === 0 && ejaculationGauge === 0 && !INTIMACY_EXPLICIT_CONSENT_ASK_RE.test([priorUserText, lastAssistant, evalExcitementText].join('\n')))) {
+            excitementDelta -= 28;
+            unwantedRequestThisTurn = true;
+            excitementReasons.push('동의 없는 강행 (-28)');
+          }
+        } else if (prefs.consentStyle === 'likes_unannounced' && unannouncedStart) {
+          excitementDelta += 18;
+          excitementReasons.push('동의 없는 즉각 돌입 선호 (+18)');
+        }
+        if (INTIMACY_RESTRAINT_TOY_RE.test(evalExcitementText)) {
+          if (prefs.restraintToyStyle === 'likes') {
+            excitementDelta += 22;
+            excitementReasons.push('눈가리개·도구·구속 선호 (+22)');
+          } else if (prefs.restraintToyStyle === 'dislikes') {
+            excitementDelta -= 28;
+            unwantedRequestThisTurn = true;
+            excitementReasons.push('도구·구속·억압 거부감 (-28)');
+          }
+        }
+        if (prefs.initiativeStyle === 'dominant') {
+          if (INTIMACY_NPC_TAKES_LEAD_RE.test(evalExcitementText) || INTIMACY_USER_ASKS_NPC_LEAD_RE.test(evalExcitementText)) {
+            excitementDelta += 16;
+            excitementReasons.push('직접 주도 성향 충족 (+16)');
+          } else if (INTIMACY_USER_FORCES_PASSIVE_RE.test(evalExcitementText)) {
+            excitementDelta -= 16;
+            unwantedRequestThisTurn = true;
+            excitementReasons.push('주도권 억압 불만 (-16)');
+          }
+        } else if (prefs.initiativeStyle === 'submissive') {
+          if (INTIMACY_USER_ASKS_NPC_LEAD_RE.test(evalExcitementText)) {
+            excitementDelta -= 24;
+            unwantedRequestThisTurn = true;
+            excitementReasons.push('원치 않는 주도 요구 (-24)');
+          } else if (hasAnyIntimateAct && !unannouncedStart && !INTIMACY_RESTRAINT_TOY_RE.test(evalExcitementText) && !unwantedRequestThisTurn) {
+            excitementDelta += 8;
+            excitementReasons.push('이끌림 선호 충족 (+8)');
+          }
+        }
+        const splitPrefTokens = raw => String(raw || '').split(/[,·/|;\n]+/).map(s => s.trim()).filter(s => s.length >= 2);
+        const evalLower = evalExcitementText.toLowerCase();
+        let turnOnBonus = 0;
+        for (const tok of splitPrefTokens(prefs.turnOns)) {
+          if (evalLower.includes(tok.toLowerCase())) {
+            const add = Math.min(16, 32 - turnOnBonus);
+            if (add > 0) {
+              turnOnBonus += add;
+              excitementDelta += add;
+              excitementReasons.push(`흥분 요소(${tok}) (+${add})`);
+            }
+          }
+        }
+        let turnOffPenalty = 0;
+        for (const tok of splitPrefTokens(prefs.turnOffs)) {
+          if (evalLower.includes(tok.toLowerCase())) {
+            const sub = Math.min(22, 44 - turnOffPenalty);
+            if (sub > 0) {
+              turnOffPenalty += sub;
+              excitementDelta -= sub;
+              unwantedRequestThisTurn = true;
+              excitementReasons.push(`식는 요소(${tok}) (-${sub})`);
+            }
+          }
+        }
+        const posContext = `${evalExcitementText}\n${scene?.position || ''}`.toLowerCase();
+        for (const tok of splitPrefTokens(card?.likedPositions)) {
+          if (posContext.includes(tok.toLowerCase())) {
+            excitementDelta += 12;
+            excitementReasons.push(`선호 체위(${tok}) (+12)`);
+            break;
+          }
+        }
+        for (const tok of splitPrefTokens(card?.dislikedPositions)) {
+          if (posContext.includes(tok.toLowerCase())) {
+            excitementDelta -= 18;
+            unwantedRequestThisTurn = true;
+            excitementReasons.push(`비선호 체위(${tok}) (-18)`);
+            break;
+          }
+        }
+        if (wasAlreadyHalted) {
+          const userStops = INTIMACY_USER_STOPS_RE.test(input);
+          if (!userStops && (hasAnyIntimateAct || unannouncedStart || INTIMACY_RESTRAINT_TOY_RE.test(evalExcitementText) || scene?.engaged)) {
+            resumedAfterHalt = true;
+            haltedByNpc = true;
+            unwantedRequestThisTurn = true;
+            excitementDelta -= 25;
+            excitementReasons.push('중단 거부 무시·강제 재개 (-25)');
+          } else if (userStops && explicitConsentAsk) {
+            haltedByNpc = false;
+          }
+        }
+      }
+      excitementGauge = intimacyClampExcitement(startExcitementGauge + excitementDelta);
+      const excitementStimMult = intimacyExcitementStimMult(excitementGauge);
+      const excitementLubMult = excitementGauge < 0
+        ? Number((1 + (excitementGauge / 100) * 0.55).toFixed(2))
+        : excitementStimMult;
       let lastTurnDeltaClimax = 0;
       let lastTurnDeltaEjac = 0;
       let lastTurnDeltaLubrication = 0;
@@ -32431,12 +33332,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
           && activeIntercourseStep
           && !/손가락(?:만|으로만)|fingering\s+only/i.test(stepText)) {
           if (!malePeers.length || bodyStateIsPersona(name) || extensionTextMentionsName(stepText, name)) {
-            const restrained = INTIMACY_PACING_RESTRAINT_RE.test(stepText);
+            const restrained = INTIMACY_PACING_RESTRAINT_RE.test(stepText) || INTIMACY_EJAC_FORCED_HOLD_RE.test(stepText);
             matchedParts.push([
               'penis_glans',
-              restrained ? '귀두·삽입 마찰(속도조절) (glans/intercourse)' : '귀두·삽입 마찰 (glans/intercourse)',
+              restrained ? '귀두·삽입 마찰(억지 참음·속도조절) (glans/intercourse)' : '귀두·삽입 마찰 (glans/intercourse)',
               0,
-              restrained ? 21 : 28
+              28
             ]);
           }
         }
@@ -32525,16 +33426,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
           || malePeers[0];
         return (activeMale && maleSizeByName.get(activeMale)) || null;
       };
-      const computeFemaleZoneGain = (id, baseC, mult, dim, stepText, activeMaleSize) => {
+      const computeFemaleZoneGain = (id, baseC, mult, dim, stepText, activeMaleSize, lubScale = 1.0) => {
         const isPenetrative = INTIMACY_PENETRATIVE_ZONES.has(id)
           && !/손가락(?:만|으로만)|도구|바이브|딜도|fingering\s+only|toy|vibrator|dildo/i.test(stepText);
         const sizeMod = (isPenetrative && activeMaleSize) ? intimacyMaleSizeModifier(activeMaleSize.size, activeMaleSize.cm) : null;
-        const cPts = sizeMod
-          ? Math.max(2, Math.round((baseC * mult * dim) * sizeMod.mult + sizeMod.bonus * dim))
+        const cPtsRaw = sizeMod
+          ? Math.round((baseC * mult * dim) * sizeMod.mult + sizeMod.bonus * dim)
           : Math.round(baseC * mult * dim);
-        const lPts = sizeMod
-          ? Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * mult * dim * sizeMod.lubMult))
-          : Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * mult * dim);
+        const cPts = baseC > 0 ? Math.max(2, cPtsRaw) : cPtsRaw;
+        const lPtsRaw = sizeMod
+          ? Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * (mult * lubScale) * dim * sizeMod.lubMult)
+          : Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * (mult * lubScale) * dim);
+        const lPts = Math.max(1, lPtsRaw);
         if (sizeMod && sizeMod.bonus !== 0 && activeMaleSize) {
           partnerSizeModifier = {
             partnerName: activeMaleSize.name,
@@ -32549,12 +33452,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
         return { cPts, lPts, sizeMod };
       };
+      const lubExScale = excitementStimMult > 0 ? (excitementLubMult / excitementStimMult) : 1.0;
+      const applyMaleForcedHoldOnStep = (preEjacVal, addEjacVal, stepHoldActive) => {
+        if (!showEjac || !stepHoldActive || ejaculationGauge < 100) {
+          return { addEjac: addEjacVal, delayed: false, triggered: showEjac && ejaculationGauge >= 100 };
+        }
+        const holdCapPre = ejacPaceVal <= -25 ? 96 : 92;
+        if (preEjacVal < holdCapPre) {
+          ejaculationGauge = 94;
+          return { addEjac: Math.max(0, 94 - preEjacVal), delayed: true, triggered: false };
+        }
+        return { addEjac: addEjacVal, delayed: false, triggered: true };
+      };
       if (settled) {
         const priorIds = new Set(Array.isArray(settled.lastMatchedIds) ? settled.lastMatchedIds : []);
         if (lastAssistant) {
           const { boosterMult, matchedParts } = scorePartsForText(lastAssistant, priorIds, { ongoingIntercourse: INTIMACY_PENETRATIVE_ACT_RE.test(lastAssistant) || INTIMACY_PENETRATIVE_ACT_RE.test(priorUserText) });
           if (matchedParts.length) {
             const activeMaleSize = resolveActiveMaleSizeForStep(lastAssistant);
+            const assistForcedHold = showEjac && INTIMACY_EJAC_FORCED_HOLD_RE.test(lastAssistant) && !INTIMACY_EJACULATION_RESET_RE.test(lastAssistant);
+            const assistHoldMult = assistForcedHold ? (ejacPaceVal >= 25 ? 0.58 : 0.65) : 1.0;
             let addC = 0;
             let addE = 0;
             let addL = 0;
@@ -32562,13 +33479,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
               const dim = idx === 0 ? 1.0 : 0.55;
               const zoneMult = multMap[id] || 1.0;
               if (showClimax) {
-                const { cPts, lPts } = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, lastAssistant, activeMaleSize);
+                const { cPts, lPts } = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult * excitementStimMult, dim, lastAssistant, activeMaleSize, lubExScale);
                 addC += cPts;
                 addL += lPts;
               }
-              addE += showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
+              addE += (showEjac && baseE > 0) ? Math.max(2, Math.round(baseE * zoneMult * boosterMult * excitementStimMult * ejacPaceMod.mult * assistHoldMult * dim)) : 0;
               assistantMatchedIds.push(id);
             });
+            const preAssistE = ejaculationGauge;
             if (showClimax) climaxGauge = Math.min(100, climaxGauge + addC);
             if (showEjac) ejaculationGauge = Math.min(100, ejaculationGauge + addE);
             if (showClimax) lubricationGauge = Math.min(100, lubricationGauge + addL);
@@ -32576,7 +33494,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
               climaxGauge = 20;
               lubricationGauge = Math.max(25, Math.round(lubricationGauge * 0.6));
             }
-            if (showEjac && ejaculationGauge >= 100) ejaculationGauge = 10;
+            if (showEjac && ejaculationGauge >= 100) {
+              const holdRes = applyMaleForcedHoldOnStep(preAssistE, addE, assistForcedHold);
+              if (!holdRes.delayed) ejaculationGauge = 10;
+            }
           }
         }
         const steps = input ? [input] : [];
@@ -32584,6 +33505,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
           const { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink } = scorePartsForText(stepText, null);
           if (stepEjacBrink) ejacBrinkThisTurn = true;
           if (stepClimaxBrink) climaxBrinkThisTurn = true;
+          const stepForcedHold = showEjac && INTIMACY_EJAC_FORCED_HOLD_RE.test(stepText) && !INTIMACY_EJACULATION_RESET_RE.test(stepText);
+          if (stepForcedHold) forcedHoldThisTurn = true;
           if (!matchedParts.length) {
             const decClimax = showClimax && climaxGauge > 0 ? Math.min(climaxGauge, INTIMACY_PASSIVE_DECAY_CLIMAX) : 0;
             const decEjac = showEjac && ejaculationGauge > 0 ? Math.min(ejaculationGauge, INTIMACY_PASSIVE_DECAY_EJACULATION) : 0;
@@ -32597,6 +33520,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             return;
           }
           const activeMaleSize = resolveActiveMaleSizeForStep(stepText);
+          const stepHoldMult = stepForcedHold ? (ejacPaceVal >= 25 ? 0.58 : 0.65) : 1.0;
           let addClimax = 0;
           let addEjac = 0;
           let addLub = 0;
@@ -32608,12 +33532,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
             let lPts = 0;
             let sizeMod = null;
             if (showClimax) {
-              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, stepText, activeMaleSize);
+              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult * excitementStimMult, dim, stepText, activeMaleSize, lubExScale);
               cPts = gain.cPts;
               lPts = gain.lPts;
               sizeMod = gain.sizeMod;
             }
-            const ePts = showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
+            const ePts = (showEjac && baseE > 0) ? Math.max(2, Math.round(baseE * zoneMult * boosterMult * excitementStimMult * ejacPaceMod.mult * stepHoldMult * dim)) : 0;
             if (cPts <= 0 && ePts <= 0) return;
             addClimax += cPts;
             addEjac += ePts;
@@ -32635,19 +33559,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
             ejaculationGauge = 82;
             addEjac = Math.max(addEjac, ejaculationGauge - preEjac, 1);
           }
+          const holdOutcome = applyMaleForcedHoldOnStep(preEjac, addEjac, stepForcedHold);
+          addEjac = holdOutcome.addEjac;
+          if (holdOutcome.delayed) ejacDelayedByHold = true;
           lastTurnDeltaClimax = addClimax;
           lastTurnDeltaEjac = addEjac;
           lastTurnDeltaLubrication = showClimax ? addLub : 0;
           lastTurnParts = partNotes;
           if (showClimax && climaxGauge >= 100) climaxTriggeredThisTurn = true;
-          if (showEjac && ejaculationGauge >= 100) ejaculationTriggeredThisTurn = true;
+          if (showEjac && holdOutcome.triggered) ejaculationTriggeredThisTurn = true;
         });
       } else {
         let runningIntercourse = false;
         seedSteps.forEach((stepText, stepIdx) => {
           const isCurrentTurn = stepIdx === seedSteps.length - 1 && !!input;
+          const stepStimMult = isCurrentTurn ? excitementStimMult : 1.0;
+          const stepLubScale = isCurrentTurn ? lubExScale : 1.0;
           if (INTIMACY_PENETRATIVE_ACT_RE.test(stepText)) runningIntercourse = true;
           const { boosterMult, matchedParts, stepEjacBrink, stepClimaxBrink } = scorePartsForText(stepText, null, { ongoingIntercourse: runningIntercourse });
+          const stepForcedHold = showEjac && INTIMACY_EJAC_FORCED_HOLD_RE.test(stepText) && !INTIMACY_EJACULATION_RESET_RE.test(stepText);
           if (!isCurrentTurn) {
             if (showClimax && INTIMACY_CLIMAX_RESET_RE.test(stepText)) {
               climaxGauge = 15;
@@ -32657,6 +33587,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           } else {
             if (stepEjacBrink) ejacBrinkThisTurn = true;
             if (stepClimaxBrink) climaxBrinkThisTurn = true;
+            if (stepForcedHold) forcedHoldThisTurn = true;
           }
           if (!matchedParts.length) {
             const decClimax = showClimax && climaxGauge > 0 ? Math.min(climaxGauge, INTIMACY_PASSIVE_DECAY_CLIMAX) : 0;
@@ -32673,6 +33604,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             return;
           }
           const activeMaleSize = resolveActiveMaleSizeForStep(stepText);
+          const stepHoldMult = stepForcedHold ? (ejacPaceVal >= 25 ? 0.58 : 0.65) : 1.0;
           let addClimax = 0;
           let addEjac = 0;
           let addLub = 0;
@@ -32684,12 +33616,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
             let lPts = 0;
             let sizeMod = null;
             if (showClimax) {
-              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult, dim, stepText, activeMaleSize);
+              const gain = computeFemaleZoneGain(id, baseC, zoneMult * boosterMult * stepStimMult, dim, stepText, activeMaleSize, stepLubScale);
               cPts = gain.cPts;
               lPts = gain.lPts;
               sizeMod = gain.sizeMod;
             }
-            const ePts = showEjac ? Math.round(baseE * zoneMult * boosterMult * dim) : 0;
+            const ePts = (showEjac && baseE > 0) ? Math.max(2, Math.round(baseE * zoneMult * boosterMult * stepStimMult * ejacPaceMod.mult * stepHoldMult * dim)) : 0;
             if (cPts <= 0 && ePts <= 0) return;
             addClimax += cPts;
             addEjac += ePts;
@@ -32716,18 +33648,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
               ejaculationGauge = 82;
               addEjac = Math.max(addEjac, ejaculationGauge - preEjac, 1);
             }
+            const holdOutcome = applyMaleForcedHoldOnStep(preEjac, addEjac, stepForcedHold);
+            addEjac = holdOutcome.addEjac;
+            if (holdOutcome.delayed) ejacDelayedByHold = true;
             lastTurnDeltaClimax = addClimax;
             lastTurnDeltaEjac = addEjac;
             lastTurnDeltaLubrication = showClimax ? addLub : 0;
             lastTurnParts = partNotes;
             if (showClimax && climaxGauge >= 100) climaxTriggeredThisTurn = true;
-            if (showEjac && ejaculationGauge >= 100) ejaculationTriggeredThisTurn = true;
+            if (showEjac && holdOutcome.triggered) ejaculationTriggeredThisTurn = true;
           } else {
             if (showClimax && climaxGauge >= 100) {
               climaxGauge = 20;
               lubricationGauge = Math.max(25, Math.round(lubricationGauge * 0.6));
             }
-            if (showEjac && ejaculationGauge >= 100) ejaculationGauge = 10;
+            if (showEjac && ejaculationGauge >= 100) {
+              const holdRes = applyMaleForcedHoldOnStep(preEjac, addEjac, stepForcedHold);
+              if (!holdRes.delayed) ejaculationGauge = 10;
+            }
           }
         });
       }
@@ -32744,6 +33682,43 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
         card.lastAssistantZoneUpdateHash = settleInfo.priorAssistantHash;
         assistantCardsDirty = true;
+      }
+      if (evaluateExcitementNow && currentMatchedIds.length > 0 && !unwantedRequestThisTurn && !resumedAfterHalt && !wasAlreadyHalted) {
+        const preWarmth = excitementGauge;
+        excitementGauge = intimacyClampExcitement(excitementGauge + 6);
+        if (excitementGauge > preWarmth && !excitementReasons.length) {
+          excitementReasons.push('친밀한 자극 반응 (+6)');
+        }
+      }
+      const lastTurnDeltaExcitement = excitementGauge - startExcitementGauge;
+      if (!isPersonaParticipant && !wasAlreadyHalted && (unwantedRequestThisTurn || excitementGauge <= -40)) {
+        haltChance = excitementGauge <= -60 ? 92 : excitementGauge <= -30 ? 75 : excitementGauge < 0 ? 50 : excitementGauge < 20 ? 30 : 15;
+        haltRoll = Number.isFinite(effectiveSettings?.debugHaltRoll)
+          ? Math.max(0, Math.min(99, Math.floor(effectiveSettings.debugHaltRoll)))
+          : Math.min(99, Math.floor(bodyStateSeedRoll([scopeKey, 'intimacy_halt', name, settleInfo?.inputHash || '', String(excitementGauge)].join('|')) * 100));
+        haltedThisTurn = haltRoll < haltChance;
+        if (haltedThisTurn) haltedByNpc = true;
+      }
+      const excitementTier = intimacyExcitementTier(excitementGauge);
+      const loreTextAll = `${loreTextForExcitement}\n${card?.basis || ''}`;
+      let initiativeDirective = '';
+      if (prefs.initiativeStyle === 'dominant' && !haltedByNpc && !INTIMACY_USER_ASKS_NPC_LEAD_RE.test(evalExcitementText) && !isPersonaParticipant) {
+        initiativeDirective = '[주도권 확보 시도] 이 인물은 직접 주도해야 성이 풀리는 성향이므로 유저가 지시하지 않아도 스스로 체위·리듬·손길의 주도권을 가져오려 시도하라.';
+      } else if (prefs.initiativeStyle === 'submissive' && INTIMACY_USER_ASKS_NPC_LEAD_RE.test(evalExcitementText) && !haltedThisTurn && !resumedAfterHalt) {
+        initiativeDirective = '[주도 요구 부담·저항] 이 인물은 행위 주도를 원치 않는다. 유저의 주도 요청으로 흥분이 떨어졌으므로 내켜하지 않으며 어색·망설이며 마지못해 따르거나 거부·저항하는 반응을 보여라.';
+      }
+      let haltDirective = '';
+      if (resumedAfterHalt) {
+        const isFierceHalt = /기\s*가?\s*세|드세|강단|단호|까칠|거침|자존심|주도적/.test(loreTextAll);
+        const isMeekHalt = /기\s*가?\s*약|소심|온순|수줍|여리|순종/.test(loreTextAll);
+        const resistanceStyle = isFierceHalt
+          ? '날 선 비난·규탄·단호한 협박 대사와 몸을 빼며 밀쳐내는 적극적 저항·행동'
+          : isMeekHalt
+            ? '눈물이나 떨리는 목소리로 중단을 애원하는 부탁·항의 대사와 몸을 웅크리며 밀어내는 저항 행동'
+            : '중단을 요구하는 부탁·대사·협박·비난·규탄과 몸을 빼려는 명확한 저항 행동';
+        haltDirective = `[중단 후 재개 — 적극적 중단 요구·저항] NPC가 이미 행위를 거부·중단했음에도 유저가 다시 재개했다. 지금부터 인물 기질에 맞춰 ${resistanceStyle}을 분명하게 표출하라. (단 자극도는 흥분도에 의해 ×${excitementStimMult}로 감쇠되더라도 계속 유입되므로 절정도가 오르면 생리적 절정 반응도 모순 없이 함께 묘사할 것)`;
+      } else if (haltedThisTurn) {
+        haltDirective = `[흥분도 하락 → 행위 즉시 중단 판정 (${haltRoll}/100 < ${haltChance}%)] 원치 않는 요청/식음으로 흥분도(${excitementGauge})가 떨어져 NPC가 행위 자체를 거부·즉시 중단하려 한다. 몸을 빼거나 손을 밀어내며 명확히 중단 의사를 표명하라.`;
       }
       const activeGaugeNow = showClimax ? climaxGauge : showEjac ? ejaculationGauge : 0;
       const extFactorsText = Array.isArray(externalReaction?.factors) ? externalReaction.factors.join(',') : '';
@@ -32773,9 +33748,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
           climax: showClimax ? climaxGauge : 0,
           ejaculation: showEjac ? ejaculationGauge : 0,
           lubrication: showClimax ? lubricationGauge : 0,
+          excitement: excitementGauge,
           lastDeltaClimax: lastTurnDeltaClimax,
           lastDeltaEjac: lastTurnDeltaEjac,
           lastDeltaLubrication: lastTurnDeltaLubrication,
+          lastDeltaExcitement: lastTurnDeltaExcitement,
+          excitementReasons,
+          haltedByNpc,
+          haltedThisTurn,
+          resumedAfterHalt,
+          haltChance,
+          haltRoll,
           climaxTriggered: showClimax && climaxTriggeredThisTurn,
           ejaculationTriggered: showEjac && ejaculationTriggeredThisTurn,
           interruptedBrink,
@@ -32798,21 +33781,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
                 : 'building';
       const ejacStateText = interruptedBrink
         ? `INTERRUPTED ON THE BRINK (외부 간접 개입으로 사정 불발 — halted on the brink; portray tense restraint, hurried withdrawal/freeze, throb without release)`
-        : ejaculationTriggeredThisTurn
-          ? 'EJACULATION REACHED (100/100 — portray unmistakable ejaculation this turn: 참지 못하고 격렬한 수축·분출)'
-          : ejaculationGauge >= 80
-            ? 'on the brink of ejaculation (안절부절못함·참으려 허리와 호흡을 다잡으나 행동이 빠르고 거칠어짐)'
-            : ejaculationGauge >= 50
-              ? 'stimulation surging (거칠어진 호흡·억누르려 해도 힘과 속도가 배가됨)'
-              : ejaculationGauge >= 25
-                ? 'stimulation building (긴장된 호흡·반응 고조)'
-                : 'building';
+        : ejacDelayedByHold
+          ? 'HELD BACK ON THE BRINK (억지로 참아 사정 지연 — 94/100; 조루이거나 한계에 닿았더라도 이를 악물고 숨을 멈추거나 박자를 늦춰 분출을 간신히 미루며 떨리는 긴장 상태를 묘사하라)'
+          : ejaculationTriggeredThisTurn
+            ? 'EJACULATION REACHED (100/100 — portray unmistakable ejaculation this turn: 참지 못하고 격렬한 수축·분출)'
+            : ejaculationGauge >= 80
+              ? 'on the brink of ejaculation (안절부절못함·참으려 허리와 호흡을 다잡으나 행동이 빠르고 거칠어짐)'
+              : ejaculationGauge >= 50
+                ? 'stimulation surging (거칠어진 호흡·억누르려 해도 힘과 속도가 배가됨)'
+                : ejaculationGauge >= 25
+                  ? 'stimulation building (긴장된 호흡·반응 고조)'
+                  : 'building';
       const climaxText = showClimax
         ? `절정 수치(climax): ${climaxGauge}/100 (${fmtDelta(lastTurnDeltaClimax)}) → ${climaxStateText}; 애액·윤활(lubrication): ${lubricationGauge}/100 (${intimacyLubricationTier(lubricationGauge)})`
         : '';
       const ejacText = showEjac
         ? `사정 수치(ejaculation): ${ejaculationGauge}/100 (${fmtDelta(lastTurnDeltaEjac)}) → ${ejacStateText}`
         : '';
+      const fmtExVal = excitementGauge > 0 ? `+${excitementGauge}` : String(excitementGauge);
+      const fmtExDelta = lastTurnDeltaExcitement > 0 ? `+${lastTurnDeltaExcitement}` : String(lastTurnDeltaExcitement);
+      const excitementText = `흥분도(excitement): ${fmtExVal} (-100~+100 · 변화 ${fmtExDelta} · ${excitementTier.label}${excitementStimMult !== 1 ? ` · 자극×${excitementStimMult}` : ''}${excitementReasons.length ? ` · 요인: ${excitementReasons.join(', ')}` : ''}) → ${excitementTier.directive}`;
       if (isSleeping && ((showClimax && lastTurnDeltaClimax > 0) || (showEjac && lastTurnDeltaEjac > 0))) {
         const arousalNudge = Math.round((Math.max(0, lastTurnDeltaClimax) + Math.max(0, lastTurnDeltaEjac)) * 0.25);
         sleepPerson.wakefulnessGauge = Math.min(96, Math.max(4, Number(sleepPerson.wakefulnessGauge || 20) + arousalNudge));
@@ -32827,6 +33815,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const maleSizeTag = maleSizeModNow
         ? ` [남성기 크기: ${maleSizeModNow.label} (${maleSizeModNow.cm}cm) · 여성 삽입 자극 ${maleSizeModNow.effectLabel}]`
         : '';
+      const fmtPaceVal = ejacPaceVal > 0 ? `+${ejacPaceVal}` : String(ejacPaceVal);
+      const malePaceTag = showEjac && (ejacPaceVal !== 0 || forcedHoldThisTurn)
+        ? ` [사정 속도: ${ejacPaceMod.label} (${fmtPaceVal} · 자극×${ejacPaceMod.mult}${forcedHoldThisTurn ? ` · 억지 참음 지연×${ejacPaceVal >= 25 ? 0.58 : 0.65}` : ''}) — ${ejacPaceMod.directive}${ejacDelayedByHold ? ' (이번 턴 억지로 참아 94/100에서 사정 지연됨)' : ''}]`
+        : '';
       const partnerSizeTag = partnerSizeModifier
         ? ` [상대 남성기 자극 보정(${forcedBondDisplayName(partnerSizeModifier.partnerName)}): ${partnerSizeModifier.label} (${partnerSizeModifier.cm}cm) → ${partnerSizeModifier.effectLabel}]`
         : '';
@@ -32838,10 +33830,28 @@ Begin directly with the in-world response and finish the complete same-turn draf
         carriedFromSettled: !!settled,
         climaxGauge,
         ejaculationGauge,
+        ejaculationPace: showEjac ? ejacPaceVal : 0,
+        ejaculationPaceMeta: showEjac ? ejacPaceMod : null,
+        forcedHoldThisTurn: showEjac && forcedHoldThisTurn,
+        ejacDelayedByHold: showEjac && ejacDelayedByHold,
         lubricationGauge: showClimax ? lubricationGauge : 0,
+        excitementGauge,
         lastTurnDeltaClimax,
         lastTurnDeltaEjac,
         lastTurnDeltaLubrication,
+        lastTurnDeltaExcitement,
+        excitementTier,
+        excitementStimMult,
+        excitementReasons,
+        unwantedRequestThisTurn,
+        haltChance,
+        haltRoll,
+        haltedThisTurn,
+        haltedByNpc,
+        resumedAfterHalt,
+        initiativeDirective,
+        haltDirective,
+        prefs,
         climaxTriggeredThisTurn,
         ejaculationTriggeredThisTurn,
         interruptedBrink,
@@ -32850,9 +33860,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         stimulatedParts: lastTurnParts,
         zoneDeltas,
         maleSize: ownMaleSize ? { ...ownMaleSize, ...maleSizeModNow } : null,
+        malePace: showEjac ? { ...(ownMalePace || {}), ...ejacPaceMod } : null,
         partnerSizeModifier,
         inputHash: settleInfo?.inputHash || '',
-        line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText].filter(Boolean).join(' · ')}${sleepTag}${maleSizeTag}${partnerSizeTag}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no received stimulation this turn → gauge decayed; do NOT claim their climax/ejaculation is rising unless someone stimulates them in the draft]'}${loreHook ? ` [성격·로어: ${loreHook}]` : ''}`
+        line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText, excitementText].filter(Boolean).join(' · ')}${sleepTag}${maleSizeTag}${malePaceTag}${partnerSizeTag}${initiativeDirective ? ` ${initiativeDirective}` : ''}${haltDirective ? ` ${haltDirective}` : ''}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no received stimulation this turn → gauge decayed; do NOT claim their climax/ejaculation is rising unless someone stimulates them in the draft]'}${loreHook ? ` [성격·로어: ${loreHook}]` : ''}`
       };
     });
     if (settleInfo?.chat || assistantCardsDirty) {
@@ -33041,29 +34052,37 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
       }
       const escapeRegExp = raw => text(raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const nameObjPattern = fn => {
+      const aliasesOf = fn => {
         const aliases = [fn];
         if (fn.length >= 3 && /^[가-힣]+$/.test(fn)) aliases.push(fn.slice(1));
-        return new RegExp(`(?:${aliases.map(escapeRegExp).join('|')})\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`);
+        return aliases.map(escapeRegExp).join('|');
       };
+      const nameObjPattern = fn => new RegExp(`(?:${aliasesOf(fn)})\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`);
+      const nonPenetrativeTargetRe = fn => new RegExp(`(?:${aliasesOf(fn)})\\s*의\\s*(?:팔|손|손목|어깨|이마|뺨|얼굴|머리|뒤통수|입술|입|목덜미|눈|귀|옷)`);
+      const directVaginalRe = /삽입|질내|(?<![가-힣])(?:질|보지)(?:에|로|을|안|속)|깊숙이\s*(?:밀어\s*넣|박|찌르)|질내\s*사정|안싸|creampie|penetrat|inside\s+her/i;
       for (const sentence of penileSentences) {
-        if (!INTIMACY_PENETRATIVE_ACT_RE.test(sentence) && !INTIMACY_CREAMPIE_RE.test(sentence)) continue;
-        const subClauses = sentence.split(/(?:,|하자|하며|하면서|동안|가운데|사이|(?<=[가-힣])고\s+|지만|는데)/).filter(Boolean);
+        const proseSentence = sentence.replace(/"[^"\n]*"|“[^”\n]*”|「[^」\n]*」/g, ' ');
+        if (!INTIMACY_PENETRATIVE_ACT_RE.test(proseSentence) && !INTIMACY_CREAMPIE_RE.test(proseSentence)) continue;
+        const subClauses = proseSentence.split(/(?:,|다가|하자|하며|하면서|면서|동안|가운데|사이|채로|채\s+|(?<=[가-힣])고\s+|지만|는데)/).filter(Boolean);
         let prevObjName = '';
         for (const sub of subClauses) {
           const namedInSub = femaleNames.filter(fn => extensionLineNames(sub, fn));
           if (namedInSub.length === 1) {
             const fn = namedInSub[0];
-            if (nameObjPattern(fn).test(sub)) {
+            if (nameObjPattern(fn).test(sub) && !nonPenetrativeTargetRe(fn).test(sub)) {
               prevObjName = fn;
             }
           }
           if (INTIMACY_PENETRATIVE_ACT_RE.test(sub) || INTIMACY_CREAMPIE_RE.test(sub)) {
+            const hasDirectVaginal = directVaginalRe.test(sub);
             if (namedInSub.length === 1) {
-              recipientNames.add(namedInSub[0]);
+              const fn = namedInSub[0];
+              if (nameObjPattern(fn).test(sub) || (!nonPenetrativeTargetRe(fn).test(sub) && hasDirectVaginal)) {
+                recipientNames.add(fn);
+              }
             } else if (namedInSub.length > 1) {
               for (const fn of namedInSub) {
-                if (nameObjPattern(fn).test(sub)) {
+                if (nameObjPattern(fn).test(sub) && !nonPenetrativeTargetRe(fn).test(sub)) {
                   recipientNames.add(fn);
                 }
               }
@@ -33080,6 +34099,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
         const hasVaginalStim = (matchedG.stimulatedParts || []).some(p => /질내|자궁경부|vaginal|cervix/i.test(p));
         if (hasVaginalStim || INTIMACY_PENETRATIVE_ACT_RE.test(r.summary || '') || INTIMACY_CREAMPIE_RE.test(r.summary || '')) {
           recipientNames.add(matchedG.name);
+        }
+      }
+      if (recipientNames.size > 1 && activeReadings.length) {
+        const vaginalOwnerNames = new Set([
+          ...(owners.get('vaginal_canal') || []),
+          ...(owners.get('cervix') || [])
+        ].filter(owner => owner && owner !== '__female__' && owner !== '__male__'));
+        for (const r of activeReadings) {
+          if (!r?.participant || !['foreplay', 'none'].includes(r.phase)) continue;
+          const matchedG = femaleNpcGauges.find(g => extensionSameOrGivenName(r.participant, g.name));
+          if (!matchedG) continue;
+          const ownsVaginal = Array.from(vaginalOwnerNames).some(o => extensionSameOrGivenName(o, matchedG.name));
+          const hasVaginalStim = (matchedG.stimulatedParts || []).some(p => /질내|자궁경부|vaginal|cervix/i.test(p));
+          if (!ownsVaginal && !hasVaginalStim && recipientNames.size > 1) {
+            for (const rn of Array.from(recipientNames)) {
+              if (extensionSameOrGivenName(rn, matchedG.name)) recipientNames.delete(rn);
+            }
+          }
         }
       }
       targetGauges = femaleNpcGauges.filter(g =>
@@ -33350,7 +34387,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const failedCondomWarn = method === 'condom_failed'
         ? ' [주의: 콘돔 끝·귀두 부위가 찢어지거나 완전히 빠져 피임이 실패한 상태이므로 안전한 피임으로 오인하지 말고 즉각적인 인지·당혹·후속 대처를 반영할 것.]'
         : (method === 'condom_slip_risk'
-          ? ' [주의: 고무가 밑동 쪽으로 말려 뭉치며 기둥 하부 맨살이 드러난 이탈 위험 상태이나, 귀두를 감싼 머리 부분이 찢어지거나 빠진 완전 피임 실패는 아니므로 위치 점검·재착용 유도 또는 조건부 경계 수준으로 반응할 것.]'
+          ? ' [주의: 고무가 밑동에서 위쪽(귀두 방향)으로 말려 올라가 뭉치며 기둥 하부 맨살이 드러난 이탈 위험 상태이나, 귀두를 감싼 머리 부분이 찢어지거나 빠진 완전 피임 실패는 아니므로 위치 점검·재착용 유도 또는 조건부 경계 수준으로 반응할 것. [방향 인과 엄수: 말려 올라간 콘돔을 고쳐 쓸 때는 반드시 "밑동까지 다시 끌어내렸다/말아 내렸다"로 서술할 것 — "끌어올렸다"는 귀두 쪽으로 벗기는 반대 방향이므로 절대 오용 금지]]'
           : '');
       const withdrawalNote = withdrawalRequested
         ? ' 대사에 담긴 질외사정 요구(예: "노콘/생으로 하려면 밖에.", "밖에.")를 무시하고 임의로 질내사정으로 흘러가지 말 것.'
@@ -33391,8 +34428,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         stanceCode = 'condom_slip_risk_check';
         badgeLabel = '콘돔 밀림·이탈 위험 · 위치 점검·재착용 경계';
         badgeTone = 'warn';
-        summaryKo = `${relLabel}에서 고무가 밑동 쪽으로 말려 뭉치며 맨살이 일부 드러났으나 귀두 피복은 유지되어 완전한 피임 실패 전 단계이므로, 빠질 위험을 의식해 위치 점검·고쳐 쓰기를 유도합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 콘돔이 밑동 쪽으로 말려 올라가 맨살이 조금 드러났지만 귀두 부분은 아직 덮여 있어 완전한 피임 실패가 아닌 이탈 위험 단계다. 과장된 파국 반응이나 무조건적인 "밖에." 강요 대신, ${loreStyleCue}에 맞춰 잠깐 멈춰 위치를 고쳐 쓰게 하거나 빠짐 여부를 확인하며, 만약 노콘·생으로 이어가려 한다면 "생으로/노콘으로 하려면 밖에." 식으로 조건부 경계를 분명히 드러내라.${failedCondomWarn}${withdrawalNote}`;
+        summaryKo = `${relLabel}에서 고무가 밑동에서 위쪽으로 말려 뭉치며 맨살이 일부 드러났으나 귀두 피복은 유지되어 완전한 피임 실패 전 단계이므로, 빠질 위험을 의식해 밑동 쪽으로 다시 끌어내리는 위치 점검·고쳐 쓰기를 유도합니다.`;
+        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 콘돔이 밑동에서 위쪽(귀두 방향)으로 말려 올라가 맨살이 조금 드러났지만 귀두 부분은 아직 덮여 있어 완전한 피임 실패가 아닌 이탈 위험 단계다. 과장된 파국 반응이나 무조건적인 "밖에." 강요 대신, ${loreStyleCue}에 맞춰 잠깐 멈춰 위치를 밑동까지 다시 끌어내려(말아 내려) 고쳐 쓰게 하거나 빠짐 여부를 확인하며, 만약 노콘·생으로 이어가려 한다면 "생으로/노콘으로 하려면 밖에." 식으로 조건부 경계를 분명히 드러내라.${failedCondomWarn}${withdrawalNote}`;
       } else if (method === 'condom_failed' && cycleWindow !== 'menstrual_safe') {
         if (highAffectionTrust && effectiveChildPlan !== 'none' && cycleWindow !== 'fertile_danger') {
           stanceCode = 'condom_failed_trust_accept';
@@ -33506,12 +34543,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
     for (const g of telemetry.gauges || []) {
       const showClimax = g.showClimax !== undefined ? g.showClimax : g.gender !== 'male';
       const showEjac = g.showEjac !== undefined ? g.showEjac : g.gender === 'male';
-      if (!(g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0 || g.lastTurnDeltaClimax !== 0 || g.lastTurnDeltaEjac !== 0)) continue;
+      const exVal = Number(g.excitementGauge) || 0;
+      if (!(g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0 || exVal !== 0 || g.haltedByNpc || g.haltedThisTurn || g.resumedAfterHalt || g.lastTurnDeltaClimax !== 0 || g.lastTurnDeltaEjac !== 0)) continue;
       const fmtNoteDelta = d => (d > 0 ? ` (+${d})` : d < 0 ? ` (${d} 감쇠)` : '');
       const gaugeParts = [];
       if (showClimax) gaugeParts.push(`절정 ${g.climaxGauge}/100${fmtNoteDelta(g.lastTurnDeltaClimax)}`);
       if (showClimax && (g.lubricationGauge || 0) > 0) gaugeParts.push(`애액·윤활 ${g.lubricationGauge}/100`);
       if (showEjac) gaugeParts.push(`사정 ${g.ejaculationGauge}/100${fmtNoteDelta(g.lastTurnDeltaEjac)}`);
+      if (showEjac && ((Number(g.ejaculationPace) || 0) !== 0 || g.ejacDelayedByHold || g.forcedHoldThisTurn)) {
+        const pVal = intimacyClampEjacPace(g.ejaculationPace);
+        const pMeta = g.ejaculationPaceMeta || intimacyMaleEjacPaceModifier(pVal);
+        gaugeParts.push(`사정속도 ${pMeta.label} (${pVal > 0 ? `+${pVal}` : pVal} · 자극×${pMeta.mult})${g.ejacDelayedByHold ? ' · 억지 참음 지연(94/100)' : g.forcedHoldThisTurn ? ' · 억지 참음 감속' : ''}`);
+      }
+      const exTierLabel = g.excitementTier?.label || intimacyExcitementTier(exVal).label;
+      const exDelta = Number(g.lastTurnDeltaExcitement) || 0;
+      gaugeParts.push(`흥분 ${exVal > 0 ? `+${exVal}` : exVal} (${exTierLabel}${exDelta ? `, ${exDelta > 0 ? `+${exDelta}` : exDelta}` : ''})`);
+      if (g.resumedAfterHalt) gaugeParts.push('중단 후 재개·저항 중');
+      else if (g.haltedThisTurn) gaugeParts.push(`행위 중단 판정 (${g.haltRoll}/${g.haltChance}%)`);
+      else if (g.haltedByNpc) gaugeParts.push('중단 상태');
+      if (g.excitementReasons?.length) gaugeParts.push(`흥분 요인: ${g.excitementReasons.join(', ')}`);
       if (g.interruptedBrink) gaugeParts.push('외부 개입으로 절정 불발');
       if (g.sleeping) gaugeParts.push(`수면 중 신체반응 (각성 ${g.wakefulnessGauge || 0}/100)`);
       if (g.carriedFromSettled) gaugeParts.push('이전 턴 승계');
@@ -33539,12 +34589,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const contraception = reuseSettled
       ? (Array.isArray(existingTelemetry.contraception) ? existingTelemetry.contraception : [])
       : (scene.engaged ? computeIntimacyContraceptionVerdicts(recent, cards, scene, gauges, externalReaction, settings) : []);
+    const hasActiveGauge = gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0 || (Number(g.excitementGauge) || 0) !== 0 || g.haltedByNpc);
     if (scopeKey && !reuseSettled) {
-      Runtime.intimacyTelemetry[scopeKey] = scene.engaged || gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0)
+      Runtime.intimacyTelemetry[scopeKey] = scene.engaged || hasActiveGauge
         ? { at: Date.now(), gauges, externalReaction, contraception }
         : { at: Date.now(), gauges: [], externalReaction: null, contraception: [] };
     }
-    if (!scene.engaged && !gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0)) return { scene, cards, gauges, externalReaction: null, contraception: [], text: '' };
+    if (!scene.engaged && !hasActiveGauge) return { scene, cards, gauges, externalReaction: null, contraception: [], text: '' };
     return {
       scene,
       cards,
@@ -33561,7 +34612,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? `Sensitivity boosters active: ${scene.sensitivityBoosters.map(item => `${item.label} → ${item.effect}`).join('; ')}. Portray touch, friction, and breath with heightened physical responsiveness.`
           : '',
         gauges.length
-          ? `CLIMAX & EJACULATION GAUGES (0–100; 100 triggers climax/ejaculation; decays when unstimulated):\n${gauges.map(g => g.line).join('\n')}`
+          ? `CLIMAX, EJACULATION & EXCITEMENT GAUGES (climax/ejaculation 0–100, 100 triggers climax/ejaculation and decays when unstimulated; excitement -100..+100 drives responsiveness & active desire vs stone-like coldness/refusal while stimulation still builds climax):\n${gauges.map(g => g.line).join('\n')}`
           : '',
         contraception.length
           ? [
@@ -33588,11 +34639,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
   };
   const INTIMACY_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. At climax peak (절정 도달 100/100), portray loss of vocal self-control alongside muscle spasms as involuntary spoken vocalization matched to mouth state: muffled quotes ("으으음…!", "흐읍…!") if mouth is covered/blocked rather than silent narration, or unrestrained moans/cries ("아아…!") if open, followed by dazed afterglow. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction in their own lore voice, personality strength (fierce pushback vs meek protest vs high-affection trust acceptance), and natural Korean diction ("노콘"/"생으로" for unprotected sex) — never illogically demanding "밖에." right after confirming a condom is on/re-worn, distinguishing base bunching (slip risk while glans stays covered) from genuine tip tear/complete slip-off failure. Never invent an unintroduced condom/rubber (콘돔·고무) mid-act. Enact EXTERNAL REACTION gauge tiers on the page.',
-    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, climax vocalization, reaction to contraception/slip-risk/failure/unprotected contact (grounded in lore, personality strength vs meekness, relationship, high-affection trust vs boundary pushback, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. Do not force non-penetrated bystanders to react as if penetrated. If a third party notices (EXTERNAL REACTION), ensure their reaction fits that character.',
-    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on; distinguish base bunching slip-risk where the glans stays covered from genuine tear/full slip-off failure, and track re-wearing in chronological order; no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel.',
-    aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open.',
-    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a climax lacks involuntary vocalization matched to mouth state; a position is impossible or changes without a transition; continuity breaks (including phantom condoms, misread re-worn condoms, or contradictory "밖에." right after confirming condom wear); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. Realize each participant’s EXCITEMENT GAUGE (-100..+100): high excitement means active pursuit, amplified sensitivity, and wanting more; negative excitement cools into stiff, stone-like unresponsiveness or biting back moans even while physical climax still climbs from touch. For male participants, honor EJACULATION PACE (-100..+100): positive scores (조루) accept stimulation faster with low restraint; negative scores (지루) absorb stimulation slowly with high stamina; when HELD BACK ON THE BRINK or holding back by force ("억지로 참아 사정 지연"), show teeth-clenched restraint, slowed thrusts, held breath, and strained delay even for premature males. Honor consent/restraint/initiative preferences: dominant-initiative NPCs attempt to take the lead without waiting for user instruction; submissive NPCs forced to lead hesitate or resist; when an immediate halt roll triggers, stop and refuse the act; when the user resumes after an NPC halt/refusal, voice active pleas, protests, threats, condemnation, or physical resistance even while suppressed physiological climax still rises from incoming touch. At climax peak (절정 도달 100/100), portray loss of vocal self-control alongside muscle spasms as involuntary spoken vocalization matched to mouth state: muffled quotes ("으으음…!", "흐읍…!") if mouth is covered/blocked rather than silent narration, or unrestrained moans/cries ("아아…!") if open, followed by dazed afterglow. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction in their own lore voice, personality strength (fierce pushback vs meek protest vs high-affection trust acceptance), and natural Korean diction ("노콘"/"생으로" for unprotected sex) — never illogically demanding "밖에." right after confirming a condom is on/re-worn, distinguishing base bunching (slip risk while glans stays covered) from genuine tip tear/complete slip-off failure, and when re-seating a rolled-up condom always describe rolling/pulling it DOWN to the base ("밑동까지 다시 끌어내렸다/말아 내렸다"), never UP ("끌어올렸다", which pulls it off). Never invent an unintroduced condom/rubber (콘돔·고무) mid-act. Enact EXTERNAL REACTION gauge tiers on the page.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, excitement level (-100..+100: eager initiative vs stone-like freezing/suppression), male ejaculation stamina/pace (-100 지루 ~ +100 조루, including forced holding back to delay climax), consent/restraint/initiative preferences (dominant self-lead vs submissive reluctance to lead), refusal/halt or active post-halt resistance (pleas, threats, condemnation, physical pushback when resumed against their refusal), arousal, climax vocalization (even when emotionally cold if climax gauge peaks), reaction to contraception/slip-risk/failure/unprotected contact (grounded in lore, personality strength vs meekness, relationship, high-affection trust vs boundary pushback, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. Do not force non-penetrated bystanders to react as if penetrated. If a third party notices (EXTERNAL REACTION), ensure their reaction fits that character.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on; distinguish base bunching slip-risk where the glans stays covered from genuine tear/full slip-off failure, track re-wearing in chronological order, and enforce anatomical direction when fixing a rolled-up condom: re-seating rolls/pulls DOWN to the base "밑동까지 끌어내리다", never UP "끌어올리다" which removes it; no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel.',
+    aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open; respect any NPC halt decision or ongoing post-halt struggle.',
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal, excitement (-100..+100), male ejaculation stamina, and state. Write a preference profile (including consent_style, initiative_style, restraint_toy_style, turn_ons, turn_offs, and male ejaculation_pace) for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a participant ignores an active EXCITEMENT GAUGE directive, male EJACULATION PACE / forced-hold delay, initiative drive, halt verdict, or post-halt resistance escalation; a climax lacks involuntary vocalization matched to mouth state; a position is impossible or changes without a transition; continuity breaks (including phantom condoms, misread re-worn condoms, or contradictory "밖에." right after confirming condom wear); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
   });
   const intimacyOutputKind = (stageName, settings = {}) => {
     if (!intimacyStageActive(settings)) return '';
@@ -33634,16 +34685,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
         '- Move through phases at the scene’s pace. Foreplay builds arousal before penetration; climax comes when built to, not as a shortcut to end the turn; afterplay follows only an actual finish.',
         '- Track each body continuously: position, who is above or behind, where hands and mouths are, clothing, depth, rhythm, fluids, breath, sweat, sound. A position holds until the prose moves it, and a change of position is shown.',
         '- Body and voice share the beat: what a participant feels, says, and does stays in one paragraph, in their own diction.',
-        'PREFERENCES:',
-        '- Each character has their own tastes: positions they like or dislike, whether they enjoy or dislike foreplay and afterplay, and how they like to lead or receive each phase. A preference card is how this character is; let it shape who initiates, what they ask for, what they steer away from, and how they react.',
-        '- A character may still do what they dislike when the scene gives a reason (a partner’s wish, the moment); show the reluctance or the exception instead of erasing it.',
+        'PREFERENCES & EXCITEMENT (-100..+100):',
+        '- Each character has their own tastes: positions they like or dislike, consent style (requires explicit consent vs likes unannounced initiation), initiative style (dominant self-lead vs submissive reluctance to lead), restraints/blindfold/toy tolerance, turn-ons/turn-offs, and how they react in each phase.',
+        '- Excitement -100..+100 drives emotional & physical responsiveness: positive excitement heightens sensitivity, active pursuit, and craving; negative excitement cools into stiff stone-like unresponsiveness or biting back sound even while incoming touch still builds physiological climax.',
+        '- Dominant-initiative NPCs try to take the lead without waiting for user instruction; submissive NPCs forced to lead hesitate, comply stiffly, or refuse. When a halt roll triggers, refuse and stop the act; if the user resumes anyway after refusal/halt, voice active pleas, protests, threats, condemnation, or physical resistance even while physiological climax still climbs.',
         gate === 'novel' ? '' : '- RP mode: the persona has no card and no preference here; what the persona likes is only what the input states.',
         'ACCURACY:',
         '- Use the reference notes below for anatomy and physiology. Do not write an impossible body: no instant lubrication without arousal, no endless male erection after ejaculation without a refractory period, no position the bodies or the place cannot hold.',
         '- Every participant is an adult. Consent, hesitation, refusal, and limits in the scene stay hard facts; this block never supplies them.',
         '- Body state on record (injury, illness, pregnancy, fatigue) still applies inside the act.'
       ] : [
-        'ACCURACY: Keep anatomy, consent, limits, and recorded body state realistic and continuous with the packet below.'
+        'ACCURACY: Keep anatomy, consent, excitement/refusal limits, and recorded body state realistic and continuous with the packet below.'
       ]),
       'EXTERNAL REACTION (외부반응):',
       '- Applies in public/semi-public places (library, park, restroom, corridor, transit, cafe, etc.) AND in private spaces (rooms, homes, dorms, hotels via thin walls, ajar doors, housemates, or visitors).',
@@ -33670,9 +34722,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'OUTPUT: add a top-level "intimacy_check" array with one item per problem or confirmation about the encounter in this draft, judged only from your own duty. Item fields: aspect (phase, position, anatomy, continuity, voice, pacing, preference, or external_reaction); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
         : outputKind === 'readings'
           ? [
-            'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
+            'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal, excitement, and state at the end of this response).',
             'Also add a top-level "intimacy_body_responses" array. For every participant who was physically stimulated this response (including a male initiator receiving hand/oral/intercourse stimulation via penis_glans or penis_shaft_scrotum, as well as stimulated female participants), write one item: name, zone (the body-part id that was stimulated), physical (the immediate bodily change: breath, muscle tension, wetness, flush, tremble, oversensitivity), reaction (what it makes them do or say next — a hand stopping, a sound, pulling in or away). A body that was touched changes; a response that says nothing about the body is not a response. Do not write responses for people who were not touched this turn, and never attribute a response to the person who gave the touch instead of the person who received it.',
-            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); male_size (for male participants ONLY: one of "very_small", "small", "average", "large", "very_large" estimated from explicit lore, physique/build, or scene cues — smaller than average reduces female penetrative stimulation, larger increases it; "" for female participants); male_size_cm (estimated length in cm 6..28 for males, or 0 for females); male_size_basis (brief lore/physique basis for male_size, or "" for females); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender, turn_ons, turn_offs, sensitive_zones, dull_zones, or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a fully populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, ALWAYS infer reasonable defaults from personality and never leave turn_ons, turn_offs, sensitive_zones, or dull_zones empty (say what you inferred from in basis). Fields: name; gender ("female", "male", or ""); male_size (for male participants ONLY: one of "very_small", "small", "average", "large", "very_large" estimated from explicit lore, physique/build, or scene cues — smaller than average reduces female penetrative stimulation, larger increases it; "" for female participants); male_size_cm (estimated length in cm 6..28 for males, or 0 for females); male_size_basis (brief lore/physique basis for male_size, or "" for females); ejaculation_pace (integer -100..+100 for male participants ONLY: positive = faster/premature 조루, 0 = average, negative = slower/delayed 지루; 0 for females); ejaculation_pace_basis (brief lore basis for ejaculation_pace, or "" for females); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts inferred from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경 기둥, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); consent_style ("", "requires_consent", "likes_unannounced", or "flexible"); initiative_style ("", "dominant", "submissive", or "switch"); restraint_toy_style ("", "likes", "dislikes", or "neutral"); turn_ons and turn_offs (comma-separated excitement vs cooling triggers inferred from lore/personality); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
@@ -33689,7 +34741,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
         intimacy_body_responses: { type: 'array', items: closedJsonObject({ name: str, zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, physical: str, reaction: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, male_size: { type: 'string', enum: ['', ...INTIMACY_MALE_SIZES] }, male_size_cm: { type: 'number' }, male_size_basis: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, male_size: { type: 'string', enum: ['', ...INTIMACY_MALE_SIZES] }, male_size_cm: { type: 'number' }, male_size_basis: str, ejaculation_pace: { type: 'integer' }, ejaculation_pace_basis: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, consent_style: { type: 'string', enum: [...INTIMACY_CONSENT_STYLES] }, initiative_style: { type: 'string', enum: [...INTIMACY_INITIATIVE_STYLES] }, restraint_toy_style: { type: 'string', enum: [...INTIMACY_RESTRAINT_TOY_STYLES] }, turn_ons: str, turn_offs: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -33785,12 +34837,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
             && !matchedFromReading.some(([id]) => id === 'penis_glans' || id === 'penis_shaft_scrotum')
             && INTIMACY_PENETRATIVE_ACT_RE.test(reading.summary)
             && !/손가락(?:만|으로만)|fingering\s+only/i.test(reading.summary)) {
-            const restrained = INTIMACY_PACING_RESTRAINT_RE.test(reading.summary);
+            const restrained = INTIMACY_PACING_RESTRAINT_RE.test(reading.summary) || INTIMACY_EJAC_FORCED_HOLD_RE.test(reading.summary);
             matchedFromReading.push([
               'penis_glans',
-              restrained ? '귀두·삽입 마찰(속도조절) (glans/intercourse)' : '귀두·삽입 마찰 (glans/intercourse)',
+              restrained ? '귀두·삽입 마찰(억지 참음·속도조절) (glans/intercourse)' : '귀두·삽입 마찰 (glans/intercourse)',
               0,
-              restrained ? 21 : 28
+              28
             ]);
           }
           if (!matchedFromReading.length && /(?:스스로를\s*자극|자위|만지|비비|수음\s*자극|masturbat|self[- ]stimulat)/i.test(reading.summary)) {
@@ -33813,6 +34865,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
             : null;
           const partnerSizeMod = partnerMaleSize ? intimacyMaleSizeModifier(partnerMaleSize.size, partnerMaleSize.cm) : null;
           const postToyOnly = /손가락(?:만|으로만)|도구|바이브|딜도|fingering\s+only|toy|vibrator|dildo/i.test(reading?.summary || '');
+          const exGaugeNow = intimacyClampExcitement(g.excitementGauge);
+          const exPostStimMult = intimacyExcitementStimMult(exGaugeNow);
+          const exPostLubMult = exGaugeNow < 0 ? Number((1 + (exGaugeNow / 100) * 0.55).toFixed(2)) : exPostStimMult;
+          const postPaceVal = showEjac ? intimacyClampEjacPace(g.ejaculationPace ?? card?.ejaculationPace ?? getRecordedIntimacyMalePace(scopeKey, g.name, card)?.pace ?? 0) : 0;
+          const postPaceMult = showEjac ? intimacyMaleEjacPaceMult(postPaceVal) : 1.0;
+          const postForcedHold = showEjac && INTIMACY_EJAC_FORCED_HOLD_RE.test(reading?.summary || '') && !INTIMACY_EJACULATION_RESET_RE.test(reading?.summary || '');
+          const postHoldMult = postForcedHold ? (postPaceVal >= 25 ? 0.58 : 0.65) : 1.0;
           matchedFromReading.forEach(([id, label, baseC, baseE], idx) => {
             if (!deltas[id]) deltas[id] = { dev: 2, sens: 2 };
             const needsPostUpdate = (showClimax && g.lastTurnDeltaClimax <= 0) || (showEjac && g.lastTurnDeltaEjac <= 0);
@@ -33822,14 +34881,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
               const applySize = showClimax && partnerSizeMod && INTIMACY_PENETRATIVE_ZONES.has(id) && !postToyOnly;
               extraC += showClimax
                 ? (applySize
-                  ? Math.max(2, Math.round((baseC * zoneMult * dim) * partnerSizeMod.mult + partnerSizeMod.bonus * dim))
-                  : Math.round(baseC * zoneMult * dim))
+                  ? Math.max(2, Math.round((baseC * zoneMult * exPostStimMult * dim) * partnerSizeMod.mult + partnerSizeMod.bonus * dim))
+                  : (baseC > 0 ? Math.max(2, Math.round(baseC * zoneMult * exPostStimMult * dim)) : 0))
                 : 0;
-              extraE += showEjac ? Math.round(baseE * zoneMult * dim) : 0;
+              extraE += (showEjac && baseE > 0) ? Math.max(2, Math.round(baseE * zoneMult * exPostStimMult * postPaceMult * postHoldMult * dim)) : 0;
               if (showClimax) {
                 extraL += applySize
-                  ? Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * dim * partnerSizeMod.lubMult))
-                  : Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * dim);
+                  ? Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * exPostLubMult * dim * partnerSizeMod.lubMult))
+                  : Math.max(1, Math.round((INTIMACY_LUBRICATION_ZONES[id] || 6) * zoneMult * exPostLubMult * dim));
               }
               const sizePostNote = applySize && partnerSizeMod.bonus !== 0 ? ` · 남성기:${partnerSizeMod.label} ${partnerSizeMod.bonus > 0 ? `+${partnerSizeMod.bonus}` : partnerSizeMod.bonus}` : '';
               extraNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ` (민감×${zoneMult})` : zoneMult < 1 ? ` (둔감×${zoneMult})` : ''}${sizePostNote}`);
@@ -33846,9 +34905,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
               g.lastTurnDeltaLubrication = extraL;
             }
             if (showEjac && extraE > 0) {
-              g.ejaculationGauge = Math.min(100, Math.max(0, (g.ejaculationGauge || 0) - Math.min(0, g.lastTurnDeltaEjac || 0) + extraE));
-              g.lastTurnDeltaEjac = extraE;
-              if (g.ejaculationGauge >= 100 && !g.interruptedBrink) g.ejaculationTriggeredThisTurn = true;
+              const prePostE = Math.max(0, (g.ejaculationGauge || 0) - Math.min(0, g.lastTurnDeltaEjac || 0));
+              g.ejaculationGauge = Math.min(100, prePostE + extraE);
+              if (postForcedHold) g.forcedHoldThisTurn = true;
+              const postHoldCapPre = postPaceVal <= -25 ? 96 : 92;
+              if (postForcedHold && g.ejaculationGauge >= 100 && prePostE < postHoldCapPre) {
+                g.ejaculationGauge = 94;
+                g.lastTurnDeltaEjac = Math.max(0, 94 - prePostE);
+                g.ejacDelayedByHold = true;
+                g.ejaculationTriggeredThisTurn = false;
+              } else {
+                g.lastTurnDeltaEjac = extraE;
+                if (g.ejaculationGauge >= 100 && !g.interruptedBrink) g.ejaculationTriggeredThisTurn = true;
+              }
             }
             if (extraNotes.length) g.stimulatedParts = [...new Set([...(g.stimulatedParts || []), ...extraNotes])];
             g.gender = resolvedGender;
@@ -33858,7 +34927,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
             const postParts = [];
             if (showClimax) postParts.push(`절정 수치(climax): ${g.climaxGauge}/100 (${fmtPostDelta(g.lastTurnDeltaClimax)}); 애액·윤활(lubrication): ${g.lubricationGauge || 0}/100 (${intimacyLubricationTier(g.lubricationGauge || 0)})`);
             if (showEjac) postParts.push(`사정 수치(ejaculation): ${g.ejaculationGauge}/100 (${fmtPostDelta(g.lastTurnDeltaEjac)})`);
-            g.line = `- ${forcedBondDisplayName(g.name)}: ${postParts.join(' · ')}${g.stimulatedParts?.length ? ` [stimulated: ${g.stimulatedParts.join(', ')}]` : ''}`;
+            const exTierPost = g.excitementTier || intimacyExcitementTier(exGaugeNow);
+            postParts.push(`흥분도(excitement): ${exGaugeNow > 0 ? `+${exGaugeNow}` : exGaugeNow} (${exTierPost.label})`);
+            g.line = `- ${forcedBondDisplayName(g.name)}: ${postParts.join(' · ')}${g.initiativeDirective ? ` ${g.initiativeDirective}` : ''}${g.haltDirective ? ` ${g.haltDirective}` : ''}${g.stimulatedParts?.length ? ` [stimulated: ${g.stimulatedParts.join(', ')}]` : ''}`;
             const normKey = compact(g.name, 80).toLowerCase();
             if (chatScope && normKey) {
               const prevEntry = chatScope.settled?.[normKey] || {};
@@ -33869,9 +34940,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
                 climax: showClimax ? g.climaxGauge : 0,
                 ejaculation: showEjac ? g.ejaculationGauge : 0,
                 lubrication: showClimax ? (g.lubricationGauge || 0) : 0,
+                excitement: exGaugeNow,
                 lastDeltaClimax: g.lastTurnDeltaClimax || 0,
                 lastDeltaEjac: g.lastTurnDeltaEjac || 0,
                 lastDeltaLubrication: g.lastTurnDeltaLubrication || 0,
+                lastDeltaExcitement: g.lastTurnDeltaExcitement ?? prevEntry.lastDeltaExcitement ?? 0,
+                excitementReasons: Array.isArray(g.excitementReasons) ? g.excitementReasons : (prevEntry.excitementReasons || []),
+                haltedByNpc: Boolean(g.haltedByNpc ?? prevEntry.haltedByNpc),
+                haltedThisTurn: Boolean(g.haltedThisTurn),
+                resumedAfterHalt: Boolean(g.resumedAfterHalt),
+                haltChance: g.haltChance ?? prevEntry.haltChance ?? 0,
+                haltRoll: g.haltRoll ?? prevEntry.haltRoll ?? null,
                 climaxTriggered: showClimax && !!g.climaxTriggeredThisTurn,
                 ejaculationTriggered: showEjac && !!g.ejaculationTriggeredThisTurn,
                 interruptedBrink: !!g.interruptedBrink,
@@ -33913,11 +34992,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
         maleSize: raw?.male_size,
         maleSizeCm: raw?.male_size_cm,
         maleSizeBasis: raw?.male_size_basis,
+        ejaculationPace: raw?.ejaculation_pace,
+        ejaculationPaceBasis: raw?.ejaculation_pace_basis,
         likedPositions: raw?.liked_positions,
         dislikedPositions: raw?.disliked_positions,
         sensitiveZones: raw?.sensitive_zones,
         dullZones: raw?.dull_zones,
         zoneStats: raw?.zone_defaults,
+        consentStyle: raw?.consent_style,
+        initiativeStyle: raw?.initiative_style,
+        restraintToyStyle: raw?.restraint_toy_style,
+        turnOns: raw?.turn_ons,
+        turnOffs: raw?.turn_offs,
         foreplayStance: raw?.foreplay_stance,
         foreplayStyle: raw?.foreplay_style,
         intercourseStance: raw?.intercourse_stance,
@@ -33946,6 +35032,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
           }, { persist: false, syncCard: false });
           backfilled = true;
         }
+        const recordedPace = getRecordedIntimacyMalePace(scopeKey, card.name);
+        if (recordedPace?.origin === 'user') {
+          card.ejaculationPace = recordedPace.pace;
+          card.ejaculationPaceBasis = recordedPace.basis || card.ejaculationPaceBasis;
+        } else if (normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace) !== null) {
+          setRecordedIntimacyMalePace(scopeKey, card.name, {
+            name: card.name,
+            pace: card.ejaculationPace,
+            basis: card.ejaculationPaceBasis || card.basis,
+            origin: 'lore'
+          }, { persist: false, syncCard: false });
+          backfilled = true;
+        }
       }
       // The persona's tastes are the user's in RP; the stage is told so, and this holds it.
       if (intimacyModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
@@ -33961,11 +35060,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (!next.maleSizeBasis && card.maleSizeBasis) next.maleSizeBasis = card.maleSizeBasis;
           touched = true;
         }
+        if (next.gender === 'male' && normalizeIntimacyMaleEjacPaceValue(next.ejaculationPace) === null && normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace) !== null && next.origin !== 'user') {
+          next.ejaculationPace = card.ejaculationPace;
+          if (!next.ejaculationPaceBasis && card.ejaculationPaceBasis) next.ejaculationPaceBasis = card.ejaculationPaceBasis;
+          touched = true;
+        }
+        const cleared = new Set(Array.isArray(next.userClearedFields) ? next.userClearedFields : []);
         if (intimacyZoneStatsAllZero(next.zoneStats) && !intimacyZoneStatsAllZero(card.zoneStats)) {
           next.zoneStats = card.zoneStats;
-          if (!next.sensitiveZones && card.sensitiveZones) next.sensitiveZones = card.sensitiveZones;
-          if (!next.dullZones && card.dullZones) next.dullZones = card.dullZones;
           touched = true;
+        }
+        if (!next.sensitiveZones && !cleared.has('sensitiveZones') && card.sensitiveZones) { next.sensitiveZones = card.sensitiveZones; touched = true; }
+        if (!next.dullZones && !cleared.has('dullZones') && card.dullZones) { next.dullZones = card.dullZones; touched = true; }
+        if (!next.turnOns && !cleared.has('turnOns') && card.turnOns) { next.turnOns = card.turnOns; touched = true; }
+        if (!next.turnOffs && !cleared.has('turnOffs') && card.turnOffs) { next.turnOffs = card.turnOffs; touched = true; }
+        if (next.origin !== 'user') {
+          if (!next.consentStyle && card.consentStyle) { next.consentStyle = card.consentStyle; touched = true; }
+          if (!next.initiativeStyle && card.initiativeStyle) { next.initiativeStyle = card.initiativeStyle; touched = true; }
+          if (!next.restraintToyStyle && card.restraintToyStyle) { next.restraintToyStyle = card.restraintToyStyle; touched = true; }
         }
         if (touched) {
           cards[existingIdx] = next;
@@ -33978,8 +35090,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       cards.push(card);
       added.push(card);
     }
-    if (!added.length && !backfilled) return [];
-    Runtime.intimacyCards = { ...Runtime.intimacyCards, [scopeKey]: cards };
+    if (added.length || backfilled) {
+      Runtime.intimacyCards = { ...Runtime.intimacyCards, [scopeKey]: cards };
+    }
+    const autoEnriched = autoPopulateIntimacyCardsFromLore(scopeKey, settings, {}, { persist: false });
+    if (!added.length && !backfilled && !autoEnriched) return [];
     saveIntimacyCards().catch(error => warn('[intimacy cards save failed]', error));
     return added;
   };
@@ -34749,10 +35864,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     for (const card of inSceneCards) {
       const pair = relsimPairState(chat, card);
       const kinship = relsimIsKinshipCard(card, pair);
+      const sameSexBlocked = isSameSexRomanceBlocked(settings) && isSameSexPair(card.from, card.to, scopeKey, settings, recent);
       const memorySignals = relsimMemorySignals(recent, settings, [card.from, card.to]);
       const pairNpcs = [card.from, card.to].filter(n => n && !relsimIsPersona(n));
       for (const act of RELSIM_ACTS_BY_STATUS[pair.status] || []) {
-        if (kinship && ['confession', 'reunion', 'proposal', 'intimate'].includes(act)) continue;
+        if ((kinship || sameSexBlocked) && ['confession', 'reunion', 'proposal', 'intimate', 'date'].includes(act)) continue;
         for (const [actor, responder] of relsimDirections(card, gate)) {
           const profile = relsimProfileFor(scopeKey, responder);
           const { percent, base, factors } = relsimPercent({ act, status: pair.status, pair, responder, actor, profile, scene, settings, memorySignals });
@@ -34946,7 +36062,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const profileNames = Array.from(new Set(cards.flatMap(card => [card.from, card.to])));
     const profiles = profileNames.map(name => relsimProfileFor(scopeKey, name)).filter(Boolean);
     const missingProfiles = profileNames.filter(name => !relsimProfileFor(scopeKey, name) && (gate === 'novel' || !relsimIsPersona(name)));
-    const proposals = cards.filter(card => prepared.cooldownReady[relsimPairId(card)] && ['lovers', 'engaged', 'married'].includes(relsimPairState(prepared.chat, card).status));
+    const proposals = cards.filter(card => prepared.cooldownReady[relsimPairId(card)]
+      && ['lovers', 'engaged', 'married'].includes(relsimPairState(prepared.chat, card).status)
+      && !(isSameSexRomanceBlocked(settings) && isSameSexPair(card.from, card.to, scopeKey, settings, recent)));
     const priorChecks = (Array.isArray(ledger?.relationshipChecks) ? ledger.relationshipChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.aspect}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`)).slice(-12);
     const readings = kind === 'readings' ? [
@@ -35027,12 +36145,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   // ---- Output recording ----
   const relsimFindCard = (settings, scopeKey, from, to) => relsimCards(settings, scopeKey).find(card => forcedBondSamePair(card, { from, to }, true));
+  const RELSIM_ROMANTIC_STATUSES = new Set(['more_than_friend', 'lovers', 'engaged', 'married', 'broken_up']);
   const recordRelationshipSimPairs = (scopeKey, rows, settings, chat) => {
     let changed = false;
     for (const raw of Array.isArray(rows) ? rows : []) {
       const from = forcedBondPerson(raw?.from || ''), to = forcedBondPerson(raw?.to || '');
       let status = relsimChoice(raw?.status, RELSIM_STATUSES);
       if (!from || !to || from === to || !status) continue;
+      if (isSameSexRomanceBlocked(settings) && isSameSexPair(from, to, scopeKey, settings) && RELSIM_ROMANTIC_STATUSES.has(status)) continue;
       let card = relsimFindCard(settings, scopeKey, from, to);
       if (!card) {
         // A pair found by the simulator becomes a shared relationship card even while 억결's own
@@ -35179,6 +36299,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const status = relsimChoice(row?.status, RELSIM_STATUSES);
       const quote = compact(row?.quote || '', 400).trim();
       if (!pairId || !status || quote.length < 6 || !libText.includes(quote) || !chat.pairs[pairId] || chat.pairs[pairId].status === status) continue;
+      const libCard = relsimCards(settings, scopeKey).find(c => relsimPairId(c) === pairId);
+      if (libCard && isSameSexRomanceBlocked(settings) && isSameSexPair(libCard.from, libCard.to, scopeKey, settings) && RELSIM_ROMANTIC_STATUSES.has(status)) continue;
       const before = chat.pairs[pairId].status;
       chat.pairs[pairId] = { ...chat.pairs[pairId], status, origin: 'lib' };
       relsimNote(chat, `LIBRA 기록으로 정정: ${RELSIM_STATUSES[before] || '미정'} → ${RELSIM_STATUSES[status]} (“${compact(quote, 80)}”)`);
@@ -35333,6 +36455,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         createdAt: new Date().toISOString()
       }, loreList.length);
       if (!card?.to || card.from === card.to || !card.tones.length) continue;
+      if (isSameSexRomanceBlocked(settings) && isSameSexPair(card.from, card.to, scopeKey, settings)) {
+        card.tones = card.tones.filter(tone => !FORCED_BOND_ROMANTIC_TONES.includes(tone));
+        if (!card.tones.length) continue;
+      }
       if (isGroupOnlyCardName(card.from) || isGroupOnlyCardName(card.to)) continue;
       if (dismissed.has(forcedBondPairDismissKey(card))) continue;
       if ([...existing, ...loreList].some(item => forcedBondSamePair(item, card, item.direction === 'mutual' || card.direction === 'mutual'))) continue;
@@ -50915,6 +52041,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       intimacyMaleSizes: src.intimacyMaleSizes && typeof src.intimacyMaleSizes === 'object'
         ? (normalizeIntimacyMaleSizeMap({ [key]: src.intimacyMaleSizes })[key] || {})
         : {},
+      intimacyMalePaces: src.intimacyMalePaces && typeof src.intimacyMalePaces === 'object'
+        ? (normalizeIntimacyMalePaceMap({ [key]: src.intimacyMalePaces })[key] || {})
+        : {},
       bodyStateSleep: src.bodyStateSleep ? (normalizeBodyStateSleepMap({ [key]: src.bodyStateSleep })[key] || null) : null,
       worldSimLogs: Array.isArray(src.worldSimLogs) ? (normalizeWorldSimLogMap({ [key]: src.worldSimLogs })[key] || []) : [],
       relationshipState: src.relationshipState ? normalizeRelsimChat(src.relationshipState) : null,
@@ -51084,6 +52213,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       intimacyGauges: Runtime.intimacyGauges?.[key] ? cloneJson(Runtime.intimacyGauges[key]) : null,
       intimacyCards: Array.isArray(Runtime.intimacyCards?.[key]) ? cloneJson(Runtime.intimacyCards[key]) : [],
       intimacyMaleSizes: Runtime.intimacyMaleSizes?.[key] ? cloneJson(Runtime.intimacyMaleSizes[key]) : {},
+      intimacyMalePaces: Runtime.intimacyMalePaces?.[key] ? cloneJson(Runtime.intimacyMalePaces[key]) : {},
       bodyStateSleep: Runtime.bodyStateSleep?.[key] ? cloneJson(Runtime.bodyStateSleep[key]) : null,
       worldSimLogs: Array.isArray(Runtime.worldSimLogs?.[key]) ? cloneJson(Runtime.worldSimLogs[key]) : [],
       relationshipState: Runtime.relationshipState?.chats?.[key] ? cloneJson(Runtime.relationshipState.chats[key]) : null,
@@ -51208,6 +52338,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (Object.keys(nextMaleSizes).length) Runtime.intimacyMaleSizes[key] = nextMaleSizes;
     else delete Runtime.intimacyMaleSizes[key];
+
+    if (!Runtime.intimacyMalePaces) Runtime.intimacyMalePaces = {};
+    const prevMalePaces = Runtime.intimacyMalePaces[key] || {};
+    const nextMalePaces = cloneJson(snap.intimacyMalePaces || {});
+    for (const [pKey, pVal] of Object.entries(prevMalePaces)) {
+      if (pVal?.origin === 'user') nextMalePaces[pKey] = cloneJson(pVal);
+    }
+    if (Object.keys(nextMalePaces).length) Runtime.intimacyMalePaces[key] = nextMalePaces;
+    else delete Runtime.intimacyMalePaces[key];
 
     // Preserve user-authored intimacy card profiles while restoring turn-accumulated zoneStats/hashes.
     if (!Runtime.intimacyCards) Runtime.intimacyCards = {};
@@ -52914,6 +54053,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.intimacyCards = null;
     Runtime.intimacyGauges = null;
     Runtime.intimacyMaleSizes = null;
+    Runtime.intimacyMalePaces = null;
     Runtime.relationshipState = null;
     Runtime.worldSimLogs = null;
     Runtime.gaugeContinuityLoaded = false;
@@ -54114,9 +55254,65 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return changed ? next : response;
   };
 
+  const repairKoreanStrayEnglishPronounsText = value => {
+    const raw = String(value ?? '');
+    if (!raw || !/\b(?:his|her|their)\b/.test(raw) || !/[가-힣]/.test(raw)) return raw;
+    const parts = raw.split(/(◈[\s\S]*?◈|`[^`\n]*`|<[^>\n]+>)/g);
+    let touched = false;
+    for (let i = 0; i < parts.length; i += 2) {
+      const seg = parts[i];
+      if (!seg) continue;
+      const repaired = seg
+        .replace(/([가-힣][,.]?\s+)his(\s+[가-힣])/g, '$1그의$2')
+        .replace(/([가-힣][,.]?\s+)her(\s+[가-힣])/g, '$1그녀의$2')
+        .replace(/([가-힣][,.]?\s+)their(\s+[가-힣])/g, '$1그들의$2');
+      if (repaired !== seg) {
+        parts[i] = repaired;
+        touched = true;
+      }
+    }
+    return touched ? parts.join('') : raw;
+  };
+
+  const repairKoreanStrayEnglishPronouns = (response, settings = null) => {
+    const effectiveLang = normalizeInternalDraftLanguage(settings?.internalDraftLanguage ?? Runtime.settings?.internalDraftLanguage);
+    if (effectiveLang !== 'korean') return response;
+    if (typeof response === 'string') return repairKoreanStrayEnglishPronounsText(response);
+    if (Array.isArray(response)) return response.map(item => repairKoreanStrayEnglishPronouns(item, settings));
+    if (!response || typeof response !== 'object') return response;
+    let changed = false;
+    const next = { ...response };
+    if (typeof response.content === 'string') {
+      const repaired = repairKoreanStrayEnglishPronounsText(response.content);
+      if (repaired !== response.content) {
+        next.content = repaired;
+        changed = true;
+      }
+    } else if (Array.isArray(response.content)) {
+      const repaired = response.content.map(item => {
+        if (!item || typeof item !== 'object' || typeof item.text !== 'string') return item;
+        const textOut = repairKoreanStrayEnglishPronounsText(item.text);
+        return textOut !== item.text ? { ...item, text: textOut } : item;
+      });
+      if (repaired.some((item, index) => item !== response.content[index])) {
+        next.content = repaired;
+        changed = true;
+      }
+    }
+    if (response.message && typeof response.message === 'object') {
+      const repairedMessage = repairKoreanStrayEnglishPronouns(response.message, settings);
+      if (repairedMessage !== response.message) {
+        next.message = repairedMessage;
+        changed = true;
+      }
+    }
+    return changed ? next : response;
+  };
+
   const afterRequestReuseCleanup = async (response, type) => {
     if (!isMainNarrativeRequest(type)) return response;
-    const cleaned = stripVisiblePlanningFromMainResponse(response);
+    const cleanedPlanning = stripVisiblePlanningFromMainResponse(response);
+    const cleaned = repairKoreanStrayEnglishPronouns(cleanedPlanning, Runtime.settings || { internalDraftLanguage: DEFAULT_INTERNAL_DRAFT_LANGUAGE });
     const visibleContent = typeof cleaned === 'string' ? cleaned : contentToText(cleaned?.content ?? '');
     if (visibleContent.trim()) {
       // A visible result normally completes this request. RisuAI may still reject
@@ -54512,6 +55708,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     npcDispositionAuto: settings.npcDispositionAuto !== false,
     npcDisposition: normalizeNpcDispositionMap(settings.npcDisposition),
     bodyStateReproduction: settings.bodyStateReproduction === true,
+    blockSameSexRomance: settings.blockSameSexRomance !== false,
     bodyStateCards: normalizeBodyStateCardMap(settings.bodyStateCards),
     worldSimulatorMaleRestriction: normalizeWorldSimMaleRestriction(settings.worldSimulatorMaleRestriction),
     loreActivationMode: normalizeLoreActivationMode(settings.loreActivationMode),
@@ -54817,6 +56014,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       enableKnowledgeBoundaryAide: Gui.state?.agents?.aide_knowledge_boundary?.enabled === true,
       enableDialogueAide: Gui.state?.agents?.aide_dialogue?.enabled === true,
       bodyStateReproduction: runtime.bodyStateReproduction === true,
+      blockSameSexRomance: runtime.blockSameSexRomance !== false,
       bodyStateCards: normalizeBodyStateCardMap(runtime.bodyStateCards),
       worldSimulatorMaleRestriction: normalizeWorldSimMaleRestriction(runtime.worldSimulatorMaleRestriction),
       forcedBondForceAppearance: runtime.forcedBondForceAppearance !== false,
@@ -54920,6 +56118,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         npc_disposition_auto: String(runtime.npcDispositionAuto !== false),
         npc_disposition: JSON.stringify(normalizeNpcDispositionMap(runtime.npcDisposition)),
         body_state_reproduction: String(runtime.bodyStateReproduction === true),
+        block_same_sex_romance: String(runtime.blockSameSexRomance !== false),
         body_state_cards: JSON.stringify(normalizeBodyStateCardMap(runtime.bodyStateCards)),
         world_simulator_male_restriction: normalizeWorldSimMaleRestriction(runtime.worldSimulatorMaleRestriction),
         lore_activation_mode: normalizeLoreActivationMode(runtime.loreActivationMode),
@@ -55103,7 +56302,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n/* CI 글꼴 (docs/brand): 라틴 글자만 내장, 외부 요청 없음. Space Grotesk와 IBM Plex Mono는 SIL OFL 1.1 (assets/fonts) */\n@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:\"IBM Plex Sans KR\",Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-brand:\"Space Grotesk\",\"IBM Plex Sans KR\",Pretendard,\"Noto Sans KR\",system-ui,sans-serif;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:clip;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}.brand__mark .brand__symbol{display:block;width:66%;height:66%}\n.brand__name{font:700 17px/1.15 var(--font-brand);letter-spacing:.08em;text-transform:uppercase;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;inset:0;margin:0;opacity:0;width:1px;height:1px;pointer-events:none}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}.switch input:disabled+.switch__track{opacity:.45;cursor:not-allowed}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice:disabled,.choice[aria-disabled=true]{opacity:.58;cursor:not-allowed;background:var(--surface2)}.choice:disabled:hover,.choice[aria-disabled=true]:hover{border-color:var(--border2)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#2f3f8f; --brand-ink:#fff;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n   --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#126457; --brand-ink:#fff;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#a3530a; --brand-ink:#fff;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#6b3fa0; --brand-ink:#fff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#a3365a; --brand-ink:#fff;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#3e5566; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.tab.tab--sub::before{content:\"+ \";color:var(--text3)}\n.node--sub{padding-top:6px;padding-bottom:6px}\n.node--sub .node__dot{width:22px;height:22px;margin-left:10px;font-size:11px}\n.node--sub b{font-size:12.5px}\n.node--sub .node__parent{display:block;font-size:11px;color:var(--text3)}\n.mini__sub{margin-left:4px;font-weight:600;color:var(--text3)}\n.ladder--aside{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}\n.ladder__label{display:block;padding:0 0 6px 8px}\n.mini__step.is-off{opacity:.5;border-style:dashed}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}\n/* Scope chips: where a setting applies (2026-11-18). 모든 채팅 = global, 이 채팅 = per chat, 이 단계 = one stage. */\n.scope-chip{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border-radius:99px;border:1px solid var(--border);font:650 11px var(--font-sans);vertical-align:middle;white-space:nowrap}\n.scope-chip--global{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent-line)}\n.scope-chip--chat{color:var(--ok-ink);background:var(--ok-soft);border-color:var(--ok-line)}\n.scope-chip--stage{color:var(--text2);background:var(--surface2)}\n.scope-link{display:flex;flex-wrap:wrap;align-items:center;gap:8px}\n.card[data-chat-section].is-flash,.card[data-writing-section].is-flash{outline:2px solid var(--accent-line);outline-offset:2px}\n/* Settings access, phase 2 (2026-11-18): search results, changed-settings rows, highlight. */\n.is-flash{outline:2px solid var(--accent-line);outline-offset:3px;border-radius:var(--r-sm)}\n.search-hit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);text-align:left;cursor:pointer;font:inherit}\n.search-hit:hover,.search-hit:focus-visible{border-color:var(--accent-line);background:var(--accent-soft);outline:none}\n.search-hit small{font-size:12px}\n.changed-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.changed-row b{font-size:14px}\n/* Stage table (phase 3, 2026-11-18). A table on wide screens, one card per stage on narrow ones. */\n.matrix-scroll{overflow-x:auto;max-width:100%}\n.stage-matrix{width:100%;border-collapse:collapse;font-size:13px}\n.stage-matrix th,.stage-matrix td{padding:6px 6px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}\n.stage-matrix thead th{color:var(--text2);font-weight:650;font-size:12px}\n.stage-matrix tbody th{font-weight:650}\n.stage-matrix .input{width:76px;min-width:0;padding-left:8px;padding-right:4px}.stage-matrix .select{width:140px;min-width:0}\n.stage-matrix .matrix-sub th{padding-left:20px}.stage-matrix tbody th small{display:block;font-weight:400;font-size:11.5px}\n.stage-matrix .matrix-stage{border:0;background:none;padding:0;color:var(--text);font:inherit;cursor:pointer;text-align:left}\n.stage-matrix .matrix-stage:hover{color:var(--accent-ink);text-decoration:underline}\n.stage-matrix td.is-changed .input,.stage-matrix td.is-changed .select{border-color:var(--accent-line)}\n.stage-matrix [data-matrix-status]{min-width:90px}.stage-matrix [data-matrix-status].is-warn{color:var(--warn-ink)}\n.stage-matrix .matrix-reason{display:block;font-size:11.5px;line-height:1.35}\n.stage-matrix .matrix-label{display:block}\n.stage-matrix .matrix-bulk-row th,.stage-matrix .matrix-bulk-row td{background:var(--surface2);border-bottom:0}\n.matrix-bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center}\n@container app (max-width:900px){\n  .stage-matrix,.stage-matrix tbody,.stage-matrix tr,.stage-matrix th,.stage-matrix td{display:block;width:auto}\n  .stage-matrix thead{display:none}\n  .stage-matrix tr{border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px;padding:8px 12px;background:var(--surface2)}\n  .stage-matrix th,.stage-matrix td{border:0;padding:4px 0}\n  .stage-matrix .matrix-sub th{padding-left:0}.stage-matrix .matrix-sub{margin-left:14px}\n  .stage-matrix td[data-label]{display:flex;justify-content:space-between;align-items:center;gap:10px}\n  .stage-matrix td[data-label]::before{content:attr(data-label);color:var(--text2);font-size:12px;flex:none}\n  .stage-matrix td[data-matrix-status]{flex-wrap:wrap;text-align:right}\n  .stage-matrix .matrix-label{white-space:nowrap;margin-left:auto}\n  .stage-matrix .matrix-reason{flex-basis:100%}\n  .stage-matrix .matrix-bulk{justify-content:flex-end}\n}\n.ladder-sub-toggle{width:100%;justify-content:space-between;margin-bottom:6px}\n.ladder.is-subs-collapsed .node--sub:not(.is-on){display:none}\n.embedded-mod-bar{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}\n.embedded-mod-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer}\n.embedded-mod-chip:hover{border-color:var(--accent)}\n.char-hub-stack,.dossier-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}\n.char-section-card,.dossier-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);padding:16px;display:grid;gap:12px}\n.char-section-card__head,.dossier-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}\n.char-identity{display:flex;align-items:center;gap:10px;min-width:0;flex:1}\n.dossier-card__avatar{width:36px;height:36px;border-radius:10px;background:var(--surface3);border:1px solid var(--border2);display:grid;place-items:center;font-weight:700;font-size:14px;color:var(--text);flex:none}\n.char-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}\n.char-controls .select,.char-tile__select{min-height:32px;padding:4px 10px;width:auto;font-size:12px}\n.dossier-card__badges{display:flex;flex-wrap:wrap;gap:6px}\n.dossier-card__offstage{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 11px;font-size:12px;line-height:1.5;color:var(--text2)}\n.char-gauges-grid,.dossier-card__meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:12px;border-radius:var(--r-sm);background:var(--surface2);border:1px solid var(--border)}\n.char-six-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}\n.char-tile{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}\n.char-tile.is-filled{border-color:var(--border2)}\n.char-tile__head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12.5px;font-weight:700;color:var(--text)}\n.char-tile__body{font-size:12px;line-height:1.5;color:var(--text2);display:grid;gap:4px}\n.char-tile__foot{margin-top:auto;padding-top:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}\n.dossier-card__foot{display:flex;flex-wrap:wrap;gap:6px}\n.gauge-row{display:grid;grid-template-columns:78px 1fr 64px;align-items:center;gap:8px;font-size:12px;color:var(--text2)}\n.gauge-track{height:9px;border-radius:999px;background:var(--app-bg);border:1px solid var(--border2);overflow:hidden}\n.gauge-fill{height:100%;border-radius:999px;background:var(--accent);min-width:2px}\n.gauge-fill--climax{background:#e11d48}\n.gauge-fill--lub{background:#0ea5e9}\n.gauge-fill--ejac{background:#f59e0b}\n.gauge-fill--sleep{background:#8b5cf6}\n.readings-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}\n.readings-kpi{display:grid;gap:4px;padding:12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.readings-kpi:hover,.readings-kpi.is-on{border-color:var(--accent-line);background:var(--accent-soft)}\n.readings-kpi__label{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--text2);font-weight:650}\n.readings-kpi__val{font:800 20px/1.15 var(--font-display);font-variant-numeric:tabular-nums;color:var(--text)}\n.readings-kpi__meta{font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.reading-filter-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}\n.reading-domains-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}\n.reading-domain-card{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}\n.reading-domain-card__head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:700;color:var(--text)}\n.reading-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:11px 12px;display:grid;gap:6px}\n.reading-card__top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}\n.reading-card__title{font-size:13px;font-weight:650;color:var(--text)}\n.reading-card__body{font-size:12px;line-height:1.55;color:var(--text2);margin:0}\n@container app (max-width:640px){.char-six-grid,.reading-domains-grid,.char-gauges-grid{grid-template-columns:minmax(0,1fr)}}";
   const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "chat": "<path d=\"M20 12a7 7 0 0 1-10.2 6.2L5 19.5l1.3-4.4A7 7 0 1 1 20 12Z\"/>"};
-  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><svg class=\"brand__symbol\" viewBox=\"0 0 48 48\" fill=\"currentColor\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"5\" y=\"32\" width=\"8\" height=\"10\" rx=\"1.8\" opacity=\".38\"/><rect x=\"15\" y=\"24\" width=\"8\" height=\"18\" rx=\"1.8\" opacity=\".58\"/><rect x=\"25\" y=\"15\" width=\"8\" height=\"27\" rx=\"1.8\" opacity=\".8\"/><rect x=\"35\" y=\"6\" width=\"8\" height=\"36\" rx=\"1.8\"/></svg></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" type=\"button\" data-settings-search-open aria-label=\"설정 검색 (Ctrl+K)\" title=\"설정 검색 (Ctrl+K 또는 /)\"><i data-i=\"search\"></i><span class=\"hide-narrow\">설정 검색</span></button>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"writing\" data-short=\"작성\"><i data-i=\"spark\"></i><span class=\"nav-text\">작성 방식</span></button>\n    <button class=\"nav-item\" data-go=\"chat\" data-short=\"이 채팅\"><i data-i=\"chat\"></i><span class=\"nav-text\">이 채팅</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\" data-go-stage=\"shadow\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\" data-go-stage=\"char\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\" data-go-stage=\"world\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\" data-go-stage=\"plot\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4w\" data-go=\"pipeline\" data-go-stage=\"world_dynamics\">세계 동역학 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4a\" data-go=\"pipeline\" data-go-stage=\"body_state\">상태 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4k\" data-go=\"pipeline\" data-go-stage=\"knowledge_boundary\">지식 경계</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4v\" data-go=\"pipeline\" data-go-stage=\"dialogue\">화술·대화</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4x\" data-go=\"pipeline\" data-go-stage=\"intimacy\">정사 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4r\" data-go=\"pipeline\" data-go-stage=\"relationship_sim\">관계 시뮬레이터</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4b\" data-go=\"pipeline\" data-go-stage=\"forced_bond\">억결 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" id=\"mini-s5\" data-go=\"pipeline\" data-go-stage=\"main\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>통합 1회</b><span>SHADOW + 통합 마스터 AIDE 1회 (총 2회 호출 · 지연 최소화)</span></button><button class=\"choice is-on\"><b>정밀 3단계</b><span>인물 · 세계관 · 플롯 3핵심 AIDE 순차 실행</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다.</p></div></div>\n    <details class=\"fold card\" data-stage-matrix-fold style=\"margin-bottom:16px\"><summary>단계 비교표 <span class=\"hint\">모든 단계의 사용 여부·AI 프리셋·한도를 한 표에서 보고 바꿉니다</span></summary><div class=\"fold__body\" data-stage-matrix></div></details>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <button class=\"btn btn--sm ladder-sub-toggle\" type=\"button\" data-ladder-sub-toggle><span>내장 도메인 모듈 7개 (핵심 AIDE에 통합)</span><span>펼치기</span></button>\n        <div class=\"ladder\" id=\"ladder\">\n          \n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node s4\" data-select-row=\"world_dynamics\"><span class=\"node__dot\">5</span><span><b>세계 동역학 AIDE</b><small>장면 밖 흐름·기한 계산</small></span><span id=\"lb-world_dynamics\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"body_state\"><span class=\"node__dot\">5</span><span><b>상태 AIDE</b><small>몸 상태·건강 계산</small></span><span id=\"lb-body_state\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"knowledge_boundary\"><span class=\"node__dot\">5</span><span><b>지식 경계</b><small>인물 지식·누설 방지</small></span><span id=\"lb-knowledge_boundary\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"dialogue\"><span class=\"node__dot\">5</span><span><b>화술·대화</b><small>메아리 문답·말투 검증</small></span><span id=\"lb-dialogue\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"intimacy\"><span class=\"node__dot\">5</span><span><b>정사 AIDE</b><small>성교 묘사·인물 선호</small></span><span id=\"lb-intimacy\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"relationship_sim\"><span class=\"node__dot\">5</span><span><b>관계 시뮬레이터</b><small>연애 서사·묘사 보조</small></span><span id=\"lb-relationship_sim\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"forced_bond\"><span class=\"node__dot\">5</span><span><b>억결 AIDE</b><small>관계 형성·관계 판독</small></span><span id=\"lb-forced_bond\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n        <div class=\"ladder ladder--aside\" id=\"ladder-aside\"><span class=\"hint ladder__label\">파이프라인 밖</span><button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">직접 실행 · 초안 파이프라인과 별개</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"s\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <div class=\"note scope-link\">장면 변수는 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 모든 초안 단계와 인풋 관리자에 적용합니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\">유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 전송 전에 직접 하나를 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            \n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"note scope-link\">NPC 반응 경향성(모든 NPC 기본값 포함)은 이 채팅 전체에 적용되는 설정이라 <b>이 채팅</b> 화면에서 정합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"disposition\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world_dynamics\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>세계관 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계 동역학 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">이미 움직이기 시작한 장면 밖의 일(추격·명령·기한·소문·절차)이 며칠째 진행 중인지, 기한이 닥쳤는지를 LIBRA 이야기 시계와 기록으로 매 턴 계산해, 근거가 있는 움직임만 간접 경로로 장면에 닿게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s7\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 전개를 드러내지 않습니다. RP에서 페르소나의 반응과 다음 행동은 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 세계관 AIDE가 이 판정까지 함께 처리합니다. 세계관 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_world_dynamics\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>장면 밖 남성 NPC 자율 제한</label><select class=\"select\" data-world-dynamics-field=\"maleRestriction\"><option value=\"none\">자유 (제한 없음)</option><option value=\"no_romance\">연애·성적 관계 발전 금지</option><option value=\"no_interaction\">페르소나 외 일체 상호작용 금지</option></select></div>\n            <div class=\"note scope-link\">이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"readings\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계 동역학 AIDE\" placeholder=\"비워 두면 내장 세계 동역학 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"d\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계 동역학 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"body_state\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">상태 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 매 턴 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s6\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 판정 없이 연출만 맡습니다. RP에서 페르소나의 몸 상태는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_body_state\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" data-body-state-field=\"reproduction\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>생식 판정 (임신·피임)</b><small>기본 꺼짐. 켜면 관계 기록과 주기·피임으로 NPC의 임신 여부를 고정 판정합니다. 같은 기록이면 언제나 같은 결과입니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 상태 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"state\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"상태 AIDE\" placeholder=\"비워 두면 내장 상태 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"b\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"상태 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"intimacy\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">정사 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장면이 성교에 들어서면 전희·성교·절정·후희를 단계별로 구체적이고 정확하게 묘사하게 합니다. 단계와 체위는 매 턴 입력과 최근 장면에서 계산하고, 인물마다 로어로 추정한 선호를 이 채팅의 카드로 남겨 계속 따릅니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s8\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>NSFW 지침이 켜져 있을 때만 실행되며 어휘 수위는 NSFW 모드를 따릅니다. 성교를 시작시키지 않습니다. RP 문장화 모드에서는 실행되지 않고, RP에서 페르소나의 행동·감각·선호는 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_intimacy\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"note scope-link\">이 채팅의 선호 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"intimacy\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"정사 AIDE\" placeholder=\"비워 두면 내장 정사 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"x\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"정사 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"knowledge_boundary\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">지식 경계 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물이 알 수 없는 것을 아는 듯 말하지 않게 합니다. 대사·속마음·인물 시점 서술이 쓰는 사실마다 그 인물이 알게 된 경로(그 장면에 있었음, 화면 안에서 들음, 공개된 사실, 보이는 단서로 한 추측)를 확인하고, 경로가 없으면 지우거나 추측·질문으로 바꿉니다. 근거는 LIBRA 기록(비밀·인물 지식)과 최근 대화이고, 따로 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s10\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않습니다. RP에서는 NPC에만 적용하고 페르소나의 지식과 대사는 고치지 않습니다. 장면 연출 모드에서는 입력이 쓴 대사를 그대로 둡니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 점검까지 함께 처리합니다. 누설로 고친 문장은 초안과 근거 원문에 실제로 있는 인용일 때만 이번 턴 판독에 남습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_knowledge_boundary\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"지식 경계\" placeholder=\"비워 두면 내장 지식 경계 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"k\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"지식 경계\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"dialogue\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">화술·대화 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물들의 대사와 대화가 실제 사람이 말하는 화법(여백·함축·우회·인물별 어조·구어체 호흡)에 맞는지 검증하고 바로잡습니다. 「~이야?」 / 「~이야.」 같은 메아리 문답 반복과 개성 없는 대사를 걷어내고, 각 인물의 성격·호칭·상황에 맞는 살아 있는 대사로 다듬습니다. 따로 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s11\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않습니다. RP에서는 NPC 대사만 검증·수정하고 페르소나의 대사는 고치지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 점검까지 함께 처리합니다. 최근 턴의 메아리 문답을 자동 탐지해 경고하며, 실제 초안에 있는 인용을 고친 경우에만 이번 턴 판독에 남습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_dialogue\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"화술·대화\" placeholder=\"비워 두면 내장 화술·대화 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"v\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"화술·대화\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"relationship_sim\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">관계 시뮬레이터 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">연애 서사와 묘사를 보조합니다. 관계 상태·공개 범위·주도권·연애 방식을 장면의 몸짓과 거리감으로 드러내게 하고, 고백·재결합·청혼·데이트·이벤트가 일어나면 미리 판정한 결과대로 쓰게 합니다. 기념일과 생일은 이야기 날짜로 계산해 장면에 올리고, 챙기지 않으면 상대가 서운해합니다. 선호와 반응은 모두 로어를 따릅니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s9\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>억결 AIDE를 꺼도 동작합니다. RP 문장화 모드에서는 실행되지 않고, RP에서는 페르소나의 고백·감정·대답을 정하지 않습니다(판정은 페르소나의 행동에 대한 NPC의 반응만 정합니다). 장면 연출 모드에서는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 판정은 초안을 쓰기 전에 코드가 정하고, 같은 턴을 다시 생성해도 결과가 같습니다. 관계 상태는 다음 턴에 응답이 유지된 것을 확인한 뒤 저장됩니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_relationship_sim\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"note scope-link\">이 채팅의 관계 상태와 연애 선호 카드는 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"relsim\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"관계 시뮬레이터\" placeholder=\"비워 두면 내장 관계 시뮬레이터 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"r\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"관계 시뮬레이터\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"forced_bond\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>플롯 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">억결 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">페르소나를 중심으로 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 장면에 엮습니다. 최근 감정 신호를 따라 관계를 한 걸음씩 움직이고, 연애로 몰아가지 않습니다. 다른 AIDE가 각자 역할에서 관계를 검증하고, 플롯 AIDE가 마지막으로 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s5\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 등장 없이 연출 색깔만 맡습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 플롯 AIDE가 이 판정까지 함께 처리합니다. 플롯 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_forced_bond\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"auto\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>카드가 없을 때 자동으로 엮기</b><small>관계 카드가 없으면 캐릭터 카드의 인물과 장면에 있는 인물(최대 2명)을 페르소나와 엮고, 관계의 결은 설정·로어·장면에서 읽습니다.</small></span></label>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"forceAppearance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>장면에 없으면 등장 계기 만들기</b><small>관계 상대가 장면에 없으면 장면 초중반에 결에 맞는 계기로 등장시킵니다. 결말을 만드는 등장은 쓰지 않습니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 관계 카드와 AI가 제안한 관계는 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"bond\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"억결 AIDE\" placeholder=\"비워 두면 내장 억결 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"f\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"억결 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"field\"><label>전달 방식</label><span class=\"hint\">초안에 기본 지시를 붙여 메인 응답으로 넘기고, 메인 응답이 그 초안을 바탕으로 마무리합니다. 단계 분석은 전달하지 않습니다.</span></div>\n            <div class=\"note\">성인 장면 표현·NSFW 지침·비앙카 투입은 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <div class=\"setting\" style=\"margin-top:8px\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 작성 방식 (모든 채팅) ===== -->\n  <section class=\"page\" data-page=\"writing\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Writing</div><h1 class=\"page-title\">작성 방식 <span class=\"scope-chip scope-chip--global\">모든 채팅</span></h1><p class=\"page-desc\">모든 채팅과 모든 초안 단계에 함께 적용되는 설정입니다. 특정 단계에 속하지 않습니다.</p></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\" data-writing-section=\"mode\"><div class=\"card__head\"><div><h2 class=\"card__title\">작성 모드</h2><p class=\"card__desc\">소설/RP 전환은 화면 상단 스위치로도 할 수 있습니다. RP 세부 모드는 RP에서만 쓰입니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>RP 세부 모드</label><select class=\"select\" data-existing-response-field=\"rpImpersonationScope\" aria-label=\"RP 세부 모드 (작성 방식)\"></select><span class=\"hint\" data-writing-rp-scope-hint>소설 모드에서는 쓰이지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"variance\"><div class=\"card__head\"><div><h2 class=\"card__title\">장면 변수</h2><p class=\"card__desc\">매 턴 작은 변수를 넣어 장면을 덜 뻔하게 만듭니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>장면 변수</label><select class=\"select\" data-scene-variance><option value=\"off\">끔</option><option value=\"low\">약하게 (가끔)</option><option value=\"medium\">보통</option><option value=\"high\">강하게 (거의 매 턴)</option></select><span class=\"hint\">매 턴 무작위로 작은 변수(인물의 기분·충동·딴생각, 스스로 하는 행동, 주변의 작은 사건)를 하나 넣어 장면을 덜 뻔하게 만듭니다. RP에서는 페르소나에게 걸지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"nsfw\"><div class=\"card__head\"><div><h2 class=\"card__title\">성인 장면</h2><p class=\"card__desc\">표현 수준과 지침 전달을 정합니다. 정사 AIDE는 NSFW 지침이 켜져 있을 때만 실행됩니다.</p></div></div><div class=\"stack\"><div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div><div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">비앙카 투입</div><div class=\"setting__desc\">BIANCA 워크스페이스 페르소나(§0~§11)를 창작 단계 프롬프트에 넣습니다. 인물·말투·장면 판단·성인 소재 규칙이 함께 들어갑니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"biancaInject\" aria-label=\"비앙카 투입\"><span class=\"switch__track\"></span></label></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 이 채팅 ===== -->\n  <section class=\"page\" data-page=\"chat\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">This chat</div><h1 class=\"page-title\">이 채팅 <span class=\"scope-chip scope-chip--chat\">이 채팅</span></h1><p class=\"page-desc\">지금 열린 채팅에만 저장되는 설정과 기록입니다. 다른 채팅에는 영향을 주지 않습니다. <span data-chat-scope-label></span></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ch\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"people\">인물별 보기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"readings\">이번 턴 판독</button></div>\n    <div data-subpanel=\"people\" data-group=\"ch\" class=\"is-active\"><div class=\"stack stack--lg\">\n      <div class=\"card card--tight\" data-chat-person-bar><div class=\"cluster\" style=\"align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap\"><span class=\"hint\" style=\"margin:0\">인물 필터: 선택한 인물의 경향성·관계·상태·선호·시뮬레이터 6종 카드를 모아 봅니다.</span><div class=\"cluster\" data-chat-person-chips style=\"gap:6px;flex-wrap:wrap\"></div></div></div>\n      <div class=\"char-hub-stack\" data-chat-person-dossiers></div>\n      <details class=\"fold chat-raw-editors-fold\" data-chat-raw-fold><summary>카테고리별 원본 카드 편집기 전체 보기 (NPC 경향성 · 관계 · 상태 · 정사 선호 · 관계 시뮬레이터)</summary><div class=\"fold__body stack\">\n      <div class=\"card\" data-chat-section=\"disposition\"><div class=\"card__head\"><div><h2 class=\"card__title\">NPC 반응 경향성</h2><p class=\"card__desc\">장면에 등장한 NPC의 경향성 카드가 로어로 자동 생성되며, 여기서 고치거나 지울 수 있습니다. 인물 AIDE를 꺼도 모든 초안 단계와 마무리 단계에 적용됩니다.</p></div></div><div class=\"stack\"><div class=\"field\" data-npc-disposition-panel><p class=\"hint\" style=\"margin:0 0 6px\">NPC가 페르소나의 접근을 어떤 태도로 받아들이고 해석할지(신뢰·의심, 온도, 거리, 양보와 보류)를 고정합니다. 호감도나 관계 진행과는 별개이며, 장면에서 이미 일어난 일을 뒤집지 않고 그 안의 태도만 정합니다. 반응의 방향은 경향성이, 표현 방식은 로어가 정합니다. 직접 바꾸기 전까지 장면 때문에 바뀌지 않습니다.</p><label class=\"check\" style=\"margin-bottom:6px\"><input type=\"checkbox\" data-npc-disposition-field=\"auto\" checked><span>장면에 등장한 NPC 경향성 카드 자동 생성 (모든 NPC 기본값이 비어 있을 때)</span></label><div class=\"opt-grid\"><div class=\"field\"><label>모든 NPC 기본값</label><select class=\"select\" data-npc-disposition-field=\"default\"></select></div></div><div class=\"stack stack--sm\" data-npc-disposition-list></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-npc-disposition-action=\"add\">NPC 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"bond\"><div class=\"card__head\"><div><h2 class=\"card__title\">관계 카드</h2><p class=\"card__desc\">억결 AIDE와 관계 시뮬레이터가 함께 사용합니다. 장면에 등장하거나 로어에 있는 주요 관계는 로어를 바탕으로 자동 생성됩니다.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-forced-bond-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-forced-bond-action=\"add\">관계 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"state\"><div class=\"card__head\"><div><h2 class=\"card__title\">상태 카드</h2><p class=\"card__desc\">상태 AIDE가 사용합니다. 이야기가 말하지 않는 기본값(주기 길이, 체질 등)이 필요할 때만 추가하세요.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-body-state-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-body-state-action=\"add\">상태 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"intimacy\"><div class=\"card__head\"><div><h2 class=\"card__title\">정사 선호 카드</h2><p class=\"card__desc\">정사 AIDE가 사용합니다. 카드는 성교 장면에 처음 등장한 인물에 대해 로어로 자동 추정되며, 여기서 고치거나 지울 수 있습니다.</p></div></div><div class=\"stack\"><div class=\"field\"><p class=\"hint\" style=\"margin:0 0 6px\">성교 장면에 처음 등장한 인물의 선호를 로어로 추정해 자동으로 만듭니다. 만들어진 카드는 자동으로 바뀌지 않으며, 여기서 고치거나 지울 수 있습니다. 바로 저장됩니다.</p><div class=\"stack stack--sm\" data-intimacy-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-intimacy-action=\"add\">선호 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"relsim\"><div class=\"card__head\"><div><h2 class=\"card__title\">관계 시뮬레이터</h2><p class=\"card__desc\">관계 시뮬레이터가 사용합니다. 관계 상태와 기념일은 이 채팅의 진행에 따라 바뀌고, 연애 선호 카드는 로어로 자동 추정됩니다. 여기서 고치면 바로 저장됩니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>관계 상태</label><p class=\"hint\" style=\"margin:0 0 6px\">관계 카드의 두 사람마다 현재 상태입니다. 판정 결과는 다음 턴에 응답이 유지된 것을 확인한 뒤 반영되고, LIBRA 기록이 다르게 말하면 그 기록을 따릅니다.</p><div class=\"stack stack--sm\" data-relsim-pairs></div><div class=\"stack stack--sm\" data-relsim-notes hidden></div></div><div class=\"field\"><label>연애 선호 카드</label><p class=\"hint\" style=\"margin:0 0 6px\">장소·시각·데이트·이벤트의 선호와 비선호, 연애 방식, 생일, 서운함을 드러내는 방식입니다. 로어에 근거가 없는 항목은 비워 둡니다. 목록에 있는 이름을 쉼표로 적습니다.</p><div class=\"stack stack--sm\" data-relsim-profiles></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-relsim-action=\"add-profile\">선호 카드 추가</button></div></div></div></div>\n      </div></details>\n    </div></div>\n    <div data-subpanel=\"readings\" data-group=\"ch\"><div class=\"stack stack--lg\">\n      <div class=\"card\" data-chat-section=\"readings\"><div class=\"card__head\"><div><h2 class=\"card__title\">이번 턴 판독</h2><p class=\"card__desc\">가장 최근 실행에서 통합 월드 엔진과 각 도메인이 정한 판독·게이지입니다. 게이지는 연속성을 위해 별도 저장됩니다.</p></div></div><div class=\"readings-kpi-grid\" data-readings-kpi-grid></div><div class=\"reading-filter-bar\" data-readings-filter-bar></div><div class=\"reading-domains-grid\" data-readings-grid><div class=\"reading-domain-card\" data-reading-domain=\"previous\"><div class=\"reading-domain-card__head\"><span>기억 · PREVIOUS 가드레일</span><span class=\"badge\" data-domain-count=\"previous\">0</span></div><div class=\"stack stack--sm\" data-shadow-previous-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"state\"><div class=\"reading-domain-card__head\"><span>몸 상태 · 수면 게이지</span><span class=\"badge\" data-domain-count=\"state\">0</span></div><div class=\"stack stack--sm\" data-body-state-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"world\"><div class=\"reading-domain-card__head\"><span>세계 동역학 · 장면 밖</span><span class=\"badge\" data-domain-count=\"world\">0</span></div><div class=\"stack stack--sm\" data-world-dynamics-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"intimacy\"><div class=\"reading-domain-card__head\"><span>정사 · 절정·윤활 게이지</span><span class=\"badge\" data-domain-count=\"intimacy\">0</span></div><div class=\"stack stack--sm\" data-intimacy-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"relsim\"><div class=\"reading-domain-card__head\"><span>연애 · 억결 관계 시뮬레이터</span><span class=\"badge\" data-domain-count=\"relsim\">0</span></div><div class=\"stack stack--sm\" data-relsim-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"dialogue\"><div class=\"reading-domain-card__head\"><span>화술 · 대사 교정</span><span class=\"badge\" data-domain-count=\"dialogue\">0</span></div><div class=\"stack stack--sm\" data-dialogue-readings></div></div></div></div>\n    </div></div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback 플러그인의 현재 채팅 기억을 플러그인 IPC로 직접 읽습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>플러그인 IPC 활성</span></span></div>\n        <div id=\"lib-read-owners-container\" class=\"field\" style=\"margin-top:14px\"><div class=\"field\" id=\"lib-draft-read-owners\"><span class=\"label\" style=\"font-weight:600\">초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)</span><div class=\"cluster\" style=\"margin-top:8px;display:flex;flex-wrap:wrap;gap:18px\"><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"libra\">LIBRA (미크로·통합 기억)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"hayaku\">HAYAKU (로케이터·연속성)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"flashback\">Flashback (벡터 메모리)</label></div></div></div>\n        <div class=\"state-grid\" style=\"margin-top:16px\">\n          <div><b>통신 방식</b><span>플러그인 IPC (별도 로컬 서버 불필요)</span></div>\n          <div><b>활성 읽기 대상</b><span id=\"lib-active-summary\">LIBRA · HAYAKU · Flashback</span></div>\n          <div><b>현재 채팅 scope</b><span id=\"lib-scope-summary\">현재 채팅 scope 미확인</span></div>\n          <div><b>기억 전달 방식</b><span>초안 프롬프트 직접 주입 (검증 퇴짜 없음)</span></div></div>\n        <div class=\"field\" id=\"lib-read-controls\" style=\"margin-top:14px\"><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:47630\" hidden style=\"display:none\"><div class=\"cluster\" style=\"margin-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px\"><button type=\"button\" class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결 · 적용</button><button type=\"button\" class=\"btn\" id=\"lib-check\">기억 연결 확인</button><button type=\"button\" class=\"btn\" id=\"lib-disconnect\">연결 해제</button><span class=\"muted\" id=\"lib-state\" style=\"font-size:12px\"></span></div></div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"s\">SHADOW ACT <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"d\">세계 동역학 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"b\">상태 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"k\">지식 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"v\">화술 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"x\">정사 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"r\">관계 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"f\">억결 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"i\">입력 도우미</button></div>\n      <div data-subpanel=\"s\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"d\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"b\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"k\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"v\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"x\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"r\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"f\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"i\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"chg\">바꾼 설정 <span class=\"count\" data-changed-count hidden>0</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"chg\" data-group=\"mg\"><div class=\"card\"><h2 class=\"card__title\">기본값과 다른 설정</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">저장 여부와 관계없이 지금 화면의 값을 기본값과 비교합니다. <b>기본값으로</b>를 누른 뒤 저장해야 적용됩니다. 이 채팅의 카드와 경향성은 되돌릴 기본값이 없어 목록으로만 보여 줍니다.</p><div class=\"stack stack--sm\" data-changed-settings></div></div></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><svg class=\"brand__symbol\" viewBox=\"0 0 48 48\" fill=\"currentColor\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"5\" y=\"32\" width=\"8\" height=\"10\" rx=\"1.8\" opacity=\".38\"/><rect x=\"15\" y=\"24\" width=\"8\" height=\"18\" rx=\"1.8\" opacity=\".58\"/><rect x=\"25\" y=\"15\" width=\"8\" height=\"27\" rx=\"1.8\" opacity=\".8\"/><rect x=\"35\" y=\"6\" width=\"8\" height=\"36\" rx=\"1.8\"/></svg></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" type=\"button\" data-settings-search-open aria-label=\"설정 검색 (Ctrl+K)\" title=\"설정 검색 (Ctrl+K 또는 /)\"><i data-i=\"search\"></i><span class=\"hide-narrow\">설정 검색</span></button>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"writing\" data-short=\"작성\"><i data-i=\"spark\"></i><span class=\"nav-text\">작성 방식</span></button>\n    <button class=\"nav-item\" data-go=\"chat\" data-short=\"이 채팅\"><i data-i=\"chat\"></i><span class=\"nav-text\">이 채팅</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\" data-go-stage=\"shadow\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\" data-go-stage=\"char\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\" data-go-stage=\"world\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\" data-go-stage=\"plot\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4w\" data-go=\"pipeline\" data-go-stage=\"world_dynamics\">세계 동역학 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4a\" data-go=\"pipeline\" data-go-stage=\"body_state\">상태 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4k\" data-go=\"pipeline\" data-go-stage=\"knowledge_boundary\">지식 경계</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4v\" data-go=\"pipeline\" data-go-stage=\"dialogue\">화술·대화</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4x\" data-go=\"pipeline\" data-go-stage=\"intimacy\">정사 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4r\" data-go=\"pipeline\" data-go-stage=\"relationship_sim\">관계 시뮬레이터</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4b\" data-go=\"pipeline\" data-go-stage=\"forced_bond\">억결 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" id=\"mini-s5\" data-go=\"pipeline\" data-go-stage=\"main\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>통합 1회</b><span>SHADOW + 통합 마스터 AIDE 1회 (총 2회 호출 · 지연 최소화)</span></button><button class=\"choice is-on\"><b>정밀 3단계</b><span>인물 · 세계관 · 플롯 3핵심 AIDE 순차 실행</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다.</p></div></div>\n    <details class=\"fold card\" data-stage-matrix-fold style=\"margin-bottom:16px\"><summary>단계 비교표 <span class=\"hint\">모든 단계의 사용 여부·AI 프리셋·한도를 한 표에서 보고 바꿉니다</span></summary><div class=\"fold__body\" data-stage-matrix></div></details>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <button class=\"btn btn--sm ladder-sub-toggle\" type=\"button\" data-ladder-sub-toggle><span>내장 도메인 모듈 7개 (핵심 AIDE에 통합)</span><span>펼치기</span></button>\n        <div class=\"ladder\" id=\"ladder\">\n          \n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node s4\" data-select-row=\"world_dynamics\"><span class=\"node__dot\">5</span><span><b>세계 동역학 AIDE</b><small>장면 밖 흐름·기한 계산</small></span><span id=\"lb-world_dynamics\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"body_state\"><span class=\"node__dot\">5</span><span><b>상태 AIDE</b><small>몸 상태·건강 계산</small></span><span id=\"lb-body_state\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"knowledge_boundary\"><span class=\"node__dot\">5</span><span><b>지식 경계</b><small>인물 지식·누설 방지</small></span><span id=\"lb-knowledge_boundary\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"dialogue\"><span class=\"node__dot\">5</span><span><b>화술·대화</b><small>메아리 문답·말투 검증</small></span><span id=\"lb-dialogue\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"intimacy\"><span class=\"node__dot\">5</span><span><b>정사 AIDE</b><small>성교 묘사·인물 선호</small></span><span id=\"lb-intimacy\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"relationship_sim\"><span class=\"node__dot\">5</span><span><b>관계 시뮬레이터</b><small>연애 서사·묘사 보조</small></span><span id=\"lb-relationship_sim\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"forced_bond\"><span class=\"node__dot\">5</span><span><b>억결 AIDE</b><small>관계 형성·관계 판독</small></span><span id=\"lb-forced_bond\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n        <div class=\"ladder ladder--aside\" id=\"ladder-aside\"><span class=\"hint ladder__label\">파이프라인 밖</span><button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">직접 실행 · 초안 파이프라인과 별개</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"s\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <div class=\"note scope-link\">장면 변수는 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 모든 초안 단계와 인풋 관리자에 적용합니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\">유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 전송 전에 직접 하나를 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            \n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"note scope-link\">NPC 반응 경향성(모든 NPC 기본값 포함)은 이 채팅 전체에 적용되는 설정이라 <b>이 채팅</b> 화면에서 정합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"disposition\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world_dynamics\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>세계관 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계 동역학 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">이미 움직이기 시작한 장면 밖의 일(추격·명령·기한·소문·절차)이 며칠째 진행 중인지, 기한이 닥쳤는지를 LIBRA 이야기 시계와 기록으로 매 턴 계산해, 근거가 있는 움직임만 간접 경로로 장면에 닿게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s7\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 전개를 드러내지 않습니다. RP에서 페르소나의 반응과 다음 행동은 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 세계관 AIDE가 이 판정까지 함께 처리합니다. 세계관 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_world_dynamics\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>장면 밖 남성 NPC 자율 제한</label><select class=\"select\" data-world-dynamics-field=\"maleRestriction\"><option value=\"none\">자유 (제한 없음)</option><option value=\"no_romance\">연애·성적 관계 발전 금지</option><option value=\"no_interaction\">페르소나 외 일체 상호작용 금지</option></select></div>\n            <div class=\"note scope-link\">이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"readings\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계 동역학 AIDE\" placeholder=\"비워 두면 내장 세계 동역학 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"d\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계 동역학 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"body_state\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">상태 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 매 턴 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s6\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 판정 없이 연출만 맡습니다. RP에서 페르소나의 몸 상태는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_body_state\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" data-body-state-field=\"reproduction\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>생식 판정 (임신·피임)</b><small>기본 꺼짐. 켜면 관계 기록과 주기·피임으로 NPC의 임신 여부를 고정 판정합니다. 같은 기록이면 언제나 같은 결과입니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 상태 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"state\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"상태 AIDE\" placeholder=\"비워 두면 내장 상태 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"b\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"상태 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"intimacy\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">정사 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장면이 성교에 들어서면 전희·성교·절정·후희를 단계별로 구체적이고 정확하게 묘사하게 합니다. 단계와 체위는 매 턴 입력과 최근 장면에서 계산하고, 인물마다 로어로 추정한 선호를 이 채팅의 카드로 남겨 계속 따릅니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s8\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>NSFW 지침이 켜져 있을 때만 실행되며 어휘 수위는 NSFW 모드를 따릅니다. 성교를 시작시키지 않습니다. RP 문장화 모드에서는 실행되지 않고, RP에서 페르소나의 행동·감각·선호는 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_intimacy\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"note scope-link\">이 채팅의 선호 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"intimacy\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"정사 AIDE\" placeholder=\"비워 두면 내장 정사 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"x\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"정사 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"knowledge_boundary\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">지식 경계 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물이 알 수 없는 것을 아는 듯 말하지 않게 합니다. 대사·속마음·인물 시점 서술이 쓰는 사실마다 그 인물이 알게 된 경로(그 장면에 있었음, 화면 안에서 들음, 공개된 사실, 보이는 단서로 한 추측)를 확인하고, 경로가 없으면 지우거나 추측·질문으로 바꿉니다. 근거는 LIBRA 기록(비밀·인물 지식)과 최근 대화이고, 따로 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s10\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않습니다. RP에서는 NPC에만 적용하고 페르소나의 지식과 대사는 고치지 않습니다. 장면 연출 모드에서는 입력이 쓴 대사를 그대로 둡니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 점검까지 함께 처리합니다. 누설로 고친 문장은 초안과 근거 원문에 실제로 있는 인용일 때만 이번 턴 판독에 남습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_knowledge_boundary\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"지식 경계\" placeholder=\"비워 두면 내장 지식 경계 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"k\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"지식 경계\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"dialogue\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">화술·대화 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물들의 대사와 대화가 실제 사람이 말하는 화법(여백·함축·우회·인물별 어조·구어체 호흡)에 맞는지 검증하고 바로잡습니다. 「~이야?」 / 「~이야.」 같은 메아리 문답 반복과 개성 없는 대사를 걷어내고, 각 인물의 성격·호칭·상황에 맞는 살아 있는 대사로 다듬습니다. 따로 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s11\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않습니다. RP에서는 NPC 대사만 검증·수정하고 페르소나의 대사는 고치지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 점검까지 함께 처리합니다. 최근 턴의 메아리 문답을 자동 탐지해 경고하며, 실제 초안에 있는 인용을 고친 경우에만 이번 턴 판독에 남습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_dialogue\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"화술·대화\" placeholder=\"비워 두면 내장 화술·대화 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"v\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"화술·대화\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"relationship_sim\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">관계 시뮬레이터 <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">연애 서사와 묘사를 보조합니다. 관계 상태·공개 범위·주도권·연애 방식을 장면의 몸짓과 거리감으로 드러내게 하고, 고백·재결합·청혼·데이트·이벤트가 일어나면 미리 판정한 결과대로 쓰게 합니다. 기념일과 생일은 이야기 날짜로 계산해 장면에 올리고, 챙기지 않으면 상대가 서운해합니다. 선호와 반응은 모두 로어를 따릅니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s9\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>억결 AIDE를 꺼도 동작합니다. RP 문장화 모드에서는 실행되지 않고, RP에서는 페르소나의 고백·감정·대답을 정하지 않습니다(판정은 페르소나의 행동에 대한 NPC의 반응만 정합니다). 장면 연출 모드에서는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 판정은 초안을 쓰기 전에 코드가 정하고, 같은 턴을 다시 생성해도 결과가 같습니다. 관계 상태는 다음 턴에 응답이 유지된 것을 확인한 뒤 저장됩니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_relationship_sim\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" data-romance-guard-field=\"blockSameSexRomance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>같은 성별 연애 금지</b><small>기본 켜짐. 같은 성별 인물끼리 연애·성적 관계로 엮이지 않도록 코드 단위로 차단합니다. 끄면 동성 연애도 허용됩니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 관계 상태와 연애 선호 카드는 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"relsim\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"관계 시뮬레이터\" placeholder=\"비워 두면 내장 관계 시뮬레이터 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"r\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"관계 시뮬레이터\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"forced_bond\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>플롯 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">억결 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">페르소나를 중심으로 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 장면에 엮습니다. 최근 감정 신호를 따라 관계를 한 걸음씩 움직이고, 연애로 몰아가지 않습니다. 다른 AIDE가 각자 역할에서 관계를 검증하고, 플롯 AIDE가 마지막으로 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s5\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 등장 없이 연출 색깔만 맡습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 플롯 AIDE가 이 판정까지 함께 처리합니다. 플롯 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_forced_bond\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"auto\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>카드가 없을 때 자동으로 엮기</b><small>관계 카드가 없으면 캐릭터 카드의 인물과 장면에 있는 인물(최대 2명)을 페르소나와 엮고, 관계의 결은 설정·로어·장면에서 읽습니다.</small></span></label>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"forceAppearance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>장면에 없으면 등장 계기 만들기</b><small>관계 상대가 장면에 없으면 장면 초중반에 결에 맞는 계기로 등장시킵니다. 결말을 만드는 등장은 쓰지 않습니다.</small></span></label>\n            <label class=\"switch\"><input type=\"checkbox\" data-romance-guard-field=\"blockSameSexRomance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>같은 성별 연애 금지</b><small>기본 켜짐. 같은 성별 인물끼리 연애·성적 관계로 엮이지 않도록 코드 단위로 차단합니다. 끄면 동성 연애도 허용됩니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 관계 카드와 AI가 제안한 관계는 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"bond\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"억결 AIDE\" placeholder=\"비워 두면 내장 억결 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"f\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"억결 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"field\"><label>전달 방식</label><span class=\"hint\">초안에 기본 지시를 붙여 메인 응답으로 넘기고, 메인 응답이 그 초안을 바탕으로 마무리합니다. 단계 분석은 전달하지 않습니다.</span></div>\n            <div class=\"note\">성인 장면 표현·NSFW 지침·비앙카 투입은 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <div class=\"setting\" style=\"margin-top:8px\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 작성 방식 (모든 채팅) ===== -->\n  <section class=\"page\" data-page=\"writing\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Writing</div><h1 class=\"page-title\">작성 방식 <span class=\"scope-chip scope-chip--global\">모든 채팅</span></h1><p class=\"page-desc\">모든 채팅과 모든 초안 단계에 함께 적용되는 설정입니다. 특정 단계에 속하지 않습니다.</p></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\" data-writing-section=\"mode\"><div class=\"card__head\"><div><h2 class=\"card__title\">작성 모드</h2><p class=\"card__desc\">소설/RP 전환은 화면 상단 스위치로도 할 수 있습니다. RP 세부 모드는 RP에서만 쓰입니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>RP 세부 모드</label><select class=\"select\" data-existing-response-field=\"rpImpersonationScope\" aria-label=\"RP 세부 모드 (작성 방식)\"></select><span class=\"hint\" data-writing-rp-scope-hint>소설 모드에서는 쓰이지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"variance\"><div class=\"card__head\"><div><h2 class=\"card__title\">장면 변수</h2><p class=\"card__desc\">매 턴 작은 변수를 넣어 장면을 덜 뻔하게 만듭니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>장면 변수</label><select class=\"select\" data-scene-variance><option value=\"off\">끔</option><option value=\"low\">약하게 (가끔)</option><option value=\"medium\">보통</option><option value=\"high\">강하게 (거의 매 턴)</option></select><span class=\"hint\">매 턴 무작위로 작은 변수(인물의 기분·충동·딴생각, 스스로 하는 행동, 주변의 작은 사건)를 하나 넣어 장면을 덜 뻔하게 만듭니다. RP에서는 페르소나에게 걸지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"nsfw\"><div class=\"card__head\"><div><h2 class=\"card__title\">성인 장면</h2><p class=\"card__desc\">표현 수준과 지침 전달을 정합니다. 정사 AIDE는 NSFW 지침이 켜져 있을 때만 실행됩니다.</p></div></div><div class=\"stack\"><div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div><div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">비앙카 투입</div><div class=\"setting__desc\">BIANCA 워크스페이스 페르소나(§0~§11)를 창작 단계 프롬프트에 넣습니다. 인물·말투·장면 판단·성인 소재 규칙이 함께 들어갑니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"biancaInject\" aria-label=\"비앙카 투입\"><span class=\"switch__track\"></span></label></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 이 채팅 ===== -->\n  <section class=\"page\" data-page=\"chat\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">This chat</div><h1 class=\"page-title\">이 채팅 <span class=\"scope-chip scope-chip--chat\">이 채팅</span></h1><p class=\"page-desc\">지금 열린 채팅에만 저장되는 설정과 기록입니다. 다른 채팅에는 영향을 주지 않습니다. <span data-chat-scope-label></span></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ch\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"people\">인물별 보기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"readings\">이번 턴 판독</button></div>\n    <div data-subpanel=\"people\" data-group=\"ch\" class=\"is-active\"><div class=\"stack stack--lg\">\n      <div class=\"card card--tight\" data-chat-person-bar><div class=\"cluster\" style=\"align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap\"><span class=\"hint\" style=\"margin:0\">인물 필터: 선택한 인물의 경향성·관계·상태·선호·시뮬레이터 6종 카드를 모아 봅니다.</span><div class=\"cluster\" data-chat-person-chips style=\"gap:6px;flex-wrap:wrap\"></div></div></div>\n      <div class=\"char-hub-stack\" data-chat-person-dossiers></div>\n      <details class=\"fold chat-raw-editors-fold\" data-chat-raw-fold><summary>카테고리별 원본 카드 편집기 전체 보기 (NPC 경향성 · 관계 · 상태 · 정사 선호 · 관계 시뮬레이터)</summary><div class=\"fold__body stack\">\n      <div class=\"card\" data-chat-section=\"disposition\"><div class=\"card__head\"><div><h2 class=\"card__title\">NPC 반응 경향성</h2><p class=\"card__desc\">장면에 등장한 NPC의 경향성 카드가 로어로 자동 생성되며, 여기서 고치거나 지울 수 있습니다. 인물 AIDE를 꺼도 모든 초안 단계와 마무리 단계에 적용됩니다.</p></div></div><div class=\"stack\"><div class=\"field\" data-npc-disposition-panel><p class=\"hint\" style=\"margin:0 0 6px\">NPC가 페르소나의 접근을 어떤 태도로 받아들이고 해석할지(신뢰·의심, 온도, 거리, 양보와 보류)를 고정합니다. 호감도나 관계 진행과는 별개이며, 장면에서 이미 일어난 일을 뒤집지 않고 그 안의 태도만 정합니다. 반응의 방향은 경향성이, 표현 방식은 로어가 정합니다. 직접 바꾸기 전까지 장면 때문에 바뀌지 않습니다.</p><label class=\"check\" style=\"margin-bottom:6px\"><input type=\"checkbox\" data-npc-disposition-field=\"auto\" checked><span>장면에 등장한 NPC 경향성 카드 자동 생성 (모든 NPC 기본값이 비어 있을 때)</span></label><div class=\"opt-grid\"><div class=\"field\"><label>모든 NPC 기본값</label><select class=\"select\" data-npc-disposition-field=\"default\"></select></div></div><div class=\"stack stack--sm\" data-npc-disposition-list></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-npc-disposition-action=\"add\">NPC 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"bond\"><div class=\"card__head\"><div><h2 class=\"card__title\">관계 카드</h2><p class=\"card__desc\">억결 AIDE와 관계 시뮬레이터가 함께 사용합니다. 장면에 등장하거나 로어에 있는 주요 관계는 로어를 바탕으로 자동 생성됩니다.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-forced-bond-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-forced-bond-action=\"add\">관계 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"state\"><div class=\"card__head\"><div><h2 class=\"card__title\">상태 카드</h2><p class=\"card__desc\">상태 AIDE가 사용합니다. 이야기가 말하지 않는 기본값(주기 길이, 체질 등)이 필요할 때만 추가하세요.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-body-state-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-body-state-action=\"add\">상태 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"intimacy\"><div class=\"card__head\"><div><h2 class=\"card__title\">정사 선호 카드</h2><p class=\"card__desc\">정사 AIDE가 사용합니다. 카드는 성교 장면에 처음 등장한 인물에 대해 로어로 자동 추정되며, 여기서 고치거나 지울 수 있습니다.</p></div></div><div class=\"stack\"><div class=\"field\"><p class=\"hint\" style=\"margin:0 0 6px\">성교 장면에 처음 등장한 인물의 선호를 로어로 추정해 자동으로 만듭니다. 만들어진 카드는 자동으로 바뀌지 않으며, 여기서 고치거나 지울 수 있습니다. 바로 저장됩니다.</p><div class=\"stack stack--sm\" data-intimacy-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-intimacy-action=\"add\">선호 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"relsim\"><div class=\"card__head\"><div><h2 class=\"card__title\">관계 시뮬레이터</h2><p class=\"card__desc\">관계 시뮬레이터가 사용합니다. 관계 상태와 기념일은 이 채팅의 진행에 따라 바뀌고, 연애 선호 카드는 로어로 자동 추정됩니다. 여기서 고치면 바로 저장됩니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>관계 상태</label><p class=\"hint\" style=\"margin:0 0 6px\">관계 카드의 두 사람마다 현재 상태입니다. 판정 결과는 다음 턴에 응답이 유지된 것을 확인한 뒤 반영되고, LIBRA 기록이 다르게 말하면 그 기록을 따릅니다.</p><div class=\"stack stack--sm\" data-relsim-pairs></div><div class=\"stack stack--sm\" data-relsim-notes hidden></div></div><div class=\"field\"><label>연애 선호 카드</label><p class=\"hint\" style=\"margin:0 0 6px\">장소·시각·데이트·이벤트의 선호와 비선호, 연애 방식, 생일, 서운함을 드러내는 방식입니다. 로어에 근거가 없는 항목은 비워 둡니다. 목록에 있는 이름을 쉼표로 적습니다.</p><div class=\"stack stack--sm\" data-relsim-profiles></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-relsim-action=\"add-profile\">선호 카드 추가</button></div></div></div></div>\n      </div></details>\n    </div></div>\n    <div data-subpanel=\"readings\" data-group=\"ch\"><div class=\"stack stack--lg\">\n      <div class=\"card\" data-chat-section=\"readings\"><div class=\"card__head\"><div><h2 class=\"card__title\">이번 턴 판독</h2><p class=\"card__desc\">가장 최근 실행에서 통합 월드 엔진과 각 도메인이 정한 판독·게이지입니다. 게이지는 연속성을 위해 별도 저장됩니다.</p></div></div><div class=\"readings-kpi-grid\" data-readings-kpi-grid></div><div class=\"reading-filter-bar\" data-readings-filter-bar></div><div class=\"reading-domains-grid\" data-readings-grid><div class=\"reading-domain-card\" data-reading-domain=\"previous\"><div class=\"reading-domain-card__head\"><span>기억 · PREVIOUS 가드레일</span><span class=\"badge\" data-domain-count=\"previous\">0</span></div><div class=\"stack stack--sm\" data-shadow-previous-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"state\"><div class=\"reading-domain-card__head\"><span>몸 상태 · 수면 게이지</span><span class=\"badge\" data-domain-count=\"state\">0</span></div><div class=\"stack stack--sm\" data-body-state-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"world\"><div class=\"reading-domain-card__head\"><span>세계 동역학 · 장면 밖</span><span class=\"badge\" data-domain-count=\"world\">0</span></div><div class=\"stack stack--sm\" data-world-dynamics-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"intimacy\"><div class=\"reading-domain-card__head\"><span>정사 · 절정·윤활 게이지</span><span class=\"badge\" data-domain-count=\"intimacy\">0</span></div><div class=\"stack stack--sm\" data-intimacy-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"relsim\"><div class=\"reading-domain-card__head\"><span>연애 · 억결 관계 시뮬레이터</span><span class=\"badge\" data-domain-count=\"relsim\">0</span></div><div class=\"stack stack--sm\" data-relsim-readings></div></div><div class=\"reading-domain-card\" data-reading-domain=\"dialogue\"><div class=\"reading-domain-card__head\"><span>화술 · 대사 교정</span><span class=\"badge\" data-domain-count=\"dialogue\">0</span></div><div class=\"stack stack--sm\" data-dialogue-readings></div></div></div></div>\n    </div></div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback 플러그인의 현재 채팅 기억을 플러그인 IPC로 직접 읽습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>플러그인 IPC 활성</span></span></div>\n        <div id=\"lib-read-owners-container\" class=\"field\" style=\"margin-top:14px\"><div class=\"field\" id=\"lib-draft-read-owners\"><span class=\"label\" style=\"font-weight:600\">초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)</span><div class=\"cluster\" style=\"margin-top:8px;display:flex;flex-wrap:wrap;gap:18px\"><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"libra\">LIBRA (미크로·통합 기억)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"hayaku\">HAYAKU (로케이터·연속성)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"flashback\">Flashback (벡터 메모리)</label></div></div></div>\n        <div class=\"state-grid\" style=\"margin-top:16px\">\n          <div><b>통신 방식</b><span>플러그인 IPC (별도 로컬 서버 불필요)</span></div>\n          <div><b>활성 읽기 대상</b><span id=\"lib-active-summary\">LIBRA · HAYAKU · Flashback</span></div>\n          <div><b>현재 채팅 scope</b><span id=\"lib-scope-summary\">현재 채팅 scope 미확인</span></div>\n          <div><b>기억 전달 방식</b><span>초안 프롬프트 직접 주입 (검증 퇴짜 없음)</span></div></div>\n        <div class=\"field\" id=\"lib-read-controls\" style=\"margin-top:14px\"><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:47630\" hidden style=\"display:none\"><div class=\"cluster\" style=\"margin-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px\"><button type=\"button\" class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결 · 적용</button><button type=\"button\" class=\"btn\" id=\"lib-check\">기억 연결 확인</button><button type=\"button\" class=\"btn\" id=\"lib-disconnect\">연결 해제</button><span class=\"muted\" id=\"lib-state\" style=\"font-size:12px\"></span></div></div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"s\">SHADOW ACT <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"d\">세계 동역학 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"b\">상태 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"k\">지식 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"v\">화술 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"x\">정사 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"r\">관계 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"f\">억결 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"i\">입력 도우미</button></div>\n      <div data-subpanel=\"s\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"d\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"b\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"k\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"v\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"x\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"r\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"f\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"i\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"chg\">바꾼 설정 <span class=\"count\" data-changed-count hidden>0</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"chg\" data-group=\"mg\"><div class=\"card\"><h2 class=\"card__title\">기본값과 다른 설정</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">저장 여부와 관계없이 지금 화면의 값을 기본값과 비교합니다. <b>기본값으로</b>를 누른 뒤 저장해야 적용됩니다. 이 채팅의 카드와 경향성은 되돌릴 기본값이 없어 목록으로만 보여 줍니다.</p><div class=\"stack stack--sm\" data-changed-settings></div></div></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
 
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -58652,6 +59851,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       markGuiDirty(); if (!inputEvent) mockupRefreshStatus();
       return;
     }
+    if (control.matches?.('[data-romance-guard-field="blockSameSexRomance"]')) {
+      const checked = control.checked === true;
+      runtime.blockSameSexRomance = checked;
+      Gui.app?.querySelectorAll('[data-romance-guard-field="blockSameSexRomance"]').forEach(el => { if (el !== control) el.checked = checked; });
+      markGuiDirty(); if (!inputEvent) mockupRefreshStatus();
+      return;
+    }
     if (control.matches?.('[data-relsim-field]') || control.matches?.('[data-relsim-profile-field]')) {
       // Text fields commit on change so typing never re-renders the card mid-word.
       if (inputEvent && control.tagName !== 'SELECT') return;
@@ -58719,6 +59925,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         renderChatPersonFilterBar(Gui.app);
         mockupRefreshStatus();
         guiSetStatus(nextTier ? `${personName} 남성기 크기 설정을 저장했습니다.` : `${personName} 남성기 크기 지정을 초기화했습니다.`);
+      });
+      return;
+    }
+    if (control.matches?.('[data-char-male-pace-select]')) {
+      if (inputEvent) return;
+      const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+      const personName = control.dataset.charMalePaceSelect || '';
+      if (!scopeKey || !personName) return;
+      const nextTier = normalizeIntimacyMaleEjacPaceTier(control.value);
+      void loadIntimacyCards().then(async () => {
+        if (nextTier) {
+          const prev = getRecordedIntimacyMalePace(scopeKey, personName);
+          const meta = INTIMACY_MALE_EJAC_PACE_META[nextTier] || INTIMACY_MALE_EJAC_PACE_META.average;
+          setRecordedIntimacyMalePace(scopeKey, personName, {
+            name: personName,
+            pace: meta.defaultPace,
+            tier: nextTier,
+            basis: prev?.origin === 'user' && prev?.basis ? prev.basis : '사용자 직접 지정',
+            origin: 'user'
+          }, { persist: false, syncCard: true, force: true });
+          await saveIntimacyCards();
+        } else {
+          const bucket = intimacyMalePaceScope(scopeKey, false);
+          const key = intimacyMaleSizeLookupKey(personName);
+          if (bucket && key) delete bucket[key];
+          if (Runtime.intimacyCards?.[scopeKey]) {
+            Runtime.intimacyCards[scopeKey] = Runtime.intimacyCards[scopeKey].map(card => (
+              card.name && extensionSameOrGivenName(card.name, personName)
+                ? { ...card, ejaculationPace: null, ejaculationPaceBasis: '' }
+                : card
+            ));
+          }
+          await saveIntimacyCards();
+        }
+        renderIntimacyPanel(Gui.app);
+        renderChatPersonFilterBar(Gui.app);
+        mockupRefreshStatus();
+        guiSetStatus(nextTier ? `${personName} 사정 속도(조루/지루) 설정을 저장했습니다.` : `${personName} 사정 속도 지정을 초기화했습니다.`);
       });
       return;
     }
@@ -59101,6 +60345,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (appearance) appearance.checked = runtime.forcedBondForceAppearance !== false;
     const autoBond = app.querySelector('[data-forced-bond-field="auto"]');
     if (autoBond) autoBond.checked = runtime.forcedBondAuto !== false;
+    app.querySelectorAll('[data-romance-guard-field="blockSameSexRomance"]').forEach(el => { el.checked = runtime.blockSameSexRomance !== false; });
     const addButton = app.querySelector('[data-forced-bond-action="add"]');
     if (addButton) addButton.disabled = !scopeKey;
     const box = app.querySelector('[data-forced-bond-cards]');
@@ -59652,18 +60897,58 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         placeholder: '예: 14',
         dataset: { intimacyCardField: 'maleSizeCm', cardId: card.id }
       });
-      return guiEl('div', { class: 'opt-grid' }, [
-        field('남성기 크기 (여성 삽입 자극 보정)', sizeSel),
-        field('추정 길이 (cm · 6~28)', cmInput),
-        field('크기 추정 근거', input('maleSizeBasis', card.maleSizeBasis || '', '예: 로어 체격/직접 묘사 기반'))
+      const curPaceVal = normalizeIntimacyMaleEjacPaceValue(card.ejaculationPace);
+      const paceSel = guiEl('select', { class: 'select', dataset: { intimacyCardField: 'ejaculationPaceTier', cardId: card.id } });
+      mockupOption(paceSel, '', '미지정 (로어 자동 추정)');
+      for (const id of INTIMACY_MALE_EJAC_PACES) {
+        const meta = INTIMACY_MALE_EJAC_PACE_META[id];
+        mockupOption(paceSel, id, `${meta.label} (${meta.defaultPace > 0 ? `+${meta.defaultPace}` : meta.defaultPace} · ${meta.effectLabel})`);
+      }
+      paceSel.value = curPaceVal !== null ? intimacyMaleEjacPaceTierFromScore(curPaceVal) : '';
+      const paceNumInput = guiEl('input', {
+        class: 'input',
+        type: 'number',
+        min: '-100',
+        max: '100',
+        step: '5',
+        value: curPaceVal !== null ? String(curPaceVal) : '',
+        placeholder: '예: 0 (-100 지루 ~ +100 조루)',
+        dataset: { intimacyCardField: 'ejaculationPace', cardId: card.id }
+      });
+      return guiEl('div', { class: 'stack stack--sm' }, [
+        guiEl('div', { class: 'opt-grid' }, [
+          field('남성기 크기 (여성 삽입 자극 보정)', sizeSel),
+          field('추정 길이 (cm · 6~28)', cmInput),
+          field('크기 추정 근거', input('maleSizeBasis', card.maleSizeBasis || '', '예: 로어 체격/직접 묘사 기반'))
+        ]),
+        guiEl('div', { class: 'opt-grid' }, [
+          field('사정 속도·참을성 (조루 ↔ 지루)', paceSel),
+          field('속도 수치 (-100 지루 ~ +100 조루)', paceNumInput),
+          field('사정 속도 근거', input('ejaculationPaceBasis', card.ejaculationPaceBasis || '', '예: 로어 경험·인내력 기반'))
+        ])
       ]);
     })() : null;
+    const selectOpt = (key, labelsMap) => {
+      const node = guiEl('select', { class: 'select', dataset: { intimacyCardField: key, cardId: card.id } });
+      for (const [id, label] of Object.entries(labelsMap)) mockupOption(node, id, label);
+      node.value = card[key] || '';
+      return node;
+    };
     return guiEl('div', { class: 'note', dataset: { intimacyCard: card.id } }, [
       guiEl('div', { class: 'opt-grid' }, [
         field('인물', input('name', forcedBondPersonLabel(card.name), '인물 이름')),
         field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: card.origin === 'user' ? '직접 작성·수정' : `로어로 추정${card.createdAt ? ` · ${card.createdAt.slice(0, 10)}` : ''}` }))
       ]),
       maleSizeSection,
+      guiEl('div', { class: 'opt-grid' }, [
+        field('동의 방식', selectOpt('consentStyle', INTIMACY_CONSENT_STYLE_LABELS)),
+        field('주도권 성향', selectOpt('initiativeStyle', INTIMACY_INITIATIVE_STYLE_LABELS)),
+        field('도구·구속·눈가리개', selectOpt('restraintToyStyle', INTIMACY_RESTRAINT_TOY_STYLE_LABELS))
+      ]),
+      guiEl('div', { class: 'opt-grid' }, [
+        field('흥분 요소 (Turn-Ons)', input('turnOns', card.turnOns || '', '예: 키스, 귀 애무, 눈가리개, 수갑')),
+        field('식는 요소 (Turn-Offs)', input('turnOffs', card.turnOffs || '', '예: 동의 없는 시작, 도구 사용, 거친 말투'))
+      ]),
       guiEl('div', { class: 'opt-grid' }, [
         field('좋아하는 체위', input('likedPositions', card.likedPositions, '예: 기승위, 대면좌위')),
         field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위')),
@@ -59686,6 +60971,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const box = app.querySelector('[data-intimacy-cards]');
     if (box) {
       if (!Runtime.intimacyCards) void loadIntimacyCards().then(() => renderIntimacyPanel(Gui.app)).catch(() => {});
+      else if (scopeKey) autoPopulateIntimacyCardsFromLore(scopeKey, Gui?.state?.runtime || Runtime.settings || {}, {}, { persist: true });
       const cards = intimacyCardsForScope(scopeKey);
       box.replaceChildren(...(cards.length ? cards.map(intimacyCardEditor) : [guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: scopeKey ? '이 채팅에는 선호 카드가 없습니다.' : '현재 채팅을 아직 확인하지 못했습니다.' }),
@@ -59702,7 +60988,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const gaugeLegend = guiReadingCard({
         badge: '게이지 축',
         title: '인물별 신체 반응 및 연속 게이지',
-        body: '절정·윤활(여성·성별 미확인) / 사정(남성 전용)은 턴과 재시작을 넘어 이어집니다. 성별은 신체 도식 → 선호 카드 → 프로필 순서로 단일 판정합니다.'
+        body: '절정·윤활(여성·성별 미확인) / 사정(남성 전용)과 흥분(-100~+100)은 턴과 재시작을 넘어 이어집니다. 성별은 신체 도식 → 선호 카드 → 프로필 순서로 단일 판정합니다.'
       });
       const extCard = ext ? guiReadingCard({
         badge: ext.tierLabelKo || (ext.noticed ? '인지됨 · 제3자 반응' : '미인지'),
@@ -59721,26 +61007,51 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         body: `${cv.contextTag} — ${cv.summaryKo}`
       }));
       const gaugeCards = telemetryGauges
-        .filter(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0 || g.lastTurnDeltaClimax !== 0 || g.lastTurnDeltaEjac !== 0)
+        .filter(g => g.climaxGauge > 0 || g.ejaculationGauge > 0 || (g.lubricationGauge || 0) > 0 || (Number(g.excitementGauge) || 0) !== 0 || g.haltedByNpc || g.haltedThisTurn || g.resumedAfterHalt || g.lastTurnDeltaClimax !== 0 || g.lastTurnDeltaEjac !== 0)
         .map(g => {
           const showClimax = g.showClimax !== undefined ? g.showClimax : g.gender !== 'male';
           const showEjac = g.showEjac !== undefined ? g.showEjac : g.gender === 'male';
           const gaugeGender = g.gender === 'male' ? '남성' : g.gender === 'female' ? '여성' : '성별 미확인';
+          const exVal = intimacyClampExcitement(g.excitementGauge);
+          const exTier = g.excitementTier || intimacyExcitementTier(exVal);
           const meters = [];
           if (showClimax) meters.push({ label: '절정 게이지', value: g.climaxGauge || 0, max: 100, variant: 'climax', suffix: `${g.climaxGauge || 0}/100` });
           if (showClimax && (g.lubricationGauge || 0) > 0) meters.push({ label: '애액·윤활', value: g.lubricationGauge, max: 100, variant: 'lub', suffix: `${g.lubricationGauge}/100` });
           if (showEjac) meters.push({ label: '사정 게이지', value: g.ejaculationGauge || 0, max: 100, variant: 'ejac', suffix: `${g.ejaculationGauge || 0}/100` });
+          meters.push({ label: '흥분 게이지', value: Math.round((exVal + 100) / 2), max: 100, variant: exVal >= 0 ? 'climax' : 'sleep', suffix: `${exVal > 0 ? `+${exVal}` : exVal} (${exTier.label})` });
           const tags = [
+            g.excitementReasons?.length ? `흥분 요인: ${g.excitementReasons.join(', ')}` : '',
+            g.resumedAfterHalt ? '중단 후 재개·저항 중' : g.haltedThisTurn ? `행위 중단 판정 (${g.haltRoll}/${g.haltChance}%)` : g.haltedByNpc ? '중단 상태' : '',
+            g.initiativeDirective ? (/\[주도권 확보 시도\]/.test(g.initiativeDirective) ? '주도권 확보 시도' : '주도 요구 부담·저항') : '',
             g.maleSize ? `남성기: ${g.maleSize.label} (${g.maleSize.cm}cm · ${g.maleSize.effectLabel})` : '',
+            (showEjac && g.malePace && (g.malePace.pace !== 0 || g.forcedHoldThisTurn || g.ejacDelayedByHold))
+              ? `사정 속도: ${g.malePace.label} (${g.malePace.pace > 0 ? `+${g.malePace.pace}` : g.malePace.pace} · 자극×${g.malePace.mult}${g.ejacDelayedByHold ? ' · 억지 참음 지연 94/100' : g.forcedHoldThisTurn ? ' · 억지 참음 감속' : ''})`
+              : '',
             g.partnerSizeModifier ? `상대 남성기 자극 보정(${forcedBondPersonLabel(g.partnerSizeModifier.partnerName)}): ${g.partnerSizeModifier.label} (${g.partnerSizeModifier.effectLabel})` : '',
             g.interruptedBrink ? '외부 개입으로 절정 불발' : '',
             g.sleeping ? `수면 중 반응 (각성 ${g.wakefulnessGauge || 0}%)` : '',
             g.carriedFromSettled ? '이전 턴 승계' : '',
             g.stimulatedParts?.length ? `자극: ${g.stimulatedParts.join(', ')}` : ''
           ].filter(Boolean);
+          const cardBadge = g.resumedAfterHalt
+            ? '중단·저항'
+            : (g.haltedThisTurn || g.haltedByNpc)
+              ? '행위 중단'
+              : g.ejacDelayedByHold
+                ? '억지 참음 지연'
+                : g.interruptedBrink
+                  ? '절정 불발'
+                  : g.climaxTriggeredThisTurn
+                    ? '절정 100'
+                    : g.ejaculationTriggeredThisTurn
+                      ? '사정 100'
+                      : gaugeGender;
+          const cardTone = (g.resumedAfterHalt || g.haltedThisTurn || g.haltedByNpc || g.interruptedBrink || g.ejacDelayedByHold)
+            ? 'warn'
+            : (g.climaxTriggeredThisTurn || g.ejaculationTriggeredThisTurn) ? 'ok' : '';
           return guiReadingCard({
-            badge: g.interruptedBrink ? '절정 불발' : g.climaxTriggeredThisTurn ? '절정 100' : g.ejaculationTriggeredThisTurn ? '사정 100' : gaugeGender,
-            badgeTone: g.interruptedBrink ? 'warn' : (g.climaxTriggeredThisTurn || g.ejaculationTriggeredThisTurn) ? 'ok' : '',
+            badge: cardBadge,
+            badgeTone: cardTone,
             title: `게이지 · ${forcedBondPersonLabel(g.name)} (${gaugeGender})`,
             body: tags.join(' · ') || '자극 반응 추세',
             meters
@@ -59812,6 +61123,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     await loadIntimacyCards();
     let changedGenderCard = null;
     let maleSizeSync = null;
+    let malePaceSync = null;
     const cards = intimacyCardsForScope(scopeKey).map(card => {
       if (card.id !== cardId) return card;
       const nextVal = key === 'name' && value === '페르소나' ? FORCED_BOND_PERSONA : value;
@@ -59824,7 +61136,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           updated.maleSize = '';
           updated.maleSizeCm = null;
           updated.maleSizeBasis = '';
-          if (updated.name) maleSizeSync = { name: updated.name, clear: true };
+          updated.ejaculationPace = null;
+          updated.ejaculationPaceBasis = '';
+          if (updated.name) {
+            maleSizeSync = { name: updated.name, clear: true };
+            malePaceSync = { name: updated.name, clear: true };
+          }
         }
         if (updated.name) changedGenderCard = { name: updated.name, gender: gNorm };
       } else if (key === 'maleSize') {
@@ -59847,6 +61164,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (updated.name && updated.maleSize) {
           maleSizeSync = { name: updated.name, size: updated.maleSize, cm: updated.maleSizeCm, basis: updated.maleSizeBasis };
         }
+      } else if (key === 'ejaculationPaceTier') {
+        delete updated.ejaculationPaceTier;
+        const nextTier = normalizeIntimacyMaleEjacPaceTier(nextVal);
+        const nextPace = nextTier ? INTIMACY_MALE_EJAC_PACE_META[nextTier].defaultPace : null;
+        updated.ejaculationPace = nextPace;
+        if (updated.name) malePaceSync = nextTier
+          ? { name: updated.name, pace: nextPace, tier: nextTier, basis: updated.ejaculationPaceBasis || '사용자 직접 지정' }
+          : { name: updated.name, clear: true };
+      } else if (key === 'ejaculationPace') {
+        const nextPace = normalizeIntimacyMaleEjacPaceValue(nextVal);
+        updated.ejaculationPace = nextPace;
+        if (updated.name) malePaceSync = nextPace !== null
+          ? { name: updated.name, pace: nextPace, tier: intimacyMaleEjacPaceTierFromScore(nextPace), basis: updated.ejaculationPaceBasis || `사용자 지정 (${nextPace > 0 ? `+${nextPace}` : nextPace})` }
+          : { name: updated.name, clear: true };
+      } else if (key === 'ejaculationPaceBasis') {
+        updated.ejaculationPaceBasis = compact(nextVal || '', 240);
+        const curPace = normalizeIntimacyMaleEjacPaceValue(updated.ejaculationPace);
+        if (updated.name && curPace !== null) {
+          malePaceSync = { name: updated.name, pace: curPace, tier: intimacyMaleEjacPaceTierFromScore(curPace), basis: updated.ejaculationPaceBasis };
+        }
       } else if (key === 'sensitiveZones' || key === 'dullZones') {
         const oldText = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
         const newText = normalizeIntimacyZoneStats(null, updated.sensitiveZones || '', updated.dullZones || '');
@@ -59859,6 +61196,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           else nextZoneStats[zoneId] = cur;
         }
         updated.zoneStats = nextZoneStats;
+      }
+      if (['turnOns', 'turnOffs', 'sensitiveZones', 'dullZones', 'consentStyle', 'initiativeStyle', 'restraintToyStyle'].includes(key)) {
+        const cleared = new Set(Array.isArray(card.userClearedFields) ? card.userClearedFields : []);
+        if (String(nextVal || '').trim() === '') cleared.add(key);
+        else cleared.delete(key);
+        updated.userClearedFields = [...cleared].slice(0, 12);
       }
       return updated;
     });
@@ -59873,6 +61216,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           size: maleSizeSync.size,
           cm: maleSizeSync.cm,
           basis: maleSizeSync.basis,
+          origin: 'user'
+        }, { persist: false, syncCard: false, force: true });
+      }
+    }
+    if (malePaceSync?.name) {
+      if (malePaceSync.clear) {
+        const bucket = intimacyMalePaceScope(scopeKey, false);
+        const pk = intimacyMaleSizeLookupKey(malePaceSync.name);
+        if (bucket && pk) delete bucket[pk];
+      } else {
+        setRecordedIntimacyMalePace(scopeKey, malePaceSync.name, {
+          name: malePaceSync.name,
+          pace: malePaceSync.pace,
+          tier: malePaceSync.tier,
+          basis: malePaceSync.basis,
           origin: 'user'
         }, { persist: false, syncCard: false, force: true });
       }
@@ -60055,6 +61413,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const renderRelationshipSimPanel = app => {
     if (!app) return;
+    const runtime = mockupRuntime();
+    app.querySelectorAll('[data-romance-guard-field="blockSameSexRomance"]').forEach(el => { el.checked = runtime.blockSameSexRomance !== false; });
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     if (!Runtime.relationshipState) void loadRelationshipState().then(() => renderRelationshipSimPanel(Gui.app)).catch(() => {});
     if (!Runtime.loreCards) void loadLoreCards().then(() => renderRelationshipSimPanel(Gui.app)).catch(() => {});
@@ -60351,6 +61711,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else if (isMale) {
         meters.push(guiMeterRow('사정', ejacVal, 100, 'ejac', `${ejacVal}/100`));
       }
+      if (tGauge?.excitementGauge !== undefined || sGauge?.excitement !== undefined || intCard) {
+        const exHub = intimacyClampExcitement(tGauge?.excitementGauge ?? sGauge?.excitement ?? 0);
+        if (exHub !== 0 || intCard) {
+          meters.push(guiMeterRow('흥분', Math.round((exHub + 100) / 2), 100, exHub >= 0 ? 'climax' : 'sleep', `${exHub > 0 ? `+${exHub}` : exHub} (${intimacyExcitementTier(exHub).label})`));
+        }
+      }
       if (sleepHit && (Number(sleepHit.depth) > 0) && sleepHit.verdict !== 'awake') {
         const wakePct = Number(sleepHit.wakefulnessGauge || 20);
         meters.push(guiMeterRow('수면 각성', wakePct, 100, 'sleep', `${wakePct}% ${sleepHit.stage || ''}`.trim()));
@@ -60461,9 +61827,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         .map(x => `${x.label}(${x.st.sensitivity >= 0 ? `+${x.st.sensitivity}` : x.st.sensitivity}/개발${x.st.development})`) : [];
       const recordedMaleSize = isMale ? getRecordedIntimacyMaleSize(scopeKey, name, intCard) : null;
       const recordedMaleMod = recordedMaleSize ? intimacyMaleSizeModifier(recordedMaleSize.size, recordedMaleSize.cm) : null;
+      const recordedMalePace = isMale ? getRecordedIntimacyMalePace(scopeKey, name, intCard) : null;
+      const recordedPaceMod = recordedMalePace ? intimacyMaleEjacPaceModifier(recordedMalePace.pace) : null;
       const intLines = [
         recordedMaleMod
           ? `남성기 크기: ${recordedMaleMod.label} (${recordedMaleMod.cm}cm · 여성 삽입 ${recordedMaleMod.effectLabel})${recordedMaleSize.basis ? ` — ${compact(recordedMaleSize.basis, 42)}` : ''}`
+          : '',
+        recordedPaceMod
+          ? `사정 속도: ${recordedPaceMod.label} (${recordedPaceMod.pace > 0 ? `+${recordedPaceMod.pace}` : recordedPaceMod.pace} · 자극×${recordedPaceMod.mult}${recordedMalePace.basis ? ` — ${compact(recordedMalePace.basis, 38)}` : ''})`
           : '',
         ...(intCard ? [
           hotZoneRows.length ? `성감대: ${hotZoneRows.join(', ')}` : (intCard.sensitiveZones ? `민감: ${compact(intCard.sensitiveZones, 56)}` : ''),
@@ -60480,11 +61851,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         sel.value = recordedMaleSize?.size || '';
         return sel;
       })() : null;
+      const malePaceSelect = isMale ? (() => {
+        const sel = guiEl('select', { class: 'select char-tile__select', 'aria-label': `${name} 사정 속도 설정`, dataset: { charMalePaceSelect: name } });
+        mockupOption(sel, '', '사정 속도: 로어 자동 추정');
+        for (const id of INTIMACY_MALE_EJAC_PACES) {
+          const meta = INTIMACY_MALE_EJAC_PACE_META[id];
+          mockupOption(sel, id, `사정: ${meta.label} (${meta.defaultPace > 0 ? `+${meta.defaultPace}` : meta.defaultPace} · ${meta.effectLabel})`);
+        }
+        sel.value = recordedMalePace ? (recordedMalePace.tier || intimacyMaleEjacPaceTierFromScore(recordedMalePace.pace)) : '';
+        return sel;
+      })() : null;
       const tileIntimacy = makeTile(
         '6. 정사 선호 · 성감대',
-        !!(intCard || recordedMaleSize),
+        !!(intCard || recordedMaleSize || recordedMalePace),
         intLines.length ? intLines.map(t => guiEl('div', { text: t })) : [guiEl('span', { class: 'hint', text: '정사 선호·해부도 카드가 없습니다.' })],
-        [maleSizeSelect, guiEl('button', { class: 'btn btn--sm', type: 'button', text: intCard ? '편집' : '카드 보기', dataset: { dossierJump: 'intimacy', dossierPerson: name } })].filter(Boolean)
+        [maleSizeSelect, malePaceSelect, guiEl('button', { class: 'btn btn--sm', type: 'button', text: intCard ? '편집' : '카드 보기', dataset: { dossierJump: 'intimacy', dossierPerson: name } })].filter(Boolean)
       );
 
       return guiEl('section', { class: 'char-section-card dossier-card', dataset: { personDossier: name } }, [
@@ -60841,6 +62222,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     add('global', 'AIDE 순서', normalizeAideStageOrder(runtime.aideStageOrder), [...DEFAULT_AIDE_STAGE_ORDER], value => value.map(guiStageLabel).join(' → '), { go: 'pipeline' }, set('aideStageOrder', [...DEFAULT_AIDE_STAGE_ORDER]));
     add('global', '억결 · 카드가 없을 때 자동으로 엮기', runtime.forcedBondAuto !== false, true, GUI_ON_OFF, { go: 'pipeline', stage: 'forced_bond' }, set('forcedBondAuto', true));
     add('global', '억결 · 장면에 없으면 등장 계기 만들기', runtime.forcedBondForceAppearance !== false, true, GUI_ON_OFF, { go: 'pipeline', stage: 'forced_bond' }, set('forcedBondForceAppearance', true));
+    add('global', '관계 · 같은 성별 연애 금지', runtime.blockSameSexRomance !== false, true, GUI_ON_OFF, { go: 'pipeline', stage: 'relationship_sim' }, set('blockSameSexRomance', true));
     add('global', '상태 · 생식 판정', runtime.bodyStateReproduction === true, false, GUI_ON_OFF, { go: 'pipeline', stage: 'body_state' }, set('bodyStateReproduction', false));
     add('global', '세계 동역학 · 장면 밖 남성 자율 제한', normalizeWorldSimMaleRestriction(runtime.worldSimulatorMaleRestriction), 'none', value => ({ none: '자유 (제한 없음)', no_romance: '연애·성적 관계 발전 금지', no_interaction: '페르소나 외 일체 상호작용 금지' })[value] || value, { go: 'pipeline', stage: 'world_dynamics' }, set('worldSimulatorMaleRestriction', 'none'));
     // Each stage, against its own defaults. A quick profile sets every draft stage's reference cap.
@@ -64756,9 +66138,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     debugEstimateMaleSizeFromLore({ name = '', loreText = '' } = {}) {
       return cloneJson(estimateMaleSizeFromLore(name, loreText));
     },
+    debugIntimacyMalePaces({ scopeKey = '' } = {}) {
+      const targetScope = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      return cloneJson(targetScope ? (Runtime.intimacyMalePaces?.[targetScope] || {}) : (Runtime.intimacyMalePaces || {}));
+    },
+    async debugSetIntimacyMalePace({ scopeKey = '', name = '', pace = null, tier = '', basis = '', origin = 'user', force = true } = {}) {
+      await loadIntimacyCards();
+      const targetScope = compact(scopeKey || Runtime.activeScopeKey || 'debug-scope', 512);
+      Runtime.activeScopeKey = targetScope;
+      const saved = setRecordedIntimacyMalePace(targetScope, name, { name, pace, tier, basis, origin }, { persist: true, syncCard: true, force });
+      await saveIntimacyCards();
+      return cloneJson(saved);
+    },
+    debugEstimateMaleEjacPaceFromLore({ name = '', loreText = '' } = {}) {
+      return cloneJson(estimateMaleEjacPaceFromLore(name, loreText));
+    },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
       Runtime.intimacyMaleSizes = null;
+    Runtime.intimacyMalePaces = null;
       return cloneJson(await loadIntimacyCards());
     },
     async debugLoreLoadCards() {
@@ -64786,8 +66184,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       Runtime.intimacyCards = null;
       Runtime.intimacyGauges = null;
       Runtime.intimacyMaleSizes = null;
+    Runtime.intimacyMalePaces = null;
       await Promise.all([loadIntimacyCards(), loadGaugeContinuity()]);
-      return cloneJson({ intimacyGauges: Runtime.intimacyGauges, sleep: Runtime.bodyStateSleep, maleSizes: Runtime.intimacyMaleSizes });
+      return cloneJson({ intimacyGauges: Runtime.intimacyGauges, sleep: Runtime.bodyStateSleep, maleSizes: Runtime.intimacyMaleSizes, malePaces: Runtime.intimacyMalePaces });
     },
     debugLivingWorldBlock({ stageName = 'shadow_act', recent = {}, settings = {}, phase = 'writing', primePackets = false } = {}) {
       if (primePackets) {
@@ -64861,6 +66260,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         reading: Runtime.dialogueReadings?.[scopeKey] || null,
         notes: dialogueReadingNotes(scopeKey)
       });
+    },
+    debugRepairKoreanStrayEnglishPronouns(value = '', settings = {}) {
+      return repairKoreanStrayEnglishPronouns(value, settings);
     },
     debugRelsimReadingNotes(scopeKey = '') {
       return cloneJson(relsimReadingNotes(scopeKey || compact(Runtime.activeScopeKey || '', 512)));

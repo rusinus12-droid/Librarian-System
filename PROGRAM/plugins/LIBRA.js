@@ -74031,7 +74031,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         for(const link of canonicalEvidenceHeadMatches(current,memory,memory.canonicalArtifact.facts.map(f=>f.tempFactId)))actualChanges.push({domain:link.domain,operation:'current_evidence_link',entityId:link.entityId,fields:[link.field],assertionIds:link.assertionIds});
       }
       const neighbor=value=>value?{...canonicalReaderRefIdentity(value),sourceWorldlineId:string(value?.worldlineId||'main'),worldlineId:resolved.worldlineId,title:canonicalReaderTitle(value)}:null;
-      return clone({schema:CANONICAL_READER_CHAPTER_SCHEMA,...canonicalReaderRefIdentity(ref),scopeKey:string(context.scope.scopeKey),title:canonicalReaderTitle(memory),summary:compact(memory.summary||ref.summary||'',1200),
+      return clone({schema:CANONICAL_READER_CHAPTER_SCHEMA,...canonicalReaderRefIdentity(ref),scopeKey:string(context.scope.scopeKey),title:canonicalReaderTitle(memory),summary:string(memory.summary||ref.summary||''),
         episode:canonicalReaderEpisode(ref),chapterNumber:index+1,text:string(memory.text||''),sourcePairs:clone(asArray(memory.sourcePairs)),canonicalArtifact:clone(asObject(memory.canonicalArtifact)),
         links:canonicalReaderArtifactLinks(memory.canonicalArtifact),actualChanges,changesMeaning:isUnified?'current_evidence_links':'applied_patches',bindingCount:isUnified?memory.canonicalArtifact.stateBindings.length:0,changeStatus:actualChanges.length?'changed':'no_recorded_change',previous:neighbor(refs[index-1]),next:neighbor(refs[index+1]),
         runId:string(memory.runId||ref.runId||''),pipeline:clone(asObject(memory.pipeline)),embedding:clone(asObject(memory.embedding)),worldlineId:resolved.worldlineId,requestLocalReadOnly:true,detailLoaded:true});
@@ -82217,6 +82217,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .canonical-reading{margin-top:26px;min-width:0;overflow-wrap:anywhere}',
     '.t-libra .canonical-reading__section{margin-top:26px;padding-top:22px;border-top:1px solid var(--border)}.t-libra .canonical-reading__section:first-child{margin-top:0;padding-top:0;border-top:0}',
     '.t-libra .canonical-reading .canonical-reading__heading{margin:0 0 14px;color:var(--text);font-size:18px;line-height:1.5;font-weight:700}.t-libra .canonical-reading h3.canonical-reading__heading{font-size:22px}',
+    '.t-libra .canonical-reading .canonical-reading__subheading{margin:12px 0 6px;color:var(--text2);font-size:14px;line-height:1.5;font-weight:700}',
     '.t-libra .canonical-reading p,.t-libra .canonical-reading li{font-size:15px;line-height:1.9;white-space:pre-line;overflow-wrap:anywhere}.t-libra .canonical-reading p{margin:0 0 12px}',
     '.t-libra .canonical-reading ul{margin:0;padding-left:22px}.t-libra .canonical-reading li+li{margin-top:9px}.t-libra .canonical-reading li::marker{color:var(--accent)}',
     '.t-libra .canonical-reading__toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)}',
@@ -90152,13 +90153,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     const standaloneFacts=currentFacts.filter(fact=>!anchorIds.has(fact._id)&&!attachedFactIds.has(fact._id));
     const nodes=[];
-    const parsedIntro=parseBookMemoryReading(String(detail?.text||''))[0];
-    const fallbackIntro=parsedIntro?guiAsArray(parsedIntro.blocks).map(b=>b.kind==='list'?guiAsArray(b.items).join(' '):text(b.text||'')).filter(Boolean).join(' '):'';
-    const summaryText=bookReadingVisibleText(artifact.summary||detail?.summary||fallbackIntro||'');
-    if(summaryText){
-      nodes.push(guiEl('div',{class:'canonical-flow__summary'},[
+    const isTruncatedSummary=val=>/(?:\u2026|\.\.\.)\s*\[truncated\]\s*$/i.test(String(val||'').trim());
+    const renderSummaryBlocks=blocks=>guiAsArray(blocks).map(block=>block.kind==='list'
+      ?guiEl('ul',{},guiAsArray(block.items).map(item=>guiEl('li',{text:item})))
+      :guiEl('p',{text:block.text}));
+    const parsedSections=parseBookMemoryReading(String(detail?.text||''));
+    const parsedIntro=parsedSections[0];
+    const nonEmptySections=parsedSections.filter(sec=>guiAsArray(sec?.blocks).length>0);
+    const rawArtifactSummary=text(artifact.summary||'').trim();
+    const rawDetailSummary=text(detail?.summary||'').trim();
+    const summaryChildren=[];
+    if(rawArtifactSummary&&!isTruncatedSummary(rawArtifactSummary)){
+      summaryChildren.push(guiEl('p',{text:bookReadingVisibleText(rawArtifactSummary)}));
+    }else if(parsedIntro&&guiAsArray(parsedIntro.blocks).length){
+      summaryChildren.push(...renderSummaryBlocks(parsedIntro.blocks));
+    }else if(rawDetailSummary&&!isTruncatedSummary(rawDetailSummary)&&!/^\s*#{1,6}\s+/m.test(rawDetailSummary)){
+      summaryChildren.push(guiEl('p',{text:rawDetailSummary.split(/\r?\n/).map(line=>bookReadingVisibleText(line)).join('\n').trim()}));
+    }else if(nonEmptySections.length){
+      for(const sec of nonEmptySections){
+        if(nonEmptySections.length>1&&sec.title)summaryChildren.push(guiEl('h5',{class:'canonical-reading__subheading',text:sec.title}));
+        summaryChildren.push(...renderSummaryBlocks(sec.blocks));
+      }
+    }else if(rawDetailSummary){
+      summaryChildren.push(guiEl('p',{text:rawDetailSummary.replace(/\s*(?:\u2026|\.\.\.)\s*\[truncated\]\s*$/i,'').split(/\r?\n/).map(line=>bookReadingVisibleText(line)).join('\n').trim()}));
+    }
+    if(summaryChildren.length){
+      nodes.push(guiEl('div',{class:'canonical-flow__summary',dataset:{canonicalFlowSummary:'true'}},[
         guiEl('h4',{class:'canonical-reading__heading',text:'종합 기억'}),
-        guiEl('p',{text:summaryText})
+        ...summaryChildren
       ]));
     }
     for(const anchor of anchors){

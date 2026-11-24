@@ -996,7 +996,7 @@ const MemorySuiteExecutionContract = (() => {
   const FINALIZED_CAPTURE_POLL_MS = 900;
   const FINALIZED_CAPTURE_IDLE_POLL_MS = 2200;
   const FINALIZED_CAPTURE_STABLE_MS = 4000;
-  const FINALIZED_CAPTURE_MAX_AGE_MS = 4 * 60 * 1000;
+  const FINALIZED_CAPTURE_MAX_AGE_MS = CAPTURE_ORIGIN_TTL_MS;
   const FINALIZED_CAPTURE_MAX_ATTEMPTS = 3;
   const FINALIZED_BINDING_POLL_MS = 900;
   const FINALIZED_BINDING_IDLE_POLL_MS = 2200;
@@ -54490,7 +54490,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           pushOperationLog('capture:finalized_timeout', Memory.lastStorageCapture, 'warn');
         }
         stopFinalizedCaptureMonitor(key);
-        removePendingCapture(pending);
+        // Stop polling after monitor timeout, but keep pendingCapture alive until
+        // CAPTURE_ORIGIN_TTL_MS expires so late host callbacks can still match it.
+        prunePendingCaptures();
         return;
       }
       try {

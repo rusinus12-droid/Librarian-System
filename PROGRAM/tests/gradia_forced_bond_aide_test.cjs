@@ -312,17 +312,26 @@ test('억결 forms and moves relationships from recent emotional signals instead
   assert.doesNotMatch(bond, /tones: affection/, 'nothing defaults to affection');
 });
 
-test('a bond follows the user’s direction and the story, never gender, and lore is background', async t => {
+test('a bond follows the user’s direction and the story, respects blockSameSexRomance by default, and lore is background', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await withCards(f);
   await runTurn(f, '준호에게 오늘은 친구로서 이야기하자고 말한다.');
   const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
-  assert.match(bond, /Gender never decides a bond\. Different genders do not imply romance, and the same gender does not rule it out\./);
+  assert.match(bond, /SAME-SEX ROMANCE PROHIBITION/);
+  assert.match(bond, /same-sex romance is currently prohibited by option/);
   assert.match(bond, /WHAT DECIDES A BOND’S DIRECTION, in order: \(1\) the user’s direction/);
   assert.match(bond, /Lore describing a character’s feelings or preferences is background, not a script/);
   assert.match(bond, /NARRATIVE: move each bond along its own arc in this story/);
   assert.match(bond, /User direction this turn \(current input\): 준호에게 오늘은 친구로서 이야기하자고 말한다\./);
+
+  await f.host.plugin.saveRuntimeSettings({ ...await f.host.plugin.getRuntimeSettings(), block_same_sex_romance: 'false' });
+  f.prompts.length = 0;
+  wireModel(f, '준호가 문 앞에서 다시 고개를 들었다.');
+  await runTurn(f, '준호와 나란히 걷는다.');
+  const unblockedBond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
+  assert.match(unblockedBond, /Gender never decides a bond\. Different genders do not imply romance, and the same gender does not rule it out\./);
+  assert.doesNotMatch(unblockedBond, /SAME-SEX ROMANCE PROHIBITION/);
 });
 
 test('a bond profile from the host becomes a stored lore card that replaces auto-1 on later turns and nothing overwrites', async t => {

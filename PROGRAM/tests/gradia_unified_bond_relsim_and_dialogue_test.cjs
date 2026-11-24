@@ -393,3 +393,91 @@ test('Dialogue AIDE detects hand-over-mouth muffling, enforces climax vocalizati
   assert.match(bridgedBlock, /피임·안전 반응 톤/);
   assert.match(bridgedBlock, /노콘|생으로/);
 });
+
+test('7) Novel persona speech causality, kiss still-locked detection, incoherent fragments, condom pull-down direction, and Korean stray-English repair', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  f.host.plugin.debugSetActiveScope('dialogue-fix-v2', '푸딩');
+  const settings = {
+    enableDialogueAide: true,
+    enableCharacterAide: true,
+    aideStageOrder: ['aide_character'],
+    mode: 'normal',
+    writingMode: 'novel'
+  };
+
+  // 1. Half head turn with "입술은 떨어지지 않았다" must NOT clear kissOn; persona crisp speech triggers Speech causality violation (deep_kiss)
+  const lockedKissDraft = [
+    '푸딩이 고개를 반쯤 돌렸다. 돌린 만큼 소연의 얼굴도 따라왔다. 입술은 떨어지지 않았다.',
+    '“너한테, 하고 있는 중인데.”',
+    '“중인데. 그거.”',
+    '으으읍.'
+  ].join('\n');
+  const kissContext = {
+    visibleMessages: [{ role: 'char', content: '소연과 키스를 나누며 혀를 얽었다.' }],
+    latestUser: '하연이 "지금 누구한테 키스하는 거냐고."라고 따진다.'
+  };
+  const rec = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: kissContext,
+    draftBefore: lockedKissDraft,
+    draftAfter: lockedKissDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.ok(rec.reading.scannedFlags.some(flag => /Speech causality violation \(deep_kiss\)/.test(flag)), 'persona crisp line while lips remain locked triggers deep_kiss causality violation');
+  assert.ok(rec.reading.scannedFlags.some(flag => /Incoherent\/broken dialogue fragment: "중인데\. 그거\."/.test(flag)), 'broken fragment "중인데. 그거." flagged');
+  assert.ok(rec.reading.scannedFlags.some(flag => /Possible unquoted dialogue \(1\): "으으읍\."/.test(flag)), 'standalone unquoted vocalization "으으읍." flagged');
+  assert.ok(rec.reading.draftStats.incoherentCount >= 1);
+
+  const scanNote = rec.notes.find(n => /^화술 스캐너 감지/.test(n.title));
+  assert.ok(scanNote, 'UI scan note exists');
+  assert.match(scanNote.body, /의미 불명·문맥 단절 단편 대사:/);
+
+  const stageBlock = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: kissContext,
+    ledger: { currentStageDraft: lockedKissDraft },
+    phase: 'analysis'
+  });
+  assert.match(stageBlock, /incoherent_line/);
+  assert.match(stageBlock, /EVERY speaker including the user persona/i);
+  assert.match(stageBlock, /키스하는 쪽\(페르소나 포함\)과 받는 쪽 양쪽 모두/);
+  assert.match(stageBlock, /Contextual\/Referential Coherence/);
+
+  // 2. Condom slip-risk prompt directive enforces pulling DOWN to base ("밑동까지 다시 끌어내렸다"), never UP ("끌어올렸다")
+  const slipPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'condom-direction-v2',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '푸딩이 천하연의 질내에 삽입한 상태에서 고무가 밑동 쪽으로 밀려 말려 올라가 뭉쳐 있었고 그 위로 맨살이 조금 드러났다.' }],
+      latestUser: '푸딩이 천하연의 안에서 허리 움직임을 멈추고 내려다보았다.'
+    }
+  });
+  assert.equal(slipPkt.contraception[0].method, 'condom_slip_risk');
+  assert.match(slipPkt.contraception[0].promptDirective, /밑동까지 다시 끌어내/);
+  assert.match(slipPkt.contraception[0].promptDirective, /"끌어올렸다"는 귀두 쪽으로 벗기는 반대 방향이므로 절대 오용 금지/);
+  assert.match(slipPkt.text, /끌어내리다|끌어내렸다/);
+
+  // 3. Anti-English code-switching contract in Korean overlay + afterRequest stray-English pronoun repair
+  const overlay = f.host.plugin.debugBuildFinalOverlay('초안 본문', {}, { internalDraftLanguage: 'korean' });
+  assert.match(overlay, /STRICT NO ENGLISH CODE-SWITCHING IN KOREAN PROSE/);
+
+  const leaked = [
+    '무릎이 올라와 his 옆구리를 조였다. 그리고 her 손끝이 흔들렸다. 그 뒤 their 숨이 겹쳤다.',
+    'But his English sentence stays untouched. His capitalized word too.',
+    '◈CG\nTIME|2027.04.26(월)|15:20\nLOC|광안리 모텔 his 방|bg_room|맑음\n◈'
+  ].join('\n');
+  const healed = f.host.plugin.debugRepairKoreanStrayEnglishPronouns(leaked, { internalDraftLanguage: 'korean' });
+  assert.match(healed, /무릎이 올라와 그의 옆구리를 조였다\./);
+  assert.match(healed, /그리고 그녀의 손끝이 흔들렸다\./);
+  assert.match(healed, /그 뒤 그들의 숨이 겹쳤다\./);
+  assert.match(healed, /But his English sentence stays untouched\. His capitalized word too\./);
+  assert.match(healed, /LOC\|광안리 모텔 his 방\|/);
+
+  // Disabled when internalDraftLanguage is english
+  const untouchedEn = f.host.plugin.debugRepairKoreanStrayEnglishPronouns('무릎이 올라와 his 옆구리를 조였다.', { internalDraftLanguage: 'english' });
+  assert.equal(untouchedEn, '무릎이 올라와 his 옆구리를 조였다.');
+});
