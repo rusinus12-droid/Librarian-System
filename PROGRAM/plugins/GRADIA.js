@@ -33040,6 +33040,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (owner && owner !== '__female__' && owner !== '__male__') recipientNames.add(owner);
         }
       }
+      const escapeRegExp = raw => text(raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const nameObjPattern = fn => {
+        const aliases = [fn];
+        if (fn.length >= 3 && /^[가-힣]+$/.test(fn)) aliases.push(fn.slice(1));
+        return new RegExp(`(?:${aliases.map(escapeRegExp).join('|')})\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`);
+      };
       for (const sentence of penileSentences) {
         if (!INTIMACY_PENETRATIVE_ACT_RE.test(sentence) && !INTIMACY_CREAMPIE_RE.test(sentence)) continue;
         const subClauses = sentence.split(/(?:,|하자|하며|하면서|동안|가운데|사이|(?<=[가-힣])고\s+|지만|는데)/).filter(Boolean);
@@ -33048,7 +33054,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           const namedInSub = femaleNames.filter(fn => extensionLineNames(sub, fn));
           if (namedInSub.length === 1) {
             const fn = namedInSub[0];
-            if (new RegExp(`${escapeRegex(fn)}\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`).test(sub)) {
+            if (nameObjPattern(fn).test(sub)) {
               prevObjName = fn;
             }
           }
@@ -33057,7 +33063,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
               recipientNames.add(namedInSub[0]);
             } else if (namedInSub.length > 1) {
               for (const fn of namedInSub) {
-                if (new RegExp(`${escapeRegex(fn)}\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`).test(sub)) {
+                if (nameObjPattern(fn).test(sub)) {
                   recipientNames.add(fn);
                 }
               }

@@ -815,25 +815,49 @@ test('13) Climax vocalization directives, chronological condom re-wear, bystande
   assert.equal(rewearPkt.contraception[0].stanceCode, 'protected_confirmed');
   assert.match(rewearPkt.contraception[0].promptDirective, /재착용|확인됨/);
 
-  // 13b: Multi-female bystander exclusion (only 천하연 penetrated; 천소연 watches/speaks nearby after earlier foreplay)
+  // 13b: Multi-female bystander exclusion (BOTH females in femaleNpcGauges so multi-female branch runs; only 천하연 penetrated; 천소연 watches/speaks nearby)
+  await f.host.plugin.debugIntimacyLoadCards();
+  f.host.plugin.debugSetActiveScope('bystander-exclude-13b', '푸딩');
+  const cardSeedSettings = {
+    enableIntimacyAide: true,
+    enableCharacterAide: true,
+    aideStageOrder: ['aide_character'],
+    mode: 'normal',
+    nsfwGuidanceEnabled: true,
+    nsfwMode: 'direct',
+    writingMode: 'rp'
+  };
+  const seededRec = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: cardSeedSettings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '천하연', gender: 'female', liked_positions: '정상위', disliked_positions: '', sensitive_zones: '질내', dull_zones: '', foreplay_stance: 'likes', foreplay_style: '차분함', intercourse_stance: 'likes', intercourse_style: '나른함', afterplay_stance: 'likes', afterplay_style: '다정함', basis: '테스트' },
+        { name: '천소연', gender: 'female', liked_positions: '정상위', disliked_positions: '', sensitive_zones: '입술', dull_zones: '', foreplay_stance: 'likes', foreplay_style: '조심스러움', intercourse_stance: 'likes', intercourse_style: '차분함', afterplay_stance: 'likes', afterplay_style: '조용함', basis: '테스트' }
+      ]
+    }
+  });
+  assert.ok(seededRec.cards.some(c => c.name === '천하연') && seededRec.cards.some(c => c.name === '천소연'), 'both female cards seeded');
   const bystanderPkt = f.host.plugin.debugIntimacyPacket({
     characterName: '천하연',
     personaName: '푸딩',
     scopeKey: 'bystander-exclude-13b',
     profileGenders: { 천하연: 'female', 천소연: 'female', 푸딩: 'male' },
     settings: {
-      mode: 'normal',
+      ...cardSeedSettings,
       writing_mode: 'rp',
       npcDisposition: { 'bystander-exclude-13b': { default: 'like', npcs: [{ name: '천하연', level: 'like' }, { name: '천소연', level: 'like' }] } }
     },
     recent: {
       visibleMessages: [
-        { role: 'char', content: '잠시 전 푸딩이 천소연의 뺨에 입을 맞췄다. 이어서 푸딩이 천하연의 안으로 삽입해 허리를 움직였다. 고무가 밑동 쪽으로 몰려 접혀 있었다.' },
-        { role: 'char', content: '천소연의 손이 어깨에서 떨어졌다가 목덜미에 걸쳤다. 천소연이 물었다. "지금 그거, 진짜로 하는 말이지."' }
+        { role: 'char', content: '잠시 전 푸딩이 천소연의 뺨에 입을 맞췄다. 이어서 푸딩이 하연의 안으로 삽입해 허리를 움직였다. 고무가 밑동 쪽으로 몰려 접혀 있었다.' },
+        { role: 'char', content: '소연이 그 말을 들었다. 그녀의 손이 어깨에서 떨어졌다가 목덜미에 걸쳤다. 천소연이 천하연과 푸딩을 보며 물었다. "지금 그거, 진짜로 하는 말이지."' }
       ],
-      latestUser: '푸딩은 천하연의 허리를 쥔 채 숨을 삼켰다.'
+      latestUser: '푸딩은 하연의 허리를 쥔 채 숨을 삼켰다.'
     }
   });
+  assert.ok(bystanderPkt.gauges.filter(g => g.gender === 'female').length >= 2, 'multi-female gauges branch actually executes');
   assert.equal(bystanderPkt.contraception.length, 1, 'contraception verdict issues ONLY for penetrated female');
   assert.equal(bystanderPkt.contraception[0].name, '천하연');
 
