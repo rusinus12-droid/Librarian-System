@@ -148,10 +148,11 @@ test('3) sleep wakefulness gauge persists across reload and couples with autonom
   const reloaded = await f.host.plugin.debugGaugeContinuityLoad();
   const storedSleep = reloaded.sleep?.[scopeKey]?.people?.['세라'];
   assert.ok(storedSleep && storedSleep.depth > 0, 'sleep state persists across reload');
+  const baseDepth = storedSleep.depth;
   const baseWake = storedSleep.wakefulnessGauge;
   assert.ok(baseWake > 0 && baseWake < 100);
 
-  // Stimulate sleeping character -> both arousal gauge AND wakefulness gauge respond while asleep
+  // Stimulate sleeping character -> both arousal gauge AND wakefulness gauge respond while asleep, and sleep depth decreases synchronously
   const intPkt = f.host.plugin.debugIntimacyPacket({
     characterName: '세라', personaName: '하준', scopeKey, profileGenders: { 세라: 'female' },
     recent: {
@@ -162,8 +163,25 @@ test('3) sleep wakefulness gauge persists across reload and couples with autonom
   const gSleep = intPkt.gauges.find(g => g.name === '세라');
   assert.equal(gSleep.sleeping, true, 'intimacy gauge sees active sleeping state');
   assert.ok(gSleep.climaxGauge > 0, 'bodily arousal accrues even during sleep');
-  assert.ok(gSleep.wakefulnessGauge >= baseWake, 'wakefulness gauge reflects tactile arousal during sleep');
+  assert.ok(gSleep.wakefulnessGauge > baseWake, 'wakefulness gauge reflects tactile arousal during sleep');
   assert.match(gSleep.line, /수면 중 자율 신체반응/);
+
+  await sleep(20);
+  const afterIntReloaded = await f.host.plugin.debugGaugeContinuityLoad();
+  const storedAfter = afterIntReloaded.sleep?.[scopeKey]?.people?.['세라'];
+  assert.ok(storedAfter && storedAfter.depth < baseDepth, 'sleep depth decreases proportionally with autonomic arousal');
+  assert.equal(storedAfter.wakefulnessGauge, gSleep.wakefulnessGauge);
+
+  // Subsequent quiet turn must NOT snap wakefulnessGauge back down
+  const quietFollowup = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey,
+    recent: {
+      latestUser: '잠시 숨을 고르며 창밖을 본다.',
+      visibleMessages: [{ role: 'assistant', content: '세라는 이불 아래에서 작게 숨을 내쉬었다.' }]
+    },
+    settings
+  });
+  assert.match(quietFollowup, new RegExp(`wakefulness ${gSleep.wakefulnessGauge}%.*depth ${storedAfter.depth}/200`), 'quiet followup preserves lowered depth and higher wakefulness without snap-back');
 });
 
 test('4) zero bilocation excludes on-scene NPCs, syncs off-scene events to chat cards, and renders dossiers', async t => {

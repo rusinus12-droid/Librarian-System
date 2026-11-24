@@ -22971,10 +22971,23 @@ function summarizeAgentCbsTag(rawContent) {
     return [`이름/식별자: ${name}`, persona.__source ? `출처: ${persona.__source}` : '', prompt ? `내용:\n${compact(prompt, maxChars)}` : '내용 없음'].filter(Boolean).join('\n');
   };
 
+  const yieldToMainThread = () => new Promise(resolve => setTimeout(resolve, 0));
+  const ragCbsRenderCache = new WeakMap();
   const renderRagCbsText = (value, cbsContext, label = 'RAG') => {
-    if (!cbsContext) return text(value || '');
-    const rendered = renderAgentCbsMessages([{ role: 'system', content: text(value || '') }], cbsContext, { label, debugLog: Runtime.settings?.debugLog === true });
-    return rendered.messages?.[0]?.content ?? text(value || '');
+    const raw = text(value || '');
+    if (!cbsContext || !raw.includes('{{')) return raw;
+    let bucket = ragCbsRenderCache.get(cbsContext);
+    if (!bucket) {
+      bucket = new Map();
+      ragCbsRenderCache.set(cbsContext, bucket);
+    } else if (bucket.has(raw)) {
+      return bucket.get(raw);
+    }
+    const rendered = renderAgentCbsMessages([{ role: 'system', content: raw }], cbsContext, { label, debugLog: Runtime.settings?.debugLog === true });
+    const out = rendered.messages?.[0]?.content ?? raw;
+    if (bucket.size >= 256) bucket.delete(bucket.keys().next().value);
+    bucket.set(raw, out);
+    return out;
   };
 
   const resolveCurrentChatAuthorNote = (chat = null, cbsContext = null) => {
@@ -23133,6 +23146,14 @@ function summarizeAgentCbsTag(rawContent) {
         normalized: normalizeRisuSelectedLoreText(message.body)
       }))
       .filter(message => message.normalized);
+    if (!requestBlocks.length) {
+      return {
+        activeLore: [],
+        requestMessageCount: 0,
+        matchedCandidateCount: 0,
+        selectedCount: 0
+      };
+    }
     const matched = [];
     for (const candidate of candidates || []) {
       if (!candidate || candidate.mode === 'folder') continue;
@@ -23301,54 +23322,41 @@ function summarizeAgentCbsTag(rawContent) {
     const loreContinuityActiveIds = readLoreContinuityIds(loreContinuityScope);
     const mainLoreActivationMode = normalizeLoreActivationMode(settings?.loreActivationMode);
     const loreActivationMode = mainLoreActivationMode;
-    // UNIFIED ACTIVATION: collect all three independent evidence signals, then combine them.
-    // The retired mode branches selected ONE source; that is the regression the original removed
-    // in 0.25.72. Host-selected lore, activation-key evidence and semantic retrieval are
-    // independent — they are not substitutes — so all three are produced on EVERY turn and
-    // folded into one candidate set. A lore matched by only one of them (host selected = false,
-    // key activated = true, semantic = medium) is therefore still protected, which was the
-    // concrete behaviour lost under a single-signal default.
-    const independentlyActivatedRaw = activeRisuLorebooks(ragRecent, candidates, {
-      ...settings,
-      loreBookDepth: clampInt(loreSettings.scanDepth ?? loreSettings.scan_depth ?? settings.turnWindow, 1, 128, settings.turnWindow || DEFAULT_RECENT_TURNS),
-      loreBookToken: clampInt(loreSettings.tokenBudget ?? loreSettings.token_budget ?? Math.ceil((settings.shadowRisuContextMaxChars || DEFAULT_SHARED_LORE_CONTEXT_CHARS) / 3.4), 64, 80000, Math.ceil(DEFAULT_SHARED_LORE_CONTEXT_CHARS / 3.4)),
-      loreFullWordMatching: loreSettings.fullWordMatching === true || loreSettings.full_word_matching === true,
-      loreRecursiveScanning: loreSettings.recursiveScanning !== false && loreSettings.recursive_scanning !== false,
-      loreContinuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
-      loreContinuityActiveIds,
-      loreChatVars: cbsContext?.chatVars || {},
-      loreGreetingIndex: Number.isInteger(Number(chatInfo.chat?.fmIndex)) ? Number(chatInfo.chat.fmIndex) : -1
-    });
-    const independentRendering = renderIndependentActiveLorebooks(independentlyActivatedRaw, requestMessages, cbsContext);
-    const hostLoreSelection = reuseRisuSelectedLorebooks(requestMessages, candidates, cbsContext);
-    // The combined set: host-selected first (it is what RisuAI actually injected this turn, so
-    // it is authoritative), then the independently activated evidence the host did not carry.
-    //
-    // IDENTITY MUST INCLUDE THE ORIGIN. A character's lore and a module's lore are separate
-    // entries that may legitimately share an `id` — the host keeps them in different namespaces.
-    // Keying on `id` alone collapsed them into one and silently dropped whichever came second
-    // (measured: 2 active lores -> 1, the character body gone). `loreContinuityIdentity` already
-    // includes the origin for exactly this reason; this follows the same rule.
-    //
-    // A lore with no origin at all still de-duplicates, but only against other origin-less
-    // entries — it is never merged into an origin-bearing one, and vice versa.
-    const unifiedLoreIdentity = lore => [
-      lore?.sourceType || lore?.source || '',
-      lore?.moduleKey || lore?.moduleId || '',
-      lore?.id ?? lore?.loreId ?? lore?.key ?? lore?.label ?? lore?.name ?? ''
-    ].map(value => String(value || '').trim().toLowerCase()).join('|');
-    const seenUnifiedLore = new Set();
+    let independentlyActivatedRaw = [];
+    let independentRendering = { activeLore: [], dropped: [], hostRecovery: { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 } };
+    let hostLoreSelection = { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 };
     const activeLore = [];
-    for (const lore of [...hostLoreSelection.activeLore, ...independentRendering.activeLore]) {
-      if (!lore) continue;
-      const identity = unifiedLoreIdentity(lore);
-      // An entry with nothing to identify it by cannot be compared; keep it rather than guess.
-      if (!identity.trim()) { activeLore.push(lore); continue; }
-      if (seenUnifiedLore.has(identity)) continue;
-      seenUnifiedLore.add(identity);
-      activeLore.push(lore);
+    if (settings?.skipSnapshotLoreActivation !== true) {
+      independentlyActivatedRaw = activeRisuLorebooks(ragRecent, candidates, {
+        ...settings,
+        loreBookDepth: clampInt(loreSettings.scanDepth ?? loreSettings.scan_depth ?? settings.turnWindow, 1, 128, settings.turnWindow || DEFAULT_RECENT_TURNS),
+        loreBookToken: clampInt(loreSettings.tokenBudget ?? loreSettings.token_budget ?? Math.ceil((settings.shadowRisuContextMaxChars || DEFAULT_SHARED_LORE_CONTEXT_CHARS) / 3.4), 64, 80000, Math.ceil(DEFAULT_SHARED_LORE_CONTEXT_CHARS / 3.4)),
+        loreFullWordMatching: loreSettings.fullWordMatching === true || loreSettings.full_word_matching === true,
+        loreRecursiveScanning: loreSettings.recursiveScanning !== false && loreSettings.recursive_scanning !== false,
+        loreContinuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
+        loreContinuityActiveIds,
+        loreChatVars: cbsContext?.chatVars || {},
+        loreGreetingIndex: Number.isInteger(Number(chatInfo.chat?.fmIndex)) ? Number(chatInfo.chat.fmIndex) : -1
+      });
+      independentRendering = renderIndependentActiveLorebooks(independentlyActivatedRaw, requestMessages, cbsContext);
+      hostLoreSelection = reuseRisuSelectedLorebooks(requestMessages, candidates, cbsContext);
+      const unifiedLoreIdentity = lore => [
+        lore?.sourceType || lore?.source || '',
+        lore?.moduleKey || lore?.moduleId || '',
+        lore?.id ?? lore?.loreId ?? lore?.key ?? lore?.label ?? lore?.name ?? ''
+      ].map(value => String(value || '').trim().toLowerCase()).join('|');
+      const seenUnifiedLore = new Set();
+      for (const lore of [...hostLoreSelection.activeLore, ...independentRendering.activeLore]) {
+        if (!lore) continue;
+        const identity = unifiedLoreIdentity(lore);
+        if (!identity.trim()) { activeLore.push(lore); continue; }
+        if (seenUnifiedLore.has(identity)) continue;
+        seenUnifiedLore.add(identity);
+        activeLore.push(lore);
+      }
+      writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
     }
-    writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
+    await yieldToMainThread();
     return {
       routeVersion: RAG_ROUTE_VERSION,
       route: 'plugins.md:getCharacter+getDatabase+getCurrentCharacterIndex+getCurrentChatIndex+getChatFromIndex',
@@ -25136,6 +25144,7 @@ function summarizeAgentCbsTag(rawContent) {
     const candidates = (Array.isArray(snapshot.candidates) ? snapshot.candidates : []).filter(candidate => ['character','module'].includes(candidate?.sourceType) && responseLoreCanonicalContent(candidate));
     if (!candidates.length) return null;
     const records = candidates.map(responseLoreIndexRecord).filter(record => record.content);
+    await yieldToMainThread();
     const activeById = new Map((Array.isArray(snapshot.activeLore) ? snapshot.activeLore : []).map(lore => [loreContinuityIdentity(lore), lore]));
     let hostSelected = [];
     try { hostSelected = reuseRisuSelectedLorebooks(messages, candidates, snapshot.cbsContext)?.activeLore || []; } catch (_) {}
@@ -25157,6 +25166,7 @@ function summarizeAgentCbsTag(rawContent) {
     const commonIds = new Set(commonAdaptive.selected.map(row => row.id));
     const stages = {};
     for (const consumer of allowedConsumers) {
+      await yieldToMainThread();
       const def = responseLoreStageDef(consumer);
       const stageSupport = compact([supportQuery, def.domainQuery].filter(Boolean).join('\n'), 8000);
       const ranked = responseLoreRankRecords({ records, currentQuery, terminalQuery, supportQuery: stageSupport, coverageQuery: compact([currentQuery, terminalQuery, supportQuery].filter(Boolean).join('\n\n'), 9000), stageId: consumer, activeById, hostById });
@@ -25254,19 +25264,23 @@ function summarizeAgentCbsTag(rawContent) {
     const noteCbs=/\{\{/.test(text(chat.note || chat.authorNote || chat.authorsNote || ''));
     const definitionCbs=Object.values(definitions).some(v=>typeof v==='string' && v.includes('{{'));
     const personaCbs=persona?JSON.stringify(persona).includes('{{'):false;
+    const anyLoreCbs = candidates.some(candidate => /\{\{/.test(text(candidate?.rawContent || candidate?.content || '')));
+    const cbsDigest = (noteCbs || definitionCbs || personaCbs || anyLoreCbs)
+      ? hash({ ...cbs, enabledModules: [...cbs.enabledModules].sort() })
+      : null;
     const personaBindingRef = text(chat.bindedPersona || '').trim()
       || (persona ? `selected:${text(db?.selectedPersona ?? '').trim()}` : '');
     const entries = {
-      author_note: {kind:'author_note', id:text(chat.id || ''),dependsOnCbs:noteCbs, digest:hash({raw:resolveCurrentChatAuthorNote(chat,cbs), cbsSource:noteCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})},
-      character_definition: {kind:'character_definition', id:text(character.chaId || character.id || ''),dependsOnCbs:definitionCbs,digest:hash({definitions,cbs:definitionCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})},
-      persona: {kind:'persona', id:text(persona?.id || ''),dependsOnCbs:personaCbs,digest:hash({binding:personaBindingRef, persona:persona || null,cbs:personaCbs?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null})}
+      author_note: {kind:'author_note', id:text(chat.id || ''),dependsOnCbs:noteCbs, digest:hash({raw:resolveCurrentChatAuthorNote(chat,cbs), cbsSource:noteCbs?cbsDigest:null})},
+      character_definition: {kind:'character_definition', id:text(character.chaId || character.id || ''),dependsOnCbs:definitionCbs,digest:hash({definitions,cbs:definitionCbs?cbsDigest:null})},
+      persona: {kind:'persona', id:text(persona?.id || ''),dependsOnCbs:personaCbs,digest:hash({binding:personaBindingRef, persona:persona || null,cbs:personaCbs?cbsDigest:null})}
     };
     const lore = candidates.map(candidate=>({
       kind:'lore', id:loreContinuityIdentity(candidate),
       digest:hash({content:responseLoreCanonicalContent(candidate), raw: candidate.rawContent || '',
         label:candidate.label, keys:candidate.keys, secondaryKeys:candidate.secondaryKeys, additionalKeys:candidate.additionalKeys,
         alwaysActive:candidate.alwaysActive, selective:candidate.selective, mode:candidate.mode,
-        cbs:/\{\{/.test(text(candidate.rawContent || candidate.content || ''))?{...cbs,enabledModules:[...cbs.enabledModules].sort()}:null}),
+        cbs:/\{\{/.test(text(candidate.rawContent || candidate.content || ''))?cbsDigest:null}),
       selectionDigest:hash({id:loreContinuityIdentity(candidate), label:candidate.label, keys:candidate.keys,
         secondaryKeys:candidate.secondaryKeys, additionalKeys:candidate.additionalKeys, alwaysActive:candidate.alwaysActive,
         selective:candidate.selective, mode:candidate.mode, sourceType:candidate.sourceType, moduleKey:candidate.moduleKey})
@@ -35329,6 +35343,13 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     settingsKey: PROVIDER_SETTINGS_KEY,
     getConfig,
     peekConfig: () => safeClone(ProviderConfig.current),
+    peekActiveContextWindow: () => {
+      const cur = ProviderConfig.current;
+      const presets = cur?.presets && typeof cur.presets === 'object' ? cur.presets : {};
+      const preset = presets[cur?.activePreset || '']
+        || Object.values(presets).find(item => Number(item?.context_window || item?.catalog_context_window || 0) > 0);
+      return Number(preset?.context_window || preset?.catalog_context_window || 0) || 0;
+    },
     saveConfig,
     replaceConfig,
     resetConfigRuntime,
@@ -35690,7 +35711,7 @@ function createLibraReadonlySourceContext(owner) {
     // checkpoints are transport caches, not canon, and must never bypass a newer
     // runtime algorithm merely because the user input and provider settings match.
 
-    const CLASSIC_MAX_INJECTION_CHARS = 20000;
+    const CLASSIC_MAX_INJECTION_CHARS = 40000;
 
 
         // Preferred display/overlay budget only. A complete normalized Planner product is
@@ -49997,7 +50018,7 @@ function createLibraReadonlySourceContext(owner) {
         excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
         excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds)
       };
-      const source = await loadRisuContextSnapshot(referenceSettings, [], batchRecent);
+      const source = await loadRisuContextSnapshot({ ...referenceSettings, skipSnapshotLoreActivation: true }, [], batchRecent);
       const loreSettings = source?.character?.loreSettings || source?.character?.lore_settings || {};
       const activeLoreRaw = activeRisuLorebooks(batchRecent, source?.candidates || [], {
         ...referenceSettings,
@@ -50010,6 +50031,7 @@ function createLibraReadonlySourceContext(owner) {
         loreChatVars: source?.cbsContext?.chatVars || {},
         loreGreetingIndex: Number.isInteger(Number(source?.chatInfo?.chat?.fmIndex)) ? Number(source.chatInfo.chat.fmIndex) : -1
       });
+      await yieldToMainThread();
       const memoryLoreRendering = renderIndependentActiveLorebooks(activeLoreRaw, [], source?.cbsContext);
       const activeLore = memoryLoreRendering.activeLore;
       const chatPairs = source?.chatInfo?.chat ? buildPairs(source.chatInfo.chat) : [];
@@ -50155,9 +50177,11 @@ function createLibraReadonlySourceContext(owner) {
 
     const buildAriadneReferenceContext = async batch => {
       const pool = await getMemoryReferencePool(batch);
+      await yieldToMainThread();
       const { batchRecent, referenceSettings, source, activeLore, latestBatch } = pool;
       const loreRerank = await buildUnifiedMemoryLoreForStage(pool, LIBRARIAN_STAGE_ID, batch, '')
         || rerankMemoryLoreForStage(activeLore, LIBRARIAN_STAGE_ID, batch, '', MEMORY_LORE_RERANK_TOP_K);
+      await yieldToMainThread();
       const selectedLore = loreRerank.selected;
       const built = buildCanonicalReferencePacketV2({
         settings: referenceSettings,
@@ -50171,6 +50195,7 @@ function createLibraReadonlySourceContext(owner) {
         capacityOptions: { stageNames: [LIBRARIAN_STAGE_ID] }
       });
       const rendered = renderAriadneReferencePacketCbs(built.packet, source?.cbsContext);
+      await yieldToMainThread();
       let bounded = repackCanonicalReferencePacketForBudget(rendered.packet, CANONICAL_ARTIFACT_REFERENCE_MAX_CHARS - 1800, { excludeTypes: ['author_note'] });
       let finalPacket = bounded?.packet || rendered.packet;
       let block = serializeAriadneReferencePacket(finalPacket);
@@ -50226,11 +50251,12 @@ function createLibraReadonlySourceContext(owner) {
         referenceOmittedCount: Number(finalPacket?.budget?.omissions?.length || 0),
         route: source?.route || ''
       };
+      const metaSnapshot = clone(meta);
       Runtime.lastRisuContext = {
         at: Date.now(),
         mode: 'libra_librarian_memory_reference',
-        shared: { meta: { referenceMeta: clone(meta) } },
-        referenceMeta: clone(meta)
+        shared: { meta: { referenceMeta: metaSnapshot } },
+        referenceMeta: metaSnapshot
       };
       return { block, meta, packet: finalPacket, cbsContext: source?.cbsContext || null, lorePool: activeLore, loreRerank };
     };
@@ -52611,12 +52637,88 @@ function memorySuiteMissingDefaultSourceTags(rules) {
 // kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
 // its own budget setting. Each plugin still shrinks below its share when the context is short.
 const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
-const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 120000;
+const MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN = 4000, MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX = 200000;
+const MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN = 0, MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX = 40000;
+const MEMORY_SUITE_RECALL_TRIM_MIN = 5, MEMORY_SUITE_RECALL_TRIM_MAX = 80;
+const MEMORY_SUITE_RECALL_PRESERVE_MIN = 2, MEMORY_SUITE_RECALL_PRESERVE_MAX = 50;
+const MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS = Object.freeze(['tiktoken', 'claude', 'gemini', 'deepseek']);
+const MEMORY_SUITE_RECALL_BUDGET_PRESETS = Object.freeze([
+  Object.freeze({ id: 'light', label: '경량', totalChars: 12000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 32000, trimPercent: 35, preserveMessages: 8, desc: '짧은 문맥·핵심 기억 중심 (GRADIA 경량 대응)' }),
+  Object.freeze({ id: 'balanced', label: '균형', totalChars: 24000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 64000, trimPercent: 30, preserveMessages: 16, desc: '일반 대화·GRADIA 균형 권장 표준 예산' }),
+  Object.freeze({ id: 'heavy', label: '중량', totalChars: 48000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 100000, trimPercent: 25, preserveMessages: 24, desc: '풍부한 회상·GRADIA 중량 장기 서사 추적' }),
+  Object.freeze({ id: 'ultra', label: '초중량', totalChars: 72000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 160000, trimPercent: 20, preserveMessages: 32, desc: '초대형 컨텍스트·최대 기억 주입' })
+]);
+const MEMORY_SUITE_RECALL_TOKENIZER_PROFILES = Object.freeze({
+  tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05 }),
+  claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0 }),
+  gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15 }),
+  deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0 })
+});
 function memorySuiteDefaultRecallBudget() {
   return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
 }
+function memorySuiteNormalizeRecallBudgetContextCutter(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const maxContextRaw=src.maxContextTokens==null?40000:Number(src.maxContextTokens);
+  if(!Number.isInteger(maxContextRaw)||maxContextRaw<MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN||maxContextRaw>MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 기준 컨텍스트는 '+MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX.toLocaleString('en-US')+' 토큰 사이의 정수입니다.');
+  const trimRaw=src.trimPercent==null?30:Number(src.trimPercent);
+  if(!Number.isInteger(trimRaw)||trimRaw<MEMORY_SUITE_RECALL_TRIM_MIN||trimRaw>MEMORY_SUITE_RECALL_TRIM_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 초과 시 비울 비율은 '+MEMORY_SUITE_RECALL_TRIM_MIN+'~'+MEMORY_SUITE_RECALL_TRIM_MAX+'% 사이의 정수입니다.');
+  const preserveRaw=src.preserveMessages==null?6:Number(src.preserveMessages);
+  if(!Number.isInteger(preserveRaw)||preserveRaw<MEMORY_SUITE_RECALL_PRESERVE_MIN||preserveRaw>MEMORY_SUITE_RECALL_PRESERVE_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 최신 보호 메시지 수는 '+MEMORY_SUITE_RECALL_PRESERVE_MIN+'~'+MEMORY_SUITE_RECALL_PRESERVE_MAX+' 사이의 정수입니다.');
+  const tokenizerRaw=src.tokenizer==null||src.tokenizer===''?'tiktoken':String(src.tokenizer).trim().toLowerCase();
+  if(!MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS.includes(tokenizerRaw))
+    throw Error('RECALL_BUDGET_INVALID: 토큰 추정 기준이 올바르지 않습니다.');
+  let gradiaReserveChars='auto';
+  if(src.gradiaReserveChars!=null&&src.gradiaReserveChars!==''&&src.gradiaReserveChars!=='auto'){
+    const reserve=Number(src.gradiaReserveChars);
+    if(!Number.isInteger(reserve)||reserve<MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN||reserve>MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX)
+      throw Error('RECALL_BUDGET_INVALID: GRADIA 예약 글자는 0~40,000 사이의 정수 또는 auto여야 합니다.');
+    gradiaReserveChars=reserve;
+  }
+  return {
+    enabled:src.enabled!==false,
+    onlyMemorized:src.onlyMemorized!==false,
+    maxContextTokens:maxContextRaw,
+    trimPercent:trimRaw,
+    preserveMessages:preserveRaw,
+    tokenizer:tokenizerRaw,
+    includeGradiaReserve:src.includeGradiaReserve!==false,
+    gradiaReserveChars,
+    triggerWithReserve:src.triggerWithReserve!==false
+  };
+}
+function memorySuiteNormalizeRecallBudgetGradia(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  return {
+    followSharedBudget:src.followSharedBudget!==false,
+    redistributeDisabledOwners:src.redistributeDisabledOwners!==false
+  };
+}
+function memorySuiteRecallBudgetPresetValues(id, currentBudget=null) {
+  const preset=MEMORY_SUITE_RECALL_BUDGET_PRESETS.find(item=>item.id===id);
+  if(!preset)throw Error('RECALL_BUDGET_INVALID: 프리셋을 찾을 수 없습니다.');
+  const existingCtx=memorySuiteNormalizeRecallBudgetContextCutter(currentBudget?.contextCutter);
+  const existingGradia=memorySuiteNormalizeRecallBudgetGradia(currentBudget?.gradia);
+  return {
+    version:2,
+    enabled:true,
+    totalChars:preset.totalChars,
+    shares:{...preset.shares},
+    contextCutter:{
+      ...existingCtx,
+      maxContextTokens:preset.maxContextTokens,
+      trimPercent:preset.trimPercent,
+      preserveMessages:preset.preserveMessages
+    },
+    gradia:existingGradia
+  };
+}
 function memorySuiteNormalizeRecallBudget(input) {
-  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1&&input.version!==2))throw Error('RECALL_BUDGET_INVALID');
   const total=Number(input.totalChars);
   if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
     throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
@@ -52627,7 +52729,61 @@ function memorySuiteNormalizeRecallBudget(input) {
     shares[owner]=value;
   }
   if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
-  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  const hasV2Fields=input.version===2||input.contextCutter!==undefined||input.gradia!==undefined;
+  if(!hasV2Fields)return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  if(input.contextCutter!=null&&(typeof input.contextCutter!=='object'||Array.isArray(input.contextCutter)))throw Error('RECALL_BUDGET_INVALID');
+  if(input.gradia!=null&&(typeof input.gradia!=='object'||Array.isArray(input.gradia)))throw Error('RECALL_BUDGET_INVALID');
+  return {
+    version:2,
+    enabled:input.enabled===true,
+    totalChars:total,
+    shares,
+    contextCutter:memorySuiteNormalizeRecallBudgetContextCutter(input.contextCutter),
+    gradia:memorySuiteNormalizeRecallBudgetGradia(input.gradia)
+  };
+}
+function memorySuiteRecallBudgetContextPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetContextCutter(budget?.contextCutter);
+}
+function memorySuiteRecallBudgetGradiaPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetGradia(budget?.gradia);
+}
+function memorySuiteRecallBudgetOwnerShares(budget, activeOwners=MEMORY_SUITE_RECALL_OWNERS) {
+  if(!budget||budget.enabled!==true)return null;
+  const active=(Array.isArray(activeOwners)?activeOwners:MEMORY_SUITE_RECALL_OWNERS).filter(owner=>MEMORY_SUITE_RECALL_OWNERS.includes(owner));
+  if(!active.length)return {};
+  const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(budget);
+  const fullSet=MEMORY_SUITE_RECALL_OWNERS.every(owner=>active.includes(owner));
+  const out={};
+  if(fullSet||gradiaPolicy.redistributeDisabledOwners===false){
+    for(const owner of active)out[owner]=Math.floor(Number(budget.totalChars||0)*Number(budget.shares?.[owner]||0)/100);
+    return out;
+  }
+  const activeShareSum=active.reduce((sum,owner)=>sum+Math.max(0,Number(budget.shares?.[owner]||0)),0);
+  if(activeShareSum<=0){
+    const even=Math.floor(Number(budget.totalChars||0)/active.length);
+    for(const owner of active)out[owner]=even;
+    return out;
+  }
+  let allocated=0;
+  for(const owner of active){
+    const share=Math.floor(Number(budget.totalChars||0)*Math.max(0,Number(budget.shares?.[owner]||0))/activeShareSum);
+    out[owner]=share;
+    allocated+=share;
+  }
+  let remainder=Math.max(0,Math.floor(Number(budget.totalChars||0))-allocated);
+  for(const owner of active){
+    if(remainder<=0)break;
+    if(Number(budget.shares?.[owner]||0)>0){out[owner]+=1;remainder-=1;}
+  }
+  return out;
+}
+function memorySuiteEstimateRecallTokens(chars, tokenizer='tiktoken') {
+  const n=Math.max(0,Number(chars||0)||0);
+  if(!n)return 0;
+  const profile=MEMORY_SUITE_RECALL_TOKENIZER_PROFILES[tokenizer]||MEMORY_SUITE_RECALL_TOKENIZER_PROFILES.tiktoken;
+  const blended=(profile.cjkCharsPerToken*0.7)+(profile.latinCharsPerToken*0.3);
+  return Math.ceil(Math.ceil(n/Math.max(1,blended))*0.8);
 }
 function memorySuiteRecallBudget(owner, next) {
   const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
@@ -53086,7 +53242,7 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
 .ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
 .ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
-.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-preset{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;text-align:left;min-height:auto}.ms-source-settings .ms-budget-preset b{font-size:13px}.ms-source-settings .ms-budget-preset small{font-size:11px;opacity:.8}.ms-source-settings .ms-budget-preset.is-on{border-color:var(--accent,#79522d);background:color-mix(in srgb,var(--accent,#79522d) 12%,var(--surface,transparent))}.ms-source-settings .ms-budget-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;border:1px solid var(--border2,#8886);font-size:11.5px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings .ms-budget-badge.is-warn{background:color-mix(in srgb,var(--warn,#b9802e) 16%,transparent);border-color:color-mix(in srgb,var(--warn,#b9802e) 45%,transparent);color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-badge.is-ok{background:color-mix(in srgb,var(--ok,#2e7d32) 14%,transparent);border-color:color-mix(in srgb,var(--ok,#2e7d32) 40%,transparent);color:var(--ok-ink,#2e7d32)}.ms-source-settings .ms-budget-libra-notice{font-size:12px;color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-context,.ms-source-settings .ms-budget-gradia{display:grid;gap:8px;padding:10px;border:1px dashed var(--border2,#8885);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-budget-context[data-libra-status=absent]{opacity:.68}.ms-source-settings .ms-budget-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end}.ms-source-settings .ms-budget-inline{display:flex;gap:8px;align-items:center}.ms-source-settings .ms-budget-inline input{flex:1 1 auto;min-width:0}.ms-source-settings .ms-budget-breakdown{font-size:12px;opacity:.85}.ms-source-settings .ms-budget-warning{font-size:12px;color:var(--warn-ink,#b9802e)}@media(max-width:600px){.ms-source-settings .ms-budget-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.ms-source-settings .ms-budget-shares,.ms-source-settings .ms-budget-context-grid{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
 /* The recent-messages list already shows the last message; the single output stays for tools. */
 .ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
 .ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
@@ -53239,6 +53395,7 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
 const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_RECALL_BUDGET_PEERS=Object.freeze(['libra','hayaku','flashback','gradia']);
 const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
@@ -53324,7 +53481,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const compareBudget=async()=>{
     await config.policy.ready();const mine=budgetFingerprint(myBudget());
-    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const theirs=String(answer.result?.budget||'');
       return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
@@ -53332,7 +53489,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeRecallBudget(budget);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
@@ -53386,38 +53543,229 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
 // plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
 function mountMemorySuiteRecallBudgetPanel(host, config) {
   const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
-  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const owners=MEMORY_SUITE_RECALL_OWNERS,budgetPeers=MEMORY_SUITE_RECALL_BUDGET_PEERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const presets=typeof MEMORY_SUITE_RECALL_BUDGET_PRESETS!=='undefined'?MEMORY_SUITE_RECALL_BUDGET_PRESETS:[];
+  const panelOwner=String(config.owner||config.sync?.owner||'').trim();
+  const isLibraOwner=panelOwner==='libra';
+  const area=make('section'),titleRow=make('div'),title=make('strong','기억 예산 · 컨텍스트 통합 설정'),presetBadge=make('span','');
+  titleRow.className='ms-budget-section-head';presetBadge.className='ms-budget-badge';presetBadge.dataset.recallBudgetPresetBadge='';titleRow.append(title,presetBadge);
+  const note=make('small','통합 프리셋·공통 예산·LIBRA 컨텍스트 자동 정리를 한 곳에서 설정하고 IPC로 자매 플러그인에 동시 반영합니다. 켜면 LIBRA·HAYAKU·Flashback이 정한 비율로 기억을 나누어 주입합니다.');
+  const presetRow=make('div'),presetButtons={};presetRow.className='ms-budget-presets';presetRow.dataset.recallBudgetPresets='';
+  for(const p of presets){
+    const btn=make('button'),b=make('b',p.label),sm=make('small',`${p.totalChars.toLocaleString('ko-KR')}자 · ${Math.round(p.maxContextTokens/1000)}K`);
+    btn.type='button';btn.className='ms-budget-preset';btn.dataset.recallBudgetPreset=p.id;btn.title=p.desc;btn.append(b,sm);
+    presetButtons[p.id]=btn;presetRow.append(btn);
+  }
   const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
   const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
   const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
   for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
-  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
-  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  const ctxBox=make('div'),ctxHeadRow=make('div'),ctxHead=make('strong','컨텍스트 자동 정리 (LIBRA 오너)'),libraBadge=make('span',''),libraNotice=make('p');
+  ctxBox.className='ms-budget-context';ctxBox.dataset.recallBudgetContext='';ctxHeadRow.className='ms-budget-section-head';
+  libraBadge.className='ms-budget-badge';libraBadge.dataset.recallBudgetLibraBadge='';ctxHeadRow.append(ctxHead,libraBadge);
+  libraNotice.className='ms-budget-libra-notice';libraNotice.dataset.recallBudgetLibraNotice='';libraNotice.hidden=true;
+  const chkRow=(text,attr)=>{const lbl=make('label'),chk=make('input');chk.type='checkbox';chk.dataset[attr]='';lbl.className='ms-sync-together';lbl.append(chk,make('span',text));return {lbl,chk};};
+  const cutterEnabledToggle=chkRow('컨텍스트 자동 정리 사용','recallBudgetCutterEnabled');
+  const cutterOnlyMemToggle=chkRow('기억(정본·영수증) 저장이 완료된 과거 턴만 제외','recallBudgetCutterOnlyMemorized');
+  const ctxGrid=make('div');ctxGrid.className='ms-budget-context-grid';
+  const maxCtxLabel=make('label'),maxCtxInline=make('div'),maxCtxInput=make('input'),autoCtxBtn=make('button','모델 기준 자동 맞춤');
+  maxCtxInline.className='ms-budget-inline';maxCtxInput.type='number';maxCtxInput.min='4000';maxCtxInput.max='200000';maxCtxInput.step='1000';maxCtxInput.dataset.recallBudgetMaxContext='';
+  autoCtxBtn.type='button';autoCtxBtn.dataset.recallBudgetAutoContext='';
+  maxCtxInline.append(maxCtxInput,autoCtxBtn);maxCtxLabel.append(make('span','자동 정리 기준 컨텍스트(토큰)'),maxCtxInline);
+  const trimPercentLabel=make('label'),trimPercentInput=make('input');
+  trimPercentInput.type='number';trimPercentInput.min='5';trimPercentInput.max='80';trimPercentInput.step='5';trimPercentInput.dataset.recallBudgetTrimPercent='';
+  trimPercentLabel.append(make('span','초과 시 비울 비율(%)'),trimPercentInput);
+  const preserveLabel=make('label'),preserveInput=make('input');
+  preserveInput.type='number';preserveInput.min='2';preserveInput.max='50';preserveInput.step='1';preserveInput.dataset.recallBudgetPreserveMessages='';
+  preserveLabel.append(make('span','최신 보호 메시지 수'),preserveInput);
+  const tokenizerLabel=make('label'),tokenizerSelect=make('select');tokenizerSelect.dataset.recallBudgetTokenizer='';
+  for(const [val,txt] of [['tiktoken','OpenAI 호환 (tiktoken)'],['claude','Claude'],['gemini','Gemini'],['deepseek','DeepSeek']]){
+    const opt=make('option',txt);opt.value=val;tokenizerSelect.append(opt);
+  }
+  tokenizerLabel.append(make('span','토큰 추정 기준'),tokenizerSelect);
+  const gradiaReserveCharsLabel=make('label'),gradiaReserveCharsInput=make('input');
+  gradiaReserveCharsInput.type='number';gradiaReserveCharsInput.min='0';gradiaReserveCharsInput.max='40000';gradiaReserveCharsInput.step='500';gradiaReserveCharsInput.placeholder='자동';gradiaReserveCharsInput.dataset.recallBudgetGradiaReserveChars='';
+  gradiaReserveCharsLabel.append(make('span','GRADIA 초안 예약(자, 비우면 자동)'),gradiaReserveCharsInput);
+  ctxGrid.append(maxCtxLabel,trimPercentLabel,preserveLabel,tokenizerLabel,gradiaReserveCharsLabel);
+  const gradiaReserveToggle=chkRow('자동 정리 예약에 GRADIA 초안 포함','recallBudgetGradiaReserve');
+  const triggerReserveToggle=chkRow('기억+GRADIA 예약을 합산한 기준에서 자동 정리 발동','recallBudgetTriggerReserve');
+  const breakdown=make('p'),cutterFooter=make('div');
+  breakdown.className='ms-budget-breakdown';breakdown.dataset.recallBudgetBreakdown='';
+  cutterFooter.dataset.recallBudgetCutterFooter='';
+  ctxBox.append(ctxHeadRow,libraNotice,cutterEnabledToggle.lbl,cutterOnlyMemToggle.lbl,ctxGrid,gradiaReserveToggle.lbl,triggerReserveToggle.lbl,breakdown,cutterFooter);
+  const gradiaBox=make('div'),gradiaHead=make('strong','GRADIA 연동'),mismatchWarning=make('p');
+  gradiaBox.className='ms-budget-gradia';gradiaBox.dataset.recallBudgetGradia='';
+  const gradiaFollowToggle=chkRow('GRADIA도 공통 예산 따르기','recallBudgetGradiaFollow');
+  const gradiaRedistributeToggle=chkRow('꺼진 기억 플러그인 몫 남은 오너에 재분배','recallBudgetGradiaRedistribute');
+  mismatchWarning.className='ms-budget-warning';mismatchWarning.dataset.recallBudgetWarning='';mismatchWarning.hidden=true;
+  gradiaBox.append(gradiaHead,gradiaFollowToggle.lbl,gradiaRedistributeToggle.lbl,mismatchWarning);
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),recheck=make('button','다시 확인'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';
+  recheck.type='button';recheck.dataset.recallBudgetRecheck='';
+  actions.className='ms-sync-actions';actions.append(apply,recheck);
   status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
-  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  area.className='ms-input-sync';area.dataset.recallBudget='';
+  if(presets.length)area.append(titleRow,note,presetRow);else area.append(titleRow,note);
+  area.append(enabledLabel,totalLabel,shareRow,ctxBox,gradiaBox,summary,actions,status,peerList);host.append(area);
   const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
-  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
-  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={},loadedVersion=1,presetTouched=false;
+  const cutterInputs=[cutterEnabledToggle.chk,cutterOnlyMemToggle.chk,maxCtxInput,trimPercentInput,preserveInput,tokenizerSelect,gradiaReserveCharsInput,gradiaReserveToggle.chk,triggerReserveToggle.chk];
+  const gradiaInputs=[gradiaFollowToggle.chk,gradiaRedistributeToggle.chk];
+  const libraState=()=>{
+    if(isLibraOwner)return {available:true,status:'owner',badge:'LIBRA 실행 중 (오너)'};
+    if(!config.sync)return {available:false,status:'absent',badge:'리브라 미감지'};
+    const st=peerStates.libra?.state;
+    if(st==='same'||st==='different')return {available:true,status:'connected',badge:'LIBRA 연동됨'};
+    if(st==='checking'||st===undefined)return {available:false,status:'checking',badge:'LIBRA 확인 중…'};
+    return {available:false,status:'absent',badge:'리브라 미감지'};
+  };
+  const hasCustomV2=()=>{
+    if(presetTouched)return true;
+    const reserveRaw=gradiaReserveCharsInput.value.trim();
+    return !cutterEnabledToggle.chk.checked||!cutterOnlyMemToggle.chk.checked||Number(maxCtxInput.value)!==40000
+      ||Number(trimPercentInput.value)!==30||Number(preserveInput.value)!==6||String(tokenizerSelect.value||'tiktoken')!=='tiktoken'
+      ||reserveRaw!==''||!gradiaReserveToggle.chk.checked||!triggerReserveToggle.chk.checked
+      ||!gradiaFollowToggle.chk.checked||!gradiaRedistributeToggle.chk.checked;
+  };
+  const draft=()=>{
+    const base={enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))};
+    if(loadedVersion!==2&&!hasCustomV2())return memorySuiteNormalizeRecallBudget({version:1,...base});
+    const lib=libraState();
+    let contextCutter;
+    if(!lib.available){
+      const stored=typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
+      contextCutter=memorySuiteRecallBudgetContextPolicy(stored);
+    }else{
+      const reserveRaw=gradiaReserveCharsInput.value.trim();
+      contextCutter={
+        enabled:cutterEnabledToggle.chk.checked,
+        onlyMemorized:cutterOnlyMemToggle.chk.checked,
+        maxContextTokens:Number(maxCtxInput.value),
+        trimPercent:Number(trimPercentInput.value),
+        preserveMessages:Number(preserveInput.value),
+        tokenizer:String(tokenizerSelect.value||'tiktoken'),
+        includeGradiaReserve:gradiaReserveToggle.chk.checked,
+        gradiaReserveChars:reserveRaw===''?'auto':Number(reserveRaw),
+        triggerWithReserve:triggerReserveToggle.chk.checked
+      };
+    }
+    return memorySuiteNormalizeRecallBudget({
+      version:2,...base,contextCutter,
+      gradia:{followSharedBudget:gradiaFollowToggle.chk.checked,redistributeDisabledOwners:gradiaRedistributeToggle.chk.checked}
+    });
+  };
   const draftOrNull=()=>{try{return draft();}catch{return null;}};
   const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
   const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const detectPreset=value=>{
+    if(!value||value.enabled!==true)return null;
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const lib=libraState();
+    return presets.find(p=>value.totalChars===p.totalChars
+      &&owners.every(o=>value.shares[o]===p.shares[o])
+      &&(!lib.available||(ctxPolicy.maxContextTokens===p.maxContextTokens&&ctxPolicy.trimPercent===p.trimPercent&&ctxPolicy.preserveMessages===p.preserveMessages)))||null;
+  };
   const draw=()=>{
+    const lib=libraState();
+    ctxBox.dataset.libraStatus=lib.status;
+    libraBadge.textContent=lib.badge;
+    libraBadge.className='ms-budget-badge '+(lib.available?'is-ok':(lib.status==='absent'?'is-warn':''));
+    libraNotice.hidden=lib.available;
+    if(!lib.available)libraNotice.textContent=lib.status==='checking'?'LIBRA 연결 상태를 확인하는 중입니다…':'컨텍스트 자동 정리는 LIBRA 전용 기능입니다. LIBRA가 감지되지 않아 비활성화되었습니다.';
     const value=draftOrNull();
-    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
-      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
-    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const matchedPreset=detectPreset(value);
+    presetBadge.textContent=matchedPreset?`프리셋: ${matchedPreset.label}`:(value?.enabled?'직접 설정':'공통 예산 꺼짐');
+    for(const p of presets){
+      const on=matchedPreset?.id===p.id;
+      presetButtons[p.id].classList.toggle('is-on',on);
+      presetButtons[p.id].setAttribute('aria-pressed',String(on));
+      presetButtons[p.id].disabled=!loaded||busy;
+    }
+    if(value){
+      summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+        +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');
+      const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+      const tokName=ctxPolicy.tokenizer||'tiktoken';
+      const recallTok=memorySuiteEstimateRecallTokens(value.totalChars+1200,tokName);
+      const autoGradiaChars=typeof config.getGradiaReserveEstimate==='function'?Number(config.getGradiaReserveEstimate()||6000):6000;
+      const gChars=ctxPolicy.includeGradiaReserve?(typeof ctxPolicy.gradiaReserveChars==='number'?ctxPolicy.gradiaReserveChars:autoGradiaChars):0;
+      const gTok=ctxPolicy.includeGradiaReserve?memorySuiteEstimateRecallTokens(gChars,tokName):0;
+      const totalReserve=Math.min(Math.floor(ctxPolicy.maxContextTokens*0.8),recallTok+gTok);
+      const keepTok=Math.max(Math.floor(ctxPolicy.maxContextTokens*0.2),ctxPolicy.maxContextTokens-totalReserve);
+      breakdown.textContent=!lib.available
+        ?'LIBRA 연결 시 컨텍스트 자동 정리 계산을 여기서 바로 적용합니다.'
+        :(ctxPolicy.enabled===false
+          ?'컨텍스트 자동 정리가 꺼져 있습니다.'
+          :`기준 ${ctxPolicy.maxContextTokens.toLocaleString('ko-KR')} 토큰 (${tokName}) = 대화 유지 상한 ~${keepTok.toLocaleString('ko-KR')} 토큰 + 3사 기억 예약 ~${recallTok.toLocaleString('ko-KR')} 토큰`+(ctxPolicy.includeGradiaReserve?` + GRADIA 예약 ~${gTok.toLocaleString('ko-KR')} 토큰`:''));
+    } else {
+      let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}
+      summary.textContent=message||'값을 확인하세요.';
+      breakdown.textContent='';
+    }
+    if(typeof config.renderContextCutterFooter==='function'){
+      try{config.renderContextCutterFooter(cutterFooter,value,lib);}catch{}
+    }
+    const parsedPreserve=Number(preserveInput.value);
+    const livePreserve=Number.isInteger(parsedPreserve)&&parsedPreserve>=MEMORY_SUITE_RECALL_PRESERVE_MIN&&parsedPreserve<=MEMORY_SUITE_RECALL_PRESERVE_MAX
+      ?parsedPreserve
+      :memorySuiteRecallBudgetContextPolicy(value||config.policy.recallBudget()).preserveMessages;
+    const warningMsg=typeof config.getPreserveMismatchWarning==='function'
+      ?String(config.getPreserveMismatchWarning(value,{preserveMessages:livePreserve,cutterEnabled:cutterEnabledToggle.chk.checked,libraAvailable:lib.available})||'')
+      :'';
+    mismatchWarning.textContent=warningMsg;mismatchWarning.hidden=!warningMsg;
+    const suggestedCtx=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    autoCtxBtn.hidden=typeof config.suggestMaxContextTokens!=='function';
+    autoCtxBtn.disabled=!loaded||busy||!lib.available||!(suggestedCtx>=4000&&suggestedCtx<=200000);
     const dirty=!value||fingerprint(value)!==initial;
     apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
-    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
-    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+    recheck.disabled=busy||!config.sync;
+    for(const node of [enabled,total,...Object.values(shares),...gradiaInputs])node.disabled=!loaded||busy;
+    for(const node of cutterInputs)node.disabled=!loaded||busy||!lib.available;
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>budgetPeers.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
       row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
   };
-  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
-    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const fill=()=>{
+    const value=config.policy.recallBudget();
+    loadedVersion=value.version===2?2:1;presetTouched=false;
+    enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(value);
+    cutterEnabledToggle.chk.checked=ctxPolicy.enabled!==false;
+    cutterOnlyMemToggle.chk.checked=ctxPolicy.onlyMemorized!==false;
+    maxCtxInput.value=String(ctxPolicy.maxContextTokens);
+    trimPercentInput.value=String(ctxPolicy.trimPercent);
+    preserveInput.value=String(ctxPolicy.preserveMessages);
+    tokenizerSelect.value=String(ctxPolicy.tokenizer||'tiktoken');
+    gradiaReserveToggle.chk.checked=ctxPolicy.includeGradiaReserve;
+    gradiaReserveCharsInput.value=typeof ctxPolicy.gradiaReserveChars==='number'?String(ctxPolicy.gradiaReserveChars):'';
+    triggerReserveToggle.chk.checked=ctxPolicy.triggerWithReserve;
+    gradiaFollowToggle.chk.checked=gradiaPolicy.followSharedBudget;
+    gradiaRedistributeToggle.chk.checked=gradiaPolicy.redistributeDisabledOwners;
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();
+  };
   const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
   const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
-  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const node of [enabled,total,...Object.values(shares),...cutterInputs,...gradiaInputs])node.addEventListener(node.type==='checkbox'||node.tagName==='SELECT'?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const p of presets){
+    presetButtons[p.id].onclick=()=>{
+      if(!loaded||busy)return;
+      enabled.checked=true;total.value=String(p.totalChars);for(const o of owners)shares[o].value=String(p.shares[o]);
+      presetTouched=true;
+      if(libraState().available){
+        maxCtxInput.value=String(p.maxContextTokens);
+        trimPercentInput.value=String(p.trimPercent);
+        preserveInput.value=String(p.preserveMessages);
+      }
+      status.textContent=`통합 프리셋 '${p.label}'을 적용 대기 중입니다. 예산 적용을 눌러 저장하세요.`;
+      draw();
+    };
+  }
+  autoCtxBtn.onclick=()=>{
+    if(!loaded||busy||!libraState().available)return;
+    const suggested=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    if(suggested>=4000&&suggested<=200000){maxCtxInput.value=String(suggested);status.textContent=`모델 컨텍스트 기준으로 ${suggested.toLocaleString('ko-KR')} 토큰에 맞췄습니다. 예산 적용을 눌러 저장하세요.`;draw();}
+  };
+  recheck.onclick=()=>{if(!busy)void check();};
   const applyBudget=async()=>{
     if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
     let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -53428,7 +53776,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
       await config.policy.setRecallBudget(value);fill();
       if(config.sync){
         await check();
-        const targets=config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)&&peerStates[peer]?.state==='different');
+        const targets=config.sync.peers.filter(peer=>budgetPeers.includes(peer)&&peerStates[peer]?.state==='different');
         if(targets.length){
           const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
           const results=await config.sync.applyBudgetToPeers(value,targets,expected);
@@ -53493,7 +53841,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
-    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{owner,policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -53857,6 +54205,29 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const libraSourceRuleSync = createMemorySuiteSourceRuleSync({ owner: 'libra', policy: libraSourceInput, isDisposed: () => state.disposed,
       api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) });
     libraSourceInputConfig.ruleSync = libraSourceRuleSync;
+    const syncLibraContextCutterFromSharedBudget = async budgetValue => {
+      if (!budgetValue || budgetValue.version !== 2 || typeof saveMemorySettings !== 'function') return null;
+      const ctxPolicy = typeof memorySuiteRecallBudgetContextPolicy === 'function'
+        ? memorySuiteRecallBudgetContextPolicy(budgetValue)
+        : null;
+      if (!ctxPolicy) return null;
+      try {
+        return await saveMemorySettings({
+          contextCutterEnabled: ctxPolicy.enabled !== false,
+          contextCutterOnlyMemorized: ctxPolicy.onlyMemorized !== false,
+          contextCutterMaxTokens: Number(ctxPolicy.maxContextTokens) || 40000,
+          contextCutterTrimPercent: Number(ctxPolicy.trimPercent) || 30,
+          contextCutterPreserveMessages: Number(ctxPolicy.preserveMessages) || 6,
+          contextCutterTokenizer: String(ctxPolicy.tokenizer || 'tiktoken')
+        });
+      } catch (_) { return null; }
+    };
+    libraSourceRuleSync.subscribeBudget?.(() => {
+      try {
+        const saved = libraSourceInput.recallBudget();
+        if (saved?.version === 2) void syncLibraContextCutterFromSharedBudget(saved);
+      } catch (_) {}
+    });
   // LIBRA uses the shared editor, the same one HAYAKU and Flashback mount (shared recall budget lives in 성능 프리셋).
   function mountLibraSourceInputControls(container) {
     return mountMemorySuiteSourceInputControls(container,{...libraSourceInputConfig,owner:'libra',policy:libraSourceInput,ruleSync:libraSourceRuleSync,includeRecallBudget:false,isDisposed:()=>state.disposed});
@@ -53870,16 +54241,24 @@ function mountMemorySuiteReanalysisReview(container,config) {
     style.textContent = `
 .ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
 .ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
-.ms-source-settings button,.ms-source-settings input{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
 .ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
 ` + memorySuiteSourceFinderCss();
     box.appendChild(style);
     container.appendChild(box);
     const panel = mountMemorySuiteRecallBudgetPanel(box, {
+      owner: 'libra',
       policy: libraSourceInput,
       sync: libraSourceRuleSync,
       isDisposed: () => state.disposed,
-      onApplied: options.onApplied
+      suggestMaxContextTokens: options.suggestMaxContextTokens,
+      getGradiaReserveEstimate: options.getGradiaReserveEstimate,
+      getPreserveMismatchWarning: options.getPreserveMismatchWarning,
+      renderContextCutterFooter: options.renderContextCutterFooter,
+      onApplied: value => {
+        if (value?.version === 2) void syncLibraContextCutterFromSharedBudget(value);
+        options.onApplied?.(value);
+      }
     });
     libraSourceInput.ready().then(() => {
       if (!state.disposed && box.isConnected) panel.load();
@@ -67751,9 +68130,22 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         + profile.overhead;
     };
     const computeContextCutterRecallReserve = (settings, tokenizerName = 'tiktoken', maxContext = 40000) => {
-      const profile = CONTEXT_CUTTER_PROFILES[tokenizerName] || CONTEXT_CUTTER_PROFILES.tiktoken;
       const sharedBudget = memorySuiteRecallBudget('libra');
       const useShared = Boolean(sharedBudget && sharedBudget.enabled === true && Number(sharedBudget.totalChars) > 0);
+      const isSharedV2 = Boolean(sharedBudget && sharedBudget.version === 2);
+      const ctxPolicy = typeof memorySuiteRecallBudgetContextPolicy === 'function'
+        ? memorySuiteRecallBudgetContextPolicy(sharedBudget)
+        : { enabled: true, onlyMemorized: true, maxContextTokens: 40000, trimPercent: 30, preserveMessages: 6, tokenizer: 'tiktoken', includeGradiaReserve: false, gradiaReserveChars: 'auto', triggerWithReserve: false };
+      const resolvedTokenizer = isSharedV2 && ctxPolicy.tokenizer
+        ? String(ctxPolicy.tokenizer)
+        : String(tokenizerName || 'tiktoken');
+      const profile = CONTEXT_CUTTER_PROFILES[resolvedTokenizer] || CONTEXT_CUTTER_PROFILES.tiktoken;
+      const effectiveMaxContext = (isSharedV2 && Number(ctxPolicy.maxContextTokens) >= 4000)
+        ? Math.floor(clamp(ctxPolicy.maxContextTokens, 4000, 200000, 40000))
+        : Math.floor(clamp(maxContext, 4000, 200000, 40000));
+      const effectiveTrimPercent = (isSharedV2 && Number(ctxPolicy.trimPercent) >= 5)
+        ? Math.floor(clamp(ctxPolicy.trimPercent, 5, 80, 30))
+        : Math.floor(clamp(settings?.contextCutterTrimPercent, 5, 80, 30));
       const wrapperChars = UNIFIED_CLASSIC_HEADER.length + UNIFIED_CLASSIC_FOOTER.length + (useShared ? 1200 : 2);
       const configuredChars = useShared
         ? Math.max(0, Number(sharedBudget.totalChars || 0))
@@ -67762,14 +68154,30 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const blendedCharsPerRawToken = (profile.cjkCharsPerToken * 0.7) + (profile.latinCharsPerToken * 0.3);
       const rawTokens = Math.ceil(reserveChars / Math.max(1, blendedCharsPerRawToken));
       const estimatedTokens = Math.ceil(rawTokens * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
-      const reserveTokens = Math.min(Math.floor(maxContext * 0.8), Math.max(500, estimatedTokens));
-      const ratioTargetTokens = Math.floor(maxContext * (1 - Math.floor(clamp(settings?.contextCutterTrimPercent, 5, 80, 30)) / 100));
-      const reserveTargetTokens = Math.max(Math.floor(maxContext * 0.2), maxContext - reserveTokens);
+      const recallReserveTokens = Math.min(Math.floor(effectiveMaxContext * 0.8), Math.max(500, estimatedTokens));
+      const gradiaReserveChars = useShared && ctxPolicy.includeGradiaReserve
+        ? (typeof ctxPolicy.gradiaReserveChars === 'number' ? ctxPolicy.gradiaReserveChars : 6000)
+        : 0;
+      const gradiaReserveTokens = gradiaReserveChars > 0
+        ? Math.ceil(Math.ceil(gradiaReserveChars / Math.max(1, blendedCharsPerRawToken)) * CONTEXT_CUTTER_TOKEN_MULTIPLIER)
+        : 0;
+      const totalReserveTokens = Math.min(Math.floor(effectiveMaxContext * 0.8), recallReserveTokens + gradiaReserveTokens);
+      const ratioTargetTokens = Math.floor(effectiveMaxContext * (1 - effectiveTrimPercent / 100));
+      const reserveTargetTokens = Math.max(Math.floor(effectiveMaxContext * 0.2), effectiveMaxContext - totalReserveTokens);
+      const triggerWithReserve = useShared && ctxPolicy.triggerWithReserve === true;
+      const triggerTokens = triggerWithReserve ? reserveTargetTokens : effectiveMaxContext;
       return {
         source: useShared ? 'shared_recall_budget' : 'libra_recall_budget',
+        sharedBudgetVersion: useShared ? Number(sharedBudget?.version || 1) : 0,
         configuredChars,
         reserveChars,
-        reserveTokens,
+        recallReserveTokens,
+        gradiaReserveChars,
+        gradiaReserveTokens,
+        reserveTokens: totalReserveTokens,
+        effectiveMaxContext,
+        triggerWithReserve,
+        triggerTokens,
         ratioTargetTokens,
         targetTokens: Math.min(ratioTargetTokens, reserveTargetTokens)
       };
@@ -67827,15 +68235,21 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       return clone(empty);
     };
     const applyLibraContextCutter = async (messages, { context, settings, completedPairs = [], requestManifest = null, receiptSet = null } = {}) => {
-      if (!Array.isArray(messages) || !messages.length || settings?.contextCutterEnabled === false) return messages;
+      const sharedBudget = typeof memorySuiteRecallBudget === 'function' ? memorySuiteRecallBudget('libra') : null;
+      const isSharedV2 = Boolean(sharedBudget && sharedBudget.version === 2);
+      const ctxPolicy = isSharedV2 && typeof memorySuiteRecallBudgetContextPolicy === 'function'
+        ? memorySuiteRecallBudgetContextPolicy(sharedBudget)
+        : null;
+      const cutterEnabled = ctxPolicy ? ctxPolicy.enabled !== false : settings?.contextCutterEnabled !== false;
+      if (!Array.isArray(messages) || !messages.length || !cutterEnabled) return messages;
       const scope = context?.scope;
       const scopeKey = string(scope?.scopeKey || '');
       if (!scopeKey) return messages;
-      const tokenizer = normalizeChoice(settings?.contextCutterTokenizer, ['tiktoken', 'claude', 'gemini', 'deepseek'], 'tiktoken');
-      const maxContext = Math.floor(clamp(settings?.contextCutterMaxTokens, 4000, 200000, 40000));
-      const trimPercent = Math.floor(clamp(settings?.contextCutterTrimPercent, 5, 80, 30));
-      const preserveMessages = Math.floor(clamp(settings?.contextCutterPreserveMessages, 2, 50, 6));
-      const onlyMemorized = settings?.contextCutterOnlyMemorized !== false;
+      const tokenizer = normalizeChoice(ctxPolicy?.tokenizer ?? settings?.contextCutterTokenizer, ['tiktoken', 'claude', 'gemini', 'deepseek'], 'tiktoken');
+      const maxContext = Math.floor(clamp(ctxPolicy?.maxContextTokens ?? settings?.contextCutterMaxTokens, 4000, 200000, 40000));
+      const trimPercent = Math.floor(clamp(ctxPolicy?.trimPercent ?? settings?.contextCutterTrimPercent, 5, 80, 30));
+      const preserveMessages = Math.floor(clamp(ctxPolicy?.preserveMessages ?? settings?.contextCutterPreserveMessages, 2, 50, 6));
+      const onlyMemorized = ctxPolicy ? ctxPolicy.onlyMemorized !== false : settings?.contextCutterOnlyMemorized !== false;
 
       const order = [];
       const seen = new Set();
@@ -67904,7 +68318,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const targetTokens = reservePlan.targetTokens;
       let trimmedThisTurn = false;
 
-      if (currentTokens > maxContext) {
+      if (currentTokens > reservePlan.triggerTokens) {
         for (const memo of order) {
           if (currentTokens <= targetTokens) break;
           if (removed.has(memo) || latest.has(memo) || blocked.has(memo)) continue;
@@ -67936,6 +68350,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         estimatedTokensBefore,
         estimatedTokensAfter: currentTokens,
         targetTokens,
+        effectiveMaxContext: reservePlan.effectiveMaxContext,
+        triggerTokens: reservePlan.triggerTokens,
+        gradiaReserveTokens: reservePlan.gradiaReserveTokens,
         recallReserveTokens: reservePlan.reserveTokens,
         recallReserveChars: reservePlan.reserveChars,
         recallReserveSource: reservePlan.source,
@@ -68670,16 +69087,39 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             // read-only Micro projection as responses, with physical/source readback.
             let view = null;
             const projectionStarted = Date.now();
+            const isTornSnapshotProjectionError = err => ['LIBRA_MEMORY_READER_BODY_CHANGED', 'LIBRA_STATE_SOURCE_CHANGED', 'CONSUMER_DATA_CHANGED_DURING_CAPTURE'].includes(string(err?.code || err?.message || ''));
             try {
-              const boundary = await captureUnifiedResponseBoundary(context);
-              view = await loadContinuityStateForResponse(context.scope, manifest);
-              const token = registerConsumedDataReadSet(context.scope,
-                asArray(consumedMicroProofsByState.get(view?.authority || view?.head)), null);
-              try {
-                bindConsumedResponseBoundary(token, boundary);
-                await assertConsumedDataCurrent(token);
+              let lastProjectionError = null;
+              for (let attempt = 0; attempt < 3; attempt += 1) {
+                if (attempt > 0) {
+                  await new Promise(resolve => setTimeout(resolve, 150));
+                  if (superseded()) return { superseded: true };
+                  activeContext = await resolveContext().catch(() => null);
+                  if (!sameSnapshotScope(activeContext?.scope, context.scope)) break;
+                }
+                let attemptView = null;
+                try {
+                  const boundary = await captureUnifiedResponseBoundary(context);
+                  attemptView = await loadContinuityStateForResponse(context.scope, manifest);
+                  const token = registerConsumedDataReadSet(context.scope,
+                    asArray(consumedMicroProofsByState.get(attemptView?.authority || attemptView?.head)), null);
+                  try {
+                    bindConsumedResponseBoundary(token, boundary);
+                    await assertConsumedDataCurrent(token);
+                  }
+                  finally { releaseConsumedDataReadSet(token); }
+                  view = attemptView;
+                  lastProjectionError = null;
+                  break;
+                } catch (attemptError) {
+                  view = attemptView || view;
+                  lastProjectionError = attemptError;
+                  if (attempt >= 2 || superseded() || !isTornSnapshotProjectionError(attemptError)) {
+                    throw attemptError;
+                  }
+                }
               }
-              finally { releaseConsumedDataReadSet(token); }
+              if (lastProjectionError) throw lastProjectionError;
               nextSnapshot.currentStateView = clone(view);
             } catch (error) {
               // The viewer keeps the last read projection (or the stored Head) visible and marks it
@@ -73382,11 +73822,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0)) || (message.recallBudgetChars !== undefined && !(Number.isSafeInteger(message.recallBudgetChars) && message.recallBudgetChars >= 1 && message.recallBudgetChars <= 160000))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0, ...(message.recallBudgetChars ? { recallBudgetChars: message.recallBudgetChars } : {}) });
         result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
@@ -73511,9 +73951,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
+  const select = async (owner, scope, queryText, signal, extraHints = {}) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner), ...(extraHints && typeof extraHints === 'object' ? extraHints : {}) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
         || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
@@ -73848,7 +74288,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);
             check?.();
             const ownRecallChars = unifiedEvidenceCharBudget(settings);
-            const maxChars = hints?.recallBudgetChars ? Math.min(Number(hints.recallBudgetChars), ownRecallChars) : ownRecallChars;
+            const requestedRecallChars = Number(hints?.recallBudgetChars || 0);
+            const maxChars = Number.isSafeInteger(requestedRecallChars) && requestedRecallChars > 0
+              ? Math.min(requestedRecallChars, CLASSIC_MAX_INJECTION_CHARS)
+              : ownRecallChars;
             const maxUnits = Number(settings.stateMaxItems || 12);
             let selection = null;
             try {
@@ -80046,6 +80489,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // 기억 주입 공통 예산 (shared with the other memory plugins through the source-rule sync channel).
       getMemorySuiteRecallBudget: async () => { await libraSourceInput.ready(); return libraSourceInput.recallBudget(); },
       setMemorySuiteRecallBudget: budget => libraSourceInput.setRecallBudget(budget),
+      peekMemorySuiteRecallBudget: () => clone(memorySuiteRecallBudget('libra') || memorySuiteDefaultRecallBudget()),
+      peekMemorySuiteRecallShareChars: () => memorySuiteRecallShareChars('libra'),
       getSourceEditRules: () => libraSourceInput.sourceRules(),
       sourceReanalysisRulesKey: () => memorySuiteSourceTagKey('libra'),
       appendReanalysisRange: (list,range,options) => appendMemorySuiteReanalysisRange(list,range,options),
@@ -82076,12 +82521,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.micro-rail__subhead .micro-seg button{min-height:24px;padding:2px 8px;font-size:11px}',
     '.micro-turns.is-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}',
     '.micro-turn{display:flex;flex-direction:column;align-items:stretch;gap:4px;min-height:48px;padding:7px 10px;border:1px solid var(--border);background:var(--surface)}',
-    '.micro-turn__top{display:flex;align-items:center;justify-content:space-between;gap:4px;width:100%;min-width:0}',
-    '.micro-turn__top b{font:750 13.5px/1.35 var(--font-sans);min-width:0}',
-    '.micro-turn__top>.badge{flex:none}',
-    '.micro-turn__count{padding:0 6px;border-radius:99px;background:var(--surface3);color:var(--text2);font:700 11px/1.45 var(--font-sans);flex:none}',
+    '.micro-turn .micro-turn__top{display:flex;align-items:center;justify-content:flex-start;gap:5px;width:100%;min-width:0;flex-wrap:nowrap}',
+    '.micro-turn .micro-turn__top b{font:750 13px/1.3 var(--font-sans);min-width:0;flex:0 0 auto;white-space:nowrap;overflow-wrap:normal}',
+    '.micro-turn .micro-turn__top .micro-turn__count{flex:0 0 auto;padding:1px 6px;border-radius:99px;background:var(--surface3);color:var(--text2);font:700 11px/1.4 var(--font-sans);white-space:nowrap;overflow-wrap:normal}',
+    '.micro-turn .micro-turn__top>.badge{flex:0 0 auto;margin-left:auto;white-space:nowrap;overflow-wrap:normal}',
     '.micro-turn small{color:var(--text3);font:500 12px/1.45 var(--font-sans);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}',
-    '.micro-turns.is-grid .micro-turn{min-height:44px;padding:6px 8px}',
+    '.micro-turns.is-grid .micro-turn{min-height:44px;padding:6px 7px}',
+    '.micro-turns.is-grid .micro-turn__top{gap:4px}',
+    '.micro-turns.is-grid .micro-turn__top b{font-size:12px;padding:1px 6px}',
+    '.micro-turns.is-grid .micro-turn__top .micro-turn__count{font-size:10.5px;padding:1px 5px}',
+    '.micro-turns.is-grid .micro-turn__top>.badge{font-size:10.5px;padding:1px 6px}',
     '.micro-turns.is-grid .micro-turn small{-webkit-line-clamp:1;font-size:11px}',
     '.micro-state-bar{display:grid;gap:6px;padding:10px 14px;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--inset-bg,var(--surface2))}',
     '.micro-state-bar.is-pending{background:var(--warn-soft);border-color:var(--warn-line)}',
@@ -92200,7 +92649,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if(!Gui.memorySettingsDraft){Gui.memorySettingsDraft=LibraMemoryCore.getSettings();Gui.memorySettingsBasisHash=LibraMemoryCore.memorySettingsHash(Gui.memorySettingsDraft);}
       const settings=Gui.memorySettingsDraft;
       const performanceFields=new Set(['stateMaxItems','recallMaxChars']);
-      const patch=value=>{const custom=Object.keys(value).some(key=>performanceFields.has(key));Gui.memorySettingsDraft=LibraMemoryCore.normalizeMemorySettings({...Gui.memorySettingsDraft,...value,...(custom?{performancePreset:'custom'}:{})});markGuiDirty();};
+      const patch=value=>{const base=Gui.memorySettingsDraft||LibraMemoryCore.getSettings();const custom=Object.keys(value).some(key=>performanceFields.has(key));Gui.memorySettingsDraft=LibraMemoryCore.normalizeMemorySettings({...base,...value,...(custom?{performancePreset:'custom'}:{})});markGuiDirty();};
       const memoryToggle=(key,label)=>setting(label,'',toggle(settings[key]!==false,label,value=>patch({[key]:value})));
       const inputs=[
         ['stateMaxItems','검색 최대 근거 수',4,128],
@@ -92229,7 +92678,7 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
           title:`${preset.desc} · 렌즈 목표 ${Math.floor(preset.chars*Number(settings.recallLensSharePercent)/100).toLocaleString()}자 · 렌즈 후보 상한 ${preset.chars.toLocaleString()}자`,
           onClick:()=>{patch(LibraMemoryCore.recallBudgetPresetValues(preset.id));void renderSettingsGui();}
         }))),
-        guiEl('p', {class:'hint', dataset:{recallBudgetSummary:'true'}, text:`${(typeof memorySuiteRecallShareChars === 'function' ? memorySuiteRecallShareChars('libra') : null) == null ? '' : `기억 주입 공통 예산 사용 중: LIBRA 몫 ${memorySuiteRecallShareChars('libra').toLocaleString()}자가 아래 최대 문자 대신 적용됩니다 (아래 기억 주입 공통 예산에서 변경) · `}전체 ${Number(settings.recallMaxChars).toLocaleString()}자 · 최대 ${settings.stateMaxItems}개 / 렌즈 목표 ${settings.recallLensSharePercent}% (${lensTarget.toLocaleString()}자) · 후보 상한 ${Number(settings.recallLensMaxChars).toLocaleString()}자`}),
+        guiEl('p', {class:'hint', dataset:{recallBudgetSummary:'true'}, text:(()=>{const sharedLibraChars=LibraMemoryCore.peekMemorySuiteRecallShareChars?.()??null;return `${sharedLibraChars==null?'':`기억 주입 공통 예산 사용 중: LIBRA 몫 ${sharedLibraChars.toLocaleString()}자가 아래 최대 문자 대신 적용됩니다 (아래 기억 주입 공통 예산에서 변경) · `}전체 ${Number(settings.recallMaxChars).toLocaleString()}자 · 최대 ${settings.stateMaxItems}개 / 렌즈 목표 ${settings.recallLensSharePercent}% (${lensTarget.toLocaleString()}자) · 후보 상한 ${Number(settings.recallLensMaxChars).toLocaleString()}자`;})()}),
         field('렌즈 비중 (%)',guiEl('input',{class:'input',type:'number',min:0,max:100,step:1,value:settings.recallLensSharePercent,
           dataset:{memorySetting:'recallLensSharePercent'},onInput:event=>patch({recallLensSharePercent:Number(event.target.value)}),onChange:()=>void renderSettingsGui()})),
         field('렌즈 후보 예산',guiEl('select',{class:'input',dataset:{memorySetting:'recallLensBudgetMode'},value:settings.recallLensBudgetMode,
@@ -92257,11 +92706,61 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
 ...extraDetails
 ])
       ]);
+      const suggestLibraContextTokens = () => {
+        try {
+          const rawCtx = Number(typeof LibraProviderBridge !== 'undefined' ? (LibraProviderBridge.peekActiveContextWindow?.() || 0) : 0);
+          if (!(rawCtx >= 4000)) return 0;
+          return Math.max(4000, Math.min(200000, Math.round((rawCtx * 0.85) / 1000) * 1000));
+        } catch (_) { return 0; }
+      };
       const buildRecallBudgetCard = () => {
         const cacheKey = `${String(Gui.openSerial)}:${String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey || '')}`;
         if (Gui.recallBudgetPanel && Gui.recallBudgetPanelKey === cacheKey) return Gui.recallBudgetPanel;
         const host = guiEl('section', { class: 'card', id: 'libraRecallBudgetCard' });
-        LibraMemoryCore.mountRecallBudgetPanel?.(host, { onApplied: () => queueGuiNavigationRender() });
+        LibraMemoryCore.mountRecallBudgetPanel?.(host, {
+          suggestMaxContextTokens: suggestLibraContextTokens,
+          renderContextCutterFooter: footerEl => {
+            if (!footerEl) return;
+            const scopeKey = String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey || '');
+            const cutterState = LibraMemoryCore.getContextCutterState?.(scopeKey) || { removedIds: [], omittedCount: 0, estimatedTokensAfter: 0 };
+            const removedTotal = Array.isArray(cutterState.removedIds) ? cutterState.removedIds.length : 0;
+            const doc = footerEl.ownerDocument;
+            const row = doc.createElement('div');
+            row.className = 'ms-budget-section-head';
+            row.style.marginTop = '6px';
+            const statusSpan = doc.createElement('span');
+            statusSpan.className = 'ms-input-hint';
+            statusSpan.dataset.contextCutterStatus = 'true';
+            statusSpan.textContent = removedTotal > 0
+              ? `현재 채팅 누적 제외 메시지 ${removedTotal.toLocaleString()}개 · 최근 요청 제외 ${Number(cutterState.omittedCount || 0).toLocaleString()}개 (추정 ${Number(cutterState.estimatedTokensAfter || 0).toLocaleString()} 토큰)`
+              : '현재 채팅에서 제외된 메시지가 없습니다.';
+            const resetBtn = doc.createElement('button');
+            resetBtn.type = 'button';
+            resetBtn.dataset.contextCutterReset = 'true';
+            resetBtn.textContent = '현재 채팅 제외 상태 초기화';
+            resetBtn.disabled = removedTotal === 0;
+            resetBtn.onclick = async () => {
+              await LibraMemoryCore.resetContextCutterState?.(scopeKey);
+              queueGuiNavigationRender();
+            };
+            row.append(statusSpan, resetBtn);
+            footerEl.replaceChildren(row);
+          },
+          onApplied: value => {
+            if (value?.version === 2) {
+              const ctx = value.contextCutter || {};
+              patch({
+                contextCutterEnabled: ctx.enabled !== false,
+                contextCutterOnlyMemorized: ctx.onlyMemorized !== false,
+                contextCutterMaxTokens: Number(ctx.maxContextTokens) || 40000,
+                contextCutterTrimPercent: Number(ctx.trimPercent) || 30,
+                contextCutterPreserveMessages: Number(ctx.preserveMessages) || 6,
+                contextCutterTokenizer: String(ctx.tokenizer || 'tiktoken')
+              });
+            }
+            queueGuiNavigationRender();
+          }
+        });
         Gui.recallBudgetPanel = host;
         Gui.recallBudgetPanelKey = cacheKey;
         return host;
@@ -92275,37 +92774,8 @@ card('기억 작동','LIBRA 기억을 쓰는지, AI 응답이 저장될 때마�
     memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석')
   ])
 ]),
-card('리콜 예산','전체 검색 예산과 렌즈 메모리 예산을 함께 조절합니다.',[budgetPresetButtons]),
 buildRecallBudgetCard(),
-(()=>{
-  const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
-  const cutterState=LibraMemoryCore.getContextCutterState?.(scopeKey)||{removedIds:[],omittedCount:0,estimatedTokensAfter:0};
-  const removedTotal=Array.isArray(cutterState.removedIds)?cutterState.removedIds.length:0;
-  const reservePlan=LibraMemoryCore.computeContextCutterRecallReserve?.(settings,settings.contextCutterTokenizer,settings.contextCutterMaxTokens)||{source:'libra_recall_budget',configuredChars:settings.recallMaxChars,reserveTokens:0,targetTokens:Math.floor(settings.contextCutterMaxTokens*(1-settings.contextCutterTrimPercent/100))};
-  const reserveLabel=reservePlan.source==='shared_recall_budget'?'기억 주입 공통 예산':'리콜 예산';
-  return card('컨텍스트 자동 정리','하이파 미사용 환경에서 오래된 채팅 메시지를 요청 컨텍스트에서 일괄 제외해 기억 주입 여유 공간과 프롬프트 캐시 안정성을 확보합니다. 제외된 과거 대화는 LIBRA 장기기억 리콜이 대신 보완합니다.',[
-    guiEl('div',{class:'stack',dataset:{contextCutterSettings:'true'}},[
-      memoryToggle('contextCutterEnabled','컨텍스트 자동 정리 사용'),
-      memoryToggle('contextCutterOnlyMemorized','기억(정본·영수증) 저장이 완료된 과거 턴만 제외'),
-      guiEl('div',{class:'grid g2'},[
-        field('기준 컨텍스트 (토큰)',guiEl('input',{class:'input',type:'number',min:4000,max:200000,step:1000,value:settings.contextCutterMaxTokens,dataset:{memorySetting:'contextCutterMaxTokens'},onInput:event=>patch({contextCutterMaxTokens:Number(event.target.value)}),onChange:event=>patch({contextCutterMaxTokens:Number(event.target.value)})})),
-        field('초과 시 비울 비율 (%)',guiEl('input',{class:'input',type:'number',min:5,max:80,step:5,value:settings.contextCutterTrimPercent,dataset:{memorySetting:'contextCutterTrimPercent'},onInput:event=>patch({contextCutterTrimPercent:Number(event.target.value)}),onChange:event=>patch({contextCutterTrimPercent:Number(event.target.value)})})),
-        field('최신 보호 메시지 수',guiEl('input',{class:'input',type:'number',min:2,max:50,step:1,value:settings.contextCutterPreserveMessages,dataset:{memorySetting:'contextCutterPreserveMessages'},onInput:event=>patch({contextCutterPreserveMessages:Number(event.target.value)}),onChange:event=>patch({contextCutterPreserveMessages:Number(event.target.value)})})),
-        field('토큰 추정 기준',guiEl('select',{class:'input',value:settings.contextCutterTokenizer,dataset:{memorySetting:'contextCutterTokenizer'},onChange:event=>patch({contextCutterTokenizer:event.target.value})},[
-          guiEl('option',{value:'tiktoken',selected:settings.contextCutterTokenizer==='tiktoken',text:'OpenAI 호환 (tiktoken)'}),
-          guiEl('option',{value:'claude',selected:settings.contextCutterTokenizer==='claude',text:'Claude'}),
-          guiEl('option',{value:'gemini',selected:settings.contextCutterTokenizer==='gemini',text:'Gemini'}),
-          guiEl('option',{value:'deepseek',selected:settings.contextCutterTokenizer==='deepseek',text:'DeepSeek'})
-        ]))
-      ]),
-      guiEl('p',{class:'hint',dataset:{contextCutterReserve:'true'},text:`예산 연동: 현재 ${reserveLabel}(${Number(reservePlan.configuredChars||0).toLocaleString()}자 · 래퍼 포함 약 ${Number(reservePlan.reserveTokens||0).toLocaleString()} 토큰)이 항상 들어갈 수 있도록 정리 목표 상한을 ${Number(reservePlan.targetTokens||0).toLocaleString()} 토큰 이하로 자동 보장합니다.`}),
-      guiEl('div',{class:'cluster',style:{justifyContent:'space-between',paddingTop:'4px'}},[
-        guiEl('span',{class:'hint',dataset:{contextCutterStatus:'true'},text:removedTotal>0?`현재 채팅 누적 제외 메시지 ${removedTotal.toLocaleString()}개 · 최근 요청 제외 ${Number(cutterState.omittedCount||0).toLocaleString()}개 (추정 ${Number(cutterState.estimatedTokensAfter||0).toLocaleString()} 토큰)`:'현재 채팅에서 제외된 메시지가 없습니다.'}),
-        guiEl('button',{class:'btn btn--sm',type:'button',dataset:{contextCutterReset:'true'},text:'현재 채팅 제외 상태 초기화',disabled:removedTotal===0,onClick:async()=>{await LibraMemoryCore.resetContextCutterState?.(scopeKey);queueGuiNavigationRender();}})
-      ])
-    ])
-  ]);
-})(),
+card('리콜 예산','공통 예산이 꺼져 있을 때 사용하는 LIBRA 단독 검색·렌즈 예산입니다.',[budgetPresetButtons]),
 advanced
 ]);
     }
@@ -95404,7 +95874,16 @@ advanced
     }
     nav.querySelectorAll('[data-subpanel]').forEach(node=>node.remove());
     nav.querySelectorAll('[data-subtab]').forEach(button=>button.hidden=false);
-    const panel = buildApprovedMockupSettingsPanel(activeGroup.id, active, previousScopePanel);
+    let panel;
+    try {
+      panel = buildApprovedMockupSettingsPanel(activeGroup.id, active, previousScopePanel);
+    } catch (error) {
+      warn('settings_panel_render_failed', active, error);
+      panel = guiEl('div', { class: 'note note--danger', dataset: { settingsPanelError: active } }, [
+        guiEl('strong', { text: '이 설정 화면을 여는 중 오류가 발생했습니다.' }),
+        guiEl('p', { class: 'hint', text: String(error?.message || error || 'unknown_error') })
+      ]);
+    }
     const sectionTabs=activeGroup.sections.length>1?guiEl('nav',{class:'tabs',role:'tablist','aria-label':`${activeGroup.label} 상세 설정`},activeGroup.sections.map(id=>{
       const item=BOOK_NATIVE_SETTINGS_SECTIONS.find(section=>section.id===id);
       return guiEl('button',{class:`tab${active===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===id),text:item?.label||id,onClick:()=>selectBookSettingsRoomSection(id)});
@@ -95649,7 +96128,7 @@ advanced
       guiEl('h3',{class:'card__title',text:'이야기 시계'}),
       guiEl('p',{class:`story-structure__lead${current?'':' muted'}`,dataset:{storyClockCurrent:'true'},text:current?view.currentLabel:panel.loading&&!view?'이야기 시계를 읽는 중입니다.':'아직 시간 진행이 기록된 턴이 없습니다.'}),
       guiEl('p',{class:'hint',text:'턴을 기억할 때 시간이 얼마나 흘렀는지 함께 읽어 일차를 셉니다. 시계가 생기기 전 턴은 일차 모름으로 남고, 재분석하면 채워집니다.'}),
-      view?guiEl('div',{class:'facts'},[fact(entries.length-unknown,'일차 확인 턴'),fact(unknown,'일차 모름'),fact(Object.keys(guiAsObject(view.corrections)).length,'정정')]):null,
+      view?guiEl('div',{class:'facts'},[fact(`${entries.length-unknown}턴`,'확인 턴'),fact(`${unknown}턴`,'미확인 턴'),fact(`${Object.keys(guiAsObject(view.corrections)).length}건`,'수동 정정')]):null,
       guiEl('div',{class:'stack stack--sm',dataset:{storyClockAnchor:'true'}},[
         guiEl('div',{class:'split',style:{flexWrap:'wrap',gap:'6px 10px'}},[
           guiEl('span',{class:'label',text:view?.basis==='clock'?'기준 날짜(기록 1일째, 선택)':'기준 날짜(1일째, 선택)'}),

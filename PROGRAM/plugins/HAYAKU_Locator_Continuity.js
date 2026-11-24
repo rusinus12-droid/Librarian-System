@@ -26482,6 +26482,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const authoritativeHistoryPairs = (chatMessages, scope = {}) => {
     const pairs = [];
     let pendingUserHash = '';
+    let pendingUserVisible = '';
     let pendingUserMessageIdHash = '';
     let pendingUserMessageIdentityStable = false;
     let pendingUserMessageIndex = -1;
@@ -26495,6 +26496,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const body = projection.body;
       if (/^(?:user|human)$/i.test(role)) {
         const visible = projection.visible;
+        pendingUserVisible = visible;
         pendingUserHash = messageRevisionVisibleHash(projection, scope?.key || '');
         pendingUserMessageIdHash = stableHash64(projection.sourceMessageId);
         pendingUserMessageIdentityStable = projection.sourceMessageStable === true;
@@ -26550,11 +26552,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       pairs.push({
         pairIndex: pairs.length + 1,
         userHash: pendingUserHash,
+        userVisibleText: pendingUserVisible,
         userMessageIdHash: pendingUserMessageIdHash,
         userMessageIdentityStable: pendingUserMessageIdentityStable,
         userMessageIndex: pendingUserMessageIndex,
         userMessageTime: pendingUserMessageTime,
         assistantVisibleHash: messageRevisionVisibleHash(projection, scope?.key || ''),
+        assistantVisibleText: visible,
         assistantLegacyVisibleHash: projection.legacyVisibleHash || '',
         // Same digest as hayakuRawSourceDigest over the unfiltered U+A bodies.
         sourceRawDigest: stableHash64([pendingUserRawHash, stableHash64(text(body))].join('\u0001')),
@@ -39973,7 +39977,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // 기억 주입 공통 예산: while it is on, HAYAKU's share caps the recalled evidence (the packet-writing
       // contract stays outside it, as with HAYAKU's own budget). 중복 제거: peer blocks already in the request.
       const sharedRecallChars = memorySuiteRecallShareChars('hayaku');
-      const recallCapForEvidence = sharedRecallChars == null ? null : Math.min(optionalInjectionBudgetChars, sharedRecallChars);
+      const requestedRecallChars = Number(mode?.recallBudgetChars || 0);
+      const effectiveRecallChars = Number.isSafeInteger(requestedRecallChars) && requestedRecallChars > 0
+        ? requestedRecallChars
+        : sharedRecallChars;
+      const recallCapForEvidence = effectiveRecallChars == null ? null : Math.min(optionalInjectionBudgetChars, effectiveRecallChars);
       const peerRecall = memorySuitePeerRecallIndex(messages, 'hayaku');
       if (peerRecall.chars && selectedForContext && typeof selectedForContext === 'object') hayakuPeerRecallIndexes.set(selectedForContext, peerRecall);
       if (visibleRecentTurns.turns.size && selectedForContext && typeof selectedForContext === 'object') hayakuVisibleRecentTurns.set(selectedForContext, visibleRecentTurns);
@@ -52173,11 +52181,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0)) || (message.recallBudgetChars !== undefined && !(Number.isSafeInteger(message.recallBudgetChars) && message.recallBudgetChars >= 1 && message.recallBudgetChars <= 160000))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0, ...(message.recallBudgetChars ? { recallBudgetChars: message.recallBudgetChars } : {}) });
         result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
@@ -52302,9 +52310,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
+  const select = async (owner, scope, queryText, signal, extraHints = {}) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner), ...(extraHints && typeof extraHints === 'object' ? extraHints : {}) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
         || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
@@ -52439,7 +52447,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
       select: async (queryText, check, hints = {}) => {
-        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0 });
+        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0, recallBudgetChars: hints.recallBudgetChars || 0 });
         check?.();
         return { content: text(selected?.recallPrompt || '').trim() };
       },
@@ -56654,9 +56662,26 @@ function hayakuSameTurnSource(stored, pair) {
   if (uId && puId && uId !== puId) return false;
   const raw = s(stored.sourceRawDigest);
   if (raw && raw === s(pair.sourceRawDigest)) return true;
+  if (s(pair.assistantLegacyVisibleHash) && s(stored.assistantVisibleHash) === s(pair.assistantLegacyVisibleHash)
+    && (!s(stored.userHash) || !s(pair.userHash) || s(stored.userHash) === s(pair.userHash))) return true;
   const storedPackets = [...(Array.isArray(stored.packetHashes) ? stored.packetHashes : []), stored.hash].map(s).filter(Boolean);
   const livePackets = new Set((Array.isArray(pair.packetHashes) ? pair.packetHashes : []).map(s).filter(Boolean));
-  return storedPackets.some(hash => livePackets.has(hash));
+  if (storedPackets.some(hash => livePackets.has(hash))) return true;
+  const storedA = s(stored.assistantVisibleText || stored.assistantText || stored.sourceAssistantText || '');
+  const pairA = s(pair.assistantVisibleText || pair.assistantText || '');
+  if (!storedA || !pairA) return false;
+  const normCompare = v => {
+    const projected = typeof memorySuiteCanonicalSource === 'function' ? memorySuiteCanonicalSource(v, 'hayaku') : null;
+    const base = projected !== null
+      ? projected
+      : (typeof memorySuiteProjectSourceTags === 'function' ? memorySuiteProjectSourceTags(v, 'hayaku') : v);
+    return String(base ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').replace(/\s+/g, ' ').trim();
+  };
+  if (normCompare(storedA) !== normCompare(pairA)) return false;
+  const storedU = s(stored.userVisibleText || stored.userText || stored.sourceUserText || '');
+  const pairU = s(pair.userVisibleText || pair.userText || '');
+  if (storedU && pairU && normCompare(storedU) !== normCompare(pairU)) return false;
+  return true;
 }
 /* LIBRARIAN SYSTEM SOURCE REVIEW v1.0.0 START
  * Own-iframe diff and immutable, owner-scoped approved-input evidence.
@@ -56810,12 +56835,88 @@ function memorySuiteMissingDefaultSourceTags(rules) {
 // kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
 // its own budget setting. Each plugin still shrinks below its share when the context is short.
 const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
-const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 120000;
+const MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN = 4000, MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX = 200000;
+const MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN = 0, MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX = 40000;
+const MEMORY_SUITE_RECALL_TRIM_MIN = 5, MEMORY_SUITE_RECALL_TRIM_MAX = 80;
+const MEMORY_SUITE_RECALL_PRESERVE_MIN = 2, MEMORY_SUITE_RECALL_PRESERVE_MAX = 50;
+const MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS = Object.freeze(['tiktoken', 'claude', 'gemini', 'deepseek']);
+const MEMORY_SUITE_RECALL_BUDGET_PRESETS = Object.freeze([
+  Object.freeze({ id: 'light', label: '경량', totalChars: 12000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 32000, trimPercent: 35, preserveMessages: 8, desc: '짧은 문맥·핵심 기억 중심 (GRADIA 경량 대응)' }),
+  Object.freeze({ id: 'balanced', label: '균형', totalChars: 24000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 64000, trimPercent: 30, preserveMessages: 16, desc: '일반 대화·GRADIA 균형 권장 표준 예산' }),
+  Object.freeze({ id: 'heavy', label: '중량', totalChars: 48000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 100000, trimPercent: 25, preserveMessages: 24, desc: '풍부한 회상·GRADIA 중량 장기 서사 추적' }),
+  Object.freeze({ id: 'ultra', label: '초중량', totalChars: 72000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 160000, trimPercent: 20, preserveMessages: 32, desc: '초대형 컨텍스트·최대 기억 주입' })
+]);
+const MEMORY_SUITE_RECALL_TOKENIZER_PROFILES = Object.freeze({
+  tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05 }),
+  claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0 }),
+  gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15 }),
+  deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0 })
+});
 function memorySuiteDefaultRecallBudget() {
   return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
 }
+function memorySuiteNormalizeRecallBudgetContextCutter(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const maxContextRaw=src.maxContextTokens==null?40000:Number(src.maxContextTokens);
+  if(!Number.isInteger(maxContextRaw)||maxContextRaw<MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN||maxContextRaw>MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 기준 컨텍스트는 '+MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX.toLocaleString('en-US')+' 토큰 사이의 정수입니다.');
+  const trimRaw=src.trimPercent==null?30:Number(src.trimPercent);
+  if(!Number.isInteger(trimRaw)||trimRaw<MEMORY_SUITE_RECALL_TRIM_MIN||trimRaw>MEMORY_SUITE_RECALL_TRIM_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 초과 시 비울 비율은 '+MEMORY_SUITE_RECALL_TRIM_MIN+'~'+MEMORY_SUITE_RECALL_TRIM_MAX+'% 사이의 정수입니다.');
+  const preserveRaw=src.preserveMessages==null?6:Number(src.preserveMessages);
+  if(!Number.isInteger(preserveRaw)||preserveRaw<MEMORY_SUITE_RECALL_PRESERVE_MIN||preserveRaw>MEMORY_SUITE_RECALL_PRESERVE_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 최신 보호 메시지 수는 '+MEMORY_SUITE_RECALL_PRESERVE_MIN+'~'+MEMORY_SUITE_RECALL_PRESERVE_MAX+' 사이의 정수입니다.');
+  const tokenizerRaw=src.tokenizer==null||src.tokenizer===''?'tiktoken':String(src.tokenizer).trim().toLowerCase();
+  if(!MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS.includes(tokenizerRaw))
+    throw Error('RECALL_BUDGET_INVALID: 토큰 추정 기준이 올바르지 않습니다.');
+  let gradiaReserveChars='auto';
+  if(src.gradiaReserveChars!=null&&src.gradiaReserveChars!==''&&src.gradiaReserveChars!=='auto'){
+    const reserve=Number(src.gradiaReserveChars);
+    if(!Number.isInteger(reserve)||reserve<MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN||reserve>MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX)
+      throw Error('RECALL_BUDGET_INVALID: GRADIA 예약 글자는 0~40,000 사이의 정수 또는 auto여야 합니다.');
+    gradiaReserveChars=reserve;
+  }
+  return {
+    enabled:src.enabled!==false,
+    onlyMemorized:src.onlyMemorized!==false,
+    maxContextTokens:maxContextRaw,
+    trimPercent:trimRaw,
+    preserveMessages:preserveRaw,
+    tokenizer:tokenizerRaw,
+    includeGradiaReserve:src.includeGradiaReserve!==false,
+    gradiaReserveChars,
+    triggerWithReserve:src.triggerWithReserve!==false
+  };
+}
+function memorySuiteNormalizeRecallBudgetGradia(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  return {
+    followSharedBudget:src.followSharedBudget!==false,
+    redistributeDisabledOwners:src.redistributeDisabledOwners!==false
+  };
+}
+function memorySuiteRecallBudgetPresetValues(id, currentBudget=null) {
+  const preset=MEMORY_SUITE_RECALL_BUDGET_PRESETS.find(item=>item.id===id);
+  if(!preset)throw Error('RECALL_BUDGET_INVALID: 프리셋을 찾을 수 없습니다.');
+  const existingCtx=memorySuiteNormalizeRecallBudgetContextCutter(currentBudget?.contextCutter);
+  const existingGradia=memorySuiteNormalizeRecallBudgetGradia(currentBudget?.gradia);
+  return {
+    version:2,
+    enabled:true,
+    totalChars:preset.totalChars,
+    shares:{...preset.shares},
+    contextCutter:{
+      ...existingCtx,
+      maxContextTokens:preset.maxContextTokens,
+      trimPercent:preset.trimPercent,
+      preserveMessages:preset.preserveMessages
+    },
+    gradia:existingGradia
+  };
+}
 function memorySuiteNormalizeRecallBudget(input) {
-  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1&&input.version!==2))throw Error('RECALL_BUDGET_INVALID');
   const total=Number(input.totalChars);
   if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
     throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
@@ -56826,7 +56927,61 @@ function memorySuiteNormalizeRecallBudget(input) {
     shares[owner]=value;
   }
   if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
-  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  const hasV2Fields=input.version===2||input.contextCutter!==undefined||input.gradia!==undefined;
+  if(!hasV2Fields)return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  if(input.contextCutter!=null&&(typeof input.contextCutter!=='object'||Array.isArray(input.contextCutter)))throw Error('RECALL_BUDGET_INVALID');
+  if(input.gradia!=null&&(typeof input.gradia!=='object'||Array.isArray(input.gradia)))throw Error('RECALL_BUDGET_INVALID');
+  return {
+    version:2,
+    enabled:input.enabled===true,
+    totalChars:total,
+    shares,
+    contextCutter:memorySuiteNormalizeRecallBudgetContextCutter(input.contextCutter),
+    gradia:memorySuiteNormalizeRecallBudgetGradia(input.gradia)
+  };
+}
+function memorySuiteRecallBudgetContextPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetContextCutter(budget?.contextCutter);
+}
+function memorySuiteRecallBudgetGradiaPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetGradia(budget?.gradia);
+}
+function memorySuiteRecallBudgetOwnerShares(budget, activeOwners=MEMORY_SUITE_RECALL_OWNERS) {
+  if(!budget||budget.enabled!==true)return null;
+  const active=(Array.isArray(activeOwners)?activeOwners:MEMORY_SUITE_RECALL_OWNERS).filter(owner=>MEMORY_SUITE_RECALL_OWNERS.includes(owner));
+  if(!active.length)return {};
+  const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(budget);
+  const fullSet=MEMORY_SUITE_RECALL_OWNERS.every(owner=>active.includes(owner));
+  const out={};
+  if(fullSet||gradiaPolicy.redistributeDisabledOwners===false){
+    for(const owner of active)out[owner]=Math.floor(Number(budget.totalChars||0)*Number(budget.shares?.[owner]||0)/100);
+    return out;
+  }
+  const activeShareSum=active.reduce((sum,owner)=>sum+Math.max(0,Number(budget.shares?.[owner]||0)),0);
+  if(activeShareSum<=0){
+    const even=Math.floor(Number(budget.totalChars||0)/active.length);
+    for(const owner of active)out[owner]=even;
+    return out;
+  }
+  let allocated=0;
+  for(const owner of active){
+    const share=Math.floor(Number(budget.totalChars||0)*Math.max(0,Number(budget.shares?.[owner]||0))/activeShareSum);
+    out[owner]=share;
+    allocated+=share;
+  }
+  let remainder=Math.max(0,Math.floor(Number(budget.totalChars||0))-allocated);
+  for(const owner of active){
+    if(remainder<=0)break;
+    if(Number(budget.shares?.[owner]||0)>0){out[owner]+=1;remainder-=1;}
+  }
+  return out;
+}
+function memorySuiteEstimateRecallTokens(chars, tokenizer='tiktoken') {
+  const n=Math.max(0,Number(chars||0)||0);
+  if(!n)return 0;
+  const profile=MEMORY_SUITE_RECALL_TOKENIZER_PROFILES[tokenizer]||MEMORY_SUITE_RECALL_TOKENIZER_PROFILES.tiktoken;
+  const blended=(profile.cjkCharsPerToken*0.7)+(profile.latinCharsPerToken*0.3);
+  return Math.ceil(Math.ceil(n/Math.max(1,blended))*0.8);
 }
 function memorySuiteRecallBudget(owner, next) {
   const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
@@ -57285,7 +57440,7 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
 .ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
 .ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
-.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-preset{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;text-align:left;min-height:auto}.ms-source-settings .ms-budget-preset b{font-size:13px}.ms-source-settings .ms-budget-preset small{font-size:11px;opacity:.8}.ms-source-settings .ms-budget-preset.is-on{border-color:var(--accent,#79522d);background:color-mix(in srgb,var(--accent,#79522d) 12%,var(--surface,transparent))}.ms-source-settings .ms-budget-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;border:1px solid var(--border2,#8886);font-size:11.5px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings .ms-budget-badge.is-warn{background:color-mix(in srgb,var(--warn,#b9802e) 16%,transparent);border-color:color-mix(in srgb,var(--warn,#b9802e) 45%,transparent);color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-badge.is-ok{background:color-mix(in srgb,var(--ok,#2e7d32) 14%,transparent);border-color:color-mix(in srgb,var(--ok,#2e7d32) 40%,transparent);color:var(--ok-ink,#2e7d32)}.ms-source-settings .ms-budget-libra-notice{font-size:12px;color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-context,.ms-source-settings .ms-budget-gradia{display:grid;gap:8px;padding:10px;border:1px dashed var(--border2,#8885);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-budget-context[data-libra-status=absent]{opacity:.68}.ms-source-settings .ms-budget-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end}.ms-source-settings .ms-budget-inline{display:flex;gap:8px;align-items:center}.ms-source-settings .ms-budget-inline input{flex:1 1 auto;min-width:0}.ms-source-settings .ms-budget-breakdown{font-size:12px;opacity:.85}.ms-source-settings .ms-budget-warning{font-size:12px;color:var(--warn-ink,#b9802e)}@media(max-width:600px){.ms-source-settings .ms-budget-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.ms-source-settings .ms-budget-shares,.ms-source-settings .ms-budget-context-grid{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
 /* The recent-messages list already shows the last message; the single output stays for tools. */
 .ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
 .ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
@@ -57438,6 +57593,7 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
 const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_RECALL_BUDGET_PEERS=Object.freeze(['libra','hayaku','flashback','gradia']);
 const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
@@ -57523,7 +57679,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const compareBudget=async()=>{
     await config.policy.ready();const mine=budgetFingerprint(myBudget());
-    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const theirs=String(answer.result?.budget||'');
       return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
@@ -57531,7 +57687,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeRecallBudget(budget);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
@@ -57585,38 +57741,229 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
 // plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
 function mountMemorySuiteRecallBudgetPanel(host, config) {
   const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
-  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const owners=MEMORY_SUITE_RECALL_OWNERS,budgetPeers=MEMORY_SUITE_RECALL_BUDGET_PEERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const presets=typeof MEMORY_SUITE_RECALL_BUDGET_PRESETS!=='undefined'?MEMORY_SUITE_RECALL_BUDGET_PRESETS:[];
+  const panelOwner=String(config.owner||config.sync?.owner||'').trim();
+  const isLibraOwner=panelOwner==='libra';
+  const area=make('section'),titleRow=make('div'),title=make('strong','기억 예산 · 컨텍스트 통합 설정'),presetBadge=make('span','');
+  titleRow.className='ms-budget-section-head';presetBadge.className='ms-budget-badge';presetBadge.dataset.recallBudgetPresetBadge='';titleRow.append(title,presetBadge);
+  const note=make('small','통합 프리셋·공통 예산·LIBRA 컨텍스트 자동 정리를 한 곳에서 설정하고 IPC로 자매 플러그인에 동시 반영합니다. 켜면 LIBRA·HAYAKU·Flashback이 정한 비율로 기억을 나누어 주입합니다.');
+  const presetRow=make('div'),presetButtons={};presetRow.className='ms-budget-presets';presetRow.dataset.recallBudgetPresets='';
+  for(const p of presets){
+    const btn=make('button'),b=make('b',p.label),sm=make('small',`${p.totalChars.toLocaleString('ko-KR')}자 · ${Math.round(p.maxContextTokens/1000)}K`);
+    btn.type='button';btn.className='ms-budget-preset';btn.dataset.recallBudgetPreset=p.id;btn.title=p.desc;btn.append(b,sm);
+    presetButtons[p.id]=btn;presetRow.append(btn);
+  }
   const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
   const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
   const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
   for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
-  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
-  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  const ctxBox=make('div'),ctxHeadRow=make('div'),ctxHead=make('strong','컨텍스트 자동 정리 (LIBRA 오너)'),libraBadge=make('span',''),libraNotice=make('p');
+  ctxBox.className='ms-budget-context';ctxBox.dataset.recallBudgetContext='';ctxHeadRow.className='ms-budget-section-head';
+  libraBadge.className='ms-budget-badge';libraBadge.dataset.recallBudgetLibraBadge='';ctxHeadRow.append(ctxHead,libraBadge);
+  libraNotice.className='ms-budget-libra-notice';libraNotice.dataset.recallBudgetLibraNotice='';libraNotice.hidden=true;
+  const chkRow=(text,attr)=>{const lbl=make('label'),chk=make('input');chk.type='checkbox';chk.dataset[attr]='';lbl.className='ms-sync-together';lbl.append(chk,make('span',text));return {lbl,chk};};
+  const cutterEnabledToggle=chkRow('컨텍스트 자동 정리 사용','recallBudgetCutterEnabled');
+  const cutterOnlyMemToggle=chkRow('기억(정본·영수증) 저장이 완료된 과거 턴만 제외','recallBudgetCutterOnlyMemorized');
+  const ctxGrid=make('div');ctxGrid.className='ms-budget-context-grid';
+  const maxCtxLabel=make('label'),maxCtxInline=make('div'),maxCtxInput=make('input'),autoCtxBtn=make('button','모델 기준 자동 맞춤');
+  maxCtxInline.className='ms-budget-inline';maxCtxInput.type='number';maxCtxInput.min='4000';maxCtxInput.max='200000';maxCtxInput.step='1000';maxCtxInput.dataset.recallBudgetMaxContext='';
+  autoCtxBtn.type='button';autoCtxBtn.dataset.recallBudgetAutoContext='';
+  maxCtxInline.append(maxCtxInput,autoCtxBtn);maxCtxLabel.append(make('span','자동 정리 기준 컨텍스트(토큰)'),maxCtxInline);
+  const trimPercentLabel=make('label'),trimPercentInput=make('input');
+  trimPercentInput.type='number';trimPercentInput.min='5';trimPercentInput.max='80';trimPercentInput.step='5';trimPercentInput.dataset.recallBudgetTrimPercent='';
+  trimPercentLabel.append(make('span','초과 시 비울 비율(%)'),trimPercentInput);
+  const preserveLabel=make('label'),preserveInput=make('input');
+  preserveInput.type='number';preserveInput.min='2';preserveInput.max='50';preserveInput.step='1';preserveInput.dataset.recallBudgetPreserveMessages='';
+  preserveLabel.append(make('span','최신 보호 메시지 수'),preserveInput);
+  const tokenizerLabel=make('label'),tokenizerSelect=make('select');tokenizerSelect.dataset.recallBudgetTokenizer='';
+  for(const [val,txt] of [['tiktoken','OpenAI 호환 (tiktoken)'],['claude','Claude'],['gemini','Gemini'],['deepseek','DeepSeek']]){
+    const opt=make('option',txt);opt.value=val;tokenizerSelect.append(opt);
+  }
+  tokenizerLabel.append(make('span','토큰 추정 기준'),tokenizerSelect);
+  const gradiaReserveCharsLabel=make('label'),gradiaReserveCharsInput=make('input');
+  gradiaReserveCharsInput.type='number';gradiaReserveCharsInput.min='0';gradiaReserveCharsInput.max='40000';gradiaReserveCharsInput.step='500';gradiaReserveCharsInput.placeholder='자동';gradiaReserveCharsInput.dataset.recallBudgetGradiaReserveChars='';
+  gradiaReserveCharsLabel.append(make('span','GRADIA 초안 예약(자, 비우면 자동)'),gradiaReserveCharsInput);
+  ctxGrid.append(maxCtxLabel,trimPercentLabel,preserveLabel,tokenizerLabel,gradiaReserveCharsLabel);
+  const gradiaReserveToggle=chkRow('자동 정리 예약에 GRADIA 초안 포함','recallBudgetGradiaReserve');
+  const triggerReserveToggle=chkRow('기억+GRADIA 예약을 합산한 기준에서 자동 정리 발동','recallBudgetTriggerReserve');
+  const breakdown=make('p'),cutterFooter=make('div');
+  breakdown.className='ms-budget-breakdown';breakdown.dataset.recallBudgetBreakdown='';
+  cutterFooter.dataset.recallBudgetCutterFooter='';
+  ctxBox.append(ctxHeadRow,libraNotice,cutterEnabledToggle.lbl,cutterOnlyMemToggle.lbl,ctxGrid,gradiaReserveToggle.lbl,triggerReserveToggle.lbl,breakdown,cutterFooter);
+  const gradiaBox=make('div'),gradiaHead=make('strong','GRADIA 연동'),mismatchWarning=make('p');
+  gradiaBox.className='ms-budget-gradia';gradiaBox.dataset.recallBudgetGradia='';
+  const gradiaFollowToggle=chkRow('GRADIA도 공통 예산 따르기','recallBudgetGradiaFollow');
+  const gradiaRedistributeToggle=chkRow('꺼진 기억 플러그인 몫 남은 오너에 재분배','recallBudgetGradiaRedistribute');
+  mismatchWarning.className='ms-budget-warning';mismatchWarning.dataset.recallBudgetWarning='';mismatchWarning.hidden=true;
+  gradiaBox.append(gradiaHead,gradiaFollowToggle.lbl,gradiaRedistributeToggle.lbl,mismatchWarning);
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),recheck=make('button','다시 확인'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';
+  recheck.type='button';recheck.dataset.recallBudgetRecheck='';
+  actions.className='ms-sync-actions';actions.append(apply,recheck);
   status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
-  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  area.className='ms-input-sync';area.dataset.recallBudget='';
+  if(presets.length)area.append(titleRow,note,presetRow);else area.append(titleRow,note);
+  area.append(enabledLabel,totalLabel,shareRow,ctxBox,gradiaBox,summary,actions,status,peerList);host.append(area);
   const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
-  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
-  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={},loadedVersion=1,presetTouched=false;
+  const cutterInputs=[cutterEnabledToggle.chk,cutterOnlyMemToggle.chk,maxCtxInput,trimPercentInput,preserveInput,tokenizerSelect,gradiaReserveCharsInput,gradiaReserveToggle.chk,triggerReserveToggle.chk];
+  const gradiaInputs=[gradiaFollowToggle.chk,gradiaRedistributeToggle.chk];
+  const libraState=()=>{
+    if(isLibraOwner)return {available:true,status:'owner',badge:'LIBRA 실행 중 (오너)'};
+    if(!config.sync)return {available:false,status:'absent',badge:'리브라 미감지'};
+    const st=peerStates.libra?.state;
+    if(st==='same'||st==='different')return {available:true,status:'connected',badge:'LIBRA 연동됨'};
+    if(st==='checking'||st===undefined)return {available:false,status:'checking',badge:'LIBRA 확인 중…'};
+    return {available:false,status:'absent',badge:'리브라 미감지'};
+  };
+  const hasCustomV2=()=>{
+    if(presetTouched)return true;
+    const reserveRaw=gradiaReserveCharsInput.value.trim();
+    return !cutterEnabledToggle.chk.checked||!cutterOnlyMemToggle.chk.checked||Number(maxCtxInput.value)!==40000
+      ||Number(trimPercentInput.value)!==30||Number(preserveInput.value)!==6||String(tokenizerSelect.value||'tiktoken')!=='tiktoken'
+      ||reserveRaw!==''||!gradiaReserveToggle.chk.checked||!triggerReserveToggle.chk.checked
+      ||!gradiaFollowToggle.chk.checked||!gradiaRedistributeToggle.chk.checked;
+  };
+  const draft=()=>{
+    const base={enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))};
+    if(loadedVersion!==2&&!hasCustomV2())return memorySuiteNormalizeRecallBudget({version:1,...base});
+    const lib=libraState();
+    let contextCutter;
+    if(!lib.available){
+      const stored=typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
+      contextCutter=memorySuiteRecallBudgetContextPolicy(stored);
+    }else{
+      const reserveRaw=gradiaReserveCharsInput.value.trim();
+      contextCutter={
+        enabled:cutterEnabledToggle.chk.checked,
+        onlyMemorized:cutterOnlyMemToggle.chk.checked,
+        maxContextTokens:Number(maxCtxInput.value),
+        trimPercent:Number(trimPercentInput.value),
+        preserveMessages:Number(preserveInput.value),
+        tokenizer:String(tokenizerSelect.value||'tiktoken'),
+        includeGradiaReserve:gradiaReserveToggle.chk.checked,
+        gradiaReserveChars:reserveRaw===''?'auto':Number(reserveRaw),
+        triggerWithReserve:triggerReserveToggle.chk.checked
+      };
+    }
+    return memorySuiteNormalizeRecallBudget({
+      version:2,...base,contextCutter,
+      gradia:{followSharedBudget:gradiaFollowToggle.chk.checked,redistributeDisabledOwners:gradiaRedistributeToggle.chk.checked}
+    });
+  };
   const draftOrNull=()=>{try{return draft();}catch{return null;}};
   const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
   const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const detectPreset=value=>{
+    if(!value||value.enabled!==true)return null;
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const lib=libraState();
+    return presets.find(p=>value.totalChars===p.totalChars
+      &&owners.every(o=>value.shares[o]===p.shares[o])
+      &&(!lib.available||(ctxPolicy.maxContextTokens===p.maxContextTokens&&ctxPolicy.trimPercent===p.trimPercent&&ctxPolicy.preserveMessages===p.preserveMessages)))||null;
+  };
   const draw=()=>{
+    const lib=libraState();
+    ctxBox.dataset.libraStatus=lib.status;
+    libraBadge.textContent=lib.badge;
+    libraBadge.className='ms-budget-badge '+(lib.available?'is-ok':(lib.status==='absent'?'is-warn':''));
+    libraNotice.hidden=lib.available;
+    if(!lib.available)libraNotice.textContent=lib.status==='checking'?'LIBRA 연결 상태를 확인하는 중입니다…':'컨텍스트 자동 정리는 LIBRA 전용 기능입니다. LIBRA가 감지되지 않아 비활성화되었습니다.';
     const value=draftOrNull();
-    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
-      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
-    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const matchedPreset=detectPreset(value);
+    presetBadge.textContent=matchedPreset?`프리셋: ${matchedPreset.label}`:(value?.enabled?'직접 설정':'공통 예산 꺼짐');
+    for(const p of presets){
+      const on=matchedPreset?.id===p.id;
+      presetButtons[p.id].classList.toggle('is-on',on);
+      presetButtons[p.id].setAttribute('aria-pressed',String(on));
+      presetButtons[p.id].disabled=!loaded||busy;
+    }
+    if(value){
+      summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+        +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');
+      const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+      const tokName=ctxPolicy.tokenizer||'tiktoken';
+      const recallTok=memorySuiteEstimateRecallTokens(value.totalChars+1200,tokName);
+      const autoGradiaChars=typeof config.getGradiaReserveEstimate==='function'?Number(config.getGradiaReserveEstimate()||6000):6000;
+      const gChars=ctxPolicy.includeGradiaReserve?(typeof ctxPolicy.gradiaReserveChars==='number'?ctxPolicy.gradiaReserveChars:autoGradiaChars):0;
+      const gTok=ctxPolicy.includeGradiaReserve?memorySuiteEstimateRecallTokens(gChars,tokName):0;
+      const totalReserve=Math.min(Math.floor(ctxPolicy.maxContextTokens*0.8),recallTok+gTok);
+      const keepTok=Math.max(Math.floor(ctxPolicy.maxContextTokens*0.2),ctxPolicy.maxContextTokens-totalReserve);
+      breakdown.textContent=!lib.available
+        ?'LIBRA 연결 시 컨텍스트 자동 정리 계산을 여기서 바로 적용합니다.'
+        :(ctxPolicy.enabled===false
+          ?'컨텍스트 자동 정리가 꺼져 있습니다.'
+          :`기준 ${ctxPolicy.maxContextTokens.toLocaleString('ko-KR')} 토큰 (${tokName}) = 대화 유지 상한 ~${keepTok.toLocaleString('ko-KR')} 토큰 + 3사 기억 예약 ~${recallTok.toLocaleString('ko-KR')} 토큰`+(ctxPolicy.includeGradiaReserve?` + GRADIA 예약 ~${gTok.toLocaleString('ko-KR')} 토큰`:''));
+    } else {
+      let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}
+      summary.textContent=message||'값을 확인하세요.';
+      breakdown.textContent='';
+    }
+    if(typeof config.renderContextCutterFooter==='function'){
+      try{config.renderContextCutterFooter(cutterFooter,value,lib);}catch{}
+    }
+    const parsedPreserve=Number(preserveInput.value);
+    const livePreserve=Number.isInteger(parsedPreserve)&&parsedPreserve>=MEMORY_SUITE_RECALL_PRESERVE_MIN&&parsedPreserve<=MEMORY_SUITE_RECALL_PRESERVE_MAX
+      ?parsedPreserve
+      :memorySuiteRecallBudgetContextPolicy(value||config.policy.recallBudget()).preserveMessages;
+    const warningMsg=typeof config.getPreserveMismatchWarning==='function'
+      ?String(config.getPreserveMismatchWarning(value,{preserveMessages:livePreserve,cutterEnabled:cutterEnabledToggle.chk.checked,libraAvailable:lib.available})||'')
+      :'';
+    mismatchWarning.textContent=warningMsg;mismatchWarning.hidden=!warningMsg;
+    const suggestedCtx=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    autoCtxBtn.hidden=typeof config.suggestMaxContextTokens!=='function';
+    autoCtxBtn.disabled=!loaded||busy||!lib.available||!(suggestedCtx>=4000&&suggestedCtx<=200000);
     const dirty=!value||fingerprint(value)!==initial;
     apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
-    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
-    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+    recheck.disabled=busy||!config.sync;
+    for(const node of [enabled,total,...Object.values(shares),...gradiaInputs])node.disabled=!loaded||busy;
+    for(const node of cutterInputs)node.disabled=!loaded||busy||!lib.available;
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>budgetPeers.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
       row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
   };
-  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
-    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const fill=()=>{
+    const value=config.policy.recallBudget();
+    loadedVersion=value.version===2?2:1;presetTouched=false;
+    enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(value);
+    cutterEnabledToggle.chk.checked=ctxPolicy.enabled!==false;
+    cutterOnlyMemToggle.chk.checked=ctxPolicy.onlyMemorized!==false;
+    maxCtxInput.value=String(ctxPolicy.maxContextTokens);
+    trimPercentInput.value=String(ctxPolicy.trimPercent);
+    preserveInput.value=String(ctxPolicy.preserveMessages);
+    tokenizerSelect.value=String(ctxPolicy.tokenizer||'tiktoken');
+    gradiaReserveToggle.chk.checked=ctxPolicy.includeGradiaReserve;
+    gradiaReserveCharsInput.value=typeof ctxPolicy.gradiaReserveChars==='number'?String(ctxPolicy.gradiaReserveChars):'';
+    triggerReserveToggle.chk.checked=ctxPolicy.triggerWithReserve;
+    gradiaFollowToggle.chk.checked=gradiaPolicy.followSharedBudget;
+    gradiaRedistributeToggle.chk.checked=gradiaPolicy.redistributeDisabledOwners;
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();
+  };
   const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
   const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
-  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const node of [enabled,total,...Object.values(shares),...cutterInputs,...gradiaInputs])node.addEventListener(node.type==='checkbox'||node.tagName==='SELECT'?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const p of presets){
+    presetButtons[p.id].onclick=()=>{
+      if(!loaded||busy)return;
+      enabled.checked=true;total.value=String(p.totalChars);for(const o of owners)shares[o].value=String(p.shares[o]);
+      presetTouched=true;
+      if(libraState().available){
+        maxCtxInput.value=String(p.maxContextTokens);
+        trimPercentInput.value=String(p.trimPercent);
+        preserveInput.value=String(p.preserveMessages);
+      }
+      status.textContent=`통합 프리셋 '${p.label}'을 적용 대기 중입니다. 예산 적용을 눌러 저장하세요.`;
+      draw();
+    };
+  }
+  autoCtxBtn.onclick=()=>{
+    if(!loaded||busy||!libraState().available)return;
+    const suggested=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    if(suggested>=4000&&suggested<=200000){maxCtxInput.value=String(suggested);status.textContent=`모델 컨텍스트 기준으로 ${suggested.toLocaleString('ko-KR')} 토큰에 맞췄습니다. 예산 적용을 눌러 저장하세요.`;draw();}
+  };
+  recheck.onclick=()=>{if(!busy)void check();};
   const applyBudget=async()=>{
     if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
     let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -57627,7 +57974,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
       await config.policy.setRecallBudget(value);fill();
       if(config.sync){
         await check();
-        const targets=config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)&&peerStates[peer]?.state==='different');
+        const targets=config.sync.peers.filter(peer=>budgetPeers.includes(peer)&&peerStates[peer]?.state==='different');
         if(targets.length){
           const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
           const results=await config.sync.applyBudgetToPeers(value,targets,expected);
@@ -57692,7 +58039,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
-    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{owner,policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -58141,7 +58488,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
   let hayakuSourceRuleSync=null;
   const getHayakuSourceRuleSync=()=>hayakuSourceRuleSync||(hayakuSourceRuleSync=createMemorySuiteSourceRuleSync({owner:'hayaku',policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded,
     api:()=>apiCandidates().find(candidate=>typeof candidate?.addPluginChannelListener==='function'&&typeof candidate?.postPluginChannelMessage==='function')||RisuCompat.api()}));
-  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),ruleSync:getHayakuSourceRuleSync(),isDisposed:()=>Memory.unloaded});
+  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),ruleSync:getHayakuSourceRuleSync(),includeRecallBudget:false,isDisposed:()=>Memory.unloaded});
+  const mountHayakuRecallBudgetPanel=container=>{
+    if(!container?.ownerDocument||container.querySelector('[data-recall-budget]'))return null;
+    const doc=container.ownerDocument,box=doc.createElement('div');
+    box.className='ms-source-settings';
+    const style=doc.createElement('style');
+    style.textContent=`
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+`+memorySuiteSourceFinderCss();
+    box.appendChild(style);
+    container.appendChild(box);
+    const panel=mountMemorySuiteRecallBudgetPanel(box,{
+      owner:'hayaku',
+      policy:getHayakuSourceInput(),
+      sync:getHayakuSourceRuleSync(),
+      isDisposed:()=>Memory.unloaded||!box.isConnected
+    });
+    getHayakuSourceInput().ready().then(()=>{
+      if(!Memory.unloaded&&box.isConnected)panel.load();
+    }).catch(()=>{});
+    return panel;
+  };
   // Selection pins packet revisions and source topology. Text is read again on Apply.
   const HAYAKU_REANALYSIS_MAX_TURNS = 512;
   const hayakuReanalysisRecordBinding = (record, scopeKey) => {
@@ -60524,7 +60895,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       <div class="stack" id="hayakuSettingsForm" aria-live="polite">
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
-        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px"><div><div class="setting__name">리콜 성능 프리셋</div><div class="setting__desc" id="hayakuRecallPresetDesc">기억 주입량 프리셋: 적게 (핵심 3개/축) · 적당히 (균형 8개/축, 권장) · 많이 (총망라 16개/축). 원문 태그 필터에서 기억 주입 공통 예산을 켜면 회상 근거는 HAYAKU 몫 안에서 넣습니다.</div><span class="argtag">hayaku_recall_preset</span></div><div class="seg" role="group" aria-label="리콜 성능 프리셋" id="hayakuRecallPresetGroup"><button type="button" data-hayaku-recall-preset-value="light" aria-pressed="false">적게</button><button type="button" data-hayaku-recall-preset-value="balanced" aria-pressed="true">적당히</button><button type="button" data-hayaku-recall-preset-value="heavy" aria-pressed="false">많이</button></div></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
+        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div id="hayakuRecallBudgetHost" data-no-track style="margin-bottom:14px"></div><div class="setting" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px"><div><div class="setting__name">리콜 성능 프리셋</div><div class="setting__desc" id="hayakuRecallPresetDesc">기억 주입량 프리셋: 적게 (핵심 3개/축) · 적당히 (균형 8개/축, 권장) · 많이 (총망라 16개/축). 위 기억 예산 · 컨텍스트 통합 설정에서 공통 예산을 켜면 회상 근거는 HAYAKU 몫 안에서 넣습니다.</div><span class="argtag">hayaku_recall_preset</span></div><div class="seg" role="group" aria-label="리콜 성능 프리셋" id="hayakuRecallPresetGroup"><button type="button" data-hayaku-recall-preset-value="light" aria-pressed="false">적게</button><button type="button" data-hayaku-recall-preset-value="balanced" aria-pressed="true">적당히</button><button type="button" data-hayaku-recall-preset-value="heavy" aria-pressed="false">많이</button></div></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
         <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">이전 턴 누락 점검</div><div class="setting__desc">요청 전에 지난 턴의 빠진 기억 패킷을 찾아 복구 화면에 올립니다. 모델은 호출하지 않습니다. 현재 턴의 자동 복구는 아래 afterRequest 설정이 따로 정합니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">이전 턴 누락 점검</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구 호출입니다. 현재 턴 응답에 패킷이 없으면 Other Ax 1회, 실패하면 수동 복구로 남깁니다. 위 누락 점검과 별개로 동작합니다.</div><span class="badge" data-setting-state="after-request-otherax" hidden>otherAX 정본 작성 중이라 일시 중지 · 끄면 이 값으로 다시 동작</span><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">otherAX로 정본 패킷 작성</div><div class="setting__desc">켜면 본 응답 모델에 패킷 작성 지시를 보내지 않고, 매 턴 Other Ax가 복구와 같은 방식으로 정본 패킷을 작성합니다. 작성자는 otherAX로 기록됩니다. 턴마다 Other Ax 1회 · Provider 비용이 발생할 수 있습니다.</div><span class="argtag">hayaku_otherax_canonical_packet</span></div><label class="switch"><input type="checkbox" id="st-otherax-canonical"><span class="switch__track"></span><span class="sr-only">otherAX로 정본 패킷 작성</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
@@ -61170,6 +61541,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ticket = viewerSettingsLifetime(); const root = ticket.root;
     if (!root) return null;
     mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
+    mountHayakuRecallBudgetPanel(root.querySelector('#hayakuRecallBudgetHost'));
     if (Memory.ledgerViewer.settingsDirty && !force) {
       viewerUpdateSettingsDraftState(); viewerSetSettingsSection(Memory.ledgerViewer.settingsSection);
       return Memory.ledgerViewer.settingsBaseline;
@@ -63916,6 +64288,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       viewerSetSettingsMessage(`리콜 성능 프리셋 '${preset.label}' (${preset.description})을 초안에 반영했습니다.`);
     }));
     const onSettingsDraftInput = event => {
+      if (event?.target?.closest?.('#hayakuRecallBudgetHost,[data-no-track]')) return;
       const argument = compact(event?.target?.name || '', 96);
       if (argument === 'hayaku_max_items_per_axis') {
         const val = Number(event?.target?.value);

@@ -79,7 +79,18 @@ test('lightweight default (previous_stage_mode auto) skips standalone previous a
   const usr = userOf(shadowCalls[0]);
   assert.doesNotMatch(usr, /\[truncated\]/);
   assert.doesNotMatch(usr, /\[PREVIOUS — CONFIRMED PAST RECORD & GUARDRAIL\]/);
-  assert.match(usr, /\[PREVIOUS — LIB \+ 최근 챗 종합 사건 기록/);
+  assert.match(usr, /\[PREVIOUS — 경량 PASS 0 기억 가드레일/);
+  const previousHeaderIdx = usr.indexOf('[PREVIOUS — 경량 PASS 0 기억 가드레일');
+  const loreHeaderIdx = usr.indexOf('[현재 입력 관련 정본·인물 참조');
+  assert.ok(previousHeaderIdx >= 0 && loreHeaderIdx > previousHeaderIdx);
+  const previousSection = usr.slice(previousHeaderIdx, loreHeaderIdx);
+  assert.doesNotMatch(previousSection, /서연이 가방에서 찾은 도서관 열쇠를 책상 위에 올려놓았다\./, 'lightweight PREVIOUS section must not duplicate raw recent chat prose');
+  assert.doesNotMatch(previousSection, /열쇠는 찾았어\?/, 'lightweight PREVIOUS section must not duplicate user turns');
+  const snapshot = f.host.plugin.debugSceneRun();
+  assert.equal(snapshot.previous.lightweightGuardrailOnly, true);
+  assert.equal(snapshot.previous.ongoing_consequences.length, 0);
+  assert.match(snapshot.previous.what_happened.join('\n'), /경량 통합 PASS 0/);
+  assert.match(snapshot.previous.what_happened.join('\n'), /LIB 외부 기억/);
 });
 
 test('lightweight with previous_stage_mode=on runs standalone previous LLM call before shadow_act and feeds guardrail', async t => {
@@ -407,4 +418,54 @@ test('shared SDK source rules strip literal ◆CG…◆ delimiters and mount ful
   assert.ok(shadowPrompt, 'shadow_act prompt recorded');
   assert.doesNotMatch(userOf(shadowPrompt), /◆CG|scene_beach_01/);
   assert.match(userOf(shadowPrompt), /소연이 모래사장을 걸었다\./);
+});
+
+test('debugShadowPrevious extracts only unresolved sentence into ongoing_consequences instead of duplicating opening prose', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const prev = f.host.plugin.debugShadowPrevious({
+    recent: {
+      latestUser: '문을 열어 본다.',
+      visibleMessages: [
+        {
+          role: 'assistant',
+          content: '[BG::bg_officetel_day]\n벽을 짚은 팔에서 힘이 빠졌다.\n\n허벅지가 크게 두 번 떨렸다.\n들이쉬는 건 아직 따라오지 못했다.\n문 밑 틈으로 복도 불빛이 얇게 들어와 있었다.'
+        },
+        { role: 'user', content: '문을 열어 본다.' }
+      ]
+    }
+  });
+  assert.equal(prev.ongoing_consequences.length, 1);
+  assert.equal(prev.ongoing_consequences[0], 'Assistant: 들이쉬는 건 아직 따라오지 못했다.');
+  assert.doesNotMatch(prev.ongoing_consequences[0], /벽을 짚은 팔에서 힘이 빠졌다|bg_officetel_day/);
+});
+
+test('GUI #q-previous choice buttons switch selection cleanly and persist on save', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('home');
+  await new Promise(r => setTimeout(r, 30));
+
+  const getChoices = () => [...f.document.querySelectorAll('#q-previous > .choice')];
+  assert.equal(getChoices().length, 3);
+  assert.equal(getChoices()[0].classList.contains('is-on'), true);
+
+  getChoices()[1].click();
+  await new Promise(r => setTimeout(r, 30));
+  assert.equal(getChoices()[1].classList.contains('is-on'), true, 'clicking 항상 켜기 updates active choice');
+  assert.equal(getChoices()[1].getAttribute('aria-pressed'), 'true');
+  assert.equal((await f.host.plugin.getRuntime()).settings?.previousStageMode, 'auto', 'saved runtime stays at auto before clicking Save');
+
+  const saveBtn = f.document.querySelector('#savebar [data-save]');
+  assert.ok(saveBtn && !saveBtn.disabled, 'save bar enabled after picking PREVIOUS option');
+  saveBtn.click();
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal((await f.host.plugin.getRuntimeSettings()).previous_stage_mode, 'on', '항상 켜기 persists as previous_stage_mode=on');
+
+  getChoices()[2].click();
+  await new Promise(r => setTimeout(r, 30));
+  assert.equal(getChoices()[2].classList.contains('is-on'), true, 'clicking 끄기 updates active choice');
+  assert.equal(getChoices()[2].getAttribute('aria-pressed'), 'true');
+  f.document.querySelector('#savebar [data-save]').click();
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal((await f.host.plugin.getRuntimeSettings()).previous_stage_mode, 'off', '끄기 persists as previous_stage_mode=off');
 });

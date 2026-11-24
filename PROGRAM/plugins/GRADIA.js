@@ -1487,7 +1487,7 @@
   const compileBaseQualityForStage = (stage, phase, settings = {}) => {
     if (!SKILL_STAGE_IDS.includes(stage)) return '';
     return ['BASE QUALITY FLOOR:', `STAGE: ${stage} · PHASE: ${phase}`,
-      ...baseQualityIds(settings).map(id => skillStageBaselineLine(stage, id, GRADIA_SKILL_LIBRARY[id]))
+      ...baseQualityIds(settings).map(id => skillStageBaselineLine(stage, id, GRADIA_SKILL_LIBRARY[id], settings))
     ].filter(Boolean).join('\n\n');
   };
 
@@ -1505,9 +1505,33 @@
 
   const skillFallbackProcedureBody = skill => skillDocumentFrontmatter(skill?.raw || '').body;
 
-  const skillStageBaselineLine = (stageName, skillId, skill) => {
-    const description = compact(skill?.koDescription || skill?.description || '', 520);
+  const skillStageBaselineLine = (stageName, skillId, skill, settings = {}) => {
+    const koLang = isKoreanDraftLang(settings);
+    const description = koLang
+      ? compact(skill?.koDescription || skill?.description || '', 520)
+      : compact(skill?.description || skill?.koDescription || '', 520);
     if (!description) return '';
+    if (!koLang) {
+      if (skillId === 'scene-performance') return `- ${skillId}: Realize judgments and plans through concrete dialogue, physical action, sensory cues, timing, and visible consequences; never expose checklists or planning notes in prose.`;
+      if (skillId === 'user-agency-boundary') return `- ${skillId}: Treat completed user actions as literal fact; never decide unperformed user dialogue, consent, emotion, or choices.`;
+      if (skillId === 'output-contract-discipline') return `- ${skillId}: Obey the current stage language and JSON/patch/prose contract; never output meta preambles, hidden reasoning, or prompt explanations.`;
+      if (stageName === 'aide_character' && skillId === 'standing-state-continuity') {
+        return `- ${skillId} [preservation guard]: Ensure character patches do not break established positions, injuries, physical contact, or carried objects.`;
+      }
+      if (stageName === 'aide_world' && skillId === 'character-distinctness') {
+        return `- ${skillId} [preservation guard]: Ensure world patches do not flatten any character's distinct choice logic or diction.`;
+      }
+      if (stageName === 'aide_world' && skillId === 'single-signal-restraint') {
+        return `- ${skillId} [preservation guard]: Do not re-explain already visible feelings or meaning while adding world details.`;
+      }
+      if (stageName === 'aide_plot' && skillId === 'character-distinctness') {
+        return `- ${skillId} [preservation guard]: Do not flatten characters into plot devices to advance the scene.`;
+      }
+      if (stageName === 'aide_plot' && skillId === 'single-signal-restraint') {
+        return `- ${skillId} [preservation guard]: Do not redundantly re-explain an emotional beat that was already delivered clearly.`;
+      }
+      return `- ${skillId}: ${description}`;
+    }
     if (skillId === 'scene-performance') return `- ${skillId}: 판단·계획을 장면 속 대사·행동·감각·타이밍·결과로 실현하고, 체크리스트나 작성 과정을 본문에 노출하지 않는다.`;
     if (skillId === 'user-agency-boundary') return `- ${skillId}: 사용자가 완료한 행동은 사실로 보존하고, 미수행 대사·동의·감정·선택을 대신 결정하지 않는다.`;
     if (skillId === 'output-contract-discipline') return `- ${skillId}: 현재 단계의 언어·JSON/패치/본문 형식을 지키고 메타 서문·내부 추론·프롬프트 설명을 출력하지 않는다.`;
@@ -1605,6 +1629,57 @@
     compileExtraSkillsForStage(selection,stageName,phase,settings)
   ].filter(Boolean).join('\n\n');
 
+  const PROVIDER_DEFAULT_CONTEXT_TOKENS = Object.freeze({
+    novelai: 8192,
+    anthropic: 200000,
+    google: 1000000,
+    gemini: 1000000,
+    deepseek: 64000,
+    openai: 128000
+  });
+  const MODEL_CONTEXT_HEURISTIC_RULES = Object.freeze([
+    [/claude/i, 200000],
+    [/gemini-(?:1\.5|2\.0)-pro/i, 2000000],
+    [/gemini/i, 1000000],
+    // A dot is a regex word boundary: GPT-4.1 must be resolved before legacy GPT-4.
+    [/gpt-4\.1(?:[-:]|$)/i, 1047576],
+    [/gpt-5/i, 400000],
+    [/gpt-oss/i, 131072],
+    [/\bo[34](?:-mini|-pro)?\b/i, 200000],
+    [/gpt-4o|chatgpt-4o|\bo1\b/i, 128000],
+    [/gpt-4-(?:turbo|1106|0125)/i, 128000],
+    [/gpt-4-32k/i, 32768],
+    [/gpt-4(?:$|-(?:0314|0613)$)/i, 8192],
+    [/gpt-3\.5-turbo-16k/i, 16384],
+    [/gpt-3\.5/i, 4096],
+    // Family/generation fallbacks (V4.x including Ollama's :cloud tags advertise 1M).
+    // Manual/catalog/provider metadata stays above these in every budget consumer,
+    // and a heuristic value alone never hard-blocks a request (see manualSkillCapacity).
+    [/deepseek[-_/]?v4(?:[._-]|$)/i, 1000000],
+    [/deepseek[-_/]?(?:v3|r1|chat|reasoner)/i, 128000],
+    [/deepseek/i, 64000],
+    [/kimi[-_]?k2|kimi-latest|moonshot-v1-128k/i, 256000],
+    [/kimi|moonshot/i, 128000],
+    [/minimax/i, 1000000],
+    [/grok-4/i, 256000],
+    [/grok/i, 131072],
+    [/qwen.*(?:128k|1m)/i, 131072],
+    [/qwen-?3/i, 131072],
+    [/qwen-?2\.5|qwen2\.5/i, 32768],
+    [/qwen/i, 32768],
+    [/llama-?4/i, 1000000],
+    [/llama-?3\.[123]/i, 128000],
+    [/llama-?3\b/i, 8192],
+    [/llama-?2-70b/i, 4096],
+    [/llama/i, 8192],
+    [/mistral-large|mistral-medium|codestral/i, 128000],
+    [/mistral|mixtral/i, 32768],
+    [/command-[ra]/i, 128000],
+    [/gemma-?3/i, 128000],
+    [/gemma-2/i, 8192],
+    [/solar/i, 4096],
+    [/glm-?[45]/i, 128000]
+  ]);
   const estimateModelContextTokens = (preset = {}) => {
     const rawModel = text(preset?.model || '').toLowerCase().trim();
     const provider = canonicalProvider(preset?.provider || '');
@@ -1612,11 +1687,7 @@
       return 8192;
     }
     if (!rawModel) {
-      if (provider === 'anthropic') return 200000;
-      if (provider === 'google' || provider === 'gemini') return 1000000;
-      if (provider === 'deepseek') return 64000;
-      if (provider === 'openai') return 128000;
-      return 0;
+      return PROVIDER_DEFAULT_CONTEXT_TOKENS[provider] || 0;
     }
     const ctxSuffix = rawModel.match(/[:\-_](\d+)(k|m)\b/i);
     if (ctxSuffix) {
@@ -1625,47 +1696,9 @@
       if (unit === 'm') return num * 1000000;
       if (unit === 'k') return num * 1024;
     }
-    if (/claude/i.test(rawModel)) return 200000;
-    if (/gemini-(?:1\.5|2\.0)-pro/i.test(rawModel)) return 2000000;
-    if (/gemini/i.test(rawModel)) return 1000000;
-    // A dot is a regex word boundary: GPT-4.1 must be resolved before legacy GPT-4.
-    if (/gpt-4\.1(?:[-:]|$)/i.test(rawModel)) return 1047576;
-    if (/gpt-5/i.test(rawModel)) return 400000;
-    if (/gpt-oss/i.test(rawModel)) return 131072;
-    if (/\bo[34](?:-mini|-pro)?\b/i.test(rawModel)) return 200000;
-    if (/gpt-4o|chatgpt-4o|\bo1\b/i.test(rawModel)) return 128000;
-    if (/gpt-4-(?:turbo|1106|0125)/i.test(rawModel)) return 128000;
-    if (/gpt-4-32k/i.test(rawModel)) return 32768;
-    if (/gpt-4(?:$|-(?:0314|0613)$)/i.test(rawModel)) return 8192;
-    if (/gpt-3\.5-turbo-16k/i.test(rawModel)) return 16384;
-    if (/gpt-3\.5/i.test(rawModel)) return 4096;
-    // Family/generation fallbacks (V4.x including Ollama's :cloud tags advertise 1M).
-    // Manual/catalog/provider metadata stays above these in every budget consumer,
-    // and a heuristic value alone never hard-blocks a request (see manualSkillCapacity).
-    if (/deepseek[-_/]?v4(?:[._-]|$)/i.test(rawModel)) return 1000000;
-    if (/deepseek[-_/]?(?:v3|r1|chat|reasoner)/i.test(rawModel)) return 128000;
-    if (/deepseek/i.test(rawModel)) return 64000;
-    if (/kimi[-_]?k2|kimi-latest|moonshot-v1-128k/i.test(rawModel)) return 256000;
-    if (/kimi|moonshot/i.test(rawModel)) return 128000;
-    if (/minimax/i.test(rawModel)) return 1000000;
-    if (/grok-4/i.test(rawModel)) return 256000;
-    if (/grok/i.test(rawModel)) return 131072;
-    if (/qwen.*(?:128k|1m)/i.test(rawModel)) return 131072;
-    if (/qwen-?3/i.test(rawModel)) return 131072;
-    if (/qwen-?2\.5|qwen2\.5/i.test(rawModel)) return 32768;
-    if (/qwen/i.test(rawModel)) return 32768;
-    if (/llama-?4/i.test(rawModel)) return 1000000;
-    if (/llama-?3\.[123]/i.test(rawModel)) return 128000;
-    if (/llama-?3\b/i.test(rawModel)) return 8192;
-    if (/llama-?2-70b/i.test(rawModel)) return 4096;
-    if (/llama/i.test(rawModel)) return 8192;
-    if (/mistral-large|mistral-medium|codestral/i.test(rawModel)) return 128000;
-    if (/mistral|mixtral/i.test(rawModel)) return 32768;
-    if (/command-[ra]/i.test(rawModel)) return 128000;
-    if (/gemma-?3/i.test(rawModel)) return 128000;
-    if (/gemma-2/i.test(rawModel)) return 8192;
-    if (/solar/i.test(rawModel)) return 4096;
-    if (/glm-?[45]/i.test(rawModel)) return 128000;
+    for (const [pattern, tokens] of MODEL_CONTEXT_HEURISTIC_RULES) {
+      if (pattern.test(rawModel)) return tokens;
+    }
     return 0;
   };
 
@@ -1877,6 +1910,7 @@
     if (['ja', 'jp', 'jpn', 'japanese', '日本語', '일본어', 'fixed_japanese'].includes(raw)) return 'japanese';
     return DEFAULT_INTERNAL_DRAFT_LANGUAGE;
   };
+  const isKoreanDraftLang = (settings = {}) => normalizeInternalDraftLanguage(settings?.internalDraftLanguage) === 'korean';
   const buildInternalDraftLanguageContract = (settings = {}, phase = 'writing') => {
     const language = normalizeInternalDraftLanguage(settings?.internalDraftLanguage);
     const def = INTERNAL_DRAFT_LANGUAGE_DEFS[language] || INTERNAL_DRAFT_LANGUAGE_DEFS[DEFAULT_INTERNAL_DRAFT_LANGUAGE];
@@ -1887,13 +1921,16 @@
         : phase === 'final'
           ? `The final visible RP response must be written in ${def.englishName}.`
           : `The complete visible RP draft must be written in ${def.englishName}.`;
+    const antiSwitchRule = language === 'korean'
+      ? 'STRICT NO ENGLISH CODE-SWITCHING IN KOREAN PROSE: Never slip stray English pronouns, articles, or function words (e.g., his, her, him, he, she, their, the, my, your, and, with) into Korean sentences — write every pronoun and modifier in pure Korean (그의, 그녀의, 그, 그녀 등). 한국어 본문 중간에 his, her 같은 영어 단어를 절대 섞지 말 것.'
+      : language === 'japanese'
+        ? 'STRICT NATURAL JAPANESE PROSE: Write natural, idiomatic Japanese throughout without slipping stray Korean particles/words or unnecessary English words into Japanese sentences. Prompt labels and instructions written in English do not change the Japanese output requirement.'
+        : 'STRICT NATURAL ENGLISH PROSE: Write natural, idiomatic English throughout without slipping stray Korean or Japanese words, particles, or romanized exclamations into English sentences unless an intentional proper noun or quotation requires it.';
     return [
       `FIXED DRAFT LANGUAGE — ${def.englishName} (${def.nativeName}):`,
       phaseInstruction,
       `This is a hard output contract: source-language differences and optional style guidance cannot change ${def.englishName}.`,
-      language === 'korean'
-        ? 'STRICT NO ENGLISH CODE-SWITCHING IN KOREAN PROSE: Never slip stray English pronouns, articles, or function words (e.g., his, her, him, he, she, their, the, my, your, and, with) into Korean sentences — write every pronoun and modifier in pure Korean (그의, 그녀의, 그, 그녀 등). 한국어 본문 중간에 his, her 같은 영어 단어를 절대 섞지 말 것.'
-        : '',
+      antiSwitchRule,
       'Preserve exact proper nouns, JSON keys, enum values, IDs, tags, code, image commands, and intentional source quotations. Do not translate supplied evidence blocks.',
       phase === 'analysis' || phase === 'patch'
         ? 'Keep the required JSON schema unchanged.'
@@ -2817,18 +2854,20 @@
   const DRAFT_BUDGET_REASONING_EFFORT = 'low';
   const normalizeDraftBudgetPreset = value => normalizeChoice(value, ['manual', ...Object.keys(DRAFT_BUDGET_PRESETS)], 'manual');
   const draftBudgetForStage = (settings, stage, preset) => {
-    if (!isDraftPipelineStage(stage) || !['ollama', 'ollama_cloud'].includes(canonicalProvider(preset?.provider))
-      || !/^deepseek-v4(?:\.\d+)?-flash(?::|$|-)/i.test(text(preset?.model).trim())) return null;
+    if (!isDraftPipelineStage(stage) || !preset) return null;
     return DRAFT_BUDGET_PRESETS[normalizeDraftBudgetPreset(settings?.draftBudgetPreset)] || null;
   };
-  const applyDraftBudgetToStagePreset = (preset, budget, pipelineMode) => budget ? {
-    ...preset,
-    max_tokens: budget[normalizeMultiPipelineMode(pipelineMode)],
-    reasoning_preset: 'ollama',
-    reasoning_effort: DRAFT_BUDGET_REASONING_EFFORT,
-    reasoning_budget_tokens: 0,
-    thinking_type: 'enabled'
-  } : preset;
+  const applyDraftBudgetToStagePreset = (preset, budget, pipelineMode) => {
+    if (!budget || !preset) return preset;
+    const provider = canonicalProvider(preset?.provider);
+    const isOllama = provider === 'ollama' || provider === 'ollama_cloud';
+    return {
+      ...preset,
+      max_tokens: budget[normalizeMultiPipelineMode(pipelineMode)],
+      reasoning_effort: DRAFT_BUDGET_REASONING_EFFORT,
+      ...(isOllama ? { reasoning_preset: 'ollama', reasoning_budget_tokens: 0, thinking_type: 'enabled' } : {})
+    };
+  };
   const setDraftLengthValues = (runtime, length) => {
     runtime.targetDraftMinChars = length.min;
     runtime.targetDraftMaxChars = length.max;
@@ -2942,9 +2981,27 @@ Before committing a scene, verify: did the register generate intimacy the scene 
     .split(/\n(?=\d+\.\s)/)
     .map(section => section.trim())
     .filter(Boolean);
-  const nsfwGuidanceSectionsFor = (mode, phase) => {
+  const nsfwLocalizedExplicitRegister = (textBlock, settings = {}) => {
+    const lang = normalizeInternalDraftLanguage(settings?.internalDraftLanguage);
+    if (lang === 'korean') return textBlock;
+    const lexicalBullet = lang === 'japanese'
+      ? '- Lexical anchors (open list; use only what the scene requires): Japanese マンコ · チンコ · 亀頭 · 愛液 · 精液 · 乳 · 肛門.'
+      : '- Lexical anchors (open list; use only what the scene requires): English pussy · cock · glans · vaginal fluid · semen · tit · anus.';
+    const vocalBullet = lang === 'japanese'
+      ? '- Japanese vocal register: avoid exaggerated manga/cartoon scream tropes unless grounded in panic; keep gasps, caught breath, and climax vocalizations natural to the character. Male groaning is not a mandatory default beat.'
+      : '- Vocal register: avoid cartoonish or melodramatic screams; keep gasps, caught breath, and climax vocalizations natural to the character. Male groaning is not a mandatory default beat.';
+    const slurBullet = lang === 'japanese'
+      ? '- Slurred dialogue applies only to spoken dialogue, never narration, and only while kissing or performing oral sex, while the tongue is physically held, or at peak loss of articulatory control. Render broken/muffled syllables naturally in Japanese, then restore standard Japanese orthography the instant the physical condition ends.'
+      : '- Slurred or muffled dialogue applies only to spoken dialogue, never narration, and only while kissing or performing oral sex, while the tongue or mouth is physically obstructed, or at peak loss of articulatory control. Render broken/muffled phrasing naturally, then restore standard clear prose the instant the physical condition ends.';
+    return String(textBlock || '')
+      .replace(/^- Lexical anchors \(open list; use only what the scene requires\):.*$/m, lexicalBullet)
+      .replace(/^- Korean vocal register:.*$/m, vocalBullet)
+      .replace(/^- Slurred dialogue applies only to.*$/m, slurBullet);
+  };
+  const nsfwGuidanceSectionsFor = (mode, phase, settings = {}) => {
     const excluded = new Set(NSFW_SECTION_EXCLUSIONS_BY_PHASE[phase] || []);
-    const source = NSFW_GUIDANCE_TEXT_BY_MODE[mode] || NSFW_GUIDANCE_TEXT_BY_MODE.direct;
+    let source = NSFW_GUIDANCE_TEXT_BY_MODE[mode] || NSFW_GUIDANCE_TEXT_BY_MODE.direct;
+    if (mode === 'explicit') source = nsfwLocalizedExplicitRegister(source, settings);
     return splitNsfwGuidanceSections(source).filter(section => !excluded.has(section.split('\n')[0].replace(/^\d+\.\s+/, '').trim()));
   };
   const NSFW_INPUT_WRITER_RULES = Object.freeze([
@@ -2985,7 +3042,7 @@ Before committing a scene, verify: did the register generate intimacy the scene 
             ];
     return [
       `NSFW GUIDANCE — ${mode.toUpperCase()}:`,
-      ...nsfwGuidanceSectionsFor(mode, phase),
+      ...nsfwGuidanceSectionsFor(mode, phase, settings),
       ...phaseRules
     ].join('\n');
   };
@@ -4430,7 +4487,73 @@ ${BIANCA_PERSONA_TEXT}`;
   // Transport recovery is capped independently of one compact mandatory-analysis recovery
   // per heavyweight AIDE. Neither path can re-open an evidence read or retry a draft repair.
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
+  const gradiaSharedRecallPlan = (settings = {}, activeOwnersInput = null) => {
+    const budget = typeof memorySuiteRecallBudget === 'function' ? memorySuiteRecallBudget('gradia') : null;
+    if (!budget || budget.enabled !== true) return null;
+    const gradiaPolicy = typeof memorySuiteRecallBudgetGradiaPolicy === 'function'
+      ? memorySuiteRecallBudgetGradiaPolicy(budget)
+      : { followSharedBudget: true, redistributeDisabledOwners: true };
+    if (gradiaPolicy.followSharedBudget === false) return null;
+    const connOwners = Array.isArray(activeOwnersInput)
+      ? activeOwnersInput
+      : (typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function'
+        ? LibReadConnection.status()?.draftReadOwners
+        : null);
+    const activeOwners = Array.isArray(connOwners)
+      ? connOwners.filter(owner => MEMORY_SUITE_RECALL_OWNERS.includes(owner))
+      : [...MEMORY_SUITE_RECALL_OWNERS];
+    const rawShares = typeof memorySuiteRecallBudgetOwnerShares === 'function'
+      ? (memorySuiteRecallBudgetOwnerShares(budget, activeOwners) || {})
+      : Object.fromEntries(activeOwners.map(owner => [owner, Math.floor(Number(budget.totalChars || 0) * Number(budget.shares?.[owner] || 0) / 100)]));
+    const rawContentTotal = activeOwners.reduce((sum, owner) => sum + Math.max(0, Number(rawShares[owner] || 0)), 0);
+    const profile = normalizeChoice(settings?.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
+    const contextBudget = workScaleContextBudget(settings, null, profile);
+    const contextLimit = contextBudget.memoryChars;
+    let scaledByContext = false;
+    const ownerShares = { ...rawShares };
+    if (contextLimit !== null && rawContentTotal > Math.max(2000, contextLimit)) {
+      scaledByContext = true;
+      const cap = Math.max(2000, contextLimit);
+      let used = 0;
+      for (const owner of activeOwners) {
+        const share = Math.floor(cap * Math.max(0, Number(rawShares[owner] || 0)) / Math.max(1, rawContentTotal));
+        ownerShares[owner] = share;
+        used += share;
+      }
+      for (const owner of activeOwners) {
+        if (used >= cap) break;
+        if (Number(rawShares[owner] || 0) > 0) {
+          ownerShares[owner] += 1;
+          used += 1;
+        }
+      }
+    }
+    const contentTotalChars = activeOwners.reduce((sum, owner) => sum + Math.max(0, Number(ownerShares[owner] || 0)), 0);
+    const wrapperHeadroom = Math.max(1200, Math.ceil(contentTotalChars * 0.22));
+    const maxChars = Math.min(REFERENCE_BUDGET_CUSTOM_MAX_CHARS, Math.max(1000, contentTotalChars + wrapperHeadroom));
+    return {
+      enabled: true,
+      version: Number(budget.version || 1),
+      totalChars: Number(budget.totalChars || 0),
+      activeOwners,
+      ownerShares,
+      contentTotalChars,
+      wrapperHeadroom,
+      maxChars,
+      scaledByContext,
+      redistributed: activeOwners.length < MEMORY_SUITE_RECALL_OWNERS.length && gradiaPolicy.redistributeDisabledOwners !== false
+    };
+  };
   const libEvidenceBudget = (settings = {}) => {
+    const sharedPlan = gradiaSharedRecallPlan(settings);
+    if (sharedPlan) {
+      return Object.freeze({
+        maxChars: sharedPlan.maxChars,
+        maxBytes: Math.min(LIB_EVIDENCE_MAX_BYTES, Math.max(65536, sharedPlan.maxChars * 4 + 8192)),
+        ownerShares: Object.freeze({ ...sharedPlan.ownerShares }),
+        source: 'memory_suite_shared'
+      });
+    }
     const profile = normalizeChoice(settings.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
     const configured = Number(settings.memoryBudgetChars);
     const profileCap = Number.isSafeInteger(configured) && configured >= 1000 ? Math.min(configured, REFERENCE_BUDGET_CUSTOM_MAX_CHARS)
@@ -5372,8 +5495,11 @@ ${BIANCA_PERSONA_TEXT}`;
           this.modelRecoverySet(stage, phase, recovery).add(key);
           return;
         }
-        const allowed = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
-          ? ['analysis', stage === 'shadow_act' ? 'draft' : 'patch'] : [stage === 'shadow_act' ? 'draft' : 'patch'];
+        const allowed = stage === 'previous' && isPreviousStageEnabled(settings)
+          ? ['analysis']
+          : normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
+            ? ['analysis', stage === 'shadow_act' ? 'draft' : 'patch']
+            : [stage === 'shadow_act' ? 'draft' : 'patch'];
         const key = `${stage}:${phase}`;
         if (!allowed.includes(phase) || this.calls.has(key)) throw this.fail('LIB_READ_RETRY_DISABLED');
         this.calls.add(key);
@@ -9026,49 +9152,60 @@ ${text(paired.leadingAssistant.content || '')}
     .replace(/\s+/g, ' ');
   const maskNegatedCommitmentMentions = value => commitmentNarrativeScanText(value)
     .replace(/(?:중단|정지|멈추|그만두|포기|끊|종료)[^.!?\n]{0,18}(?:지\s*(?:않|못|말)|하지\s*(?:않|못)|않는|않는다|않았다)/gi, ' ')
+    .replace(/(?:止め|やめ|中断|中止|放棄)[^.!?\n。]{0,12}(?:ない|ず|なかった|しない)/g, ' ')
     .replace(/(?:stop|pause|halt|quit|give\s+up|terminate)[^.!?\n]{0,18}(?:not|never)|(?:do(?:es|ne)?|did)\s+not\s+(?:stop|pause|halt|quit|terminate)/gi, ' ')
     .replace(/\s+/g, ' ');
   const AUTHORITATIVE_COMMITMENT_RULES = Object.freeze([
     {
       id: 'continue_vs_stop',
       label: '계속/중단',
+      labelEn: 'continue_vs_stop',
       desired: 'continue',
-      input: /(?:(?:끝내|끝까지|계속(?:해서|하여|적으로)?|절대)[^.!?\n]{0,42})?(?:중단|정지|멈추|그만두|포기|끊|종료)[^.!?\n]{0,16}(?:지\s*않|하지\s*않|않는|않는다)|(?:keep(?:s|ing)?|continue(?:s|d|ing)?)[^.!?\n]{0,30}(?:without\s+(?:stopping|pausing)|despite)|(?:does?|did)\s+not\s+(?:stop|pause|halt|quit|terminate)/i,
-      conflict: /(?:일시\s*)?(?:중단(?:했|한다|하고|시키|시켜|시켰|되었|됐다|되는)|정지(?:했|한다|하고|시키|시켜|시켰|되었|됐다)|멈췄|멈춘|멈춘다|그만뒀|그만두(?:었|고|며|는|다)|포기(?:했|한다|하고)|끊(?:었|는다|고)|종료(?:했|한다|하고)|\b(?:stopp(?:ed|ing)|paus(?:ed|ing)|halt(?:ed|ing)|quit|terminated?)\b)/i,
+      input: /(?:(?:끝내|끝까지|계속(?:해서|하여|적으로)?|절대)[^.!?\n]{0,42})?(?:중단|정지|멈추|그만두|포기|끊|종료)[^.!?\n]{0,16}(?:지\s*않|하지\s*않|않는|않는다)|(?:止め|やめ|中断|中止)[^.!?\n。]{0,12}(?:ない|ず|しない)|(?:続け(?:る|て|た))|(?:keep(?:s|ing)?|continue(?:s|d|ing)?)[^.!?\n]{0,30}(?:without\s+(?:stopping|pausing)|despite)|(?:does?|did)\s+not\s+(?:stop|pause|halt|quit|terminate)/i,
+      conflict: /(?:일시\s*)?(?:중단(?:했|한다|하고|시키|시켜|시켰|되었|됐다|되는)|정지(?:했|한다|하고|시키|시켜|시켰|되었|됐다)|멈췄|멈춘|멈춘다|그만뒀|그만두(?:었|고|며|는|다)|포기(?:했|한다|하고)|끊(?:었|는다|고)|종료(?:했|한다|하고)|中断(?:した|して|する)|中止(?:した|して|する)|止め(?:た|て)|やめた|\b(?:stopp(?:ed|ing)|paus(?:ed|ing)|halt(?:ed|ing)|quit|terminated?)\b)/i,
       conflictScan: maskNegatedCommitmentMentions,
-      repair: '현재 입력은 해당 행동을 중단·정지·포기하지 않는다고 고정한다. 초안에서 자발적/의도적 중단, 일시정지, 종료로 뒤집지 말고 계속되는 상태를 유지한다.'
+      repair: '현재 입력은 해당 행동을 중단·정지·포기하지 않는다고 고정한다. 초안에서 자발적/의도적 중단, 일시정지, 종료로 뒤집지 말고 계속되는 상태를 유지한다.',
+      repairEn: 'The current input locks that this action must NOT stop, pause, or be abandoned. Keep it ongoing without reversing into a voluntary stop or termination.'
     },
     {
       id: 'reject_vs_accept',
       label: '거부/수락',
+      labelEn: 'reject_vs_accept',
       desired: 'reject',
-      input: /(?:절대[^.!?\n]{0,24})?(?:수락|동의|허락|받아들이)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:거부|거절)(?:한다|했다|하며|하고)|(?:refuse|reject|decline)(?:s|d|ing)?|(?:does?|did)\s+not\s+(?:accept|agree|consent)/i,
-      conflict: /(?:수락(?:했|한다|하고)|동의(?:했|한다|하고)|허락(?:했|한다|하고)|받아들(?:였|인다|이고)|\b(?:accept(?:ed|s|ing)|agree(?:d|s|ing)|consent(?:ed|s|ing))\b)/i,
-      repair: '현재 입력이 거부/비동의를 고정한 경우 초안이 이를 수락·동의·허락으로 바꾸지 않는다.'
+      input: /(?:절대[^.!?\n]{0,24})?(?:수락|동의|허락|받아들이)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:거부|거절)(?:한다|했다|하며|하고)|(?:拒否|拒絶|断)(?:する|した|った)|(?:受け入れ|承諾|同意)[^.!?\n。]{0,10}(?:ない|しない)|(?:refuse|reject|decline)(?:s|d|ing)?|(?:does?|did)\s+not\s+(?:accept|agree|consent)/i,
+      conflict: /(?:수락(?:했|한다|하고)|동의(?:했|한다|하고)|허락(?:했|한다|하고)|받아들(?:였|인다|이고)|承諾(?:した|して)|同意(?:した|して)|受け入れ(?:た|て)|\b(?:accept(?:ed|s|ing)|agree(?:d|s|ing)|consent(?:ed|s|ing))\b)/i,
+      repair: '현재 입력이 거부/비동의를 고정한 경우 초안이 이를 수락·동의·허락으로 바꾸지 않는다.',
+      repairEn: 'When the current input establishes refusal or non-consent, the draft must not flip it into acceptance or agreement.'
     },
     {
       id: 'stay_vs_leave',
       label: '잔류/이탈',
+      labelEn: 'stay_vs_leave',
       desired: 'stay',
-      input: /(?:떠나|나가|이탈|출발)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:남아\s*있|머무른|머문다|잔류한다)|(?:does?|did)\s+not\s+leave|(?:stay|remain)(?:s|ed|ing)?/i,
-      conflict: /(?:떠났|떠난다|떠나버|나갔|나간다|이탈(?:했|한다)|출발(?:했|한다)|\b(?:left|leaves|departed|exited)\b)/i,
-      repair: '현재 입력이 남아 있음/떠나지 않음을 고정한 경우 초안이 이탈·출발·퇴장으로 바꾸지 않는다.'
+      input: /(?:떠나|나가|이탈|출발)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:남아\s*있|머무른|머문다|잔류한다)|(?:立ち去|離れ|出て行)[^.!?\n。]{0,10}(?:ない|ずに)|(?:留まる|残る|滞在する)|(?:does?|did)\s+not\s+leave|(?:stay|remain)(?:s|ed|ing)?/i,
+      conflict: /(?:떠났|떠난다|떠나버|나갔|나간다|이탈(?:했|한다)|출발(?:했|한다)|立ち去った|離れた|出て行った|出発した|\b(?:left|leaves|departed|exited)\b)/i,
+      repair: '현재 입력이 남아 있음/떠나지 않음을 고정한 경우 초안이 이탈·출발·퇴장으로 바꾸지 않는다.',
+      repairEn: 'When the current input locks staying / not leaving, the draft must not turn it into a departure or exit.'
     },
     {
       id: 'preserve_vs_destroy',
       label: '보존/파괴',
+      labelEn: 'preserve_vs_destroy',
       desired: 'preserve',
-      input: /(?:삭제|파괴|폐기|지우|없애)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:보존|유지)(?:한다|했다|하며|하고)|(?:does?|did)\s+not\s+(?:delete|destroy|erase)|(?:preserve|retain|keep)(?:s|ed|ing)?/i,
-      conflict: /(?:삭제(?:했|한다|하고)|파괴(?:했|한다|하고)|폐기(?:했|한다|하고)|지워(?:버렸|냈|진)|없애(?:버렸|버린|는)|\b(?:deleted|destroyed|erased|discarded)\b)/i,
-      repair: '현재 입력이 보존/비삭제를 고정한 경우 초안이 해당 대상을 삭제·파괴·폐기한 것으로 바꾸지 않는다.'
+      input: /(?:삭제|파괴|폐기|지우|없애)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:보존|유지)(?:한다|했다|하며|하고)|(?:削除|破壊|破棄|消)[^.!?\n。]{0,10}(?:ない|しない)|(?:does?|did)\s+not\s+(?:delete|destroy|erase)|(?:preserve|retain|keep)(?:s|ed|ing)?/i,
+      conflict: /(?:삭제(?:했|한다|하고)|파괴(?:했|한다|하고)|폐기(?:했|한다|하고)|지워(?:버렸|냈|진)|없애(?:버렸|버린|는)|削除した|破壊した|破棄した|消した|\b(?:deleted|destroyed|erased|discarded)\b)/i,
+      repair: '현재 입력이 보존/비삭제를 고정한 경우 초안이 해당 대상을 삭제·파괴·폐기한 것으로 바꾸지 않는다.',
+      repairEn: 'When the current input locks preservation / non-destruction, the draft must not portray the target as deleted or destroyed.'
     },
     {
       id: 'spare_vs_kill',
       label: '생존/살해',
+      labelEn: 'spare_vs_kill',
       desired: 'spare',
-      input: /(?:죽이|살해|처단)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:살려\s*둔|살려둔다|목숨을\s*살린)|(?:does?|did)\s+not\s+kill|(?:spare|keep\s+alive)(?:s|d|ing)?/i,
-      conflict: /(?:죽였|죽인다|살해(?:했|한다)|처단(?:했|한다)|목숨을\s*끊|\b(?:killed|kills|executed|slain)\b)/i,
-      repair: '현재 입력이 생존/비살해를 고정한 경우 초안이 살해·처단으로 바꾸지 않는다.'
+      input: /(?:죽이|살해|처단)[^.!?\n]{0,14}(?:지\s*않|하지\s*않|않는다)|(?:살려\s*둔|살려둔다|목숨을\s*살린)|(?:殺|処刑)[^.!?\n。]{0,10}(?:ない|しない)|(?:does?|did)\s+not\s+kill|(?:spare|keep\s+alive)(?:s|d|ing)?/i,
+      conflict: /(?:죽였|죽인다|살해(?:했|한다)|처단(?:했|한다)|목숨을\s*끊|殺した|殺害した|処刑した|\b(?:killed|kills|executed|slain)\b)/i,
+      repair: '현재 입력이 생존/비살해를 고정한 경우 초안이 살해·처단으로 바꾸지 않는다.',
+      repairEn: 'When the current input locks sparing / keeping alive, the draft must not turn it into a killing.'
     }
   ]);
   const authoritativeCommitmentLocks = currentInputValue => {
@@ -9089,23 +9226,26 @@ ${text(paired.leadingAssistant.content || '')}
       return evidence ? {
         id: lock.id,
         label: lock.label,
+        labelEn: lock.labelEn || lock.id,
         desired: lock.desired,
         inputEvidence: lock.evidence,
         draftEvidence: evidence,
-        repair: lock.repair
+        repair: lock.repair,
+        repairEn: lock.repairEn || lock.repair
       } : null;
     }).filter(Boolean);
   };
-  const buildAuthoritativeCommitmentGuardBlock = (currentInputValue, draftValue = '') => {
+  const buildAuthoritativeCommitmentGuardBlock = (currentInputValue, draftValue = '', settings = null) => {
     const locks = authoritativeCommitmentLocks(currentInputValue);
     if (!locks.length) return '';
+    const koLang = isKoreanDraftLang(settings || Runtime.settings || {});
     const violations = draftValue ? detectAuthoritativeCommitmentViolations(currentInputValue, draftValue) : [];
     return [
       `[CURRENT INPUT HARD COMMITMENT GUARD — ${AUTHORITATIVE_COMMITMENT_GUARD_VERSION}]`,
       'These are literal highest-authority commitments extracted only from the current submitted input. Story Arc, memory, lore, skills, prior drafts, and stylistic preferences cannot reverse them.',
-      ...locks.map(lock => `- ${lock.label}: ${lock.repair}\n  current_input_evidence: ${lock.evidence}`),
+      ...locks.map(lock => `- ${koLang ? lock.label : (lock.labelEn || lock.id)}: ${koLang ? lock.repair : (lock.repairEn || lock.repair)}\n  current_input_evidence: ${lock.evidence}`),
       violations.length ? '[DETECTED CANDIDATE CONFLICTS]' : '',
-      ...violations.map(item => `- ${item.label}: candidate conflict = ${item.draftEvidence}`),
+      ...violations.map(item => `- ${koLang ? item.label : (item.labelEn || item.id)}: candidate conflict = ${item.draftEvidence}`),
       'Before returning the candidate, verify that no later sentence semantically reverses these commitments. A temporary warning, risk, temptation, or external pressure is allowed; the forbidden reversal itself is not.'
     ].filter(Boolean).join('\n');
   };
@@ -21111,6 +21251,7 @@ ${passage.text || ''}`, 420));
     const draftStages = stagePlan.filter(stage => stage !== RISU_ENGINE_STAGE);
     const callsPerDraftStage = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight' ? 2 : 1;
     const baseDraftCalls = draftStages.length * callsPerDraftStage;
+    const previousCalls = !inputAssistStandalone && isPreviousStageEnabled(settings) ? 1 : 0;
     const inputAssistCalls = includeInputAssist && inputAssistEnabled ? 1 : 0;
     const explicitArcCallCount = Object.prototype.hasOwnProperty.call(options || {}, 'arcBoundaryCalls')
       ? Math.max(0, Number(options.arcBoundaryCalls || 0))
@@ -21127,13 +21268,14 @@ ${passage.text || ''}`, 420));
           ? Math.max(0, runtimeArcCallCount)
           : Runtime.arcDirector?.boundaryCallDue === true ? 1 : 0;
     const arcBoundaryCalls = (0);
-    const internalLogicalCalls = baseDraftCalls + inputAssistCalls + arcBoundaryCalls + risuEngineCalls;
+    const internalLogicalCalls = baseDraftCalls + previousCalls + inputAssistCalls + arcBoundaryCalls + risuEngineCalls;
     return {
       schema: 'gradia_total_call_plan_v1',
       mode: normalizeMultiPipelineMode(settings.multiPipelineMode),
       draftStages,
       callsPerDraftStage,
       baseDraftCalls,
+      previousCalls,
       inputAssistCalls,
       arcBoundaryCalls,
       risuEngineCalls,
@@ -21861,8 +22003,9 @@ ${passage.text || ''}`, 420));
     'A candidate that focuses on other people still keeps the persona as its protagonist; only the emphasis moves.'
   ];
 
-  const authorDirectedInputAssistInstruction = (voiceContext = {}, targetChoice = {}) => {
+  const authorDirectedInputAssistInstruction = (voiceContext = {}, targetChoice = {}, settings = {}) => {
     const aliases = Array.isArray(voiceContext?.aliases) ? voiceContext.aliases.filter(Boolean) : [];
+    const koLang = isKoreanDraftLang(settings);
     return [
       'MODE: PLAYER-CONTROLLED RP ACTION CHOICE ADVISER.',
       voiceContext.hasInput
@@ -21876,8 +22019,15 @@ ${passage.text || ''}`, 420));
       'Each option must be a ready-to-send user input: what the user character chooses to do/say/attempt/ask NOW, not a scene brief telling the assistant what outcomes must happen.',
       'PLAYER INPUT VOICE: write from the player side, NOT as a narrator describing the persona from outside.',
       aliases.length ? `Known player/persona subject aliases to avoid as third-person sentence subjects: ${aliases.join(', ')}.` : '',
-      'For Korean, default to ZERO-SUBJECT player prose: omit the persona name and usually omit 나/내가/나는 too. Write the action or dialogue directly, e.g. `보라를 바라보며 물었다. "왜 그렇게 생각해요?"` rather than `도현은 보라를 바라보며 물었다...`.',
-      'Do not continue into the NPC/world answer. `그러자 보라가 대답했다...` is assistant-owned outcome and must NOT appear in a choice. If useful, the player input may end with a user-owned handoff such as `대답을 기다렸다.`',
+      ...(koLang
+        ? [
+            'For Korean, default to ZERO-SUBJECT player prose: omit the persona name and usually omit 나/내가/나는 too. Write the action or dialogue directly, e.g. `보라를 바라보며 물었다. "왜 그렇게 생각해요?"` rather than `도현은 보라를 바라보며 물었다...`.',
+            'Do not continue into the NPC/world answer. `그러자 보라가 대답했다...` is assistant-owned outcome and must NOT appear in a choice. If useful, the player input may end with a user-owned handoff such as `대답을 기다렸다.`'
+          ]
+        : [
+            'Write directly from the player-side voice natural to the target language, avoiding third-person persona narration.',
+            'Do not continue into the NPC/world answer or assistant outcome. If useful, end cleanly on a player-owned handoff such as waiting for a response.'
+          ]),
       'Prefer immediately playable outward action/dialogue/question over a paragraph of private reflection. An observe/wait option should describe the player staying quiet, watching, or waiting—not decide a long hidden emotional conclusion for the persona.',
       'In languages where a subject is grammatically necessary, prefer natural first-person player voice over third-person persona narration.',
       (voiceContext.hasInput
@@ -22483,14 +22633,16 @@ ${passage.text || ''}`, 420));
     }
     if (authorDirectedDraft) {
       const startedAt = Date.now();
+      const iaLang = normalizeInternalDraftLanguage(scoped?.internalDraftLanguage);
       const playerInputVoice = playerControlledInputVoiceContext(original, scoped.ragCbsContext);
       const systemPrompt = [
         'You are GRADIA Input Manager in PLAYER-CONTROLLED RP ACTION CHOICE ADVISER mode.',
-        ...authorDirectedInputAssistInstruction({ ...playerInputVoice, hasInput: !!text(original).trim(), speechOnly: isQuotedPersonaSpeechInput(original) }, inputAssistTargetChoice(settings.inputAssistTargetChars)),
+        buildInternalDraftLanguageContract(scoped, 'writing'),
+        ...authorDirectedInputAssistInstruction({ ...playerInputVoice, hasInput: !!text(original).trim(), speechOnly: isQuotedPersonaSpeechInput(original) }, inputAssistTargetChoice(settings.inputAssistTargetChars), scoped),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}.`,
         `Return ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET} distinct choices when possible, using this exact shape: {"schema":"${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}","choices":[{"id":"A","title":"short label","summary":"what this player action emphasizes","input":"ready-to-send user action input"}]}.`,
-        'The input field must be written in the conversation language as a ready-to-send USER input, never assistant RP prose or an authorial outcome script.',
+        'The input field must be written in the active draft language as a ready-to-send USER input, never assistant RP prose or an authorial outcome script.',
         'Do not include markdown, recommendation scores, a best choice, or commentary outside the JSON.'
       ].join('\n');
       const userPrompt = [
@@ -22508,7 +22660,11 @@ ${passage.text || ''}`, 420));
         '',
         '[CHOICE CONTRACT]',
         original ? '- Every option must keep the action and intent of CURRENT USER INPUT and differ in how it is carried out, not merely in wording.' : '- Each option must be materially different in the USER action/tactic, not merely different wording.',
-        '- In Korean, write each choice as subject-omitted player action/dialogue whenever natural. Do not prefix the choice with the persona name as a third-person actor.',
+        iaLang === 'korean'
+          ? '- In Korean, write each choice as subject-omitted player action/dialogue whenever natural. Do not prefix the choice with the persona name as a third-person actor.'
+          : iaLang === 'japanese'
+            ? '- In Japanese, write each choice as natural subject-omitted player action/dialogue matching the conversation register; do not narrate the persona in third person.'
+            : '- In English, write each choice as concise ready-to-send player action/dialogue matching the conversation POV; do not narrate the NPC response.',
         '- End each choice on the player side. Do not write what the NPC/world does in response; GRADIA will generate that only after the user selects the choice.',
         '- Preserve explicit OOC/agency constraints across every option.',
         '- Do not enact any option. The user will choose after generation.',
@@ -22595,14 +22751,21 @@ ${passage.text || ''}`, 420));
     // until the user explicitly chooses it in the choice picker.
     if (!authorDirectedDraft) {
       const startedAt = Date.now();
+      const iaLang = normalizeInternalDraftLanguage(scoped?.internalDraftLanguage);
+      const perspectiveTitles = iaLang === 'korean'
+        ? { user_focus: '주인공 중심', npc_focus: '현장 인물 중심', offscreen_focus: '세계·외부 인물 중심' }
+        : iaLang === 'japanese'
+          ? { user_focus: '主人公中心', npc_focus: '現場キャラクター中心', offscreen_focus: '世界・場面外中心' }
+          : { user_focus: 'Protagonist Focus', npc_focus: 'On-Scene Cast Focus', offscreen_focus: 'World & Off-Scene Focus' };
       const targetChoice = inputAssistTargetChoice(settings.inputAssistTargetChars);
       const systemPrompt = [
         'You are GRADIA Input Manager in NOVEL-MODE THREE-PERSPECTIVE CHOICE mode.',
+        buildInternalDraftLanguageContract(scoped, 'writing'),
         resolveModelBehaviorAdapterForStage(scoped, INPUT_ASSIST_STAGE_ID, 'input').prompt,
         ...novelInputAssistChoiceInstruction(continuationCue, targetChoice, playerControlledInputVoiceContext(original, scoped.ragCbsContext)),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${NOVEL_INPUT_CHOICES_SCHEMA}.`,
-        `Return exactly this shape: {"schema":"${NOVEL_INPUT_CHOICES_SCHEMA}","choices":[{"perspective":"user_focus","title":"주인공 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"npc_focus","title":"현장 인물 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"offscreen_focus","title":"세계·외부 인물 중심","summary":"short explanation","input":"ready-to-send user input"}]}.`,
+        `Return exactly this shape: {"schema":"${NOVEL_INPUT_CHOICES_SCHEMA}","choices":[{"perspective":"user_focus","title":"${perspectiveTitles.user_focus}","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"npc_focus","title":"${perspectiveTitles.npc_focus}","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"offscreen_focus","title":"${perspectiveTitles.offscreen_focus}","summary":"short explanation","input":"ready-to-send user input"}]}.`,
         'Do not include markdown, recommendation scores, a best choice, hidden analysis, or commentary outside the JSON.'
       ].join('\n');
       const userPrompt = [
@@ -27021,25 +27184,61 @@ Begin directly with the in-world response and finish the complete same-turn draf
     .replace(/<[^>]*>/g, ' ')
     .replace(/◈[\s\S]*?◈/g, ' ')
     .replace(/^#{1,6}\s.*$/gm, ' ');
+  const SCENE_FIXATION_EN_STOP = new Set(['that', 'this', 'with', 'from', 'have', 'been', 'were', 'they', 'their', 'them', 'there', 'what', 'when', 'where', 'which', 'while', 'would', 'could', 'should', 'will', 'about', 'after', 'before', 'into', 'over', 'under', 'back', 'down', 'away', 'around', 'through', 'just', 'like', 'more', 'some', 'only', 'even', 'still', 'again', 'then', 'than', 'very', 'here', 'your', 'mine', 'said', 'asked', 'looked', 'turned', 'stood', 'went', 'came', 'took', 'made', 'kept', 'felt', 'hand', 'hands', 'eyes', 'face', 'voice', 'head', 'hair', 'room', 'door', 'wall', 'side', 'moment', 'time']);
+  const SCENE_FIXATION_JA_STOP = new Set(['それ', 'これ', 'あれ', 'どれ', 'ここ', 'そこ', 'あそこ', 'どこ', 'こと', 'もの', 'とき', 'ため', 'よう', 'ほう', 'まま', 'なか', 'うえ', 'した', 'まえ', 'うしろ', 'となり', '部屋', '視線', '表情', '言葉', '声', '顔', '手', '指', '目', '息', '言っ', '話し', '聞い', '見', '思っ', '感じ', 'わかっ', '知っ', '立ち', '座っ', '歩き', '戻っ', '頷い', '笑い', '笑っ']);
+  const sceneFixationEnLemma = word => {
+    let w = String(word || '').toLowerCase();
+    if (w.length < 4) return '';
+    if (w.endsWith('ied') && w.length > 5) w = `${w.slice(0, -3)}y`;
+    else if (w.endsWith('ing') && w.length > 6) w = w.slice(0, -3);
+    else if (w.endsWith('ed') && w.length > 5) w = w.slice(0, -2);
+    else if (w.endsWith('es') && w.length > 5) w = w.slice(0, -2);
+    else if (w.endsWith('s') && w.length > 4 && !w.endsWith('ss')) w = w.slice(0, -1);
+    return w;
+  };
+  const sceneFixationJaStem = token => String(token || '')
+    .replace(/(?:ている|ていた|てい|てた|てしまう|てしまった|ない|なかった|ます|ました|ません|れる|られる|って|った|んだ|んで|した|して|する|る|た|て)$/, '');
   const sceneFixationDetect = (recentValue = {}) => {
     const recent = recentValue || {};
     const assistants = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .filter(message => message?.role === 'assistant').slice(-SCENE_FIXATION_RESPONSES).map(message => sceneFixationText(message?.content));
     if (assistants.length < 3) return [];
-    const names = new Set([Runtime.activePersonaName, Runtime.activeCharacterName, ...extensionScenePeople(recent)]
-      .filter(Boolean).flatMap(name => { const entry = extensionEntityEntry(name); return [name, ...(entry ? [entry.canonical, ...(entry.aliases || [])] : [])]; })
-      .flatMap(name => (String(name).match(/[가-힣]+/g) || []).flatMap(part => [part, sceneFixationStem(part)])));
+    const nameParts = [Runtime.activePersonaName, Runtime.activeCharacterName, ...extensionScenePeople(recent)]
+      .filter(Boolean).flatMap(name => { const entry = extensionEntityEntry(name); return [name, ...(entry ? [entry.canonical, ...(entry.aliases || [])] : [])]; });
+    const names = new Set(nameParts.flatMap(name => [
+      ...(String(name).match(/[가-힣]+/g) || []).flatMap(part => [part, sceneFixationStem(part)]),
+      ...(String(name).match(/[a-zA-Z]{2,}/g) || []).flatMap(part => [part.toLowerCase(), sceneFixationEnLemma(part)]),
+      ...(String(name).match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+/g) || []).flatMap(part => [part, sceneFixationJaStem(part)])
+    ].filter(Boolean)));
     const stats = new Map();
+    const recordStat = (stem, surface, index, isVariant) => {
+      if (!stem || names.has(stem) || names.has(surface)) return;
+      if (!stats.has(stem)) stats.set(stem, { count: 0, responses: new Set(), surfaces: new Map(), verbForms: new Set() });
+      const row = stats.get(stem);
+      row.count += 1;
+      row.responses.add(index);
+      row.surfaces.set(surface, (row.surfaces.get(surface) || 0) + 1);
+      if (isVariant) row.verbForms.add(surface);
+    };
     assistants.forEach((body, index) => {
       for (const word of body.match(/[가-힣]{2,7}/g) || []) {
         const { stem, ending } = sceneFixationStemOf(word);
-        if (!stem || SCENE_FIXATION_STOP_STEMS.has(stem) || SCENE_MOTIF_STOPWORDS.has(stem) || names.has(stem) || names.has(word)) continue;
-        if (!stats.has(stem)) stats.set(stem, { count: 0, responses: new Set(), surfaces: new Map(), verbForms: new Set() });
-        const row = stats.get(stem);
-        row.count += 1;
-        row.responses.add(index);
-        row.surfaces.set(word, (row.surfaces.get(word) || 0) + 1);
-        if (!SCENE_FIXATION_NOUN_ENDINGS.has(ending)) row.verbForms.add(word);
+        if (!stem || SCENE_FIXATION_STOP_STEMS.has(stem) || SCENE_MOTIF_STOPWORDS.has(stem)) continue;
+        recordStat(stem, word, index, !SCENE_FIXATION_NOUN_ENDINGS.has(ending));
+      }
+      if (!/[가-힣]{6,}/.test(body)) {
+        for (const word of body.match(/\b[a-zA-Z]{4,16}\b/g) || []) {
+          const lower = word.toLowerCase();
+          const lemma = sceneFixationEnLemma(lower);
+          if (!lemma || lemma.length < 3 || SCENE_FIXATION_EN_STOP.has(lower) || SCENE_FIXATION_EN_STOP.has(lemma)) continue;
+          recordStat(lemma, lower, index, true);
+        }
+        for (const token of body.match(/[\u4E00-\u9FFF][\u3040-\u309F]{1,5}|[\u30A0-\u30FF\u4E00-\u9FFF]{2,6}/g) || []) {
+          const stem = sceneFixationJaStem(token);
+          if (!stem || stem.length < 1 || SCENE_FIXATION_JA_STOP.has(token) || SCENE_FIXATION_JA_STOP.has(stem)) continue;
+          const hasKanaTail = /[\u3040-\u309F]/.test(token);
+          recordStat(stem, token, index, hasKanaTail || stem !== token);
+        }
       }
     });
     const last = assistants.length - 1;
@@ -27048,7 +27247,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       // A fixation is a verb or phrase coming back in several forms; a name or a noun seen with
       // particles only is left to the motif list.
       .filter(([stem, row]) => row.responses.has(last) && row.responses.size >= 3 && row.count >= (stem.length === 1 ? 5 : 4)
-        && row.verbForms.size >= 2)
+        && (row.verbForms.size >= 2 || (/^[a-z]+$/.test(stem) && row.count >= 4)))
       .sort((left, right) => right[1].responses.size - left[1].responses.size || right[1].count - left[1].count)
       .slice(0, 4)
       .map(([stem, row]) => ({
@@ -27308,14 +27507,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return !!entry && extensionEntityEntry(right) === entry;
   };
   // People named in the last few scene messages and the current input, via the alias index.
-  const EXTENSION_PERSON_NAME_RE = /^(?:[A-Z][a-z'’-]+(?:\s+[A-Z][a-z'’-]+){0,2}|[가-힣]{2,5})$/;
-  const EXTENSION_NON_PERSON_NAME_RE = /^(?:rules?|system|settings?|world|lore|guide|status|prompt|info|information|notes?|summary|history|timeline|schedule|locations?|maps?|items?|events?|scenes?|format|output|style|memory|characters?|cast|profiles?|relationships?|directives?|instructions?|overview|background|glossary|index|manual|appendix|hud|cg|time|loc|weather|규칙|설정|세계관|시스템|상태창|가이드|프롬프트|장소|일정|요약|메모|참고|지침|배경|관계도|인물|등장인물|목록|개요|안내|형식|출력)$/i;
+  const EXTENSION_PERSON_NAME_RE = /^(?:[A-Z][a-z'’-]+(?:\s+[A-Z][a-z'’-]+){0,2}|[가-힣]{2,5}|[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFFー]{2,8}(?:[\s・][\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFFー]{1,8})?)$/;
+  const EXTENSION_NON_PERSON_NAME_RE = /^(?:rules?|system|settings?|world|lore|guide|status|prompt|info|information|notes?|summary|history|timeline|schedule|locations?|maps?|items?|events?|scenes?|format|output|style|memory|characters?|cast|profiles?|relationships?|directives?|instructions?|overview|background|glossary|index|manual|appendix|hud|cg|time|loc|weather|hotel|motel|room|bedroom|bathroom|restroom|hallway|corridor|lobby|lounge|balcony|kitchen|study|office|classroom|school|park|cafe|library|station|hospital|inn|tavern|규칙|설정|세계관|시스템|상태창|가이드|프롬프트|장소|일정|요약|메모|참고|지침|배경|관계도|인물|등장인물|목록|개요|안내|형식|출력|호텔|모텔|방|객실|거실|욕실|화장실|복도|로비|라운지|여관|병원|학교|교실|공원|카페|도서관|역|공항|ルール|システム|設定|世界観|状態|ステータス|場所|現在地|時間|天気|登場人物|人物|メモ|概要|案内|出力|形式|会話|状況|プロンプト|ホテル|旅館|部屋|客室|寝室|浴室|風呂|トイレ|洗面所|廊下|ロビー|ラウンジ|厨房|ベランダ|書斎|駅|空港|学校|教室|公園|病院|カフェ|図書館)$/i;
   const extensionIsPersonName = value => {
     const n = compact(value || '', 40);
     return !!n && EXTENSION_PERSON_NAME_RE.test(n) && !EXTENSION_NON_PERSON_NAME_RE.test(n);
   };
-  const SCENE_REMOTE_OR_MENTION_RE = /(?:문자|메시지|카톡|톡이|톡을|전화|통화|알림|진동이\s*났|화면이\s*켜지|스마트폰|휴대폰|핸드폰|폰\s*화면|부재중|연락이\s*왔|연락했|연락을|답장|발신|수신|언급|얘기(?:를|가|만|했)|이야기(?:를|가|만|했)|소문|소식|text\s*message|phone\s*call|notification|mentioned)/i;
-  const SCENE_PHYSICAL_PRESENCE_RE = /(?:들어왔|들어섰|문을\s*열고|나타났|다가왔|걸어왔|마주\s*앉|옆에\s*앉|침대\s*위|끌어안|입을\s*맞|키스|삽입|만졌|안겼|올라탔|눈을\s*마주쳤|walked\s+in|entered|stepped\s+in|sat\s+beside)/i;
+  const SCENE_REMOTE_OR_MENTION_RE = /(?:문자|메시지|카톡|톡이|톡을|전화|통화|알림|진동이\s*났|화면이\s*켜지|스마트폰|휴대폰|핸드폰|폰\s*화면|부재중|연락이\s*왔|연락했|연락을|답장|발신|수신|언급|얘기(?:를|가|만|했)|이야기(?:를|가|만|했)|소문|소식|서신|편지|전령|텔레파시|통신|メッセージ|メール|ライン|LINE|電話|通話|通知|スマホ|携帯|連絡|返信|噂|話題|手紙|伝言|念話|通信|text\s*message|phone\s*call|notification|mentioned|letter|missive|telepathy|comms|transmission|hologram)/i;
+  const SCENE_PHYSICAL_PRESENCE_RE = /(?:들어왔|들어섰|문을\s*열고|나타났|다가왔|걸어왔|마주\s*앉|옆에\s*앉|침대\s*위|끌어안|입을\s*맞|키스|삽입|만졌|안겼|올라탔|눈을\s*마주쳤|入ってきた|現れた|近づいた|隣に座|ベッドの上|抱きしめ|キス|挿入|触れた|目を合わせ|walked\s+in|entered|stepped\s+in|sat\s+beside)/i;
   const stripQuotedAndRemoteSceneText = rawText => {
     const base = typeof stripNonProseSceneTags === 'function' ? stripNonProseSceneTags(rawText) : String(rawText || '');
     const unquoted = base
@@ -27324,14 +27523,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .replace(/「[^」\n]*」/g, ' ')
       .replace(/『[^』\n]*』/g, ' ');
     return unquoted
-      .split(/\n+|(?<=[.!?。！？])\s+/)
+      .split(/\n+|(?<=[.!?])\s+|(?<=[。！？])\s*/)
       .map(seg => seg.trim())
       .filter(seg => seg && (!SCENE_REMOTE_OR_MENTION_RE.test(seg) || SCENE_PHYSICAL_PRESENCE_RE.test(seg)))
       .join('\n');
   };
-  const extensionScenePeople = (recent = {}) => {
+  const extensionScenePeople = (recent = {}, settings = {}) => {
     const index = Runtime.activeEntityIndex;
-    const hudNames = typeof worldDynamicsHudPresentNames === 'function' ? worldDynamicsHudPresentNames(recent) : [];
+    const hudNames = typeof worldDynamicsHudPresentNames === 'function' ? worldDynamicsHudPresentNames(recent, settings) : [];
     const inputText = stripQuotedAndRemoteSceneText(recent.latestUser || '');
     const inputEntities = index && inputText ? continuityEntitiesInText(inputText, index).filter(extensionIsPersonName) : [];
     if (hudNames.length > 0) {
@@ -27362,9 +27561,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (extensionLineNames(sceneText, cardName)) return cardName;
     return extensionIsPersonName(cardName) && (!!extensionEntityEntry(cardName) || !scenePeople.length) ? cardName : '';
   };
+  const EXTENSION_LATIN_TITLE_RE = /^(?:Mr|Ms|Mrs|Dr|Sir|Lady|Lord|Prof|Miss|Saint)\.?$/i;
   const extensionGivenName = raw => {
     const clean = compact(raw || '', 40);
-    return clean.length >= 3 && /^[가-힣]+$/.test(clean) ? clean.slice(1) : '';
+    if (!clean) return '';
+    if (clean.length >= 3 && /^[가-힣]+$/.test(clean)) return clean.slice(1);
+    if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(clean)) {
+      const jaParts = clean.split(/[\s・]+/).filter(Boolean);
+      if (jaParts.length >= 2 && jaParts[jaParts.length - 1].length >= 2) return jaParts[jaParts.length - 1];
+      if (/^[\u4E00-\u9FFF]{4}$/.test(clean)) return clean.slice(2);
+      return '';
+    }
+    const enParts = clean.split(/\s+/).filter(Boolean);
+    if (enParts.length >= 2 && enParts[0].length >= 3 && !EXTENSION_LATIN_TITLE_RE.test(enParts[0])) {
+      return enParts[0];
+    }
+    return '';
   };
   const extensionSameOrGivenName = (left, right) => {
     if (!left || !right) return false;
@@ -27384,6 +27596,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (given) tokens.push(given);
     return tokens.some(tok => {
       const esc = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(tok)) {
+        if (tok.length >= 3 && hay.includes(tok)) return true;
+        return new RegExp(`(?:^|[\\s「」『』()（）、。.,!?はがをにのともへで・])${esc}(?:$|[\\s「」『』()（）、。.,!?はがをにのともへでからまでさんくんちゃん様先輩先生たち])`).test(hay);
+      }
       return new RegExp(`(?:^|[^가-힣A-Za-z])${esc}(?:은|는|이|가|을|를|의|에게|께|한테|와|과|랑|이랑|도|만|야|아|[^가-힣A-Za-z]|$)`).test(hay);
     });
   };
@@ -28373,24 +28589,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const BODY_STATE_SYMPTOM_RE = /아프|통증|두통|어지러|기침|열이|미열|오한|메스꺼|구토|피곤|피로|몸살|쑤시|저리|pain|ache|dizzy|cough|nausea|fatigue/i;
   const BODY_STATE_RECOVERY_RE = /나았|회복|완치|열이\s*내렸|괜찮아졌|아물|recovered|healed/i;
   const BODY_STATE_MEDICATION_RE = /약을|복용|진통제|해열제|처방|병원|치료|붕대|깁스|medicine|pill\b|bandage|cast\b/i;
-  const BODY_STATE_PERIOD_START_RE = /생리(?:를|가|는)?\s*(?:시작|터졌|왔|나왔)|월경(?:을|이)?\s*(?:시작|터졌|왔)|period\s+(?:started|began)/i;
-  const BODY_STATE_PERIOD_ONGOING_RE = /생리\s*중|생리\s*(?:[1-7]|[일이삼사오육칠])\s*일\s*(?:째|차)|생리(?:대|컵|팬티)|탐폰|생리통|그날(?:이|이라|인데)|생리\s*(?:때문|이라|중이|혈)|월경\s*중|월경통|menstruat(?:ing|ion)|on\s+(?:her|my|their)\s+period|period\s+(?:cramps?|pain)|(?:sanitary\s+)?(?:pad|tampon)/i;
-  const BODY_STATE_PERIOD_ENDED_RE = /생리(?:가|는|도)?\s*(?:끝났|끝나|멈췄|멎었|지났)|월경(?:이|은)?\s*(?:끝났|끝나|멈췄|지났)|period\s+(?:ended|finished|stopped|is\s+over)/i;
+  const BODY_STATE_PERIOD_START_RE = /생리(?:를|가|는)?\s*(?:시작|터졌|왔|나왔)|월경(?:을|이)?\s*(?:시작|터졌|왔)|生理(?:が|を)?(?:始ま|きた|来た|なっ)|月経(?:が|を)?始ま|period\s+(?:started|began)/i;
+  const BODY_STATE_PERIOD_ONGOING_RE = /생리\s*중|생리\s*(?:[1-7]|[일이삼사오육칠])\s*일\s*(?:째|차)|생리(?:대|컵|팬티)|탐폰|생리통|그날(?:이|이라|인데)|생리\s*(?:때문|이라|중이|혈)|월경\s*중|월경통|生理中|生理\s*[1-7]\s*日目|生理痛|ナプキン|タンポン|月経中|menstruat(?:ing|ion)|on\s+(?:her|my|their)\s+period|period\s+(?:cramps?|pain)|(?:sanitary\s+)?(?:pad|tampon)/i;
+  const BODY_STATE_PERIOD_ENDED_RE = /생리(?:가|는|도)?\s*(?:끝났|끝나|멈췄|멎었|지났)|월경(?:이|은)?\s*(?:끝났|끝나|멈췄|지났)|生理(?:が|は)?(?:終わっ|止まっ|過ぎ)|月経(?:が|は)?終わっ|period\s+(?:ended|finished|stopped|is\s+over)/i;
   function bodyStateStatedPeriodDay(text) {
-    const m = String(text || '').match(/(?:생리|월경|period)\s*(?:day\s*)?([1-7])\s*(?:일\s*(?:째|차))?/i)
+    const m = String(text || '').match(/(?:생리|월경|生理|月経|period)\s*(?:day\s*)?([1-7])\s*(?:일\s*(?:째|차)|日目)?/i)
       || String(text || '').match(/day\s*([1-7])\s+of\s+(?:her|my|their\s+)?period/i);
     if (!m) return null;
     const d = Number(m[1]);
     return Number.isFinite(d) && d >= 1 && d <= 7 ? d : null;
   }
-  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|안에\s*쌌|속에\s*쌌|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|가득)|slept together|had sex|intercourse/i;
+  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|안에\s*쌌|속에\s*쌌|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|가득)|セックス|性交|抱いた|抱かれ|射精|中出し|精液|slept together|had sex|intercourse/i;
   const BODY_STATE_CONTRACEPTION = Object.freeze({
     // Multiplier on the per-act conception chance under typical use.
-    none: Object.freeze({ label: '피임 안 함', factor: 1, pattern: /피임\s*(?:안|없이|하지)|콘돔\s*없이|without (?:a )?condom|no protection/i }),
-    condom: Object.freeze({ label: '콘돔', factor: 0.15, pattern: /콘돔|condom/i }),
-    pill: Object.freeze({ label: '경구피임약', factor: 0.07, pattern: /피임약|경구피임|the pill|birth control pill/i }),
-    iud: Object.freeze({ label: '자궁내장치', factor: 0.01, pattern: /루프|자궁내장치|미레나|\biud\b/i }),
-    implant: Object.freeze({ label: '피하이식', factor: 0.001, pattern: /임플라논|피하이식|implant/i }),
+    none: Object.freeze({ label: '피임 안 함', factor: 1, pattern: /피임\s*(?:안|없이|하지)|콘돔\s*없이|避妊(?:なし|せず)|コンドーム(?:なし|無し)|生で|without (?:a )?condom|no protection/i }),
+    condom: Object.freeze({ label: '콘돔', factor: 0.15, pattern: /콘돔|コンドーム|ゴム|condom/i }),
+    pill: Object.freeze({ label: '경구피임약', factor: 0.07, pattern: /피임약|경구피임|ピル|避妊薬|the pill|birth control pill/i }),
+    iud: Object.freeze({ label: '자궁내장치', factor: 0.01, pattern: /루프|자궁내장치|미레나|ミレーナ|避妊リング|\biud\b/i }),
+    implant: Object.freeze({ label: '피하이식', factor: 0.001, pattern: /임플라논|피하이식|避妊インプラント|implant/i }),
     withdrawal: Object.freeze({ label: '질외사정', factor: 0.2, pattern: /질외사정|withdrawal/i }),
     emergency: Object.freeze({ label: '응급피임약', factor: 0.15, pattern: /사후\s*피임|응급\s*피임|애프터\s*필|노레보|엘라원|morning[\s.-]*after|plan\s*b\b|emergency\s*contracept/i })
   });
@@ -28781,10 +28997,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // - Soothing interactions deepen sleep (increase depth, 0% wake chance).
   // - Awakening interactions have distinct stimulus scores; repeated interactions across turns or
   //   proximity to waking add a cumulative bonus so even low-score touches can eventually wake the NPC.
-  const BODY_STATE_SLEEP_ONSET_RE = /잠이?\s*(?:들었|든|들어|들고|드네)|잠들(?:었|어|고|며|자|기)|자고\s*있|잠든\s*(?:채|모습|얼굴|숨소|몸)|수면\s*(?:중|상태)|골아떨어|곯아떨어|숙면(?:을\s*취하|에\s*빠졌|\s*중)|깊은\s*잠|고른\s*숨소|새근새근|코를\s*골며|눈을\s*감고\s*잠|fell asleep|fast asleep|sleeping\b|slumber|dozed off|sound asleep/i;
-  const BODY_STATE_SLEEP_WAKE_RE = /잠에서?\s*(?:깼|깨어났|깨어나|깨어)|눈을\s*(?:떴|뜨고|비비며\s*일어)|일어났|부스스\s*일어|기상했|정신을\s*차렸|woke up|awakened|stirred awake|opened (?:her|his) eyes/i;
-  const BODY_STATE_DEEP_SLEEP_RE = /깊은\s*잠|숙면|골아떨어|곯아떨어|세상\s*모르고\s*자|죽은\s*듯(?:이)?\s*자|코를\s*골|기절하듯\s*잠|deep sleep|dead to the world|sound asleep|heavy sleep/i;
-  const BODY_STATE_LIGHT_SLEEP_RE = /선잠|얕은\s*잠|조는|꾸벅꾸벅|설잠|뒤척이며\s*자|light sleep|dozing|half[- ]asleep/i;
+  const BODY_STATE_SLEEP_ONSET_RE = /잠이?\s*(?:들었|든|들어|들고|드네)|잠들(?:었|어|고|며|자|기)|자고\s*있|잠든\s*(?:채|모습|얼굴|숨소|몸)|수면\s*(?:중|상태)|골아떨어|곯아떨어|숙면(?:을\s*취하|에\s*빠졌|\s*중)|깊은\s*잠|고른\s*숨소|새근새근|코를\s*골며|눈을\s*감고\s*잠|眠(?:っ|りにつ)|寝息|熟睡|寝落ち|寝てい|眠って|fell asleep|fast asleep|sleeping\b|slumber|dozed off|sound asleep/i;
+  const BODY_STATE_SLEEP_WAKE_RE = /잠에서?\s*(?:깼|깨어났|깨어나|깨어)|눈을\s*(?:떴|뜨고|비비며\s*일어)|일어났|부스스\s*일어|기상했|정신을\s*차렸|目覚め|目を覚まし|目が覚め|起き(?:た|て)|woke up|awakened|stirred awake|opened (?:her|his) eyes/i;
+  const BODY_STATE_DEEP_SLEEP_RE = /깊은\s*잠|숙면|골아떨어|곯아떨어|세상\s*모르고\s*자|죽은\s*듯(?:이)?\s*자|코를\s*골|기절하듯\s*잠|熟睡|ぐっすり|深い眠り|泥のように眠|deep sleep|dead to the world|sound asleep|heavy sleep/i;
+  const BODY_STATE_LIGHT_SLEEP_RE = /선잠|얕은\s*잠|조는|꾸벅꾸벅|설잠|뒤척이며\s*자|浅い眠り|うとうと|まどろ|light sleep|dozing|half[- ]asleep/i;
   const BODY_STATE_SLEEP_AID_FACTORS = Object.freeze([
     [/수면제|수면\s*유도제|안정제|진정제|마취|수면향|최면향|sleeping pill|sedative|tranquilizer|hypnotic/i, '수면제·진정제', 55, 0.45],
     [/감기약|몸살약|항히스타민|처방약|약기운|cold medicine|drowsy medicine|medication/i, '졸음 유발 약물', 35, 0.65],
@@ -28806,21 +29022,29 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ]);
   // 완료된 각성 = 잠든 사람 쪽의 상태 서술(눈을 뜬다/깨어난다/일어나 앉는다) 또는 완료형으로
   // 깨운 행동. "깨우려 한다·깨우고 있다" 같은 시도 표현은 확정으로 보지 않는다.
-  const BODY_STATE_SLEEP_DONE_WAKE_RE = /(?:눈을\s*(?:뜨|뜬|떴|떠)|깨어났|깨어나|깨어난|일어나\s*앉|몸을\s*일으|깨웠|깨워\s*냈|깨버렸|깼다|woke (?:her|him) up|woke up|awakened|opened (?:her|his) eyes)/i;
-  const BODY_STATE_SLEEP_WAKE_ATTEMPT_RE = /(?:깨우려|깨우려고|깨우고|깨울|깨우는\s*중|시도|보려|try(?:ing)? to wake|attempt)/i;
-  const BODY_STATE_SLEEP_DONE_ONSET_RE = /(?:잠(?:이)?\s*(?:들었|들어|든|든다)|잠들었|잠들어|잠든\s*채|곯아떨어|골아떨어|fell asleep|dozed off)/i;
+  const BODY_STATE_SLEEP_DONE_WAKE_RE = /(?:눈을\s*(?:뜨|뜬|떴|떠)|깨어났|깨어나|깨어난|일어나\s*앉|몸을\s*일으|깨웠|깨워\s*냈|깨버렸|깼다|目を覚まし|目が覚め|目覚めた|起きた|起き上がった|woke (?:her|him) up|woke up|awakened|opened (?:her|his) eyes)/i;
+  const BODY_STATE_SLEEP_WAKE_ATTEMPT_RE = /(?:깨우려|깨우려고|깨우고|깨울|깨우는\s*중|시도|보려|起こそうと|try(?:ing)? to wake|attempt)/i;
+  const BODY_STATE_SLEEP_DONE_ONSET_RE = /(?:잠(?:이)?\s*(?:들었|들어|든|든다)|잠들었|잠들어|잠든\s*채|곯아떨어|골아떨어|眠りについた|寝落ちした|眠った|fell asleep|dozed off)/i;
+  const BODY_STATE_SLEEP_MAX_DEPTH = 200;
+  const BODY_STATE_SLEEP_MIN_DEPTH = 25;
+  const computeWakefulnessGauge = (depth, totalStimulus = 0, bonus = 0) => {
+    const d = Math.max(0, Math.min(BODY_STATE_SLEEP_MAX_DEPTH, Number(depth) || 0));
+    const base = 100 - (d / BODY_STATE_SLEEP_MAX_DEPTH) * 92;
+    return Math.max(4, Math.min(96, Math.round(base + Number(bonus || 0) * 0.45 + Math.max(0, Number(totalStimulus || 0)) * 0.25)));
+  };
   const normalizeBodyStateSleepPerson = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const depth = Math.max(0, Math.min(200, Math.round(Number(value.depth) || 0)));
+    const depth = Math.max(0, Math.min(BODY_STATE_SLEEP_MAX_DEPTH, Math.round(Number(value.depth) || 0)));
     if (depth <= 0) return null;
     return {
       depth,
-      wakefulnessGauge: Math.max(0, Math.min(100, Math.round(Number(value.wakefulnessGauge ?? (100 - (depth / 200) * 85)) || 0))),
+      wakefulnessGauge: Math.max(0, Math.min(100, Math.round(Number(value.wakefulnessGauge ?? computeWakefulnessGauge(depth, 0, 0)) || 0))),
       stage: compact(value.stage || '', 80),
       aidMultiplier: Number(value.aidMultiplier) || 1,
       aids: Array.isArray(value.aids) ? value.aids.map(a => compact(a || '', 80)).filter(Boolean).slice(0, 8) : [],
       storyDay: Number.isFinite(Number(value.storyDay)) ? Number(value.storyDay) : null,
       verdict: compact(value.verdict || 'asleep', 40),
+      displayLine: compact(value.displayLine || '', 360),
       at: Number(value.at) || Date.now()
     };
   };
@@ -28843,6 +29067,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           wakefulnessGauge: Math.max(0, Math.min(100, Math.round(Number(it.wakefulnessGauge) || 0))),
           depth: Math.max(0, Math.min(200, Math.round(Number(it.depth) || 0))),
           stage: compact(it.stage || '', 80),
+          displayLine: compact(it.displayLine || '', 360),
           line: compact(it.line, 360)
         } : null)
         .filter(Boolean)
@@ -28889,22 +29114,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!Runtime.bodyStateSleep[scopeKey].people) Runtime.bodyStateSleep[scopeKey].people = {};
     return Runtime.bodyStateSleep[scopeKey];
   };
-  const computeWakefulnessGauge = (depth, totalStimulus = 0, bonus = 0) => {
-    const base = 100 - (Math.max(0, Math.min(200, Number(depth) || 0)) / 185) * 85;
-    return Math.max(4, Math.min(96, Math.round(base + Number(bonus || 0) * 0.6 + Math.max(0, Number(totalStimulus || 0)) * 0.35)));
-  };
   const sleepMovementTierForWakefulness = gauge => {
     if (gauge >= 65) return {
       band: '각성 임박',
-      cue: '각성에 가까워져 몸의 움직임이 눈에 띄게 커짐 (visibly larger unconscious tossing, restless hips/limbs shifting, eyelids fluttering, hitched breath while still asleep)'
+      enBand: 'near waking (각성 임박)',
+      cue: '각성에 가까워져 몸의 움직임이 눈에 띄게 커짐 (visibly larger unconscious tossing, restless hips/limbs shifting, eyelids fluttering, hitched breath while still asleep)',
+      cueKo: '각성에 가까워져 몸의 움직임이 눈에 띄게 커짐 (눈꺼풀 떨림, 뒤척임, 가쁜 숨결)'
     };
     if (gauge >= 35) return {
       band: '얕은 수면·선잠',
-      cue: 'brow furrowing, faint mumble or hitched sigh, slight finger/shoulder twitch'
+      enBand: 'light sleep (얕은 수면·선잠)',
+      cue: 'brow furrowing, faint mumble or hitched sigh, slight finger/shoulder twitch',
+      cueKo: '미간 찌푸림, 작게 중얼거리거나 끊기는 한숨, 손가락·어깨의 미세한 움찔거림'
     };
     return {
       band: '깊은 수면',
-      cue: 'heavy limp limbs, slow deep breathing, minimal voluntary movement'
+      enBand: 'deep sleep (깊은 수면)',
+      cue: 'heavy limp limbs, slow deep breathing, minimal voluntary movement',
+      cueKo: '힘없이 늘어진 팔다리, 깊고 느린 호흡, 최소한의 무의식적 움직임'
     };
   };
   const bodyStateSleepReport = (name, mine, recent, scopeKey, settings = {}, context = null) => {
@@ -28996,7 +29223,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       }
       depth = Math.max(50, Math.min(200, depth + priorSoothingShift - priorAccumulatedStimulus));
     }
-    const remember = (nextDepth, verdict, wakefulnessGauge, stageBand) => {
+    const remember = (nextDepth, verdict, wakefulnessGauge, stageBand, displayLine = '') => {
       if (sleepStore?.people) {
         sleepStore.people[personKey] = {
           name,
@@ -29007,13 +29234,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
           aids,
           storyDay: clockDay,
           verdict,
+          displayLine: compact(displayLine || '', 360),
           at: Date.now()
         };
-        if (context) context.lastSleepMeta = { name, depth: Math.round(nextDepth), wakefulnessGauge: sleepStore.people[personKey].wakefulnessGauge, stage: stageBand };
+        if (context) context.lastSleepMeta = { name, depth: Math.round(nextDepth), wakefulnessGauge: sleepStore.people[personKey].wakefulnessGauge, stage: stageBand, displayLine: compact(displayLine || '', 360) };
         void saveGaugeContinuity().catch(() => {});
       }
     };
     const carriedNote = carried ? ' (carried from the earlier turn — still asleep)' : '';
+    const carriedNoteKo = carried ? ' (이전 턴 승계 · 수면 유지)' : '';
     const repeatCountForBonus = (() => {
       let count = 0;
       for (const sceneText of recentWindow.slice(-4)) {
@@ -29037,17 +29266,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!currentInteractions.length) {
       const wakeGauge = computeWakefulnessGauge(depth, 0, 0);
       const tier = sleepMovementTierForWakefulness(wakeGauge);
-      const stageLabel = depth >= 160 ? 'deep sleep (깊은 숙면)' : depth >= 115 ? 'sound sleep (숙면)' : depth >= 85 ? 'normal sleep (일반 수면)' : 'light sleep (선잠·각성 임박)';
-      remember(depth, 'asleep', wakeGauge, tier.band);
-      return `  sleep state: asleep — wakefulness ${wakeGauge}% (${tier.band}) · depth ${depth}/200 (${stageLabel}${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote}; no direct waking stimulus this turn → stays asleep (reaction: ${tier.cue})`;
+      const displayLine = `수면 중 · 각성도 ${wakeGauge}% (${tier.band}) · 수면 깊이 ${depth}/200${aids.length ? ` · 수면 요인: ${aids.join(', ')}` : ''}${carriedNoteKo} · 이번 턴 직접 각성 자극 없음 → 수면 유지 (반응: ${tier.cueKo || tier.cue})`;
+      remember(depth, 'asleep', wakeGauge, tier.band, displayLine);
+      return `  sleep state: asleep — wakefulness ${wakeGauge}% (${tier.band}) · depth ${depth}/200 (${tier.enBand}${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote}; no direct waking stimulus this turn → stays asleep (reaction: ${tier.cue})`;
     }
     const soothingOnly = currentInteractions.every(([kind]) => kind === 'soothing');
     if (soothingOnly) {
-      const nextDepth = Math.min(200, depth + 20);
+      const nextDepth = Math.min(BODY_STATE_SLEEP_MAX_DEPTH, depth + 20);
       const wakeGauge = computeWakefulnessGauge(nextDepth, 0, 0);
       const tier = sleepMovementTierForWakefulness(wakeGauge);
-      remember(nextDepth, 'deepened', wakeGauge, tier.band);
-      return `  sleep state: asleep — soothing interaction (${currentInteractions.map(([, label]) => label).join(', ')}) deepens sleep (${depth} → ${nextDepth}/200${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote} → wake chance 0.0% → STAYS DEEPLY ASLEEP (fixed verdict: wakefulness ${wakeGauge}% (${tier.band}); breathing grows slower and more even; ${tier.cue})`;
+      const soothingLabels = currentInteractions.map(([, label]) => label).join(', ');
+      const displayLine = `수면 중 · 진정 상호작용(${soothingLabels})으로 수면 심화 (${depth} → ${nextDepth}/200${aids.length ? `; 수면 요인: ${aids.join(', ')}` : ''})${carriedNoteKo} · 각성 확률 0.0% → 깊은 수면 유지 (각성도 ${wakeGauge}% · ${tier.band}; 호흡이 느리고 고르게 가라앉음 · ${tier.cueKo || tier.cue})`;
+      remember(nextDepth, 'deepened', wakeGauge, tier.band, displayLine);
+      return `  sleep state: asleep — soothing interaction (${soothingLabels}) deepens sleep (${depth} → ${nextDepth}/200${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote} → wake chance 0.0% → STAYS DEEPLY ASLEEP (fixed verdict: wakefulness ${wakeGauge}% (${tier.band}); breathing grows slower and more even; ${tier.cue})`;
     }
     const activeInteractions = currentInteractions.filter(([kind]) => kind !== 'soothing');
     const primary = activeInteractions.reduce((best, cur) => (cur[3] > best[3] ? cur : best), activeInteractions[0]);
@@ -29057,7 +29288,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const proximityBonus = depth < 100 ? Math.round((100 - depth) * 0.45) : 0;
     const repeatBonus = repeatCountForBonus > 0 ? repeatCountForBonus * 14 + Math.min(24, Math.round(priorStimulusForBonus * 0.35)) : 0;
     const totalStimulus = rawStimulus + repeatBonus + proximityBonus;
-    const effectiveDepth = Math.max(25, depth - totalStimulus);
+    const effectiveDepth = Math.max(BODY_STATE_SLEEP_MIN_DEPTH, depth - totalStimulus);
     const rawChance = (totalStimulus / Math.max(55, depth)) * aidMultiplier;
     const chance = Math.max(0.01, Math.min(0.98, rawChance));
     const seedKey = `${scopeKey}|${name}|sleep-wake|${turnCount}|${normalizeForLoreMatch(actionSource.slice(0, 160))}`;
@@ -29069,17 +29300,28 @@ Begin directly with the in-world response and finish the complete same-turn draf
       proximityBonus > 0 ? `near-wake bonus +${proximityBonus}` : '',
       aids.length ? `sleep aids: ${aids.join(', ')} (wake resistance ×${aidMultiplier.toFixed(2)})` : ''
     ].filter(Boolean).join(', ');
+    const bonusNotesKo = [
+      `자극 ${rawStimulus} (${primary[1]})`,
+      repeatBonus > 0 ? `반복 자극 보정 +${repeatBonus} (연속 ${turnCount}회)` : '',
+      proximityBonus > 0 ? `각성 임박 보정 +${proximityBonus}` : '',
+      aids.length ? `수면 요인: ${aids.join(', ')} (각성 저항 ×${aidMultiplier.toFixed(2)})` : ''
+    ].filter(Boolean).join(', ');
     if (wakes) {
       clearStoredSleep();
-      if (context) context.lastSleepMeta = { name, depth: 0, wakefulnessGauge: 100, stage: '각성' };
+      const wakeDisplayLine = `수면 중 (깊이 ${depth}/200) + 자극 [${bonusNotesKo}]${carriedNoteKo} · 각성 확률 ${(chance * 100).toFixed(1)}% · 각성도 100% → 이번 턴 각성 (자극으로 잠에서 깨어남)`;
+      if (context) context.lastSleepMeta = { name, depth: 0, wakefulnessGauge: 100, stage: '각성', displayLine: wakeDisplayLine };
       return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}]${carriedNote} → wake chance ${(chance * 100).toFixed(1)}% · wakefulness 100% → WAKES UP THIS TURN (fixed verdict: show the NPC stirring and waking from the interaction)`;
     }
-    const wakeGauge = computeWakefulnessGauge(effectiveDepth, rawStimulus, repeatBonus + proximityBonus);
+    const wakeGauge = computeWakefulnessGauge(effectiveDepth, 0, 0);
     const tier = sleepMovementTierForWakefulness(wakeGauge);
-    remember(effectiveDepth, 'asleep', wakeGauge, tier.band);
-    const outcomeText = effectiveDepth <= 75 || wakeGauge >= 65
+    const outcomeText = wakeGauge >= 65
       ? `STAYS ASLEEP — NEAR WAKING (fixed verdict: wakefulness ${wakeGauge}%, depth drops ${depth} → ${effectiveDepth}/200; ${tier.cue})`
       : `STAYS ASLEEP (fixed verdict: wakefulness ${wakeGauge}%, depth drops ${depth} → ${effectiveDepth}/200; does not wake from this interaction; ${tier.cue})`;
+    const outcomeKo = wakeGauge >= 65
+      ? `수면 유지 · 각성 임박 (각성도 ${wakeGauge}%, 깊이 ${depth} → ${effectiveDepth}/200 · ${tier.cueKo || tier.cue})`
+      : `수면 유지 (각성도 ${wakeGauge}%, 깊이 ${depth} → ${effectiveDepth}/200 · 이번 자극으로는 깨지 않음 · ${tier.cueKo || tier.cue})`;
+    const stayDisplayLine = `수면 중 (깊이 ${depth}/200) + 자극 [${bonusNotesKo}]${carriedNoteKo} · 각성 확률 ${(chance * 100).toFixed(1)}% → ${outcomeKo}`;
+    remember(effectiveDepth, 'asleep', wakeGauge, tier.band, stayDisplayLine);
     return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}]${carriedNote} → wake chance ${(chance * 100).toFixed(1)}% → ${outcomeText}`;
   };
   // A time named for another day or as a span edge ("내일 아침", "아침부터", "tomorrow morning") is not
@@ -29467,6 +29709,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (Array.isArray(context.sleepItems)) context.sleepItems.push({
             name,
             line: sleepLine.trim(),
+            displayLine: context.lastSleepMeta?.displayLine || '',
             wakefulnessGauge: context.lastSleepMeta?.wakefulnessGauge ?? null,
             depth: context.lastSleepMeta?.depth ?? null,
             stage: context.lastSleepMeta?.stage || ''
@@ -29487,16 +29730,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
         wakefulnessGauge: info.wakefulnessGauge,
         depth: info.depth,
         stage: info.stage,
-        line: `수면 승계 · 각성 ${info.wakefulnessGauge ?? 0}% (${info.stage || info.verdict || '수면 중'}) · 깊이 ${info.depth}/200`
+        displayLine: info.displayLine || '',
+        line: info.displayLine || `수면 승계 · 각성 ${info.wakefulnessGauge ?? 0}% (${info.stage || info.verdict || '수면 중'}) · 깊이 ${info.depth}/200`
       }));
-    return items.map(item => ({
-      title: `${forcedBondPersonLabel(item.name)} · 수면·각성`,
-      body: item.line,
-      name: item.name,
-      wakefulnessGauge: item.wakefulnessGauge,
-      depth: item.depth,
-      stage: item.stage
-    }));
+    return items.map(item => {
+      const fallbackKo = /^sleep state:/i.test(String(item.line || '').trim())
+        ? `수면 중 · 각성도 ${item.wakefulnessGauge ?? 0}% (${item.stage || '수면 중'}) · 수면 깊이 ${item.depth ?? '?'}/200`
+        : item.line;
+      return {
+        title: `${forcedBondPersonLabel(item.name)} · 수면·각성`,
+        body: item.displayLine || fallbackKo,
+        name: item.name,
+        wakefulnessGauge: item.wakefulnessGauge,
+        depth: item.depth,
+        stage: item.stage
+      };
+    });
   };
   const bodyStatePacket = (recent = {}, settings = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
@@ -29773,25 +30022,95 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ['routine_ripple', '일상·업무 여파', 'remote', 'a subtle ripple from their own routine, work, or habit'],
     ['nearby_passing', '근처 기척·우연한 스침', 'local', 'a brief sighting, passing voice, or nearby trace in a public/semi-public space']
   ]);
-  const worldDynamicsHudPresentNames = (recent = {}) => {
+  const parseSceneHudBlock = (bodyStr = '', settings = {}) => {
+    const str = String(bodyStr || '');
+    if (!str) return { hasHud: false, format: 'none', loc: '', names: [] };
+    const names = [];
+    const pushName = raw => {
+      const cleaned = compact(String(raw || '').replace(/\([^)]*\)/g, '').trim(), 40);
+      if (!cleaned || !extensionIsPersonName(cleaned)) return;
+      if (!names.some(existing => existing === cleaned || extensionSameOrGivenName(existing, cleaned))) {
+        names.push(cleaned);
+      }
+    };
+    let loc = '';
+    let format = 'none';
+    let hasHud = false;
+
+    // Adapter 0: User custom HUD regexes
+    if (settings?.customHudLocationPattern || settings?.customHudCastPattern) {
+      try {
+        if (settings.customHudLocationPattern) {
+          const locRe = settings.customHudLocationPattern instanceof RegExp
+            ? settings.customHudLocationPattern
+            : new RegExp(String(settings.customHudLocationPattern), 'im');
+          const m = str.match(locRe);
+          if (m && (m[1] || m[0])) {
+            loc = compact((m[1] || m[0]).trim(), 80);
+            format = 'custom';
+            hasHud = true;
+          }
+        }
+        if (settings.customHudCastPattern) {
+          const base = settings.customHudCastPattern instanceof RegExp
+            ? settings.customHudCastPattern
+            : new RegExp(String(settings.customHudCastPattern), 'gim');
+          const globalRe = base.global ? base : new RegExp(base.source, `${base.flags}g`);
+          for (const m of str.matchAll(globalRe)) {
+            const rawChunk = String(m[1] || m[0] || '');
+            for (const part of rawChunk.split(/[,·、/|]/)) pushName(part);
+            format = 'custom';
+            hasHud = true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Adapter 1: ◈CG HUD block
+    if (/◈CG[\s\S]*?◈/.test(str)) {
+      hasHud = true;
+      format = format === 'custom' ? format : 'cg_hud';
+      if (!loc) {
+        const cgMatches = [...str.matchAll(/◈CG[\s\S]*?^LOC\|([^|\n]+)(?:\|[^\n]*)?$/gm)];
+        if (cgMatches.length) loc = compact(cgMatches[cgMatches.length - 1][1], 80);
+      }
+      for (const match of str.matchAll(/^@\|([^\n|]{2,40})/gm)) {
+        pushName(match[1]);
+      }
+    }
+
+    // Adapter 2: Generic status blocks (<status>, [Status]/[Scene]/[Info], Key: Value)
+    const statusContainers = [
+      ...[...str.matchAll(/<status\b[^>]*>([\s\S]*?)<\/status>/gi)].map(m => m[1]),
+      ...[...str.matchAll(/\[(?:Status|Scene|Info)\]([\s\S]*?)\[\/(?:Status|Scene|Info)\]/gi)].map(m => m[1]),
+      ...[...str.matchAll(/```(?:status|hud|scene)\b[^\n]*\n([\s\S]*?)```/gi)].map(m => m[1])
+    ];
+    const kvScope = statusContainers.length
+      ? statusContainers[statusContainers.length - 1]
+      : ((/\[(?:Status|Scene|Info)\]/i.test(str) || /(?:^|\n)\s*(?:Location|Place|場所|現在地|위치|장소)\s*[:|：]/im.test(str)) ? str : '');
+    if (kvScope) {
+      const locMatch = kvScope.match(/(?:^|\n|\|)\s*(?:[-*•]\s*)?(?:Location|Loc|Place|Setting|場所|現在地|위치|장소)\s*[:|：]\s*([^\n|\]]{2,80})/i);
+      const castMatch = kvScope.match(/(?:^|\n|\|)\s*(?:[-*•]\s*)?(?:Present|Characters|Cast|People|Scene\s*Cast|登場人物|現在地の人物|人物|현장\s*인물|등장인물)\s*[:|：]\s*([^\n|\]]{2,160})/i);
+      if (locMatch || castMatch || statusContainers.length) {
+        hasHud = true;
+        if (format === 'none') format = 'generic_status';
+      }
+      if (!loc && locMatch) loc = compact(locMatch[1].trim(), 80);
+      if (castMatch) {
+        for (const part of castMatch[1].split(/[,·、/|]/)) pushName(part);
+      }
+    }
+
+    return { hasHud, format, loc, names };
+  };
+  const worldDynamicsHudPresentNames = (recent = {}, settings = {}) => {
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
     const assistants = messages.filter(m => m?.role !== 'user');
     const lastBody = assistants.length ? assistants[assistants.length - 1]?.content : (recent?.latestAssistant || '');
-    const parseHud = bodyStr => {
-      const str = String(bodyStr || '');
-      const hasCg = /◈CG[\s\S]*?◈/.test(str);
-      const loc = typeof extractHudLocation === 'function' ? extractHudLocation(str) : '';
-      const names = [];
-      for (const match of str.matchAll(/^@\|([^\n|]{2,40})/gm)) {
-        const name = compact(match[1], 40);
-        if (extensionIsPersonName(name)) names.push(name);
-      }
-      return { hasCg, loc, names };
-    };
-    const lastHud = parseHud(lastBody || '');
+    const lastHud = parseSceneHudBlock(lastBody || '', settings);
     if (lastHud.names.length) return lastHud.names;
-    if (lastHud.hasCg && assistants.length >= 2) {
-      const prevHud = parseHud(assistants[assistants.length - 2]?.content || '');
+    if (lastHud.hasHud && assistants.length >= 2) {
+      const prevHud = parseSceneHudBlock(assistants[assistants.length - 2]?.content || '', settings);
       if (prevHud.names.length && (!lastHud.loc || !prevHud.loc || prevHud.loc === lastHud.loc)) {
         return prevHud.names;
       }
@@ -29799,15 +30118,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return [];
   };
   const SPATIAL_SUB_ROOMS = Object.freeze([
-    ['bathroom', '욕실·화장실', /욕실|화장실|샤워실|샤워\s*부스|세면실|씻으러|씻기\s*위해|씻고\s*나|bathroom|shower\s*room|washroom|restroom/i],
-    ['balcony', '베란다·발코니·테라스', /베란다|발코니|테라스|야외\s*테라스|balcony|terrace|veranda/i],
-    ['dressing_room', '드레스룸·탈의실·옷방', /드레스룸|탈의실|옷방|파우더룸|dressing\s*room|walk-in\s*closet|fitting\s*room/i],
-    ['inner_room', '안방·안쪽 방·침실·서재·옆방', /안쪽\s*방|안방|건너방|옆방|작은방|서재|침실\s*안|inner\s*room|study\s*room|side\s*room|adjacent\s*room/i],
-    ['storage_nook', '창고·다용도실·보조실·탕비실', /창고|다용도실|보조실|탕비실|storage\s*room|utility\s*room|pantry/i]
+    ['bathroom', '욕실·화장실', /욕실|화장실|샤워실|샤워\s*부스|세면실|씻으러|씻기\s*위해|씻고\s*나|浴室|風呂|シャワー室|トイレ|洗面所|脱衣所|privy|washroom|bathroom|shower\s*room|restroom/i],
+    ['balcony', '베란다·발코니·테라스', /베란다|발코니|테라스|야외\s*테라스|ベランダ|バルコニー|テラス|balcony|terrace|veranda/i],
+    ['dressing_room', '드레스룸·탈의실·옷방', /드레스룸|탈의실|옷방|파우더룸|更衣室|衣装部屋|ドレッシングルーム|dressing\s*room|walk-in\s*closet|fitting\s*room/i],
+    ['inner_room', '안방·안쪽 방·침실·서재·옆방·내실·선실', /안쪽\s*방|안방|건너방|옆방|작은방|서재|침실\s*안|측실|내실|선실|에어록|奥の部屋|隣室|書斎|寝室|船室|inner\s*room|study\s*room|side\s*room|adjacent\s*room|chamber|alcove|antechamber|cabin|airlock/i],
+    ['storage_nook', '창고·다용도실·보조실·탕비실', /창고|다용도실|보조실|탕비실|物置|倉庫|納戸|storage\s*room|utility\s*room|pantry/i]
   ]);
-  const SUB_ROOM_ENTER_RE = /들어갔|들어왔|들어섰|들어가|씻으러|데리고|따로|이동했|옮겼|건너갔|나갔|피했|숨었|stepped\s+into|went\s+into|entered|took\s+[^.!?\n]{0,24}into/i;
-  const SUB_ROOM_EXIT_RE = /(?:욕실|화장실|샤워실|베란다|발코니|드레스룸|탈의실|안쪽\s*방|안방|서재|창고|세면실)(?:에서|을|를)?\s*(?:나와|나왔|나섰|나가|돌아왔|돌아가)|(?:모두|같이|함께)\s*(?:방|거실|침실)(?:으로|에)?\s*(?:돌아왔|나왔)|모두\s*모였|came\s+back\s+out|stepped\s+out\s+of\s+the\s+(?:bathroom|balcony|room)|returned\s+to\s+the\s+room/i;
-  const SUB_ROOM_STAY_OUT_RE = /남아|남았|기다리|밖에\s*있|문\s*밖|침대\s*(?:위|옆)|stay(?:ed|ing)?\s+behind|waited\s+outside/i;
+  const SUB_ROOM_ENTER_RE = /들어갔|들어왔|들어섰|들어가|씻으러|데리고|따로|이동했|옮겼|건너갔|나갔|피했|숨었|入った|入ってきた|入って|連れて|移動した|隠れた|stepped\s+into|went\s+into|entered|took\s+[^.!?\n]{0,24}into/i;
+  const SUB_ROOM_EXIT_RE = /(?:욕실|화장실|샤워실|베란다|발코니|드레스룸|탈의실|안쪽\s*방|안방|서재|창고|세면실|측실|내실|선실)(?:에서|을|를)?\s*(?:나와|나왔|나섰|나가|돌아왔|돌아가)|(?:모두|같이|함께)\s*(?:방|거실|침실)(?:으로|에)?\s*(?:돌아왔|나왔)|모두\s*모였|(?:浴室|風呂|シャワー室|ベランダ|更衣室|奥の部屋|隣室|書斎|トイレ|洗面所)から(?:出|戻)|部屋に戻った|出てきた|came\s+back\s+out|stepped\s+out\s+of\s+the\s+(?:bathroom|balcony|room|chamber|cabin)|returned\s+to\s+the\s+room/i;
+  const SUB_ROOM_STAY_OUT_RE = /남아|남았|기다리|밖에\s*있|문\s*밖|침대\s*(?:위|옆)|残った|残って|待って|外に|ドアの外|ベッドの上|stay(?:ed|ing)?\s+behind|waited\s+outside/i;
   const resolveSpatialTopology = (recent = {}, settings = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const input = text(recent.latestUser || '');
@@ -29816,12 +30135,56 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const assistants = messages.filter(m => m?.role !== 'user');
     const lastAssistant = assistants.length ? assistants[assistants.length - 1] : null;
     const parentPlace = (typeof extractHudLocation === 'function'
-      ? (extractHudLocation(input) || [...messages].reverse().map(m => extractHudLocation(m?.content || '')).find(Boolean) || '')
+      ? (extractHudLocation(input, settings) || [...messages].reverse().map(m => extractHudLocation(m?.content || '', settings)).find(Boolean) || '')
       : '');
     const physicalInput = stripQuotedAndRemoteSceneText(input);
     const physicalLast = stripQuotedAndRemoteSceneText(text(lastAssistant?.content || ''));
-    const hudNames = worldDynamicsHudPresentNames(recent);
+    const hudNames = worldDynamicsHudPresentNames(recent, settings);
     const prevTopo = scopeKey ? (Runtime.spatialTopology?.[scopeKey] || null) : null;
+
+    const llmTopo = recent?.structuredSignals?.spatialTopology;
+    if (llmTopo && typeof llmTopo === 'object') {
+      if (llmTopo.active === false) {
+        if (scopeKey && Runtime.spatialTopology) delete Runtime.spatialTopology[scopeKey];
+        return {
+          active: false,
+          parentPlace: compact(llmTopo.parentPlace || parentPlace, 80),
+          subRoom: '',
+          subRoomId: '',
+          inSubScene: [],
+          adjacentObservers: [],
+          turnsInSubRoom: 0,
+          barrier: '',
+          lastInputHash: inputHash,
+          source: 'structured_signal'
+        };
+      }
+      const inSubList = Array.isArray(llmTopo.inSubScene) ? llmTopo.inSubScene.map(n => compact(n, 60)).filter(Boolean) : [];
+      const adjList = Array.isArray(llmTopo.adjacentObservers) ? llmTopo.adjacentObservers.map(n => compact(n, 60)).filter(Boolean) : [];
+      if (inSubList.length && adjList.length) {
+        const subId = compact(llmTopo.subRoomId || 'inner_room', 40);
+        const subEntry = SPATIAL_SUB_ROOMS.find(([id]) => id === subId);
+        const nextTopo = {
+          active: true,
+          parentPlace: compact(llmTopo.parentPlace || parentPlace, 80),
+          subRoom: compact(llmTopo.subRoom || subEntry?.[1] || subId, 80),
+          subRoomId: subId,
+          inSubScene: inSubList,
+          adjacentObservers: adjList,
+          turnsInSubRoom: prevTopo?.active && prevTopo.subRoomId === subId
+            ? ((inputHash && prevTopo.lastInputHash === inputHash) ? (Number(prevTopo.turnsInSubRoom) || 1) : ((Number(prevTopo.turnsInSubRoom) || 1) + 1))
+            : 1,
+          barrier: compact(llmTopo.barrier || '문·벽 하나 사이 (동일 장소 내 인접 공간)', 100),
+          lastInputHash: inputHash,
+          source: 'structured_signal'
+        };
+        if (scopeKey) {
+          if (!Runtime.spatialTopology) Runtime.spatialTopology = {};
+          Runtime.spatialTopology[scopeKey] = nextTopo;
+        }
+        return nextTopo;
+      }
+    }
 
     let detectedSub = null;
     for (const [id, label, pattern] of SPATIAL_SUB_ROOMS) {
@@ -29891,7 +30254,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
 
     if (detectedSub && (SUB_ROOM_ENTER_RE.test(physicalInput) || !prevTopo?.active) && parentRoomPool.length >= 2) {
-      const inputSentences = physicalInput.split(/\n+|(?<=[.!?。！？])\s+/).map(s => s.trim()).filter(Boolean);
+      const inputSentences = physicalInput.split(/\n+|(?<=[.!?])\s+|(?<=[。！？])\s*/).map(s => s.trim()).filter(Boolean);
       const enterClauses = inputSentences.filter(s => (detectedSub.pattern.test(s) || SUB_ROOM_ENTER_RE.test(s)) && !SUB_ROOM_STAY_OUT_RE.test(s));
       const scanBlock = enterClauses.length ? enterClauses.join('\n') : physicalInput;
       const inSub = parentRoomPool.filter(n => extensionTextMentionsName(scanBlock, n) && !inputSentences.some(s => SUB_ROOM_STAY_OUT_RE.test(s) && extensionTextMentionsName(s, n) && !detectedSub.pattern.test(s)));
@@ -30887,18 +31250,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '6. Pragmatic Turn Function & Korean Spoken Rhythm (대사의 목적·구어체 호흡): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Cut empty filler; omit understood subjects.',
     '7. Contextual/Referential Coherence & No Meaningless Fragments (상황·대상 정합성 및 의미 불명 대사 금지): Every spoken reply must accurately reflect who is physically doing what to whom right now and connect cleanly to the immediately preceding question or action — e.g., when asked “지금 누구한테 키스하는 거냐고.” while visibly kissing the sister, reply grounded in the actual target (“네 동생.”) rather than a factually absurd deflection (“너한테, 하고 있는 중인데.”). Never emit ungrammatical, truncated, or referent-less fragments whose meaning cannot be understood in context (e.g., “중인데. 그거.” or dangling “~는데. 그거.”); rewrite any such fragment into natural, context-grounded spoken Korean.'
   ]);
-  const DIALOGUE_KISS_ACTIVE_RE = /키스(?:를|가)?\s*(?:나누|나눴|하|했|이어|계속|퍼부|파고들|깊어)|입술(?:을|이|에)?\s*(?:맞대|맞닿|부딪|포개|덮|삼키|물|빨|파고들)|혀(?:가|를|로|끝)?\s*(?:섞|얽|밀어\s*넣|파고들|들어왔|들어가|감아|감싸|훑)|입\s*(?:속|안)으로\s*혀|deep[- ]?kiss|tongues?\s+(?:entwined|tangled|inside|plunged)|lips?\s+(?:locked|pressed)/i;
-  const DIALOGUE_KISS_LOCKED_RE = /물러나려고\s*해도[^\n.!?]{0,24}허락하지\s*않|뒤통수[^\n.!?]{0,24}(?:붙잡|눌러|감싸|고정)|고개(?:를|가)?\s*(?:고정|붙잡|놓지\s*않)|입술(?:을|이)?\s*떼지\s*못|놓아주지\s*않|escap(?:e|ing)\s+the\s+kiss|held\s+(?:her|his)\s+head/i;
-  const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이|에서)?\s*(?:떼|떨어뜨|떨어졌|떨어지|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:젖혀|젖혔|빼내|뺐|뒤로\s*빼)|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
-  const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*(?:못|않)|떨어지지\s*않|떨어뜨리지\s*않|풀지\s*(?:못|않)|못\s*하|못하|허락하지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채|얼굴도\s*따라왔/;
-  const DIALOGUE_KISS_STILL_LOCKED_RE = /입술(?:은|이|을)?\s*(?:떨어지지\s*않|떼지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채)|입(?:을|이)?\s*떼지\s*않/i;
-  const DIALOGUE_ORAL_ACTIVE_RE = /(?:페니스|자지|음경|귀두|남성기|손가락|재갈|입마개|손)(?:이|가|을|를|로)?[^\n.?!]{0,20}(?:입\s*(?:안|속)|목구멍|입을?\s*막|틀어막|물고\s*(?:있|빨)|삼키|파고들)|펠라(?:티오|치오)?|딥쓰롯|사까시|이라마|쿠니|커닐링구스|음핵(?:을|에)?\s*(?:입술|혀)(?:로|를)\s*(?:핥|빨|파묻)|mouth\s+(?:full|occupied|covered)|gag(?:ged)?|fellatio|deepthroat/i;
-  const DIALOGUE_HAND_MUFFLED_RE = /(?:손(?:으로|등으로|바닥으로)?[^\n.?!]{0,20}입(?:을|이|으로)?\s*(?:갔|막|틀어막|가리|눌러)|입(?:으로|을)\s*(?:손이\s*갔|막은\s*손|틀어막)|손등으로\s*위를\s*막[^\n.?!]{0,24}손바닥|hand\s+over\s+(?:her|his)\s+mouth|clamped\s+(?:a|her|his)\s+hand\s+over\s+(?:her|his)\s+mouth)/i;
-  const DIALOGUE_CLIMAX_PROSE_RE = /(?:절정(?:에|이|을)?\s*(?:달하|도달|맞|느끼|터지|밀려)|오르가즘|배가\s*위로\s*꺾|경련이\s*시작|전신(?:이|을)?\s*(?:경련|떨리며|굳었다가)|몸이\s*아래에서부터\s*들렸|climaxe[ds]|orgasm)/i;
-  const DIALOGUE_CLIMAX_VOCAL_QUOTE_RE = /(?:으+음|흐+읍|으+읍|으+윽|흐+윽|아+아|하+아|흐+아|응+아|으+아|아+악|흐+으|응+으|하+으|ah+|oh+|mm+|ngh+|hm+)/i;
-  const DIALOGUE_MOUTH_FREE_RE = /입(?:에서|을|이)?\s*(?:빼내|뺐|떼어|떼었|풀어|치워|치웠|내뱉|놓아)|손(?:을|이)?\s*(?:떼|치우|내리|풀)|재갈(?:을)?\s*(?:풀|빼)|pulled\s+out\s+of\s+(?:her|his)\s+mouth/i;
-  const DIALOGUE_BREATHLESS_RE = /숨(?:을|이)?\s*(?:고르(?:지|려다|내지)?\s*못|가빠|헐떡|턱\s*끝|가쁘|몰아쉬|거칠)|헉헉|신음|panting|breathless|gasping\s+for\s+air/i;
-  const DIALOGUE_SLURRED_SPEECH_RE = /(?:^|[….\-\s"“「])(?:으+읍|으+음|흐+읍|하+읍|응+읍|음+[….\-~]|흡|흐+ㄱ|으+윽|끅|응[….~]+|흐[….~]+|으응|아읍)|(?:[가-힣]{1,2}[,…\-]\s*[가-힣]{1,2}[,…\-])/;
+  const DIALOGUE_KISS_ACTIVE_RE = /키스(?:를|가)?\s*(?:나누|나눴|하|했|이어|계속|퍼부|파고들|깊어)|입술(?:을|이|에)?\s*(?:맞대|맞닿|부딪|포개|덮|삼키|물|빨|파고들)|혀(?:가|를|로|끝)?\s*(?:섞|얽|밀어\s*넣|파고들|들어왔|들어가|감아|감싸|훑)|입\s*(?:속|안)으로\s*혀|キス(?:を|が|し)|唇を重ね|舌を絡め|口づけ|deep[- ]?kiss|tongues?\s+(?:entwined|tangled|inside|plunged)|lips?\s+(?:locked|pressed)/i;
+  const DIALOGUE_KISS_LOCKED_RE = /물러나려고\s*해도[^\n.!?]{0,24}허락하지\s*않|뒤통수[^\n.!?]{0,24}(?:붙잡|눌러|감싸|고정)|고개(?:를|가)?\s*(?:고정|붙잡|놓지\s*않)|입술(?:을|이)?\s*떼지\s*못|놓아주지\s*않|離さず|離れようとしても|後頭部を押さえ|escap(?:e|ing)\s+the\s+kiss|held\s+(?:her|his)\s+head/i;
+  const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이|에서)?\s*(?:떼|떨어뜨|떨어졌|떨어지|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:젖혀|젖혔|빼내|뺐|뒤로\s*빼)|唇を離|顔を離|キスを止め|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
+  const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*(?:못|않)|떨어지지\s*않|떨어뜨리지\s*않|풀지\s*(?:못|않)|못\s*하|못하|허락하지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채|얼굴도\s*따라왔|離さず|離れない|重ねたまま/;
+  const DIALOGUE_KISS_STILL_LOCKED_RE = /입술(?:은|이|을)?\s*(?:떨어지지\s*않|떼지\s*않|붙어\s*있|맞닿은\s*채|포개진\s*채|겹친\s*채)|입(?:을|이)?\s*떼지\s*않|唇は離れな|唇を重ねたまま/i;
+  const DIALOGUE_ORAL_ACTIVE_RE = /(?:페니스|자지|음경|귀두|남성기|손가락|재갈|입마개|손)(?:이|가|을|를|로)?[^\n.?!]{0,20}(?:입\s*(?:안|속)|목구멍|입을?\s*막|틀어막|물고\s*(?:있|빨)|삼키|파고들)|펠라(?:티오|치오)?|딥쓰롯|사까시|이라마|쿠니|커닐링구스|음핵(?:을|에)?\s*(?:입술|혀)(?:로|를)\s*(?:핥|빨|파묻)|フェラ|イラマ|クンニ|口に含|喉奥|咥え|口枷|mouth\s+(?:full|occupied|covered)|gag(?:ged)?|fellatio|deepthroat/i;
+  const DIALOGUE_HAND_MUFFLED_RE = /(?:손(?:으로|등으로|바닥으로)?[^\n.?!]{0,20}입(?:을|이|으로)?\s*(?:갔|막|틀어막|가리|눌러)|입(?:으로|을)\s*(?:손이\s*갔|막은\s*손|틀어막)|손등으로\s*위를\s*막[^\n.?!]{0,24}손바닥|口を塞|手で口を|手のひらで口|hand\s+over\s+(?:her|his)\s+mouth|clamped\s+(?:a|her|his)\s+hand\s+over\s+(?:her|his)\s+mouth)/i;
+  const DIALOGUE_CLIMAX_PROSE_RE = /(?:절정(?:에|이|을)?\s*(?:달하|도달|맞|느끼|터지|밀려)|오르가즘|배가\s*위로\s*꺾|경련이\s*시작|전신(?:이|을)?\s*(?:경련|떨리며|굳었다가)|몸이\s*아래에서부터\s*들렸|絶頂|イッた|イク|痙攣|オーガズム|climaxe[ds]|orgasm)/i;
+  const DIALOGUE_CLIMAX_VOCAL_QUOTE_RE = /(?:으+음|흐+읍|으+읍|으+윽|흐+윽|아+아|하+아|흐+아|응+아|으+아|아+악|흐+으|응+으|하+으|ん+っ|ん+む|ふ+ぅ|あ+っ|あ+ぁ|ひ+ぁ|う+ぅ|ah+|oh+|mm+|ngh+|hm+)/i;
+  const DIALOGUE_MOUTH_FREE_RE = /입(?:에서|을|이)?\s*(?:빼내|뺐|떼어|떼었|풀어|치워|치웠|내뱉|놓아)|손(?:을|이)?\s*(?:떼|치우|내리|풀)|재갈(?:을)?\s*(?:풀|빼)|口から離|手を離|手をどけ|pulled\s+out\s+of\s+(?:her|his)\s+mouth/i;
+  const DIALOGUE_BREATHLESS_RE = /숨(?:을|이)?\s*(?:고르(?:지|려다|내지)?\s*못|가빠|헐떡|턱\s*끝|가쁘|몰아쉬|거칠)|헉헉|신음|息が荒|喘ぎ|息も絶え|panting|breathless|gasping\s+for\s+air/i;
+  const DIALOGUE_SLURRED_SPEECH_RE = /(?:^|[….\-\s"“「])(?:으+읍|으+음|흐+읍|하+읍|응+읍|음+[….\-~]|흡|흐+ㄱ|으+윽|끅|응[….~]+|흐[….~]+|으응|아읍|ん+っ|ん+む|んぐ|ふぐ|っ…)|(?:[가-힣]{1,2}[,…\-]\s*[가-힣]{1,2}[,…\-])|(?:[\u3040-\u309F]{1,2}[、…\-]\s*[\u3040-\u309F]{1,2}[、…\-])/;
   const dialogueIsSlurredOrVocalQuote = rawQuote => {
     const inner = String(rawQuote || '').replace(/^["“「]+|["”」]+$/g, '').trim();
     if (!inner) return true;
@@ -30928,7 +31291,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     let asleep = false;
     for (const step of contextSteps) {
       const cleaned = stripNonProseSceneTags(step);
-      for (const clause of cleaned.split(/(?:\.(?!\d)|[!?;\n])+/) ) {
+      for (const clause of cleaned.split(/(?:\.(?!\d)|[!?;\n。！？])+/)) {
         if (!clause.trim()) continue;
         if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissActive = true;
         if (DIALOGUE_KISS_LOCKED_RE.test(clause)) kissLocked = true;
@@ -31018,6 +31381,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return { constraints, kissActive, kissLocked, oralActive, handMuffled: draftHandMuffled || handMuffled, climaxVocalNeeded, breathless, asleep, violations: [...new Set(violations)].slice(0, 6) };
   };
   const dialogueDetectSituations = (recent = {}, settings = {}) => {
+    const koLang = isKoreanDraftLang(settings);
     const input = text(recent?.latestUser || '');
     const msgs = (Array.isArray(recent?.visibleMessages) ? recent.visibleMessages : []).slice(-3).map(m => text(m?.content || '')).filter(Boolean);
     const corpus = [...msgs, input].join('\n');
@@ -31030,60 +31394,92 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const climaxActive = (intTel?.gauges || []).some(g => g && !bodyStateIsPersona(g.name) && (g.climaxTriggeredThisTurn || ((g.climaxGauge || 0) >= 85 && !g.interruptedBrink)))
       || DIALOGUE_CLIMAX_PROSE_RE.test(corpus);
     if (climaxActive) {
-      situations.push({
+      situations.push(koLang ? {
         id: 'climax_peak',
         label: '절정 도달·통제 불능 발화',
         guidance: '쾌감이 통제력을 넘겨 머리가 하얘지고 소리 억제가 무너지는 순간. 입을 손으로 막았으면 지문만으로 끝내지 말고 "으으음…!"/"흐읍…!" 같은 억눌린 발화 대사를, 입이 열려 있으면 "아아…!"·괴성·깨진 숨소리를 반드시 대사로 출력할 것(제3자 청취 위험보다 절정 시 통제 상실이 우선하며, 은밀함은 입 막힘·억눌린 대사로 표현).'
+      } : {
+        id: 'climax_peak',
+        label: 'Climax peak / involuntary vocalization',
+        guidance: 'Pleasure overwhelms conscious control. Never leave climax as silent narration: emit muffled vocalized dialogue in quotes if the mouth is covered/occupied, or ragged unrestrained cries/moans in the active draft language if unobstructed.'
       });
     }
     if (intTel?.contraception?.length) {
       const stanceSummary = intTel.contraception.map(c => `${c.displayName || forcedBondDisplayName(c.name)}:${c.badgeLabel}`).join(', ');
-      situations.push({
+      situations.push(koLang ? {
         id: 'contraception_stance',
         label: '피임·안전 반응 톤',
         guidance: `${stanceSummary} — 무피임은 한국어 구어 "노콘"/"생으로"를 자연스럽게 쓰고, 콘돔 착용·재착용이 확인된 상태에서 맥락 없이 "밖에."를 강요하지 말며, 피임 실패 시 성격(드셈/기약함)과 호감·신뢰도에 맞는 반응 수위를 유지할 것.`
+      } : {
+        id: 'contraception_stance',
+        label: 'Contraception & safety stance',
+        guidance: `${stanceSummary} — use natural colloquial phrasing in the active draft language for protected vs unprotected acts, do not force withdrawal cries right after confirming condom wear, and match reaction intensity to the character's lore personality and affection/trust.`
       });
     }
     if (scene?.engaged || DIALOGUE_KISS_ACTIVE_RE.test(corpus) || DIALOGUE_ORAL_ACTIVE_RE.test(corpus)) {
-      situations.push({
+      situations.push(koLang ? {
         id: 'intimacy',
         label: '정사·밀착 스킨십',
         guidance: '호흡·신체 감각·접촉 리듬에 맞춘 짧은 단문·속삭임·여운 위주로 쓰고, 장황하거나 평온한 일상 대화 금지(입술/구강/손 막힘 점유 시 발화 물리 인과 엄수).'
+      } : {
+        id: 'intimacy',
+        label: 'Intimate / close physical contact',
+        guidance: 'Keep dialogue short, breathless, whispered, or rhythm-matched to physical sensation; prohibit composed small talk and strictly obey lip/mouth/hand obstruction speech causality.'
       });
     }
-    if (/손님|고객|주문|계산|결제|카운터|매장|가게|알바|아르바이트|직장|사무실|회의|상사|거래처|업무|근무|응대|병원|진료|수업|강의|customer|client|order|counter|cashier|office|meeting|workplace/i.test(corpus)) {
-      situations.push({
+    if (/손님|고객|주문|계산|결제|카운터|매장|가게|알바|아르바이트|직장|사무실|회의|상사|거래처|업무|근무|응대|병원|진료|수업|강의|客|注文|会計|店|職場|会議|仕事|接客|customer|client|order|counter|cashier|office|meeting|workplace/i.test(corpus)) {
+      situations.push(koLang ? {
         id: 'work_service',
         label: '업무·근무·손님 응대',
         guidance: '직업·응대 역할에 맞는 공적 존댓말·업무 어휘·거리감을 유지하고, 사적 반말이나 맥락 없는 잡담을 섞지 말 것.'
+      } : {
+        id: 'work_service',
+        label: 'Workplace / service role',
+        guidance: 'Maintain role-appropriate professional register, vocabulary, and distance for the workplace/service setting; avoid out-of-place casual chatter.'
       });
     }
-    if (/데이트|산책|레스토랑|야경|카페거리|전시회|놀이공원|손을\s*잡고\s*걸|date\s+night/i.test(corpus) || relChat?.activeDate?.active) {
-      situations.push({
+    if (/데이트|산책|레스토랑|야경|카페거리|전시회|놀이공원|손을\s*잡고\s*걸|デート|散歩|レストラン|夜景|date\s+night/i.test(corpus) || relChat?.activeDate?.active) {
+      situations.push(koLang ? {
         id: 'date',
         label: '데이트·로맨틱',
         guidance: '둘만의 분위기·시선·호감 온도를 살려 가벼운 농담·은근한 배려·여운 있는 티키타카를 만들고 사무적 설명투를 피할 것.'
+      } : {
+        id: 'date',
+        label: 'Date / romantic',
+        guidance: 'Reflect shared mood, eye contact, and warmth through light teasing, understated care, and lingering back-and-forth instead of stiff exposition.'
       });
     }
-    if (/복도|문\s*밖|문\s*너머|옆방|주변|사람들|타인|지나가|들릴까|숨죽|낮은\s*목소리|속삭|earshot|hallway|nearby/i.test(corpus) || (extNotice && extNotice.score >= 60)) {
-      situations.push({
+    if (/복도|문\s*밖|문\s*너머|옆방|주변|사람들|타인|지나가|들릴까|숨죽|낮은\s*목소리|속삭|廊下|ドアの外|隣室|誰か|ひそひそ|ささや|earshot|hallway|nearby/i.test(corpus) || (extNotice && extNotice.score >= 60)) {
+      situations.push(koLang ? {
         id: 'public_stealth',
         label: '공공장소·제3자 청취 위험',
         guidance: '제3자 가청 반경을 의식해 음량을 낮춘 속삭임·암시·몸짓 위주로 표현하고, 들킬 만한 큰 소리나 직설 발설을 피할 것.'
+      } : {
+        id: 'public_stealth',
+        label: 'Third-party earshot / stealth risk',
+        guidance: 'Keep dialogue hushed, veiled, or whispered around potential bystanders/adjacent listeners and avoid loud direct disclosures.'
       });
     }
-    if (/따졌|추궁|화내|소리치|싸우|언쟁|위험|긴급|도망|서둘|지금\s*당장|confront|urgent|danger/i.test(corpus)) {
-      situations.push({
+    if (/따졌|추궁|화내|소리치|싸우|언쟁|위험|긴급|도망|서둘|지금\s*당장|問い詰め|怒|喧嘩|危険|緊急|逃げ|confront|urgent|danger/i.test(corpus)) {
+      situations.push(koLang ? {
         id: 'conflict_urgent',
         label: '갈등·긴박·추궁',
         guidance: '팽팽한 긴장·주도권 다툼·감정 압박에 맞춰 즉각적이고 날 선 화법(반박·회피·단호한 끊기)을 쓸 것.'
+      } : {
+        id: 'conflict_urgent',
+        label: 'Conflict / urgency / confrontation',
+        guidance: 'Use immediate, sharp, pressure-reactive phrasing (pushback, evasion, curt cut-offs) that fits active conflict or urgency.'
       });
     }
     if (!situations.length) {
-      situations.push({
+      situations.push(koLang ? {
         id: 'casual_private',
         label: '일상·사적 대화',
         guidance: '인물 간 관계와 거리감에 맞는 자연스러운 한국어 구어체 리듬과 화자별 말투 차이를 살릴 것.'
+      } : {
+        id: 'casual_private',
+        label: 'Casual / private exchange',
+        guidance: 'Preserve natural spoken rhythm in the active draft language and distinct speaker cadence/register matching their relationship distance.'
       });
     }
     return situations;
@@ -31098,19 +31494,42 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return quotes;
   };
+  const DIALOGUE_JA_STOP_TOKENS = new Set(['それ', 'これ', 'あれ', 'どれ', 'ここ', 'そこ', 'あそこ', 'どこ', 'ほんと', '本当', 'ちょっと', 'まだ', 'もう', 'いま', '今', 'なぜ', 'どう', 'なに', '何']);
+  const DIALOGUE_EN_STOP_TOKENS = new Set(['the', 'and', 'but', 'you', 'are', 'was', 'were', 'not', 'for', 'with', 'that', 'this', 'what', 'why', 'how', 'when', 'where', 'yes', 'yeah', 'no', 'just', 'really', 'now', 'here', 'there', 'your', 'mine', 'have', 'has', 'had', 'can', 'will', 'would', 'could', 'should', 'did', 'does', 'doing']);
   const dialogueEndingStem = quote => {
-    const cleaned = String(quote || '').replace(/[\s….~!?,"”」]+$/g, '').trim();
+    const cleaned = String(quote || '').replace(/[\s….~!?！？。,"”」』]+$/g, '').trim();
+    if (!cleaned) return '';
+    if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(cleaned) && !/[가-힣]/.test(cleaned)) {
+      const jaMatch = cleaned.match(/(でしょ(?:う)?|だろう|だよ|だね|よね|かな|なの|わよ|ます|です|ない|けど|って|かも|のか|んだ|よ|ね|な|さ|わ|ぞ|ぜ|か)$/);
+      return jaMatch ? jaMatch[1] : cleaned.slice(-2);
+    }
     const tail = cleaned.split(/\s+/).pop() || '';
+    if (/^[a-zA-Z'’-]+$/.test(tail)) {
+      return tail.toLowerCase().replace(/(?:'s|’s|n't|n’t)$/i, '');
+    }
     const match = tail.match(/(이야|거야|맞아|진짜야|그래|그치|응|어|아니야|몰라|알아|좋아|싫어|해|지|네|걸|데|야)$/);
     return match ? match[1] : tail.slice(-2);
   };
-  const dialogueContentTokens = quote => new Set(
-    String(quote || '')
-      .replace(/[?!.,…~"“”「」]/g, ' ')
-      .split(/\s+/)
-      .map(w => w.replace(/(?:이야|거야|맞아|은|는|이|가|을|를|에|서|도|만|야|요)$/g, ''))
-      .filter(w => w.length >= 2 && !/^(?:그냥|진짜|정말|아직|지금|여기|저기|이거|그거|뭐야|왜|어떻게)$/.test(w))
-  );
+  const dialogueContentTokens = quote => {
+    const raw = String(quote || '').replace(/[?!？！.,。、…~"“”「」『』]/g, ' ').trim();
+    if (!raw) return new Set();
+    if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(raw) && !/[가-힣]/.test(raw)) {
+      const jaTokens = raw.match(/[\u4E00-\u9FFF\u30A0-\u30FF]{2,8}|[\u4E00-\u9FFF][\u3040-\u309F]{1,4}|[\u3040-\u309F]{2,6}/g) || [];
+      return new Set(jaTokens.filter(t => t.length >= 2 && !DIALOGUE_JA_STOP_TOKENS.has(t)));
+    }
+    return new Set(
+      raw
+        .split(/\s+/)
+        .map(w => {
+          if (/^[a-zA-Z'’-]+$/.test(w)) return w.toLowerCase().replace(/(?:ing|ed|es|s)$/i, '');
+          return w.replace(/(?:이야|거야|맞아|은|는|이|가|을|를|에|서|도|만|야|요)$/g, '');
+        })
+        .filter(w => {
+          if (/^[a-z]+$/.test(w)) return w.length >= 3 && !DIALOGUE_EN_STOP_TOKENS.has(w);
+          return w.length >= 2 && !/^(?:그냥|진짜|정말|아직|지금|여기|저기|이거|그거|뭐야|왜|어떻게)$/.test(w);
+        })
+    );
+  };
   const DIALOGUE_UNQUOTED_END_RE = /(?:잖아|거든|알면서|줄게|할게|지\s*마|어\?|야\?|냐\?|니\?|라고|라구|대\?|래\?)[.!?…~]*$/;
   const dialogueScanEchoPatterns = (recent = {}, draftText = '') => {
     const messages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
@@ -31149,7 +31568,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     let shortRun = 0;
     let shortRunMax = 0;
     for (const q of targetQuotes) {
-      const stripped = q.replace(/[….\s!?,"'“”「」]/g, '');
+      const stripped = q.replace(/[….\s!?！？。,"'“”「」『』]/g, '');
       if (stripped.length <= 10) {
         shortRun += 1;
         if (shortRun > shortRunMax) shortRunMax = shortRun;
@@ -31167,7 +31586,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const cleaned = stripNonProseSceneTags(targetText);
       for (const rawLine of cleaned.split(/\r?\n/)) {
         const line = rawLine.trim();
-        if (!line || line.length > 48 || /["“”「」『』]/.test(line)) continue;
+        if (!line || line.length > 48 || /["“”「」『』]/.test(line) || !/[가-힣]/.test(line)) continue;
         if (DIALOGUE_UNQUOTED_END_RE.test(line) || DIALOGUE_UNQUOTED_VOCAL_RE.test(line)) {
           unquotedLines.push(line);
         }
@@ -31178,8 +31597,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     let incoherentCount = 0;
     for (const q of targetQuotes) {
-      const stripped = q.replace(/^["“「]+|["”」]+$/g, '').trim();
-      if (stripped && DIALOGUE_INCOHERENT_FRAGMENT_RE.test(stripped)) {
+      const stripped = q.replace(/^["“「『]+|["”」』]+$/g, '').trim();
+      if (stripped && /[가-힣]/.test(stripped) && DIALOGUE_INCOHERENT_FRAGMENT_RE.test(stripped)) {
         incoherentCount += 1;
         flags.push(`Incoherent/broken dialogue fragment: "${compact(stripped, 48)}"`);
       }
@@ -31197,6 +31616,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
   };
   const dialogueCraftPacket = (recent = {}, settings = {}, draftText = '') => {
+    const koLang = isKoreanDraftLang(settings);
     const scenePeople = extensionScenePeople(recent);
     const present = [...new Set([extensionCardPerson(recent, scenePeople), ...scenePeople].filter(Boolean))].slice(0, 8);
     const situations = dialogueDetectSituations(recent, settings);
@@ -31207,28 +31627,50 @@ Begin directly with the in-world response and finish the complete same-turn draf
       present.length
         ? `Speakers in scene: ${present.map(name => (gate !== 'novel' && bodyStateIsPersona(name) ? `${name} (persona — do not alter persona lines)` : name)).join(', ')}`
         : 'No named speaker detected; check every NPC spoken line in the draft anyway.',
-      `[장면 상황·대화 톤]: ${situations.map(s => `${s.label} — ${s.guidance}`).join(' | ')}`
+      koLang
+        ? `[장면 상황·대화 톤]: ${situations.map(s => `${s.label} — ${s.guidance}`).join(' | ')}`
+        : `[SCENE SITUATION & DIALOGUE TONE]: ${situations.map(s => `${s.label} — ${s.guidance}`).join(' | ')}`
     ];
     if (causality.constraints.length) {
-      const labels = causality.constraints.map(c => c.label).join(' · ');
+      const labels = causality.constraints.map(c => (koLang ? c.label : c.kind)).join(' · ');
       const remedyParts = [];
-      if (causality.kissActive || causality.oralActive) {
-        remedyParts.push(causality.kissLocked
-          ? '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술이 맞닿아 떨어지지 않은 상태이므로, 누가 말하든 또렷한 문장을 쓰지 말고 말하기 직전에 입술을 떼는 명확한 동작을 먼저 서술하거나 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음·비언어 반응으로 고칠 것.'
-          : '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.');
+      if (koLang) {
+        if (causality.kissActive || causality.oralActive) {
+          remedyParts.push(causality.kissLocked
+            ? '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술이 맞닿아 떨어지지 않은 상태이므로, 누가 말하든 또렷한 문장을 쓰지 말고 말하기 직전에 입술을 떼는 명확한 동작을 먼저 서술하거나 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음·비언어 반응으로 고칠 것.'
+            : '키스하는 쪽(페르소나 포함)과 받는 쪽 양쪽 모두 입술/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.');
+        }
+        if (causality.handMuffled) {
+          remedyParts.push('손으로 입을 막아 소리를 틀어막은 상태이므로, 또렷한 문장 대신 손을 치우거나 손 아래·목구멍으로 새어 나오는 억눌린 발화("으으음…!", "흐읍…!")로 묘사할 것.');
+        }
+        if (causality.climaxVocalNeeded) {
+          remedyParts.push(causality.handMuffled || causality.oralActive
+            ? '절정 순간에는 쾌감이 통제력을 넘기므로 지문만으로 끝내지 말고 입을 막은 상태에 맞는 억눌린 비자발 발화 대사("으으음…!"/"흐읍…!")를 반드시 포함할 것.'
+            : '절정 순간에는 머리가 하얘지며 소리 통제가 무너지므로 지문으로만 넘기지 말고 "아아…!"·괴성·깨진 신음 같은 비자발 발화 대사를 반드시 포함할 것.');
+        }
+        if (!remedyParts.length) {
+          remedyParts.push('호흡이 가쁘거나 각성도가 낮은 상태에 맞게 대사 길이·호흡 단절·신음 섞임을 조절할 것.');
+        }
+        lines.push(`[물리 발화 제약]: ${labels} 감지됨 → ${remedyParts.join(' ')}`);
+      } else {
+        if (causality.kissActive || causality.oralActive) {
+          remedyParts.push(causality.kissLocked
+            ? 'Lips/mouth are locked on both sides (including the persona): never emit crisp fluent dialogue without first depicting a clear physical beat breaking lip contact, OR rewrite the line into slurred/muffled vocalizations or broken syllables.'
+            : 'Lips/mouth are occupied on both sides: either separate lips/mouth clearly right before speaking or render muffled/slurred speech.');
+        }
+        if (causality.handMuffled) {
+          remedyParts.push('A hand is muffling the mouth: remove the hand first or emit muffled, throat-caught vocalizations in quotes rather than crisp sentences.');
+        }
+        if (causality.climaxVocalNeeded) {
+          remedyParts.push(causality.handMuffled || causality.oralActive
+            ? 'At climax peak with mouth obstructed/muffled, include involuntary muffled vocalized dialogue inside quotation marks instead of silent narration.'
+            : 'At climax peak when unobstructed, include involuntary gasps/moans/broken cries inside quotation marks instead of silent narration.');
+        }
+        if (!remedyParts.length) {
+          remedyParts.push('Adjust line length, breath breaks, and vocal tremor to match breathlessness or low wakefulness.');
+        }
+        lines.push(`[PHYSICAL SPEECH CONSTRAINTS]: ${labels} detected -> ${remedyParts.join(' ')}`);
       }
-      if (causality.handMuffled) {
-        remedyParts.push('손으로 입을 막아 소리를 틀어막은 상태이므로, 또렷한 문장 대신 손을 치우거나 손 아래·목구멍으로 새어 나오는 억눌린 발화("으으음…!", "흐읍…!")로 묘사할 것.');
-      }
-      if (causality.climaxVocalNeeded) {
-        remedyParts.push(causality.handMuffled || causality.oralActive
-          ? '절정 순간에는 쾌감이 통제력을 넘기므로 지문만으로 끝내지 말고 입을 막은 상태에 맞는 억눌린 비자발 발화 대사("으으음…!"/"흐읍…!")를 반드시 포함할 것.'
-          : '절정 순간에는 머리가 하얘지며 소리 통제가 무너지므로 지문으로만 넘기지 말고 "아아…!"·괴성·깨진 신음 같은 비자발 발화 대사를 반드시 포함할 것.');
-      }
-      if (!remedyParts.length) {
-        remedyParts.push('호흡이 가쁘거나 각성도가 낮은 상태에 맞게 대사 길이·호흡 단절·신음 섞임을 조절할 것.');
-      }
-      lines.push(`[물리 발화 제약]: ${labels} 감지됨 → ${remedyParts.join(' ')}`);
     }
     lines.push(
       scan.flags.length
@@ -31252,7 +31694,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '[DIALOGUE & SPEECHCRAFT (화술·대화) — HUMAN SPOKEN DIALOGUE & CAUSALITY]',
       'Write and repair spoken dialogue so every character sounds like a real, distinct person in their exact physical & situational moment — never crisp fluent Q&A while deep-kissing, factually contradicting visible reality, or uttering meaningless broken fragments.',
       gate === 'novel'
-        ? '- Novel mode: apply physical speech causality, factual/contextual coherence, and incoherent-fragment repair to EVERY speaker including the user persona (author-specified exact quotes stay intact).'
+        ? '- Novel mode: apply to every character — enforce physical speech causality, factual/contextual coherence, and incoherent-fragment repair to EVERY speaker including the user persona (author-specified exact quotes stay intact).'
         : gate === 'staging'
           ? '- Scene-staging RP mode: lines the input wrote stay as written. Check and refine only NPC lines the draft adds.'
           : '- RP mode: apply to NPCs only. The persona’s spoken lines belong to the user; never edit or rewrite them.',
@@ -31434,13 +31876,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_PHASE_RANK = Object.freeze({ none: 0, foreplay: 1, intercourse: 2, climax: 3, afterplay: 4 });
   // A kiss or undressing alone is not an encounter; these are acts that only happen inside one.
   const INTIMACY_PHASE_SIGNALS = Object.freeze([
-    ['foreplay', /애무|유두|젖꼭지|(?:가슴|젖가슴|유방|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨)|커닐링구스|펠라(?:티오|치오)?|오럴|사까시|쿤닐|클리토리스|음핵|애액|(?:남성기|여성기|보지|자지|음경|성기|페니스|귀두|육봉|양물|고환|불알|음낭|외음부|음순|비소|항문|후구)(?:을|를|에|이|가)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|쥐|쥐었|감싸|감쌌|훑|핥|빨|문지|문질|비비|비벼|비볐|쓰다듬|더듬|자극|꼬집|튕기|물고|삼키|눌러|눌렀)|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|대딸|수음|자위|핸드잡|파이즈리|풋잡|스마타|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘|냈|내)|입으로\s*(?:해|빨|물|삼)|caress(?:ed|ing)? (?:her|his) (?:breast|thigh|nipple)|fondl|foreplay|cunnilingus|fellatio|blowjob|handjob|paizuri|titjob|footjob|masturbat|nipple|clit|fingering|fingered/i],
-    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:(?<![가-힣])질|(?<![가-힣])보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
-    ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|(?<![가-힣])(?:싸버|싼다|쌌)|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
-    ['afterplay', /여운(?:에|이|을|속)|후희|베개\s*(?:대화|이야기)|팔베개|숨(?:을|이)?\s*(?:고르|골랐|돌리|가라앉)|뒷정리|(?:닦아\s*주|닦아주|닦아\s*냈)|afterglow|pillow talk|catching (?:his|her|their) breath/i]
+    ['foreplay', /애무|유두|젖꼭지|(?:가슴|젖가슴|유방|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨)|커닐링구스|펠라(?:티오|치오)?|오럴|사까시|쿤닐|클리토리스|음핵|애액|(?:남성기|여성기|보지|자지|음경|성기|페니스|귀두|육봉|양물|고환|불알|음낭|외음부|음순|비소|항문|후구)(?:을|를|에|이|가)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|쥐|쥐었|감싸|감쌌|훑|핥|빨|문지|문질|비비|비벼|비볐|쓰다듬|더듬|자극|꼬집|튕기|물고|삼키|눌러|눌렀)|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|대딸|수음|자위|핸드잡|파이즈리|풋잡|스마타|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘|냈|내)|입으로\s*(?:해|빨|물|삼)|愛撫|乳首|(?:ペニス|チンコ|肉棒|亀頭|マンコ|クリトリス|陰核|胸|乳房|乳首|お尻|太もも)(?:を|に)?[^\n。！？?!]{0,12}(?:口に含|含ん|咥え|舐め|吸|扱|撫で|触れ|揉み|擦)|クンニ|フェラ|オラル|クリトリス|陰核|愛液|手コキ|指を入れ|パイズリ|自慰|caress(?:ed|ing)? (?:her|his) (?:breast|thigh|nipple)|(?:hand|fingers?) slid [^\n.?!]{0,16}(?:between|into) (?:her|his) (?:thighs|legs|underwear|panties)|(?:touch|strok|rubb?|lick|suck|kiss)(?:ed|ing)? [^\n.?!]{0,18}(?:breast|nipple|thigh|pussy|clit|cock|dick|penis)|fondl|foreplay|cunnilingus|fellatio|blowjob|handjob|paizuri|titjob|footjob|masturbat|nipple|clit|fingering|fingered/i],
+    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:(?<![가-힣])질|(?<![가-힣])보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|挿入|奥まで|ピストン|腰を振|正常位|騎乗位|後背位|対面座位|立ちバック|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|had sex|having sex|missionary|doggy|cowgirl|spooning sex/i],
+    ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|(?<![가-힣])(?:싸버|싼다|쌌)|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|絶頂|イく|イッた|イク|射精|精液|潮吹き|オーガズム|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
+    ['afterplay', /여운(?:에|이|을|속)|후희|베개\s*(?:대화|이야기)|팔베개|숨(?:을|이)?\s*(?:고르|골랐|돌리|가라앉)|뒷정리|(?:닦아\s*주|닦아주|닦아\s*냈)|余韻|後戯|ピロートーク|息を整|腕枕|afterglow|pillow talk|catching (?:his|her|their) breath/i]
   ]);
   // Cross-sentence / pronoun-bridged foreplay: e.g. "남성기는 존재감을 드러내고 있었다 ... 그것을 감싸고 비비기 시작했다"
-  const INTIMACY_GENITAL_MENTION_RE = /남성기|여성기|보지|자지|음경|페니스|귀두|육봉|양물|클리토리스|음핵|외음부|음순|고환|불알|음낭|애액|질구|질내|성기|\b(?:penis|cock|dick|pussy|vulva|clit|clitoris|scrotum|testicles?)\b/i;
+  const INTIMACY_GENITAL_MENTION_RE = /남성기|여성기|보지|자지|음경|페니스|귀두|육봉|양물|클리토리스|음핵|외음부|음순|고환|불알|음낭|애액|질구|질내|성기|ペニス|チンコ|マンコ|クリトリス|陰核|亀頭|性器|\b(?:penis|cock|dick|pussy|vulva|clit|clitoris|scrotum|testicles?)\b/i;
   const INTIMACY_BRIDGED_TOUCH_RE = /(?:그것|거기|그곳|그걸|하체|속옷|팬티|천)(?:을|를|에|이|가)?[^\n.?!]{0,24}(?:내리|내렸|벗기|벗겼|감싸|감쌌|비비|비벼|비볐|문지|문질|훑|핥|빨|쥐|쥐었|만지|만졌|쓰다듬|더듬|누르|눌렀|자극|넣|대|댔)|손가락(?:이|을)?[^\n.?!]{0,20}(?:감싸|비비|비벼|문지|훑|넣|눌|더듬|쓰다듬)|입술(?:이|을)?[^\n.?!]{0,20}(?:대|댔|감싸|빨|핥|삼키)/i;
   const INTIMACY_POSITIONS = Object.freeze([
     ['정상위 (missionary)', /정상위|missionary/i],
@@ -31506,77 +31948,78 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_EXTERNAL_MAX_SCORE = 200;
   // Ordered from more specific / higher-exposure venues to general private spaces.
   const INTIMACY_EXTERNAL_PLACES = Object.freeze([
-    ['downtown', '번화가·광장', 45, 'public', /번화가|광장|거리\s*한복판|시장\s*통|downtown|plaza|busy street/i],
-    ['transit', '대중교통 (버스·지하철·기차·비행기)', 45, 'public', /버스|지하철|전철|기차|열차|비행기|기내|대중교통|bus|subway|train|airplane|cabin/i],
-    ['venue_public', '카페·식당·술집', 40, 'public', /카페|커피숍|식당|레스토랑|술집|바\b|펍|주점|cafe|restaurant|bar\b|pub\b/i],
-    ['facility_public', '백화점·마트·영화관·수영장·찜질방·목욕탕·PC방', 40, 'public', /백화점|쇼핑몰|마트|영화관|극장|수영장|찜질방|사우나|목욕탕|온천|pc방|피시방|mall|cinema|pool|sauna|bathhouse/i],
-    ['park', '공원·정원', 35, 'public', /공원|정원|산책로|벤치|\bpark\b|garden/i],
-    ['corridor', '복도·계단·옥상·엘리베이터', 35, 'semi_public', /복도|계단|비상구|옥상|엘리베이터|승강기|현관|corridor|hallway|stairwell|rooftop|elevator/i],
-    ['library', '도서관·서고·열람실', 30, 'semi_public', /도서관|서고|열람실|독서실|서점|library|reading room|archive/i],
-    ['workplace', '교실·강의실·사무실·회의실·연구실', 30, 'semi_public', /교실|강의실|양호실|보건실|동아리방|사무실|회의실|연구실|작업실|집무실|\b(?:classroom|office|meeting room|lab)\b/i],
-    ['restroom', '화장실·세면실', 25, 'semi_public', /화장실|세면실|파우더룸|칸막이|restroom|bathroom|washroom|stall/i],
-    ['secluded_semi', '골목·차 안·창고', 15, 'semi_public', /골목|뒷길|차\s*안|차량|뒷좌석|창고|탈의실|alley|car\b|backseat|storage|locker room/i],
-    ['private_room', '방·침실·집·숙소', -20, 'private', /침실|내\s*방|그녀의\s*방|그의\s*방|안방|자취방|기숙사|거실|호텔|모텔|여관|숙소|오피스텔|(?:^|[^가-힣])방(?:에|에서|안|으로)|(?:^|[^가-힣])집(?:에|에서|안|으로)|bedroom|my room|her room|his room|dorm|apartment|officetel|hotel|motel|inn|\bhome\b/i]
+    ['downtown', '번화가·광장', 45, 'public', /번화가|광장|거리\s*한복판|시장\s*통|장터|市場|広場|大通り|downtown|plaza|busy street|market\s*square|agora|promenade/i],
+    ['transit', '대중교통 (버스·지하철·기차·비행기)', 45, 'public', /버스|지하철|전철|기차|열차|비행기|기내|대중교통|電車|新幹線|バス|機内|bus|subway|train|airplane/i],
+    ['venue_public', '카페·식당·술집·주점', 40, 'public', /카페|커피숍|식당|레스토랑|술집|바\b|펍|주점|선술집|카페|喫茶店|レストラン|居酒屋|バー|cafe|restaurant|bar\b|pub\b|tavern/i],
+    ['facility_public', '백화점·마트·영화관·수영장·찜질방·목욕탕·PC방', 40, 'public', /백화점|쇼핑몰|마트|영화관|극장|수영장|찜질방|사우나|목욕탕|온천|pc방|피시방|温泉|銭湯|大浴場|デパート|映画館|プール|mall|cinema|pool|sauna|bathhouse/i],
+    ['park', '공원·정원', 35, 'public', /공원|정원|산책로|벤치|公園|庭園|\bpark\b|garden/i],
+    ['corridor', '복도·계단·옥상·엘리베이터·회랑', 35, 'semi_public', /복도|계단|비상구|옥상|엘리베이터|승강기|현관|회랑|성채\s*복도|선실\s*복도|객잔\s*복도|廊下|階段|屋上|エレベーター|corridor|hallway|stairwell|rooftop|elevator|cloister|rampart|deck\s*corridor/i],
+    ['library', '도서관·서고·열람실', 30, 'semi_public', /도서관|서고|열람실|독서실|서점|図書館|書庫|library|reading room|archive/i],
+    ['workplace', '교실·강의실·사무실·회의실·연구실', 30, 'semi_public', /교실|강의실|양호실|보건실|동아리방|사무실|회의실|연구실|작업실|집무실|병영|의무실|教室|オフィス|会議室|研究室|保健室|執務室|\b(?:classroom|office|meeting room|lab|barracks|infirmary|ward)\b/i],
+    ['restroom', '화장실·세면실', 25, 'semi_public', /화장실|세면실|파우더룸|칸막이|トイレ|洗面所|化粧室|restroom|bathroom|washroom|stall/i],
+    ['secluded_semi', '골목·차 안·창고', 15, 'semi_public', /골목|뒷길|차\s*안|차량|뒷좌석|창고|탈의실|路地|車内|倉庫|更衣室|alley|car\b|backseat|storage|locker room/i],
+    ['private_room', '방·침실·집·숙소·객실', -20, 'private', /침실|내\s*방|그녀의\s*방|그의\s*방|안방|자취방|기숙사|거실|호텔|모텔|여관|숙소|오피스텔|내실|침소|선실|천막|객잔\s*방|(?:^|[^가-힣])방(?:에|에서|안|으로)|(?:^|[^가-힣])집(?:에|에서|안|으로)|部屋|寝室|自室|寮|リビング|ホテル|旅館|宿|アパート|マンション|和室|客室|bedroom|my room|her room|his room|dorm|apartment|officetel|hotel|motel|inn|\bhome\b|chambers?|quarters|cabin|suite|inn\s*room|sanctum|tent|pavilion/i]
   ]);
-  const extractHudLocation = value => {
-    const matches = [...String(value || '').matchAll(/◈CG[\s\S]*?^LOC\|([^|\n]+)(?:\|[^\n]*)?$/gm)];
-    return matches.length ? compact(matches[matches.length - 1][1], 80) : '';
-  };
+  const extractHudLocation = (value, settings = {}) => parseSceneHudBlock(value, settings).loc;
   const stripNonProseSceneTags = value => String(value || '')
     .replace(/◈CG[\s\S]*?◈/g, ' ')
+    .replace(/<status\b[^>]*>[\s\S]*?<\/status>/gi, ' ')
+    .replace(/\[(?:Status|Scene|Info)\][\s\S]*?\[\/(?:Status|Scene|Info)\]/gi, ' ')
+    .replace(/```(?:status|hud|scene)\b[^\n]*\n[\s\S]*?```/gi, ' ')
     .replace(/<img\b[^>]*>/gi, ' ')
     .replace(/\bbg_[a-z0-9_]+\b/gi, ' ');
-  const INTIMACY_CROWD_HIGH_RE = /사람들|인파|북적|붐비|붐벼|만석|시끌벅적|지나다니|오가는|crowded|busy|full of people|passersby/i;
-  const INTIMACY_CROWD_NEARBY_RE = /옆\s*방|벽\s*너머|얇은\s*벽|문\s*밖|밖에서|복도에|누군가|다른\s*사람|동거|룸메이트|가족|부모님|손님|관리인|사서|경비|직원|next room|thin wall|outside the door|someone nearby|roommate|family|staff|guard|librarian/i;
-  const INTIMACY_CROWD_LOW_RE = /아무도\s*없|인적\s*없|인적이\s*끊|한적|조용한\s*밤|늦은\s*밤|새벽|텅\s*빈|폐관|문\s*닫은|nobody around|deserted|empty|late at night|after hours/i;
-  const INTIMACY_LOUD_HIGH_RE = /비명|큰\s*소리|신음(?:이|을)?\s*(?:터|새어|질렀|내질|참지)|소리\s*(?:내|지르|질렀)|울부짖|거칠게|격렬|침대(?:가|를)?\s*(?:삐걱|흔들|부딪)|살이\s*부딪|찰싹|퍼억|loud|scream|cry out|moan(?:ed|ing)? loudly|creaking|slapping|noisy/i;
-  const INTIMACY_LOUD_LOW_RE = /입을\s*(?:막|틀어막)|입술을\s*깨물|소리(?:를|가)?\s*(?:죽이|죽여|삼키|삼켜|참|억누르)|조용히|속삭|숨죽|낮은\s*소리|cover(?:ed|ing)? (?:her|his) mouth|muffled|quietly|whisper|silent/i;
-  const INTIMACY_STEALTH_EXPOSED_RE = /열린\s*문|문이\s*열|반쯤\s*열|잠그지\s*않|커튼(?:이|을)?\s*열|불이\s*켜|훤히|탁\s*트인|노출|들킬|open door|ajar|unlocked|unlatched|curtain open|in plain sight|exposed/i;
-  const INTIMACY_STEALTH_HIDDEN_RE = /문(?:을|이)?\s*(?:잠그|잠갔|잠긴|걸어\s*잠)|자물쇠|방음|커튼(?:을|이)?\s*(?:치|쳐|내리|닫)|어둠|그늘|숨(?:어|은)|구석|사각지대|밀실|locked door|soundproof|curtain drawn|hidden|secluded|blind spot/i;
+  const INTIMACY_CROWD_HIGH_RE = /사람들|인파|북적|붐비|붐벼|만석|시끌벅적|지나다니|오가는|人通り|混雑|人混み|crowded|busy|full of people|passersby/i;
+  const INTIMACY_CROWD_NEARBY_RE = /옆\s*방|벽\s*너머|얇은\s*벽|문\s*밖|밖에서|복도에|누군가|다른\s*사람|동거|룸메이트|가족|부모님|손님|관리인|사서|경비|직원|隣室|壁の向こう|ドアの外|廊下|誰か|他の人|家族|従業員|next room|thin wall|outside the door|someone nearby|roommate|family|staff|guard|librarian/i;
+  const INTIMACY_CROWD_LOW_RE = /아무도\s*없|인적\s*없|인적이\s*끊|한적|조용한\s*밤|늦은\s*밤|새벽|텅\s*빈|폐관|문\s*닫은|誰もいな|無人|静かな夜|深夜|nobody around|deserted|empty|late at night|after hours/i;
+  const INTIMACY_LOUD_HIGH_RE = /비명|큰\s*소리|신음(?:이|을)?\s*(?:터|새어|질렀|내질|참지)|소리\s*(?:내|지르|질렀)|울부짖|거칠게|격렬|침대(?:가|를)?\s*(?:삐걱|흔들|부딪)|살이\s*부딪|찰싹|퍼억|大きな声|喘ぎ声|悲鳴|激しく|ベッドが軋|loud|scream|cry out|moan(?:ed|ing)? loudly|creaking|slapping|noisy/i;
+  const INTIMACY_LOUD_LOW_RE = /입을\s*(?:막|틀어막)|입술을\s*깨물|소리(?:를|가)?\s*(?:죽이|죽여|삼키|삼켜|참|억누르)|조용히|속삭|숨죽|낮은\s*소리|口を塞|唇を噛|声を抑え|声を殺|ひそひそ|静かに|cover(?:ed|ing)? (?:her|his) mouth|muffled|quietly|whisper|silent/i;
+  const INTIMACY_STEALTH_EXPOSED_RE = /열린\s*문|문이\s*열|반쯤\s*열|잠그지\s*않|커튼(?:이|을)?\s*열|불이\s*켜|훤히|탁\s*트인|노출|들킬|開いたドア|鍵をかけていな|半開き|丸見え|open door|ajar|unlocked|unlatched|curtain open|in plain sight|exposed/i;
+  const INTIMACY_STEALTH_HIDDEN_RE = /문(?:을|이)?\s*(?:잠그|잠갔|잠긴|걸어\s*잠)|자물쇠|방음|커튼(?:을|이)?\s*(?:치|쳐|내리|닫)|어둠|그늘|숨(?:어|은)|구석|사각지대|밀실|鍵をかけ|施錠|防音|遮断|暗闇|死角|locked door|soundproof|curtain drawn|hidden|secluded|blind spot/i;
   const INTIMACY_EXTERNAL_RISK_KO = Object.freeze({
     low: '낮음',
     moderate: '보통',
     high: '높음',
     critical: '매우 높음'
   });
-  const INTIMACY_SHOWER_STOP_RE = /(?:샤워기|물|수도|수도꼭지|온수)(?:을|를)?\s*(?:껐|잠갔|멈췄)|물소리(?:가|도)?\s*(?:멎|그쳤|멈췄|사라졌)|turned\s+off\s+the\s+(?:shower|water)/i;
-  const INTIMACY_SHOWER_RUN_RE = /샤워기|씻으러|물줄기|물소리|물을\s*(?:틀|켜|맞)|흐르는\s*물|shower(?:ing)?|running\s+water/i;
-  const INTIMACY_FAN_MEDIA_RE = /환풍기|배기팬|음악|노래|tv|텔레비전|빗소리|파도\s*소리|exhaust\s+fan|music|\btv\b|rain|waves/i;
-  const INTIMACY_DEAD_SILENCE_RE = /정적|적막|쥐\s*죽은|아무\s*소리(?:도|가)?\s*없|조용해졌|dead\s+silence/i;
-  const INTIMACY_PROVOKE_INPUT_RE = /들으라는\s*듯|들키(?:고\s*싶|려)|알아차리(?:게|라)|소리를\s*(?:더|크게|높여|일부러)|문\s*(?:쪽|앞|너머)(?:로|에)?\s*(?:밀착|기대|붙)|벽을\s*(?:치|두드리|짚)|과시|deliberately\s+loud|want(?:ed|s)?\s+(?:them|her|him)\s+to\s+hear/i;
-  const INTIMACY_CONCEAL_INPUT_RE = /입을\s*(?:막|틀어막)|소리를\s*(?:죽|삼|참|낮)|들키지\s*않|비밀|속삭|숨죽|quietly|muffle|don't\s+let\s+(?:them|her|him)\s+hear/i;
+  const INTIMACY_SHOWER_STOP_RE = /(?:샤워기|물|수도|수도꼭지|온수)(?:을|를)?\s*(?:껐|잠갔|멈췄)|물소리(?:가|도)?\s*(?:멎|그쳤|멈췄|사라졌)|シャワーを止め|お湯を止め|水音が消え|水が止まっ|turned\s+off\s+the\s+(?:shower|water)/i;
+  const INTIMACY_SHOWER_RUN_RE = /샤워기|씻으러|물줄기|물소리|물을\s*(?:틀|켜|맞)|흐르는\s*물|シャワー|水音|お湯を流|流れる水|shower(?:ing)?|running\s+water/i;
+  const INTIMACY_FAN_MEDIA_RE = /환풍기|배기팬|음악|노래|tv|텔레비전|빗소리|파도\s*소리|폭포|천둥|엔진음|換気扇|音楽|雨音|波音|滝|嵐|エンジン音|exhaust\s+fan|music|\btv\b|rain|waves|waterfall|storm|thunder|engine\s*hum/i;
+  const INTIMACY_DEAD_SILENCE_RE = /정적|적막|쥐\s*죽은|아무\s*소리(?:도|가)?\s*없|조용해졌|静寂|無音|シーン|物音ひとつ|dead\s+silence/i;
+  const INTIMACY_PROVOKE_INPUT_RE = /들으라는\s*듯|들키(?:고\s*싶|려)|알아차리(?:게|라)|소리를\s*(?:더|크게|높여|일부러)|문\s*(?:쪽|앞|너머)(?:로|에)?\s*(?:밀착|기대|붙)|벽을\s*(?:치|두드리|짚)|과시|聞こえるように|わざと大きな声|気づかせる|見せつけ|deliberately\s+loud|want(?:ed|s)?\s+(?:them|her|him)\s+to\s+hear/i;
+  const INTIMACY_CONCEAL_INPUT_RE = /입을\s*(?:막|틀어막)|소리를\s*(?:죽|삼|참|낮)|들키지\s*않|비밀|속삭|숨죽|声を抑|声を殺|気づかれないよう|口を塞|quietly|muffle|don't\s+let\s+(?:them|her|him)\s+hear/i;
+  const INTIMACY_ACOUSTIC_PROFILES = Object.freeze({
+    very_high: Object.freeze({ label: '최상 방음', attenuation: 0.45, baseCap: 55 }),
+    high: Object.freeze({ label: '양호 방음', attenuation: 0.72, baseCap: 115 }),
+    medium: Object.freeze({ label: '보통 방음', attenuation: 1.0, baseCap: 165 }),
+    low: Object.freeze({ label: '취약 방음', attenuation: 1.2, baseCap: 200 })
+  });
   const inferFacilityAcoustics = (recent = {}, placeObj = {}, topology = null, settings = {}) => {
     const rawInput = text(recent.latestUser || '');
     const rawMessages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .filter(m => m?.role !== 'user')
       .map(m => text(m?.content || ''))
       .filter(Boolean);
-    const hudLocation = extractHudLocation(rawInput) || [...rawMessages].reverse().map(extractHudLocation).find(Boolean) || '';
+    const hudLocation = extractHudLocation(rawInput, settings) || [...rawMessages].reverse().map(m => extractHudLocation(m, settings)).find(Boolean) || '';
     const input = stripNonProseSceneTags(rawInput);
     const window = rawMessages.slice(-INTIMACY_RECENT_WINDOW).map(stripNonProseSceneTags);
     const lastWindow = window.length ? window[window.length - 1] : '';
     const combined = [input, ...window, hudLocation].filter(Boolean).join('\n');
 
+    const llmAcoustics = recent?.structuredSignals?.acoustics;
     let soundproofing = 'medium';
-    let soundproofingLabel = '보통 방음';
-    let attenuation = 1.0;
-    let baseCap = 165;
-    if (/완벽한\s*방음|방음\s*시공|이중\s*(?:방음)?문|두꺼운\s*(?:방음)?문|방음벽|최고급\s*호텔|5성급|VIP\s*스위트|프라이빗\s*스위트|soundproof(?:ed|ing)?|double[- ]glazed|luxury\s*(?:hotel|suite)/i.test(combined)) {
+    if (llmAcoustics?.soundproofing && INTIMACY_ACOUSTIC_PROFILES[llmAcoustics.soundproofing]) {
+      soundproofing = llmAcoustics.soundproofing;
+    } else if (/완벽한\s*방음|방음\s*시공|이중\s*(?:방음)?문|두꺼운\s*(?:방음)?문|방음벽|최고급\s*호텔|5성급|VIP\s*스위트|프라이빗\s*스위트|두꺼운\s*석벽|석조\s*밀실|격벽|방음\s*결계|침묵\s*마법|防音|二重ドア|厚い石壁|防音結界|soundproof(?:ed|ing)?|double[- ]glazed|luxury\s*(?:hotel|suite)|stone\s*(?:wall|vault)|bulkhead|silence\s*ward/i.test(combined)) {
       soundproofing = 'very_high';
-      soundproofingLabel = '최상 방음';
-      attenuation = 0.45;
-      baseCap = 55;
-    } else if (/방음(?:이|은)?\s*(?:잘|괜찮|탄탄|되어)|중급\s*호텔|신축\s*(?:호텔|오피스텔|빌라)|두꺼운\s*문|heavy\s+door/i.test(combined)) {
+    } else if (/방음(?:이|은)?\s*(?:잘|괜찮|탄탄|되어)|중급\s*호텔|신축\s*(?:호텔|오피스텔|빌라)|두꺼운\s*문|묵직한\s*문|중문|重厚なドア|厚い扉|heavy\s*(?:oak\s*)?door|solid\s*wall/i.test(combined)) {
       soundproofing = 'high';
-      soundproofingLabel = '양호 방음';
-      attenuation = 0.72;
-      baseCap = 115;
-    } else if (/얇은\s*(?:문|벽)|합판문|방음(?:이|도)?\s*(?:안|부족|취약|허술|약하)|노후\s*(?:모텔|여관|건물)|허름한\s*(?:모텔|여관)|목조|소리(?:가|도)?\s*(?:잘|다)\s*새|thin\s*(?:door|wall)|poor\s+soundproofing/i.test(combined)) {
+    } else if (/얇은\s*(?:문|벽)|합판문|방음(?:이|도)?\s*(?:안|부족|취약|허술|약하)|노후\s*(?:모텔|여관|건물)|허름한\s*(?:모텔|여관)|목조|소리(?:가|도)?\s*(?:잘|다)\s*새|장지문|창호지|천막|휘장|커튼\s*칸막이|障子|襖|薄い壁|薄いドア|テント|thin\s*(?:door|wall)|poor\s+soundproofing|paper\s*screen|shoji|tent\s*flap|thin\s*partition/i.test(combined)) {
       soundproofing = 'low';
-      soundproofingLabel = '취약 방음';
-      attenuation = 1.2;
-      baseCap = 200;
     }
+    const acousticSpec = INTIMACY_ACOUSTIC_PROFILES[soundproofing] || INTIMACY_ACOUSTIC_PROFILES.medium;
+    let soundproofingLabel = acousticSpec.label;
+    let attenuation = acousticSpec.attenuation;
+    let baseCap = acousticSpec.baseCap;
 
     let ambientMasking = 'none';
     let ambientMaskingLabel = '배경 소음 없음';
@@ -31588,22 +32031,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
       INTIMACY_SHOWER_RUN_RE.test(input)
       || (topology?.subRoomId === 'bathroom' && INTIMACY_SHOWER_RUN_RE.test([input, lastWindow].filter(Boolean).join('\n')))
     );
-    if (showerActive) {
+    const llmMasking = typeof llmAcoustics?.ambientMasking === 'string' && /^(?:shower_running|dead_silence|fan_or_media|none)$/.test(llmAcoustics.ambientMasking)
+      ? llmAcoustics.ambientMasking
+      : '';
+    if (llmMasking === 'shower_running' || (!llmMasking && showerActive)) {
       ambientMasking = 'shower_running';
       ambientMaskingLabel = '샤워·물소리 마스킹';
       maskingDelta = -28;
       ambientCapDelta = -20;
-    } else if (INTIMACY_DEAD_SILENCE_RE.test(input) || (showerStopped && INTIMACY_DEAD_SILENCE_RE.test(combined))) {
+    } else if (llmMasking === 'dead_silence' || (!llmMasking && (INTIMACY_DEAD_SILENCE_RE.test(input) || (showerStopped && INTIMACY_DEAD_SILENCE_RE.test(combined))))) {
       ambientMasking = 'dead_silence';
       ambientMaskingLabel = '정적(소음 증폭)';
       maskingDelta = 18;
       ambientCapDelta = 25;
-    } else if (INTIMACY_FAN_MEDIA_RE.test(combined)) {
+    } else if (llmMasking === 'fan_or_media' || (!llmMasking && INTIMACY_FAN_MEDIA_RE.test(combined))) {
       ambientMasking = 'fan_or_media';
       ambientMaskingLabel = '배경음·환풍기 마스킹';
       maskingDelta = -14;
       ambientCapDelta = -10;
-    } else if (INTIMACY_DEAD_SILENCE_RE.test(combined)) {
+    } else if (!llmMasking && INTIMACY_DEAD_SILENCE_RE.test(combined)) {
       ambientMasking = 'dead_silence';
       ambientMaskingLabel = '정적(소음 증폭)';
       maskingDelta = 18;
@@ -31614,16 +32060,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
     let visualBarrierLabel = '닫힌 불투명 문';
     let visualFloor = 0;
     let visualCapDelta = 0;
-    if (INTIMACY_STEALTH_EXPOSED_RE.test(combined)) {
+    const llmBarrier = typeof llmAcoustics?.visualBarrier === 'string' && /^(?:ajar|frosted_glass|opaque_locked|closed_door)$/.test(llmAcoustics.visualBarrier)
+      ? llmAcoustics.visualBarrier
+      : '';
+    if (llmBarrier === 'ajar' || (!llmBarrier && INTIMACY_STEALTH_EXPOSED_RE.test(combined))) {
       visualBarrier = 'ajar';
       visualBarrierLabel = '문틈·개방(시각·청각 직통)';
       visualFloor = 185;
       visualCapDelta = 35;
-    } else if (/반투명\s*유리|유리문|불투명\s*유리|간유리|실루엣|frosted\s*glass|glass\s*door/i.test(combined)) {
+    } else if (llmBarrier === 'frosted_glass' || (!llmBarrier && /반투명\s*유리|유리문|불투명\s*유리|간유리|실루엣|frosted\s*glass|glass\s*door|すりガラス|摺りガラス|ガラス戸|シルエット/i.test(combined))) {
       visualBarrier = 'frosted_glass';
       visualBarrierLabel = '반투명 유리문(실루엣 노출)';
       visualCapDelta = 25;
-    } else if (INTIMACY_STEALTH_HIDDEN_RE.test(combined)) {
+    } else if (llmBarrier === 'opaque_locked' || (!llmBarrier && INTIMACY_STEALTH_HIDDEN_RE.test(combined))) {
       visualBarrier = 'opaque_locked';
       visualBarrierLabel = '잠긴 불투명 문';
       visualCapDelta = -10;
@@ -31788,7 +32237,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .filter(Boolean);
     if (rawMessages.length && rawInput && rawMessages[rawMessages.length - 1].trim() === rawInput.trim()) rawMessages.pop();
     const rawWindow = rawMessages.slice(-INTIMACY_RECENT_WINDOW);
-    const hudLocation = extractHudLocation(rawInput) || [...rawWindow].reverse().map(extractHudLocation).find(Boolean) || '';
+    const hudLocation = extractHudLocation(rawInput, settings) || [...rawWindow].reverse().map(m => extractHudLocation(m, settings)).find(Boolean) || '';
     const input = stripNonProseSceneTags(rawInput);
     const window = rawWindow.map(stripNonProseSceneTags);
     const windowJoined = [...window].reverse().join('\n');
@@ -32061,34 +32510,34 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_MAX_CARDS = 12;
   // Body-part stimulation definitions: [id, label, baseClimaxPoints, baseEjaculationPoints, pattern]
   const INTIMACY_BODY_PARTS = Object.freeze([
-    ['lips_mouth', '입술·혀 (lips/mouth)', 10, 6, /키스|입술(?:을|에|로)?\s*(?:맞추|포개|빨|깨물|핥|부딪)|설키스|딥키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣|감싸)|입\s*안|kiss(?:ed|ing)?|tongue|lips/i],
-    ['ears', '귀·귓불 (ears)', 11, 6, /(?<![가-힣])귀(?:를|에|\s*뒤|\s*안)|귓불|귓바퀴|귓가(?:에|를)?\s*(?:속삭|핥|깨물|숨)|earlobe|\bears?\b/i],
-    ['neck_collarbone', '목덜미·쇄골 (neck/collarbone)', 11, 6, /(?<![가-힣])목덜미|(?<![가-힣])목선|(?<![가-힣])목(?:을|에)?\s*(?:핥|깨물|입맞|키스|빨|쓸)|쇄골|어깨선|\bneck\b|\bcollarbone\b|\bnape\b/i],
-    ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방|유륜)(?:을|를|에|이|의)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지|얹|애무|감싸|누르|스치)|nipple|breast|fondl(?:e|ed|ing)/i],
-    ['abdomen_waist', '복부·허리·등 (abdomen/waist/back)', 10, 7, /(?:배|복부|아랫배|배꼽|허리|옆구리|등줄기|척추)(?:을|를|에|를)?[^\n.?!]{0,18}(?:쓸|쓰다듬|만지|감싸|핥|입맞|키스|쥐|움켜|문지)|waist|abdomen|lower belly|spine|back/i],
-    ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|\bhips?\b|\bbuttocks\b|\bbutt\b/i],
-    ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞|애무)|inner thigh|thighs|groin/i],
-    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:여성기|보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|비벼|비볐|감싸|감쌌|핥|빨|자극|눌|튕|애무)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
-    ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|(?<![가-힣])질(?:에|로|구|입구|속)|보지\s*(?:안|속)|(?<![가-힣])보지(?:에|로|속)|내벽|질벽|안쪽\s*벽|지스팟|G스팟|안쪽\s*살(?:이|을)?[^\n.?!]{0,14}(?:감아|조이|조여|붙잡|삼키|꿈틀)|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
-    ['cervix', '자궁구·심부 (cervix/deep)', 26, 22, /자궁구|자궁\s*입구|가장\s*깊은\s*곳|깊숙이\s*(?:찌르|찔러|닿|박|밀어)|cervix|deep thrust/i],
-    ['penis_glans', '귀두·소대 (glans/frenulum)', 0, 32, /귀두|소대|요도구|(?:남성기|자지|음경|성기|페니스|육봉|양물)(?:의)?\s*(?:끝|머리|귀두)|펠라(?:티오|치오)?|오럴|사까시|파이즈리|가슴으로\s*끼우|fellatio|blowjob|glans|frenulum/i],
-    ['penis_shaft_scrotum', '음경 기둥·고환 (shaft/scrotum)', 0, 24, /(?:남성기|자지|음경|성기|페니스|육봉|양물|기둥|장대|불알|고환|음낭)(?:을|를|에|의|이|가)?[^\n.?!]{0,18}(?:만지|만졌|쥐|쥐었|감싸|감쌌|훑|비비|비벼|비볐|문지|문질|핥|빨|물고|삼키|자극|애무|잡|쓰다듬|주무르|주물|눌|흔들|흔드|움직|당기|끌어|물어|빨아|세우|세웠|파묻|감기|감겼)|대딸|손으로\s*훑|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘)|handjob|penis|shaft|scrotum|testicle|stroke(?:d|s|ing)? his/i],
-    ['anal_perineum', '후구·회음부·전립선 (anal/perineum/prostate)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|anal|perineum|prostate/i]
+    ['lips_mouth', '입술·혀 (lips/mouth)', 10, 6, /키스|입술(?:을|에|로)?\s*(?:맞추|포개|빨|깨물|핥|부딪)|설키스|딥키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣|감싸)|입\s*안|キス|唇|舌を絡め|kiss(?:ed|ing)?|tongue|lips/i],
+    ['ears', '귀·귓불 (ears)', 11, 6, /(?<![가-힣])귀(?:를|에|\s*뒤|\s*안)|귓불|귓바퀴|귓가(?:에|를)?\s*(?:속삭|핥|깨물|숨)|耳(?:を|に|の裏|たぶ)|earlobe|\bears?\b/i],
+    ['neck_collarbone', '목덜미·쇄골 (neck/collarbone)', 11, 6, /(?<![가-힣])목덜미|(?<![가-힣])목선|(?<![가-힣])목(?:을|에)?\s*(?:핥|깨물|입맞|키스|빨|쓸)|쇄골|어깨선|首筋|鎖骨|\bneck\b|\bcollarbone\b|\bnape\b/i],
+    ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방|유륜)(?:을|를|에|이|의)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지|얹|애무|감싸|누르|스치)|乳首|胸を(?:揉|撫|舐|吸|触)|乳房|nipple|breast|fondl(?:e|ed|ing)/i],
+    ['abdomen_waist', '복부·허리·등 (abdomen/waist/back)', 10, 7, /(?:배|복부|아랫배|배꼽|허리|옆구리|등줄기|척추)(?:을|를|에|를)?[^\n.?!]{0,18}(?:쓸|쓰다듬|만지|감싸|핥|입맞|키스|쥐|움켜|문지)|お腹|下腹部|腰を(?:撫|抱|掴)|背中|waist|abdomen|lower belly|spine|back/i],
+    ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|お尻|尻を(?:揉|撫|掴|叩)|骨盤|\bhips?\b|\bbuttocks\b|\bbutt\b/i],
+    ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞|애무)|内もも|太もも|股間|inner thigh|thighs|groin/i],
+    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:여성기|보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|비벼|비볐|감싸|감쌌|핥|빨|자극|눌|튕|애무)|커닐링구스|쿤닐|クリトリス|陰核|クリ|秘部|クンニ|マンコを|cunnilingus|clit(?:oris)?|vulva/i],
+    ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|(?<![가-힣])질(?:에|로|구|입구|속)|보지\s*(?:안|속)|(?<![가-힣])보지(?:에|로|속)|내벽|질벽|안쪽\s*벽|지스팟|G스팟|안쪽\s*살(?:이|을)?[^\n.?!]{0,14}(?:감아|조이|조여|붙잡|삼키|꿈틀)|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|挿入|膣内|膣奥|指を入れ|Gスポット|腰を振|ピストン|penetrat|thrust|inside her|g-spot|fingering/i],
+    ['cervix', '자궁구·심부 (cervix/deep)', 26, 22, /자궁구|자궁\s*입구|가장\s*깊은\s*곳|깊숙이\s*(?:찌르|찔러|닿|박|밀어)|子宮口|ポルチオ|一番奥|cervix|deep thrust/i],
+    ['penis_glans', '귀두·소대 (glans/frenulum)', 0, 32, /귀두|소대|요도구|(?:남성기|자지|음경|성기|페니스|육봉|양물)(?:의)?\s*(?:끝|머리|귀두)|펠라(?:티오|치오)?|오럴|사까시|파이즈리|가슴으로\s*끼우|亀頭|裏筋|フェラ|パイズリ|fellatio|blowjob|glans|frenulum/i],
+    ['penis_shaft_scrotum', '음경 기둥·고환 (shaft/scrotum)', 0, 24, /(?:남성기|자지|음경|성기|페니스|육봉|양물|기둥|장대|불알|고환|음낭)(?:을|를|에|의|이|가)?[^\n.?!]{0,18}(?:만지|만졌|쥐|쥐었|감싸|감쌌|훑|비비|비벼|비볐|문지|문질|핥|빨|물고|삼키|자극|애무|잡|쓰다듬|주무르|주물|눌|흔들|흔드|움직|당기|끌어|물어|빨아|세우|세웠|파묻|감기|감겼)|대딸|손으로\s*훑|(?:한\s*번\s*)?빼\s*(?:줄게|줄|주|줘)|ペニス|チンコ|男根|睾丸|手コキ|扱|handjob|penis|shaft|scrotum|testicle|stroke(?:d|s|ing)? his/i],
+    ['anal_perineum', '후구·회음부·전립선 (anal/perineum/prostate)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|アナル|肛門|会陰|前立腺|anal|perineum|prostate/i]
   ]);
-  const INTIMACY_PENETRATIVE_ACT_RE = /(?:삽입(?:한|하|해|후|중|된|되|을|이|하며)?|짧게\s*뺐다\s*(?:깊게\s*)?넣|깊숙이\s*(?:밀어\s*넣|박|찌르)|피스톤(?:\s*운동)?|왕복|박아\s*(?:넣|대|주)|질내(?:에|로)\s*(?:넣|박|밀)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:질|보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:놀|흔들|흔드|움직|쳐|치|박|튕|넣|빼)|정상위|후배위|기승위|측위|굴곡위|입위|좌위|penetrat|thrust(?:ing|s)?\s+(?:in(?:to)?|deep)|inside\s+her)/i;
-  const INTIMACY_PACING_RESTRAINT_RE = /(?:박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|참으려|페이스\s*조절|slow(?:ed|ing)?\s+(?:down|the pace)|hold(?:ing)?\s+back)/i;
-  const INTIMACY_EJAC_FORCED_HOLD_RE = /억지로\s*참|이를?\s*(?:악)?물고\s*(?:참|버티|견디)|사정(?:을|이)?\s*(?:억지로\s*)?(?:참|억누르|억제|미루|지연|견디)|싸지\s*않으려|참아\s*내|겨우\s*참|참고\s*버티|참으려|박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|페이스\s*조절|holding\s+back|trying\s+not\s+to\s+cum|staving\s+off|forcing\s+(?:himself\s+)?to\s+hold/i;
-  const INTIMACY_ACTIVE_THRUST_RE = /(?:움직임(?:이|을)?\s*(?:격해|빨라|거칠|세지|세졌|몰아|깊어|강해|높아)|속도(?:가|를)?\s*(?:높|올리|올렸|빨라|붙|더하|더했)|박자(?:가|를)?\s*(?:빨라|거칠|몰아|높)|거칠게\s*(?:움직|몰아|쳐|밀|박|흔들)|더\s*(?:세게|깊게|빠르게|거칠게)|몰아(?:붙|치|쳤)|격렬하게|faster|harder|deeper|pounding|picking\s+up\s+(?:speed|pace)|thrusts?\s+(?:grow|growing|get|getting)\s+(?:faster|harder|rougher))/i;
-  const INTIMACY_EJACULATION_BRINK_RE = /(?:곧\s*(?:사정|쌀|싸|분출|터질)|사정(?:할\s*듯|할\s*것\s*같|직전|이\s*가까|이\s*임박|을\s*참기)|싸(?:기\s*직전|려\s*하|ㄹ\s*것\s*같|버릴\s*(?:것\s*같|듯))|한계(?:에\s*(?:달|다다|가까)|가\s*(?:오|왔|가까))|about\s+to\s+(?:cum|ejaculate|finish)|close\s+to\s+(?:cumming|ejaculating)|on\s+the\s+brink\s+of\s+(?:cumming|ejaculating))/i;
-  const INTIMACY_CLIMAX_BRINK_RE = /(?:곧\s*(?:절정|갈\s*것|가버릴|올\s*것)|절정(?:이\s*(?:가까|임박|다가)|에\s*(?:가까|다다)|직전|할\s*듯|할\s*것\s*같)|가버릴\s*(?:것\s*같|듯)|갈\s*것\s*같|오르가[즘슴]\s*(?:직전|이\s*가까)|about\s+to\s+(?:cum|climax|orgasm)|on\s+the\s+edge|close\s+to\s+climax)/i;
-  const INTIMACY_FEMALE_AROUSAL_PROSE_RE = /(?:허리가\s*(?:시트에서\s*떨어|휘|들리|들렸|젖혀|떨리|튕기)|발뒤꿈치가\s*시트를|다리가\s*(?:풀리|풀렸|떨리|떨렸|후들)|몸(?:을|이)\s*(?:떨었|떨며|경련|뒤틀|활처럼)|신음(?:이|을)\s*(?:터|삼키|참지|흘리|새어)|숨이\s*(?:목에서\s*끊|가빠|턱\s*끝)|애액(?:이|을)\s*(?:흐르|흘러|번들|젖|고이|묻)|흠뻑\s*젖|아랫배(?:가|에)\s*(?:조여|오므라|찌릿|열이|경련)|열이\s*올라\s*붉어|배가\s*(?:한\s*번\s*)?오므라|입술을\s*물었|숨을\s*몰아쉬)/i;
+  const INTIMACY_PENETRATIVE_ACT_RE = /(?:삽입(?:한|하|해|후|중|된|되|을|이|하며)?|짧게\s*뺐다\s*(?:깊게\s*)?넣|깊숙이\s*(?:밀어\s*넣|박|찌르)|피스톤(?:\s*운동)?|왕복|박아\s*(?:넣|대|주)|질내(?:에|로)\s*(?:넣|박|밀)|(?<![가-힣])(?:질|보지)(?:에|로|을|안(?:에|으로)?|속(?:에|으로)?)\s*(?:넣|밀어\s*넣|집어\s*넣|박|찔러|찌르|묻|파묻|들이밀|채우|채웠)|(?:남성기|자지|음경|성기|페니스|육봉|양물|귀두)(?:을|를|이|가)?[^\n.?!]{0,20}(?:질|보지|안|속)(?:에|으로|안|속)?[^\n.?!]{0,12}(?:넣|밀어\s*넣|집어\s*넣|박|들어가|들어갔|묻|파묻)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:놀|흔들|흔드|움직|쳐|치|박|튕|넣|빼)|정상위|후배위|기승위|측위|굴곡위|입위|좌위|挿入|ピストン|腰を振|奥まで突|正常位|後背位|騎乗位|penetrat|thrust(?:ing|s)?\s+(?:in(?:to)?|deep)|inside\s+her)/i;
+  const INTIMACY_PACING_RESTRAINT_RE = /(?:박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|참으려|페이스\s*조절|ペースを抑|ゆっくり|我慢|slow(?:ed|ing)?\s+(?:down|the pace)|hold(?:ing)?\s+back)/i;
+  const INTIMACY_EJAC_FORCED_HOLD_RE = /억지로\s*참|이를?\s*(?:악)?물고\s*(?:참|버티|견디)|사정(?:을|이)?\s*(?:억지로\s*)?(?:참|억누르|억제|미루|지연|견디)|싸지\s*않으려|참아\s*내|겨우\s*참|참고\s*버티|참으려|박자(?:를|가)?\s*(?:스스로\s*)?조절|속도(?:를|가)?\s*(?:늦추|늦췄|늦춘|늦춤|줄이|참|조절)|부수지\s*않으려|숨을?\s*고르|페이스\s*조절|無理やり我慢|射精を堪え|イくのを我慢|holding\s+back|trying\s+not\s+to\s+cum|staving\s+off|forcing\s+(?:himself\s+)?to\s+hold/i;
+  const INTIMACY_ACTIVE_THRUST_RE = /(?:움직임(?:이|을)?\s*(?:격해|빨라|거칠|세지|세졌|몰아|깊어|강해|높아)|속도(?:가|를)?\s*(?:높|올리|올렸|빨라|붙|더하|더했)|박자(?:가|를)?\s*(?:빨라|거칠|몰아|높)|거칠게\s*(?:움직|몰아|쳐|밀|박|흔들)|더\s*(?:세게|깊게|빠르게|거칠게)|몰아(?:붙|치|쳤)|격렬하게|激しく|速く|奥まで|突き上げ|faster|harder|deeper|pounding|picking\s+up\s+(?:speed|pace)|thrusts?\s+(?:grow|growing|get|getting)\s+(?:faster|harder|rougher))/i;
+  const INTIMACY_EJACULATION_BRINK_RE = /(?:곧\s*(?:사정|쌀|싸|분출|터질)|사정(?:할\s*듯|할\s*것\s*같|직전|이\s*가까|이\s*임박|을\s*참기)|싸(?:기\s*직전|려\s*하|ㄹ\s*것\s*같|버릴\s*(?:것\s*같|듯))|한계(?:에\s*(?:달|다다|가까)|가\s*(?:오|왔|가까))|もうすぐ出|射精寸前|限界が近|about\s+to\s+(?:cum|ejaculate|finish)|close\s+to\s+(?:cumming|ejaculating)|on\s+the\s+brink\s+of\s+(?:cumming|ejaculating))/i;
+  const INTIMACY_CLIMAX_BRINK_RE = /(?:곧\s*(?:절정|갈\s*것|가버릴|올\s*것)|절정(?:이\s*(?:가까|임박|다가)|에\s*(?:가까|다다)|직전|할\s*듯|할\s*것\s*같)|가버릴\s*(?:것\s*같|듯)|갈\s*것\s*같|오르가[즘슴]\s*(?:직전|이\s*가까)|イきそう|絶頂寸前|もう限界|about\s+to\s+(?:cum|climax|orgasm)|on\s+the\s+edge|close\s+to\s+climax)/i;
+  const INTIMACY_FEMALE_AROUSAL_PROSE_RE = /(?:허리가\s*(?:시트에서\s*떨어|휘|들리|들렸|젖혀|떨리|튕기)|발뒤꿈치가\s*시트를|다리가\s*(?:풀리|풀렸|떨리|떨렸|후들)|몸(?:을|이)\s*(?:떨었|떨며|경련|뒤틀|활처럼)|신음(?:이|을)\s*(?:터|삼키|참지|흘리|새어)|숨이\s*(?:목에서\s*끊|가빠|턱\s*끝)|애액(?:이|을)\s*(?:흐르|흘러|번들|젖|고이|묻)|흠뻑\s*젖|아랫배(?:가|에)\s*(?:조여|오므라|찌릿|열이|경련)|열이\s*올라\s*붉어|배가\s*(?:한\s*번\s*)?오므라|입술을\s*물었|숨을\s*몰아쉬|腰が浮|身体が震|愛液が溢|脚が震)/i;
   const INTIMACY_LEGACY_ZONE_MAP = Object.freeze({
     lips_neck: ['lips_mouth', 'ears', 'neck_collarbone'],
     thighs_hips: ['hips_buttocks', 'inner_thighs'],
     vaginal_interior: ['vaginal_canal', 'cervix']
   });
-  const INTIMACY_CLIMAX_RESET_RE = /절정(?:에\s*(?:달했|도달|올랐|이르)|을\s*맞)|가버렸|가\s*버렸|오르가[즘슴](?:을\s*느꼈|에\s*달했)|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|climaxed|orgasmed|came hard/i;
-  const INTIMACY_EJACULATION_RESET_RE = /사정(?:했|하였|하며|하고)|정액(?:을|이|가)?\s*(?:쏟|뿜|분출|가득\s*채웠)|싸버렸|쌌다|안에\s*쌌|속에\s*쌌|ejaculated|came inside|released his seed/i;
+  const INTIMACY_CLIMAX_RESET_RE = /절정(?:에\s*(?:달했|도달|올랐|이르)|을\s*맞)|가버렸|가\s*버렸|오르가[즘슴](?:을\s*느꼈|에\s*달했)|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|イッた|絶頂に達し|潮吹き|climaxed|orgasmed|came hard/i;
+  const INTIMACY_EJACULATION_RESET_RE = /사정(?:했|하였|하며|하고)|정액(?:을|이|가)?\s*(?:쏟|뿜|분출|가득\s*채웠)|싸버렸|쌌다|안에\s*쌌|속에\s*쌌|射精した|精液を吐|出した|中に出し|ejaculated|came inside|released his seed/i;
   const parseErogenousMap = (sensitiveZones = '', dullZones = '') => {
     const sensText = String(sensitiveZones || '');
     const dullText = String(dullZones || '');
@@ -34365,9 +34814,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const fmtExDelta = lastTurnDeltaExcitement > 0 ? `+${lastTurnDeltaExcitement}` : String(lastTurnDeltaExcitement);
       const excitementText = `흥분도(excitement): ${fmtExVal} (-100~+100 · 변화 ${fmtExDelta} · ${excitementTier.label}${excitementStimMult !== 1 ? ` · 자극×${excitementStimMult}` : ''}${excitementReasons.length ? ` · 요인: ${excitementReasons.join(', ')}` : ''}) → ${excitementTier.directive}`;
       if (isSleeping && ((showClimax && lastTurnDeltaClimax > 0) || (showEjac && lastTurnDeltaEjac > 0))) {
-        const arousalNudge = Math.round((Math.max(0, lastTurnDeltaClimax) + Math.max(0, lastTurnDeltaEjac)) * 0.25);
-        sleepPerson.wakefulnessGauge = Math.min(96, Math.max(4, Number(sleepPerson.wakefulnessGauge || 20) + arousalNudge));
+        const arousalNudge = Math.max(1, Math.round((Math.max(0, lastTurnDeltaClimax) + Math.max(0, lastTurnDeltaEjac)) * 0.25));
+        const depthDrop = Math.max(1, Math.round(arousalNudge * (BODY_STATE_SLEEP_MAX_DEPTH / 92)));
+        sleepPerson.depth = Math.max(BODY_STATE_SLEEP_MIN_DEPTH, Math.round(Number(sleepPerson.depth || 100) - depthDrop));
+        sleepPerson.wakefulnessGauge = computeWakefulnessGauge(sleepPerson.depth, 0, 0);
         sleepPerson.stage = sleepMovementTierForWakefulness(sleepPerson.wakefulnessGauge).band;
+        sleepPerson.displayLine = `수면 중 (정사 자율 자극 반영) · 각성도 ${sleepPerson.wakefulnessGauge}% (${sleepPerson.stage}) · 수면 깊이 ${sleepPerson.depth}/200`;
+        const sleepScopeItems = Runtime.bodyStateSleep?.[scopeKey]?.items;
+        if (Array.isArray(sleepScopeItems)) {
+          for (const sItem of sleepScopeItems) {
+            if (sItem && sItem.name && (sItem.name === name || extensionSamePerson(sItem.name, name))) {
+              sItem.depth = sleepPerson.depth;
+              sItem.wakefulnessGauge = sleepPerson.wakefulnessGauge;
+              sItem.stage = sleepPerson.stage;
+              sItem.displayLine = sleepPerson.displayLine;
+            }
+          }
+        }
         void saveGaugeContinuity().catch(() => {});
       }
       const sleepTag = isSleeping
@@ -34441,14 +34904,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return gauges;
   };
-  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌|굴러\s*내려|말려\s*내려|뿌리까지\s*(?:덮|감싸))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워)|콘돔\s*착용|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?:wore|wearing|with|used)\s+a\s+condom/i;
-  const INTIMACY_CONDOM_REWEAR_RE = /(?:다시\s*(?:끼웠|끼워|끼고|씌웠|씌워|착용|썼)|새\s*(?:콘돔|고무|것?)(?:을|를)?\s*(?:끼|씌)|고쳐\s*(?:끼웠|씌웠|잡았)|put\s+(?:it|a\s+new\s+one)\s+back\s+on)/i;
-  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:없이|안\s*(?:끼|쓰|하|챙)|못\s*(?:끼|쓰)|빼고|거부|치우)|피임\s*(?:안\s*(?:하|했)|없이|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|(?:안|속|질내|자궁)(?:에|에다|으로)\s*(?:그대로\s*)?(?:싸|사정|쏟|부어)|질내\s*사정|안싸|\braw\b|bareback|without\s+(?:a\s+)?condom|no\s+protection|creampie/i;
-  const INTIMACY_CONDOM_SLIP_RISK_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?[^\n.?!]{0,20}(?:말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^\n.?!]{0,18}(?:몰려|뭉쳐|접혀)|뭉쳐\s*(?:있|버렸)|접혀\s*있)|(?:뭉친\s*(?:자리|테두리)|콘돔|고무)[^\n.?!]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|(?:condom|rubber)\s+(?:bunched|rolled\s+up)/i;
-  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
-  const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;
-  const INTIMACY_ONGOING_BIRTH_CONTROL_RE = /경구\s*피임약|피임약(?:을)?\s*(?:복용|먹고|챙겨\s*먹|먹어)|미레나|루프\s*(?:시술|착용)|임플라논|(?:on|taking)\s+(?:the\s+)?(?:birth\s+control\s+)?pill|has\s+an?\s+iud/i;
-  const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸|사정|쏟았|부었|가득\s*채웠)|안싸|came\s+inside|creampie/i;
+  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌|굴러\s*내려|말려\s*내려|뿌리까지\s*(?:덮|감싸))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워)|콘돔\s*착용|(?:コンドーム|ゴム)を(?:つけ|着け|被せ)|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?:wore|wearing|with|used)\s+a\s+condom/i;
+  const INTIMACY_CONDOM_REWEAR_RE = /(?:다시\s*(?:끼웠|끼워|끼고|씌웠|씌워|착용|썼)|새\s*(?:콘돔|고무|것?)(?:을|를)?\s*(?:끼|씌)|고쳐\s*(?:끼웠|씌웠|잡았)|付け直|新しい(?:コンドーム|ゴム)|put\s+(?:it|a\s+new\s+one)\s+back\s+on)/i;
+  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:없이|안\s*(?:끼|쓰|하|챙)|못\s*(?:끼|쓰)|빼고|거부|치우)|피임\s*(?:안\s*(?:하|했)|없이|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|(?:안|속|질내|자궁)(?:에|에다|으로)\s*(?:그대로\s*)?(?:싸|사정|쏟|부어)|질내\s*사정|안싸|避妊(?:なし|せず)|コンドーム(?:なし|無し)|生で|中出し|\braw\b|bareback|without\s+(?:a\s+)?condom|no\s+protection|creampie/i;
+  const INTIMACY_CONDOM_SLIP_RISK_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?[^\n.?!]{0,20}(?:말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^\n.?!]{0,18}(?:몰려|뭉쳐|접혀)|뭉쳐\s*(?:있|버렸)|접혀\s*있)|(?:뭉친\s*(?:자리|테두리)|콘돔|고무)[^\n.?!]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|(?:コンドーム|ゴム)がずれ|(?:condom|rubber)\s+(?:bunched|rolled\s+up)/i;
+  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:コンドーム|ゴム)が(?:破れ|外れ|抜け)|避妊失敗|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
+  const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|外に出|抜いて|膣外射精|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;
+  const INTIMACY_ONGOING_BIRTH_CONTROL_RE = /경구\s*피임약|피임약(?:을)?\s*(?:복용|먹고|챙겨\s*먹|먹어)|미레나|루프\s*(?:시술|착용)|임플라논|ピル|避妊薬|ミレーナ|(?:on|taking)\s+(?:the\s+)?(?:birth\s+control\s+)?pill|has\s+an?\s+iud/i;
+  const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸|사정|쏟았|부었|가득\s*채웠)|안싸|中出し|膣内射精|came\s+inside|creampie/i;
 
   const collectSafeCharacterLoreText = (name, scopeKey = '', settings = {}, recent = {}) => {
     if (!name) return '';
@@ -35705,8 +36168,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     friend: '친구', more_than_friend: '친구 이상', less_than_friend: '친구 미만',
     lovers: '연인', broken_up: '결별', engaged: '약혼', engagement_broken: '파혼', married: '결혼', divorced: '이혼'
   });
-  const RELSIM_FAMILY_RE = /(?:가족|자매|형제|남매|언니|오빠|누나|형|동생|부모|아버지|어머니|아빠|엄마|딸|아들|사촌|조카|이모|고모|삼촌|family|sister|brother|sibling|mother|father|daughter|son|cousin)/i;
-  const RELSIM_ROMANTIC_STATUS_SIGNAL_RE = /(?:연인|애인|사귀|약혼|결혼|부부|남편|아내|결별|파혼|이혼|썸|짝사랑|호감|사랑|lovers|dating|engaged|married|romance|crush)/i;
+  const RELSIM_FAMILY_RE = /(?:가족|자매|형제|남매|언니|오빠|누나|형|동생|부모|아버지|어머니|아빠|엄마|딸|아들|사촌|조카|이모|고모|삼촌|家族|姉妹|兄弟|姉|妹|兄|弟|父|母|娘|息子|family|sister|brother|sibling|mother|father|daughter|son|cousin)/i;
+  const RELSIM_ROMANTIC_STATUS_SIGNAL_RE = /(?:연인|애인|사귀|약혼|결혼|부부|남편|아내|결별|파혼|이혼|썸|짝사랑|호감|사랑|恋人|恋愛|付き合|婚約|結婚|夫婦|好き|片思い|lovers|dating|engaged|married|romance|crush)/i;
   const RELSIM_DISCLOSURES = Object.freeze({ public: '공개', partial: '일부 공개', secret: '비밀' });
   const RELSIM_LEAD_REASONS = Object.freeze({
     appearance: '외모', affection: '애정', devotion: '헌신도', wealth: '경제력', ability: '능력', intellect: '지능', pride: '자존심'
@@ -37184,6 +37647,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
   };
   const buildLivingWorldEngineBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
+    const koLang = isKoreanDraftLang(settings);
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const hasLibEvidence = Boolean(settings?.[LIB_EVIDENCE_CONTEXT]?.block);
     const wSim = scopeKey ? Runtime.worldDynamicsTelemetry?.[scopeKey] : null;
@@ -37194,78 +37658,128 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const mustRealize = [];
 
     if (wSim?.triggered && wSim.actor) {
-      const banList = (wSim.onSceneNames || []).length ? ` (현재 장면 안 인물 [${wSim.onSceneNames.join(', ')}] 장면 밖 복제 금지)` : '';
-      mustRealize.push(`- [세계 시뮬레이터 발동] ${forcedBondDisplayName(wSim.actor)}${wSim.companion ? ` · ${forcedBondDisplayName(wSim.companion)}` : ''} — ${wSim.actionType?.label || '장면 밖 행동'}${wSim.actionType?.hint ? ` (${wSim.actionType.hint})` : ''}. 이 움직임이 실제 세계에서 벌어지고 그 간접 흔적(메시지·소문·부재·마주침)이 이번 턴 본문에 구체적으로 드러나게 써라.${banList}`);
+      if (koLang) {
+        const banList = (wSim.onSceneNames || []).length ? ` (현재 장면 안 인물 [${wSim.onSceneNames.join(', ')}] 장면 밖 복제 금지)` : '';
+        mustRealize.push(`- [세계 시뮬레이터 발동] ${forcedBondDisplayName(wSim.actor)}${wSim.companion ? ` · ${forcedBondDisplayName(wSim.companion)}` : ''} — ${wSim.actionType?.label || '장면 밖 행동'}${wSim.actionType?.hint ? ` (${wSim.actionType.hint})` : ''}. 이 움직임이 실제 세계에서 벌어지고 그 간접 흔적(메시지·소문·부재·마주침)이 이번 턴 본문에 구체적으로 드러나게 써라.${banList}`);
+      } else {
+        const banList = (wSim.onSceneNames || []).length ? ` (never duplicate on-scene cast [${wSim.onSceneNames.join(', ')}] off-scene)` : '';
+        mustRealize.push(`- [WORLD SIMULATOR TRIGGERED] ${forcedBondDisplayName(wSim.actor)}${wSim.companion ? ` · ${forcedBondDisplayName(wSim.companion)}` : ''} — ${wSim.actionType?.id || 'offscene_action'}${wSim.actionType?.hint ? ` (${wSim.actionType.hint})` : ''}. Let this off-scene movement happen in the living world and surface one concrete indirect trace (message, rumor, absence, or brief encounter) in the prose.${banList}`);
+      }
     }
 
     if (forcedBondModeGate(settings) !== 'skip') {
       const activeBondRolls = [
-        fbSim?.main && ['주 비트', fbSim.main],
-        fbSim?.ripple && ['파급 비트', fbSim.ripple],
-        fbSim?.offScene && ['장면 밖 비트', fbSim.offScene]
+        fbSim?.main && [koLang ? '주 비트' : 'main', fbSim.main],
+        fbSim?.ripple && [koLang ? '파급 비트' : 'ripple', fbSim.ripple],
+        fbSim?.offScene && [koLang ? '장면 밖 비트' : 'off_scene', fbSim.offScene]
       ].filter(Boolean);
       for (const [slotLabel, roll] of activeBondRolls) {
-        const toneKo = (roll.tones || []).map(t => FORCED_BOND_TONES[t]?.label || t).join('·');
-        const stageKo = FORCED_BOND_STAGES[roll.stage] || roll.stage || '현재';
-        mustRealize.push(`- [억결 행동 비트 · ${slotLabel}] ${forcedBondDisplayName(roll.actor || roll.from)} → ${forcedBondDisplayName(roll.target || roll.to)} ([${toneKo || '관계 기조'}] · 단계 ${stageKo}${roll.offScene ? ' · 장면 밖 간접 흔적만, 장면 안 난입 금지' : ''}) — ${roll.contextualDirectiveKo || roll.beatIntentKo}`);
+        if (koLang) {
+          const toneKo = (roll.tones || []).map(t => FORCED_BOND_TONES[t]?.label || t).join('·');
+          const stageKo = FORCED_BOND_STAGES[roll.stage] || roll.stage || '현재';
+          mustRealize.push(`- [억결 행동 비트 · ${slotLabel}] ${forcedBondDisplayName(roll.actor || roll.from)} → ${forcedBondDisplayName(roll.target || roll.to)} ([${toneKo || '관계 기조'}] · 단계 ${stageKo}${roll.offScene ? ' · 장면 밖 간접 흔적만, 장면 안 난입 금지' : ''}) — ${roll.contextualDirectiveKo || roll.beatIntentKo}`);
+        } else {
+          const toneEn = (roll.tones || []).join(', ') || 'bond tone';
+          const stageEn = roll.stage || 'current';
+          mustRealize.push(`- [FORCED BOND BEAT · ${slotLabel}] ${forcedBondDisplayName(roll.actor || roll.from)} -> ${forcedBondDisplayName(roll.target || roll.to)} ([${toneEn}] · stage ${stageEn}${roll.offScene ? ' · indirect off-scene trace only, do not barge into scene' : ''}) — ${roll.beatIntent || 'Enact this relational beat concretely through gaze, gesture, posture, or dialogue in the prose.'}`);
+        }
       }
       if (!activeBondRolls.length && (fbSim?.rolls || []).some(r => !r.offScene && r.tones?.length)) {
         const qRoll = fbSim.rolls.find(r => !r.offScene && r.tones?.length);
-        const qToneKo = (qRoll.tones || []).map(t => FORCED_BOND_TONES[t]?.label || t).join('·');
-        const qStageKo = FORCED_BOND_STAGES[qRoll.stage] || qRoll.stage || '현재';
-        mustRealize.push(`- [억결 기조 행동 유지] ${forcedBondDisplayName(qRoll.actor || qRoll.from)} → ${forcedBondDisplayName(qRoll.target || qRoll.to)} ([${qToneKo}] · 단계 ${qStageKo}) — 급격한 단계 전이 없이 현 장면의 자세·대화 흐름 속에서 ${qRoll.beatIntentKo || '관계 기조에 맞는 행동'} 태도가 시선·손짓·말투에 실제 행동으로 드러나게 하라.`);
+        if (koLang) {
+          const qToneKo = (qRoll.tones || []).map(t => FORCED_BOND_TONES[t]?.label || t).join('·');
+          const qStageKo = FORCED_BOND_STAGES[qRoll.stage] || qRoll.stage || '현재';
+          mustRealize.push(`- [억결 기조 행동 유지] ${forcedBondDisplayName(qRoll.actor || qRoll.from)} → ${forcedBondDisplayName(qRoll.target || qRoll.to)} ([${qToneKo}] · 단계 ${qStageKo}) — 급격한 단계 전이 없이 현 장면의 자세·대화 흐름 속에서 ${qRoll.beatIntentKo || '관계 기조에 맞는 행동'} 태도가 시선·손짓·말투에 실제 행동으로 드러나게 하라.`);
+        } else {
+          const qToneEn = (qRoll.tones || []).join(', ');
+          mustRealize.push(`- [FORCED BOND BASELINE STANCE] ${forcedBondDisplayName(qRoll.actor || qRoll.from)} -> ${forcedBondDisplayName(qRoll.target || qRoll.to)} ([${qToneEn}] · stage ${qRoll.stage || 'current'}) — Without forcing a sudden stage jump, let ${qRoll.beatIntent || 'their established relational stance'} show naturally in posture, gaze, gesture, and tone.`);
+        }
       }
     }
 
     for (const v of relVerdicts) {
       const verdictTag = `${v?.type || ''} ${v?.verdict || ''} ${v?.label || ''}`;
       if (v?.triggered || /confess|kiss|jealous|mood|anniversary|sulk|trigger|데이트|기념|고백/i.test(verdictTag)) {
-        mustRealize.push(`- [연애 시뮬레이터 판정] ${compact(v.label || v.type || '관계 변화', 80)}: ${compact(v.detail || v.reason || v.verdict || '인물의 말투·호칭·행동으로 직접 드러내라.', 160)}`);
+        if (koLang) {
+          mustRealize.push(`- [연애 시뮬레이터 판정] ${compact(v.label || v.type || '관계 변화', 80)}: ${compact(v.detail || v.reason || v.verdict || '인물의 말투·호칭·행동으로 직접 드러내라.', 160)}`);
+        } else {
+          mustRealize.push(`- [RELATIONSHIP SIM VERDICT] ${compact(v.type || v.label || 'relationship_shift', 80)}: ${compact(v.verdict || v.detail || v.reason || 'Reflect this shift directly in character diction, address, and behavior.', 160)}`);
+        }
       }
     }
 
     for (const g of (intTel?.gauges || [])) {
       const label = forcedBondDisplayName(g.name);
       const lore = typeof personLoreReactionBrief === 'function' ? personLoreReactionBrief(g.name, scopeKey, settings, recent) : '';
-      const loreNote = lore ? ` [로어 성격: ${lore}]` : '';
+      const loreNote = lore ? (koLang ? ` [로어 성격: ${lore}]` : ` [lore personality: ${lore}]`) : '';
       if (g.interruptedBrink) {
-        mustRealize.push(`- [외부 간접 개입으로 절정 불발] ${label} — 절정 직전(${g.climaxGauge || g.ejaculationGauge}/100)에 외부 인기척·간접 개입${intTel.externalReaction?.nearbyActor ? `(${intTel.externalReaction.nearbyActor})` : ''} 때문에 멈칫하며 절정에 이르지 못하고 가쁜 숨과 떨림·잔열만 남긴다.${loreNote}`);
+        mustRealize.push(koLang
+          ? `- [외부 간접 개입으로 절정 불발] ${label} — 절정 직전(${g.climaxGauge || g.ejaculationGauge}/100)에 외부 인기척·간접 개입${intTel.externalReaction?.nearbyActor ? `(${intTel.externalReaction.nearbyActor})` : ''} 때문에 멈칫하며 절정에 이르지 못하고 가쁜 숨과 떨림·잔열만 남긴다.${loreNote}`
+          : `- [CLIMAX INTERRUPTED ON BRINK] ${label} — right on the brink (${g.climaxGauge || g.ejaculationGauge}/100), outside sound/presence${intTel.externalReaction?.nearbyActor ? ` (${intTel.externalReaction.nearbyActor})` : ''} aborts release, leaving ragged breath, trembling, and held tension.${loreNote}`);
       } else if (g.climaxTriggeredThisTurn) {
-        mustRealize.push(`- [절정 도달 100/100] ${label} — 전신 경련·떨림·가빠진 숨결·애액 분비(${g.lubricationGauge || 0}/100)와 함께 분명한 절정 도달을 묘사하고, 입 상태에 맞는 비자발적 절정 발화 대사(입을 손으로 막은 상태면 "으으음…!"/"흐읍…!" 같은 억눌린 발화 대사, 입이 열린 상태면 "아아…!"·괴성·깨진 신음) 및 직후 멍하고 나른한 이완 여운을 회피 없이 그려라.${loreNote}`);
+        mustRealize.push(koLang
+          ? `- [절정 도달 100/100] ${label} — 전신 경련·떨림·가빠진 숨결·애액 분비(${g.lubricationGauge || 0}/100)와 함께 분명한 절정 도달을 묘사하고, 입 상태에 맞는 비자발적 절정 발화 대사(입을 손으로 막은 상태면 "으으음…!"/"흐읍…!" 같은 억눌린 발화 대사, 입이 열린 상태면 "아아…!"·괴성·깨진 신음) 및 직후 멍하고 나른한 이완 여운을 회피 없이 그려라.${loreNote}`
+          : `- [CLIMAX REACHED 100/100] ${label} — portray full-body trembling/spasms, broken breathing, and wetness (${g.lubricationGauge || 0}/100), emit involuntary climax vocalized dialogue in quotes matching mouth state (muffled throat sounds if covered/occupied, open cries/gasps in the active draft language if unobstructed), and show immediate dazed release.${loreNote}`);
       } else if (g.ejaculationTriggeredThisTurn) {
-        mustRealize.push(`- [사정 도달 100/100] ${label} — 더 이상 참지 못하고 격렬한 수축과 사정에 이르는 과정을 분명히 묘사하라.${loreNote}`);
+        mustRealize.push(koLang
+          ? `- [사정 도달 100/100] ${label} — 더 이상 참지 못하고 격렬한 수축과 사정에 이르는 과정을 분명히 묘사하라.${loreNote}`
+          : `- [EJACULATION REACHED 100/100] ${label} — portray involuntary rhythmic contractions and unmistakable ejaculation clearly without coy omission.${loreNote}`);
       } else if (g.showClimax && (g.climaxGauge || 0) >= 50) {
-        const tierCue = g.climaxGauge >= 80
-          ? '숨이 턱 끝까지 차오르고 허벅지 떨림·목소리 갈라짐과 신음 억제가 한계에 달한 직전 상태를 그려라.'
-          : '호흡이 눈에 띄게 가빠지고 홍조와 촉촉한 반응이 고조됨을 행동으로 그려라.';
-        mustRealize.push(`- [여성 게이지 ${g.climaxGauge}/100 · 애액 ${g.lubricationGauge || 0}/100] ${label} — ${tierCue}${loreNote}`);
+        if (koLang) {
+          const tierCue = g.climaxGauge >= 80
+            ? '숨이 턱 끝까지 차오르고 허벅지 떨림·목소리 갈라짐과 신음 억제가 한계에 달한 직전 상태를 그려라.'
+            : '호흡이 눈에 띄게 가빠지고 홍조와 촉촉한 반응이 고조됨을 행동으로 그려라.';
+          mustRealize.push(`- [여성 게이지 ${g.climaxGauge}/100 · 애액 ${g.lubricationGauge || 0}/100] ${label} — ${tierCue}${loreNote}`);
+        } else {
+          const tierCue = g.climaxGauge >= 80
+            ? 'portray breath catching, trembling thighs, cracking voice, and failing suppression right on the edge of climax.'
+            : 'portray noticeably quicker breathing, heat/flush, and rising physical responsiveness.';
+          mustRealize.push(`- [CLIMAX GAUGE ${g.climaxGauge}/100 · LUBRICATION ${g.lubricationGauge || 0}/100] ${label} — ${tierCue}${loreNote}`);
+        }
       } else if (g.showEjac && (g.ejaculationGauge || 0) >= 50) {
-        const tierCue = g.ejaculationGauge >= 80
-          ? '사정 임박으로 안절부절못하며 참으려 호흡·표정을 다잡으나 움직임이 오히려 더 빠르고 거칠어짐을 그려라.'
-          : '거칠어진 호흡 속에서 참으려 템포를 조절하지만 힘과 속도가 높아짐을 그려라.';
-        mustRealize.push(`- [남성 사정 게이지 ${g.ejaculationGauge}/100] ${label} — ${tierCue}${loreNote}`);
+        if (koLang) {
+          const tierCue = g.ejaculationGauge >= 80
+            ? '사정 임박으로 안절부절못하며 참으려 호흡·표정을 다잡으나 움직임이 오히려 더 빠르고 거칠어짐을 그려라.'
+            : '거칠어진 호흡 속에서 참으려 템포를 조절하지만 힘과 속도가 높아짐을 그려라.';
+          mustRealize.push(`- [남성 사정 게이지 ${g.ejaculationGauge}/100] ${label} — ${tierCue}${loreNote}`);
+        } else {
+          const tierCue = g.ejaculationGauge >= 80
+            ? 'portray restless urgency near the brink of ejaculation, trying to hold pace while thrusts grow faster and rougher.'
+            : 'portray rougher breathing and rising force/pace as stimulation surges.';
+          mustRealize.push(`- [EJACULATION GAUGE ${g.ejaculationGauge}/100] ${label} — ${tierCue}${loreNote}`);
+        }
       }
       if (g.showClimax && (g.lubricationGauge || 0) >= 15 && (g.climaxGauge || 0) < 50 && !g.interruptedBrink && !g.climaxTriggeredThisTurn) {
-        mustRealize.push(`- [애액·윤활 ${g.lubricationGauge}/100] ${label} — ${intimacyLubricationTier(g.lubricationGauge)}. 유저의 별도 지시가 없어도 애무 흐름에 맞춘 윤활 묘사를 자연스럽게 포함하라.`);
+        mustRealize.push(koLang
+          ? `- [애액·윤활 ${g.lubricationGauge}/100] ${label} — ${intimacyLubricationTier(g.lubricationGauge)}. 유저의 별도 지시가 없어도 애무 흐름에 맞춘 윤활 묘사를 자연스럽게 포함하라.`
+          : `- [LUBRICATION ${g.lubricationGauge}/100] ${label} — naturally reflect progressive wetness/slickness matching current foreplay without waiting for explicit user instruction.`);
       }
     }
 
     for (const cv of (intTel?.contraception || [])) {
-      mustRealize.push(`- [피임 판정 · ${cv.displayName}] ${cv.badgeLabel} (${cv.contextTag}) — ${cv.promptDirective}`);
+      mustRealize.push(koLang
+        ? `- [피임 판정 · ${cv.displayName}] ${cv.badgeLabel} (${cv.contextTag}) — ${cv.promptDirective}`
+        : `- [CONTRACEPTION VERDICT · ${cv.displayName}] ${cv.status || cv.badgeLabel} — ${cv.promptDirective}`);
     }
 
     const isRp = forcedBondModeGate(settings) !== 'novel';
     const ext = intTel?.externalReaction;
     if (ext && (ext.noticed || Number(ext.score || 0) >= 60) && forcedBondModeGate(settings) !== 'skip') {
-      const riskKo = ext.riskLabelKo || INTIMACY_EXTERNAL_RISK_KO[ext.riskBand] || ext.riskBand;
-      mustRealize.push(`- [외부반응 게이지 ${ext.score}/${ext.maxScore} · ${ext.tierLabelKo}] (${ext.place} · 인지확률 ${ext.noticeChance}% · 위험도 ${riskKo} · ${ext.noticed ? '이번 턴 인지됨' : '미인지 긴장'}) — ${ext.promptDirective}${isRp ? ' (RP 규칙: 페르소나의 행동·대사는 임의로 정하지 말고 외부 환경·제3자 기척과 장면 안 NPC 반응으로 구현하라.)' : ''}`);
+      if (koLang) {
+        const riskKo = ext.riskLabelKo || INTIMACY_EXTERNAL_RISK_KO[ext.riskBand] || ext.riskBand;
+        mustRealize.push(`- [외부반응 게이지 ${ext.score}/${ext.maxScore} · ${ext.tierLabelKo}] (${ext.place} · 인지확률 ${ext.noticeChance}% · 위험도 ${riskKo} · ${ext.noticed ? '이번 턴 인지됨' : '미인지 긴장'}) — ${ext.promptDirective}${isRp ? ' (RP 규칙: 페르소나의 행동·대사는 임의로 정하지 말고 외부 환경·제3자 기척과 장면 안 NPC 반응으로 구현하라.)' : ''}`);
+      } else {
+        mustRealize.push(`- [EXTERNAL REACTION ${ext.score}/${ext.maxScore} · ${ext.riskBand.toUpperCase()}] (${ext.place} · chance ${ext.noticeChance}% · ${ext.noticed ? 'NOTICED THIS TURN' : 'UNNOTICED TENSION'}) — ${ext.promptDirective}${isRp ? ' (RP rule: never decide persona actions or dialogue; enact through environment, outside sound/presence, and NPC reactions.)' : ''}`);
+      }
     }
 
     for (const [key, sp] of Object.entries(sleepMap)) {
       if (!sp || !(Number(sp.depth) > 0) || sp.verdict === 'awake') continue;
       const tier = sleepMovementTierForWakefulness(sp.wakefulnessGauge || 20);
       const spName = forcedBondDisplayName(sp.name || key);
-      mustRealize.push(`- [수면 게이지 · ${spName}] 각성 ${sp.wakefulnessGauge || 20}/100 (${tier.band}) — ${tier.cue}. 수면 중이라도 신체 접촉·자극에 따른 자율 반응과 뒤척임 변화를 생략하지 마라.`);
+      mustRealize.push(koLang
+        ? `- [수면 게이지 · ${spName}] 각성 ${sp.wakefulnessGauge || 20}/100 (${tier.band}) — ${tier.cueKo || tier.cue}. 수면 중이라도 신체 접촉·자극에 따른 자율 반응과 뒤척임 변화를 생략하지 마라.`
+        : `- [SLEEP GAUGE · ${spName}] wakefulness ${sp.wakefulnessGauge || 20}/100 (${tier.band}) — ${tier.cue}. Do not omit autonomic shifting/breathing responses to physical contact even while asleep.`);
     }
 
     const lines = [
@@ -37598,12 +38112,88 @@ function memorySuiteMissingDefaultSourceTags(rules) {
 // kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
 // its own budget setting. Each plugin still shrinks below its share when the context is short.
 const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
-const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 120000;
+const MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN = 4000, MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX = 200000;
+const MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN = 0, MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX = 40000;
+const MEMORY_SUITE_RECALL_TRIM_MIN = 5, MEMORY_SUITE_RECALL_TRIM_MAX = 80;
+const MEMORY_SUITE_RECALL_PRESERVE_MIN = 2, MEMORY_SUITE_RECALL_PRESERVE_MAX = 50;
+const MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS = Object.freeze(['tiktoken', 'claude', 'gemini', 'deepseek']);
+const MEMORY_SUITE_RECALL_BUDGET_PRESETS = Object.freeze([
+  Object.freeze({ id: 'light', label: '경량', totalChars: 12000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 32000, trimPercent: 35, preserveMessages: 8, desc: '짧은 문맥·핵심 기억 중심 (GRADIA 경량 대응)' }),
+  Object.freeze({ id: 'balanced', label: '균형', totalChars: 24000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 64000, trimPercent: 30, preserveMessages: 16, desc: '일반 대화·GRADIA 균형 권장 표준 예산' }),
+  Object.freeze({ id: 'heavy', label: '중량', totalChars: 48000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 100000, trimPercent: 25, preserveMessages: 24, desc: '풍부한 회상·GRADIA 중량 장기 서사 추적' }),
+  Object.freeze({ id: 'ultra', label: '초중량', totalChars: 72000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 160000, trimPercent: 20, preserveMessages: 32, desc: '초대형 컨텍스트·최대 기억 주입' })
+]);
+const MEMORY_SUITE_RECALL_TOKENIZER_PROFILES = Object.freeze({
+  tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05 }),
+  claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0 }),
+  gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15 }),
+  deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0 })
+});
 function memorySuiteDefaultRecallBudget() {
   return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
 }
+function memorySuiteNormalizeRecallBudgetContextCutter(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const maxContextRaw=src.maxContextTokens==null?40000:Number(src.maxContextTokens);
+  if(!Number.isInteger(maxContextRaw)||maxContextRaw<MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN||maxContextRaw>MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 기준 컨텍스트는 '+MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX.toLocaleString('en-US')+' 토큰 사이의 정수입니다.');
+  const trimRaw=src.trimPercent==null?30:Number(src.trimPercent);
+  if(!Number.isInteger(trimRaw)||trimRaw<MEMORY_SUITE_RECALL_TRIM_MIN||trimRaw>MEMORY_SUITE_RECALL_TRIM_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 초과 시 비울 비율은 '+MEMORY_SUITE_RECALL_TRIM_MIN+'~'+MEMORY_SUITE_RECALL_TRIM_MAX+'% 사이의 정수입니다.');
+  const preserveRaw=src.preserveMessages==null?6:Number(src.preserveMessages);
+  if(!Number.isInteger(preserveRaw)||preserveRaw<MEMORY_SUITE_RECALL_PRESERVE_MIN||preserveRaw>MEMORY_SUITE_RECALL_PRESERVE_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 최신 보호 메시지 수는 '+MEMORY_SUITE_RECALL_PRESERVE_MIN+'~'+MEMORY_SUITE_RECALL_PRESERVE_MAX+' 사이의 정수입니다.');
+  const tokenizerRaw=src.tokenizer==null||src.tokenizer===''?'tiktoken':String(src.tokenizer).trim().toLowerCase();
+  if(!MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS.includes(tokenizerRaw))
+    throw Error('RECALL_BUDGET_INVALID: 토큰 추정 기준이 올바르지 않습니다.');
+  let gradiaReserveChars='auto';
+  if(src.gradiaReserveChars!=null&&src.gradiaReserveChars!==''&&src.gradiaReserveChars!=='auto'){
+    const reserve=Number(src.gradiaReserveChars);
+    if(!Number.isInteger(reserve)||reserve<MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN||reserve>MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX)
+      throw Error('RECALL_BUDGET_INVALID: GRADIA 예약 글자는 0~40,000 사이의 정수 또는 auto여야 합니다.');
+    gradiaReserveChars=reserve;
+  }
+  return {
+    enabled:src.enabled!==false,
+    onlyMemorized:src.onlyMemorized!==false,
+    maxContextTokens:maxContextRaw,
+    trimPercent:trimRaw,
+    preserveMessages:preserveRaw,
+    tokenizer:tokenizerRaw,
+    includeGradiaReserve:src.includeGradiaReserve!==false,
+    gradiaReserveChars,
+    triggerWithReserve:src.triggerWithReserve!==false
+  };
+}
+function memorySuiteNormalizeRecallBudgetGradia(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  return {
+    followSharedBudget:src.followSharedBudget!==false,
+    redistributeDisabledOwners:src.redistributeDisabledOwners!==false
+  };
+}
+function memorySuiteRecallBudgetPresetValues(id, currentBudget=null) {
+  const preset=MEMORY_SUITE_RECALL_BUDGET_PRESETS.find(item=>item.id===id);
+  if(!preset)throw Error('RECALL_BUDGET_INVALID: 프리셋을 찾을 수 없습니다.');
+  const existingCtx=memorySuiteNormalizeRecallBudgetContextCutter(currentBudget?.contextCutter);
+  const existingGradia=memorySuiteNormalizeRecallBudgetGradia(currentBudget?.gradia);
+  return {
+    version:2,
+    enabled:true,
+    totalChars:preset.totalChars,
+    shares:{...preset.shares},
+    contextCutter:{
+      ...existingCtx,
+      maxContextTokens:preset.maxContextTokens,
+      trimPercent:preset.trimPercent,
+      preserveMessages:preset.preserveMessages
+    },
+    gradia:existingGradia
+  };
+}
 function memorySuiteNormalizeRecallBudget(input) {
-  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1&&input.version!==2))throw Error('RECALL_BUDGET_INVALID');
   const total=Number(input.totalChars);
   if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
     throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
@@ -37614,7 +38204,61 @@ function memorySuiteNormalizeRecallBudget(input) {
     shares[owner]=value;
   }
   if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
-  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  const hasV2Fields=input.version===2||input.contextCutter!==undefined||input.gradia!==undefined;
+  if(!hasV2Fields)return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  if(input.contextCutter!=null&&(typeof input.contextCutter!=='object'||Array.isArray(input.contextCutter)))throw Error('RECALL_BUDGET_INVALID');
+  if(input.gradia!=null&&(typeof input.gradia!=='object'||Array.isArray(input.gradia)))throw Error('RECALL_BUDGET_INVALID');
+  return {
+    version:2,
+    enabled:input.enabled===true,
+    totalChars:total,
+    shares,
+    contextCutter:memorySuiteNormalizeRecallBudgetContextCutter(input.contextCutter),
+    gradia:memorySuiteNormalizeRecallBudgetGradia(input.gradia)
+  };
+}
+function memorySuiteRecallBudgetContextPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetContextCutter(budget?.contextCutter);
+}
+function memorySuiteRecallBudgetGradiaPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetGradia(budget?.gradia);
+}
+function memorySuiteRecallBudgetOwnerShares(budget, activeOwners=MEMORY_SUITE_RECALL_OWNERS) {
+  if(!budget||budget.enabled!==true)return null;
+  const active=(Array.isArray(activeOwners)?activeOwners:MEMORY_SUITE_RECALL_OWNERS).filter(owner=>MEMORY_SUITE_RECALL_OWNERS.includes(owner));
+  if(!active.length)return {};
+  const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(budget);
+  const fullSet=MEMORY_SUITE_RECALL_OWNERS.every(owner=>active.includes(owner));
+  const out={};
+  if(fullSet||gradiaPolicy.redistributeDisabledOwners===false){
+    for(const owner of active)out[owner]=Math.floor(Number(budget.totalChars||0)*Number(budget.shares?.[owner]||0)/100);
+    return out;
+  }
+  const activeShareSum=active.reduce((sum,owner)=>sum+Math.max(0,Number(budget.shares?.[owner]||0)),0);
+  if(activeShareSum<=0){
+    const even=Math.floor(Number(budget.totalChars||0)/active.length);
+    for(const owner of active)out[owner]=even;
+    return out;
+  }
+  let allocated=0;
+  for(const owner of active){
+    const share=Math.floor(Number(budget.totalChars||0)*Math.max(0,Number(budget.shares?.[owner]||0))/activeShareSum);
+    out[owner]=share;
+    allocated+=share;
+  }
+  let remainder=Math.max(0,Math.floor(Number(budget.totalChars||0))-allocated);
+  for(const owner of active){
+    if(remainder<=0)break;
+    if(Number(budget.shares?.[owner]||0)>0){out[owner]+=1;remainder-=1;}
+  }
+  return out;
+}
+function memorySuiteEstimateRecallTokens(chars, tokenizer='tiktoken') {
+  const n=Math.max(0,Number(chars||0)||0);
+  if(!n)return 0;
+  const profile=MEMORY_SUITE_RECALL_TOKENIZER_PROFILES[tokenizer]||MEMORY_SUITE_RECALL_TOKENIZER_PROFILES.tiktoken;
+  const blended=(profile.cjkCharsPerToken*0.7)+(profile.latinCharsPerToken*0.3);
+  return Math.ceil(Math.ceil(n/Math.max(1,blended))*0.8);
 }
 function memorySuiteRecallBudget(owner, next) {
   const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
@@ -38073,7 +38717,7 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
 .ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
 .ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
-.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-preset{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;text-align:left;min-height:auto}.ms-source-settings .ms-budget-preset b{font-size:13px}.ms-source-settings .ms-budget-preset small{font-size:11px;opacity:.8}.ms-source-settings .ms-budget-preset.is-on{border-color:var(--accent,#79522d);background:color-mix(in srgb,var(--accent,#79522d) 12%,var(--surface,transparent))}.ms-source-settings .ms-budget-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;border:1px solid var(--border2,#8886);font-size:11.5px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings .ms-budget-badge.is-warn{background:color-mix(in srgb,var(--warn,#b9802e) 16%,transparent);border-color:color-mix(in srgb,var(--warn,#b9802e) 45%,transparent);color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-badge.is-ok{background:color-mix(in srgb,var(--ok,#2e7d32) 14%,transparent);border-color:color-mix(in srgb,var(--ok,#2e7d32) 40%,transparent);color:var(--ok-ink,#2e7d32)}.ms-source-settings .ms-budget-libra-notice{font-size:12px;color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-context,.ms-source-settings .ms-budget-gradia{display:grid;gap:8px;padding:10px;border:1px dashed var(--border2,#8885);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-budget-context[data-libra-status=absent]{opacity:.68}.ms-source-settings .ms-budget-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end}.ms-source-settings .ms-budget-inline{display:flex;gap:8px;align-items:center}.ms-source-settings .ms-budget-inline input{flex:1 1 auto;min-width:0}.ms-source-settings .ms-budget-breakdown{font-size:12px;opacity:.85}.ms-source-settings .ms-budget-warning{font-size:12px;color:var(--warn-ink,#b9802e)}@media(max-width:600px){.ms-source-settings .ms-budget-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.ms-source-settings .ms-budget-shares,.ms-source-settings .ms-budget-context-grid{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
 /* The recent-messages list already shows the last message; the single output stays for tools. */
 .ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
 .ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
@@ -38226,6 +38870,7 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
 const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_RECALL_BUDGET_PEERS=Object.freeze(['libra','hayaku','flashback','gradia']);
 const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
@@ -38311,7 +38956,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const compareBudget=async()=>{
     await config.policy.ready();const mine=budgetFingerprint(myBudget());
-    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const theirs=String(answer.result?.budget||'');
       return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
@@ -38319,7 +38964,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeRecallBudget(budget);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_OWNERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
@@ -38373,38 +39018,229 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
 // plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
 function mountMemorySuiteRecallBudgetPanel(host, config) {
   const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
-  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const owners=MEMORY_SUITE_RECALL_OWNERS,budgetPeers=MEMORY_SUITE_RECALL_BUDGET_PEERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const presets=typeof MEMORY_SUITE_RECALL_BUDGET_PRESETS!=='undefined'?MEMORY_SUITE_RECALL_BUDGET_PRESETS:[];
+  const panelOwner=String(config.owner||config.sync?.owner||'').trim();
+  const isLibraOwner=panelOwner==='libra';
+  const area=make('section'),titleRow=make('div'),title=make('strong','기억 예산 · 컨텍스트 통합 설정'),presetBadge=make('span','');
+  titleRow.className='ms-budget-section-head';presetBadge.className='ms-budget-badge';presetBadge.dataset.recallBudgetPresetBadge='';titleRow.append(title,presetBadge);
+  const note=make('small','통합 프리셋·공통 예산·LIBRA 컨텍스트 자동 정리를 한 곳에서 설정하고 IPC로 자매 플러그인에 동시 반영합니다. 켜면 LIBRA·HAYAKU·Flashback이 정한 비율로 기억을 나누어 주입합니다.');
+  const presetRow=make('div'),presetButtons={};presetRow.className='ms-budget-presets';presetRow.dataset.recallBudgetPresets='';
+  for(const p of presets){
+    const btn=make('button'),b=make('b',p.label),sm=make('small',`${p.totalChars.toLocaleString('ko-KR')}자 · ${Math.round(p.maxContextTokens/1000)}K`);
+    btn.type='button';btn.className='ms-budget-preset';btn.dataset.recallBudgetPreset=p.id;btn.title=p.desc;btn.append(b,sm);
+    presetButtons[p.id]=btn;presetRow.append(btn);
+  }
   const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
   const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
   const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
   for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
-  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
-  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  const ctxBox=make('div'),ctxHeadRow=make('div'),ctxHead=make('strong','컨텍스트 자동 정리 (LIBRA 오너)'),libraBadge=make('span',''),libraNotice=make('p');
+  ctxBox.className='ms-budget-context';ctxBox.dataset.recallBudgetContext='';ctxHeadRow.className='ms-budget-section-head';
+  libraBadge.className='ms-budget-badge';libraBadge.dataset.recallBudgetLibraBadge='';ctxHeadRow.append(ctxHead,libraBadge);
+  libraNotice.className='ms-budget-libra-notice';libraNotice.dataset.recallBudgetLibraNotice='';libraNotice.hidden=true;
+  const chkRow=(text,attr)=>{const lbl=make('label'),chk=make('input');chk.type='checkbox';chk.dataset[attr]='';lbl.className='ms-sync-together';lbl.append(chk,make('span',text));return {lbl,chk};};
+  const cutterEnabledToggle=chkRow('컨텍스트 자동 정리 사용','recallBudgetCutterEnabled');
+  const cutterOnlyMemToggle=chkRow('기억(정본·영수증) 저장이 완료된 과거 턴만 제외','recallBudgetCutterOnlyMemorized');
+  const ctxGrid=make('div');ctxGrid.className='ms-budget-context-grid';
+  const maxCtxLabel=make('label'),maxCtxInline=make('div'),maxCtxInput=make('input'),autoCtxBtn=make('button','모델 기준 자동 맞춤');
+  maxCtxInline.className='ms-budget-inline';maxCtxInput.type='number';maxCtxInput.min='4000';maxCtxInput.max='200000';maxCtxInput.step='1000';maxCtxInput.dataset.recallBudgetMaxContext='';
+  autoCtxBtn.type='button';autoCtxBtn.dataset.recallBudgetAutoContext='';
+  maxCtxInline.append(maxCtxInput,autoCtxBtn);maxCtxLabel.append(make('span','자동 정리 기준 컨텍스트(토큰)'),maxCtxInline);
+  const trimPercentLabel=make('label'),trimPercentInput=make('input');
+  trimPercentInput.type='number';trimPercentInput.min='5';trimPercentInput.max='80';trimPercentInput.step='5';trimPercentInput.dataset.recallBudgetTrimPercent='';
+  trimPercentLabel.append(make('span','초과 시 비울 비율(%)'),trimPercentInput);
+  const preserveLabel=make('label'),preserveInput=make('input');
+  preserveInput.type='number';preserveInput.min='2';preserveInput.max='50';preserveInput.step='1';preserveInput.dataset.recallBudgetPreserveMessages='';
+  preserveLabel.append(make('span','최신 보호 메시지 수'),preserveInput);
+  const tokenizerLabel=make('label'),tokenizerSelect=make('select');tokenizerSelect.dataset.recallBudgetTokenizer='';
+  for(const [val,txt] of [['tiktoken','OpenAI 호환 (tiktoken)'],['claude','Claude'],['gemini','Gemini'],['deepseek','DeepSeek']]){
+    const opt=make('option',txt);opt.value=val;tokenizerSelect.append(opt);
+  }
+  tokenizerLabel.append(make('span','토큰 추정 기준'),tokenizerSelect);
+  const gradiaReserveCharsLabel=make('label'),gradiaReserveCharsInput=make('input');
+  gradiaReserveCharsInput.type='number';gradiaReserveCharsInput.min='0';gradiaReserveCharsInput.max='40000';gradiaReserveCharsInput.step='500';gradiaReserveCharsInput.placeholder='자동';gradiaReserveCharsInput.dataset.recallBudgetGradiaReserveChars='';
+  gradiaReserveCharsLabel.append(make('span','GRADIA 초안 예약(자, 비우면 자동)'),gradiaReserveCharsInput);
+  ctxGrid.append(maxCtxLabel,trimPercentLabel,preserveLabel,tokenizerLabel,gradiaReserveCharsLabel);
+  const gradiaReserveToggle=chkRow('자동 정리 예약에 GRADIA 초안 포함','recallBudgetGradiaReserve');
+  const triggerReserveToggle=chkRow('기억+GRADIA 예약을 합산한 기준에서 자동 정리 발동','recallBudgetTriggerReserve');
+  const breakdown=make('p'),cutterFooter=make('div');
+  breakdown.className='ms-budget-breakdown';breakdown.dataset.recallBudgetBreakdown='';
+  cutterFooter.dataset.recallBudgetCutterFooter='';
+  ctxBox.append(ctxHeadRow,libraNotice,cutterEnabledToggle.lbl,cutterOnlyMemToggle.lbl,ctxGrid,gradiaReserveToggle.lbl,triggerReserveToggle.lbl,breakdown,cutterFooter);
+  const gradiaBox=make('div'),gradiaHead=make('strong','GRADIA 연동'),mismatchWarning=make('p');
+  gradiaBox.className='ms-budget-gradia';gradiaBox.dataset.recallBudgetGradia='';
+  const gradiaFollowToggle=chkRow('GRADIA도 공통 예산 따르기','recallBudgetGradiaFollow');
+  const gradiaRedistributeToggle=chkRow('꺼진 기억 플러그인 몫 남은 오너에 재분배','recallBudgetGradiaRedistribute');
+  mismatchWarning.className='ms-budget-warning';mismatchWarning.dataset.recallBudgetWarning='';mismatchWarning.hidden=true;
+  gradiaBox.append(gradiaHead,gradiaFollowToggle.lbl,gradiaRedistributeToggle.lbl,mismatchWarning);
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),recheck=make('button','다시 확인'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';
+  recheck.type='button';recheck.dataset.recallBudgetRecheck='';
+  actions.className='ms-sync-actions';actions.append(apply,recheck);
   status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
-  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  area.className='ms-input-sync';area.dataset.recallBudget='';
+  if(presets.length)area.append(titleRow,note,presetRow);else area.append(titleRow,note);
+  area.append(enabledLabel,totalLabel,shareRow,ctxBox,gradiaBox,summary,actions,status,peerList);host.append(area);
   const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
-  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
-  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={},loadedVersion=1,presetTouched=false;
+  const cutterInputs=[cutterEnabledToggle.chk,cutterOnlyMemToggle.chk,maxCtxInput,trimPercentInput,preserveInput,tokenizerSelect,gradiaReserveCharsInput,gradiaReserveToggle.chk,triggerReserveToggle.chk];
+  const gradiaInputs=[gradiaFollowToggle.chk,gradiaRedistributeToggle.chk];
+  const libraState=()=>{
+    if(isLibraOwner)return {available:true,status:'owner',badge:'LIBRA 실행 중 (오너)'};
+    if(!config.sync)return {available:false,status:'absent',badge:'리브라 미감지'};
+    const st=peerStates.libra?.state;
+    if(st==='same'||st==='different')return {available:true,status:'connected',badge:'LIBRA 연동됨'};
+    if(st==='checking'||st===undefined)return {available:false,status:'checking',badge:'LIBRA 확인 중…'};
+    return {available:false,status:'absent',badge:'리브라 미감지'};
+  };
+  const hasCustomV2=()=>{
+    if(presetTouched)return true;
+    const reserveRaw=gradiaReserveCharsInput.value.trim();
+    return !cutterEnabledToggle.chk.checked||!cutterOnlyMemToggle.chk.checked||Number(maxCtxInput.value)!==40000
+      ||Number(trimPercentInput.value)!==30||Number(preserveInput.value)!==6||String(tokenizerSelect.value||'tiktoken')!=='tiktoken'
+      ||reserveRaw!==''||!gradiaReserveToggle.chk.checked||!triggerReserveToggle.chk.checked
+      ||!gradiaFollowToggle.chk.checked||!gradiaRedistributeToggle.chk.checked;
+  };
+  const draft=()=>{
+    const base={enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))};
+    if(loadedVersion!==2&&!hasCustomV2())return memorySuiteNormalizeRecallBudget({version:1,...base});
+    const lib=libraState();
+    let contextCutter;
+    if(!lib.available){
+      const stored=typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
+      contextCutter=memorySuiteRecallBudgetContextPolicy(stored);
+    }else{
+      const reserveRaw=gradiaReserveCharsInput.value.trim();
+      contextCutter={
+        enabled:cutterEnabledToggle.chk.checked,
+        onlyMemorized:cutterOnlyMemToggle.chk.checked,
+        maxContextTokens:Number(maxCtxInput.value),
+        trimPercent:Number(trimPercentInput.value),
+        preserveMessages:Number(preserveInput.value),
+        tokenizer:String(tokenizerSelect.value||'tiktoken'),
+        includeGradiaReserve:gradiaReserveToggle.chk.checked,
+        gradiaReserveChars:reserveRaw===''?'auto':Number(reserveRaw),
+        triggerWithReserve:triggerReserveToggle.chk.checked
+      };
+    }
+    return memorySuiteNormalizeRecallBudget({
+      version:2,...base,contextCutter,
+      gradia:{followSharedBudget:gradiaFollowToggle.chk.checked,redistributeDisabledOwners:gradiaRedistributeToggle.chk.checked}
+    });
+  };
   const draftOrNull=()=>{try{return draft();}catch{return null;}};
   const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
   const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const detectPreset=value=>{
+    if(!value||value.enabled!==true)return null;
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const lib=libraState();
+    return presets.find(p=>value.totalChars===p.totalChars
+      &&owners.every(o=>value.shares[o]===p.shares[o])
+      &&(!lib.available||(ctxPolicy.maxContextTokens===p.maxContextTokens&&ctxPolicy.trimPercent===p.trimPercent&&ctxPolicy.preserveMessages===p.preserveMessages)))||null;
+  };
   const draw=()=>{
+    const lib=libraState();
+    ctxBox.dataset.libraStatus=lib.status;
+    libraBadge.textContent=lib.badge;
+    libraBadge.className='ms-budget-badge '+(lib.available?'is-ok':(lib.status==='absent'?'is-warn':''));
+    libraNotice.hidden=lib.available;
+    if(!lib.available)libraNotice.textContent=lib.status==='checking'?'LIBRA 연결 상태를 확인하는 중입니다…':'컨텍스트 자동 정리는 LIBRA 전용 기능입니다. LIBRA가 감지되지 않아 비활성화되었습니다.';
     const value=draftOrNull();
-    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
-      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
-    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const matchedPreset=detectPreset(value);
+    presetBadge.textContent=matchedPreset?`프리셋: ${matchedPreset.label}`:(value?.enabled?'직접 설정':'공통 예산 꺼짐');
+    for(const p of presets){
+      const on=matchedPreset?.id===p.id;
+      presetButtons[p.id].classList.toggle('is-on',on);
+      presetButtons[p.id].setAttribute('aria-pressed',String(on));
+      presetButtons[p.id].disabled=!loaded||busy;
+    }
+    if(value){
+      summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+        +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');
+      const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+      const tokName=ctxPolicy.tokenizer||'tiktoken';
+      const recallTok=memorySuiteEstimateRecallTokens(value.totalChars+1200,tokName);
+      const autoGradiaChars=typeof config.getGradiaReserveEstimate==='function'?Number(config.getGradiaReserveEstimate()||6000):6000;
+      const gChars=ctxPolicy.includeGradiaReserve?(typeof ctxPolicy.gradiaReserveChars==='number'?ctxPolicy.gradiaReserveChars:autoGradiaChars):0;
+      const gTok=ctxPolicy.includeGradiaReserve?memorySuiteEstimateRecallTokens(gChars,tokName):0;
+      const totalReserve=Math.min(Math.floor(ctxPolicy.maxContextTokens*0.8),recallTok+gTok);
+      const keepTok=Math.max(Math.floor(ctxPolicy.maxContextTokens*0.2),ctxPolicy.maxContextTokens-totalReserve);
+      breakdown.textContent=!lib.available
+        ?'LIBRA 연결 시 컨텍스트 자동 정리 계산을 여기서 바로 적용합니다.'
+        :(ctxPolicy.enabled===false
+          ?'컨텍스트 자동 정리가 꺼져 있습니다.'
+          :`기준 ${ctxPolicy.maxContextTokens.toLocaleString('ko-KR')} 토큰 (${tokName}) = 대화 유지 상한 ~${keepTok.toLocaleString('ko-KR')} 토큰 + 3사 기억 예약 ~${recallTok.toLocaleString('ko-KR')} 토큰`+(ctxPolicy.includeGradiaReserve?` + GRADIA 예약 ~${gTok.toLocaleString('ko-KR')} 토큰`:''));
+    } else {
+      let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}
+      summary.textContent=message||'값을 확인하세요.';
+      breakdown.textContent='';
+    }
+    if(typeof config.renderContextCutterFooter==='function'){
+      try{config.renderContextCutterFooter(cutterFooter,value,lib);}catch{}
+    }
+    const parsedPreserve=Number(preserveInput.value);
+    const livePreserve=Number.isInteger(parsedPreserve)&&parsedPreserve>=MEMORY_SUITE_RECALL_PRESERVE_MIN&&parsedPreserve<=MEMORY_SUITE_RECALL_PRESERVE_MAX
+      ?parsedPreserve
+      :memorySuiteRecallBudgetContextPolicy(value||config.policy.recallBudget()).preserveMessages;
+    const warningMsg=typeof config.getPreserveMismatchWarning==='function'
+      ?String(config.getPreserveMismatchWarning(value,{preserveMessages:livePreserve,cutterEnabled:cutterEnabledToggle.chk.checked,libraAvailable:lib.available})||'')
+      :'';
+    mismatchWarning.textContent=warningMsg;mismatchWarning.hidden=!warningMsg;
+    const suggestedCtx=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    autoCtxBtn.hidden=typeof config.suggestMaxContextTokens!=='function';
+    autoCtxBtn.disabled=!loaded||busy||!lib.available||!(suggestedCtx>=4000&&suggestedCtx<=200000);
     const dirty=!value||fingerprint(value)!==initial;
     apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
-    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
-    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+    recheck.disabled=busy||!config.sync;
+    for(const node of [enabled,total,...Object.values(shares),...gradiaInputs])node.disabled=!loaded||busy;
+    for(const node of cutterInputs)node.disabled=!loaded||busy||!lib.available;
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>budgetPeers.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
       row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
   };
-  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
-    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const fill=()=>{
+    const value=config.policy.recallBudget();
+    loadedVersion=value.version===2?2:1;presetTouched=false;
+    enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(value);
+    cutterEnabledToggle.chk.checked=ctxPolicy.enabled!==false;
+    cutterOnlyMemToggle.chk.checked=ctxPolicy.onlyMemorized!==false;
+    maxCtxInput.value=String(ctxPolicy.maxContextTokens);
+    trimPercentInput.value=String(ctxPolicy.trimPercent);
+    preserveInput.value=String(ctxPolicy.preserveMessages);
+    tokenizerSelect.value=String(ctxPolicy.tokenizer||'tiktoken');
+    gradiaReserveToggle.chk.checked=ctxPolicy.includeGradiaReserve;
+    gradiaReserveCharsInput.value=typeof ctxPolicy.gradiaReserveChars==='number'?String(ctxPolicy.gradiaReserveChars):'';
+    triggerReserveToggle.chk.checked=ctxPolicy.triggerWithReserve;
+    gradiaFollowToggle.chk.checked=gradiaPolicy.followSharedBudget;
+    gradiaRedistributeToggle.chk.checked=gradiaPolicy.redistributeDisabledOwners;
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();
+  };
   const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
   const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
-  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const node of [enabled,total,...Object.values(shares),...cutterInputs,...gradiaInputs])node.addEventListener(node.type==='checkbox'||node.tagName==='SELECT'?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const p of presets){
+    presetButtons[p.id].onclick=()=>{
+      if(!loaded||busy)return;
+      enabled.checked=true;total.value=String(p.totalChars);for(const o of owners)shares[o].value=String(p.shares[o]);
+      presetTouched=true;
+      if(libraState().available){
+        maxCtxInput.value=String(p.maxContextTokens);
+        trimPercentInput.value=String(p.trimPercent);
+        preserveInput.value=String(p.preserveMessages);
+      }
+      status.textContent=`통합 프리셋 '${p.label}'을 적용 대기 중입니다. 예산 적용을 눌러 저장하세요.`;
+      draw();
+    };
+  }
+  autoCtxBtn.onclick=()=>{
+    if(!loaded||busy||!libraState().available)return;
+    const suggested=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    if(suggested>=4000&&suggested<=200000){maxCtxInput.value=String(suggested);status.textContent=`모델 컨텍스트 기준으로 ${suggested.toLocaleString('ko-KR')} 토큰에 맞췄습니다. 예산 적용을 눌러 저장하세요.`;draw();}
+  };
+  recheck.onclick=()=>{if(!busy)void check();};
   const applyBudget=async()=>{
     if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
     let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -38415,7 +39251,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
       await config.policy.setRecallBudget(value);fill();
       if(config.sync){
         await check();
-        const targets=config.sync.peers.filter(peer=>MEMORY_SUITE_RECALL_OWNERS.includes(peer)&&peerStates[peer]?.state==='different');
+        const targets=config.sync.peers.filter(peer=>budgetPeers.includes(peer)&&peerStates[peer]?.state==='different');
         if(targets.length){
           const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
           const results=await config.sync.applyBudgetToPeers(value,targets,expected);
@@ -38480,7 +39316,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
-    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{owner,policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -39023,9 +39859,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (!hasContent) return { hasContent: false, what_happened: [], ongoing_consequences: [], do_not_misremember: [], libFacts: [], recentEvents: [], text: '' };
 
     const ongoingConsequences = [];
+    const seenOngoing = new Set();
     for (const item of recentEvents.slice(-3)) {
-      if (/\?|아직|기다|약속|남겨|미완|보류|거절|다쳐|부상|잠긴|닫힌/.test(item)) {
-        ongoingConsequences.push(trimAtSentenceBoundary(item, 220));
+      const m = item.match(/^((?:User|Assistant|[^:\n]{1,24})):\s*([\s\S]+)$/);
+      const speakerPrefix = m ? `${m[1]}: ` : '';
+      const rawBody = m ? m[2] : item;
+      const sentences = String(rawBody || '')
+        .split(/\n+|(?<=[.!?])\s+|(?<=[。！？])\s*/g)
+        .map(s => s.trim())
+        .filter(Boolean);
+      const matchedSentences = sentences.filter(s => /\?|아직|기다|약속|남겨|미완|보류|거절|다쳐|부상|잠긴|닫힌/.test(s));
+      const picked = matchedSentences.length ? matchedSentences[matchedSentences.length - 1] : '';
+      if (!picked) continue;
+      const candidate = `${speakerPrefix}${trimAtSentenceBoundary(picked, 180)}`;
+      if (!seenOngoing.has(candidate)) {
+        seenOngoing.add(candidate);
+        ongoingConsequences.push(candidate);
       }
     }
     const doNotMisremember = [
@@ -39051,6 +39900,58 @@ function mountMemorySuiteReanalysisReview(container,config) {
       libFacts,
       recentEvents,
       text: trimAtSentenceBoundary(lines.join('\n'), 3600)
+    };
+  };
+
+  const buildLightweightPreviousGuardrail = (recent = {}, settings = {}, options = {}) => {
+    const koLang = isKoreanDraftLang(settings);
+    const usesLib = Boolean(options?.usesLibEvidence);
+    const owners = Array.isArray(options?.memoryRecall?.owners) ? options.memoryRecall.owners : [];
+    const ownerParts = owners
+      .filter(o => o && o.status === 'ok' && Number(o.chars) > 0)
+      .map(o => `${String(o.owner || '').toUpperCase()} ${Number(o.chars).toLocaleString()}자`);
+    const libCharsNum = Number(options?.libChars || 0);
+    const libSummary = ownerParts.length
+      ? ownerParts.join(' · ')
+      : (libCharsNum > 0 ? `${libCharsNum.toLocaleString()}자` : '바인딩 완료');
+    const doNotMisremember = koLang
+      ? [
+          '최근 완료 챗과 오래된 LIB 기억이 충돌하면 반드시 최근 완료 챗을 우선한다.',
+          '과거 사건의 행위자·대상·순서를 바꾸거나, 미확정 제안·거절·가정을 이미 완료된 사실로 취급하지 마라.'
+        ]
+      : [
+          'When recent completed chat conflicts with older LIB memory, recent completed chat always takes precedence.',
+          'Never swap actors, targets, or order of past events, and never treat unconfirmed proposals, refusals, or assumptions as completed facts.'
+        ];
+    const whatHappened = [
+      '경량 통합 PASS 0 — 단독 PREVIOUS 호출 없이 shadow_act 내부 비공개 PASS 0에서 최근 챗·직전 종결부·LIB 기억을 통합 정리 (최근 챗 원문 중복 복사 생략)',
+      usesLib
+        ? `LIB 외부 기억 바인딩 활성 (${libSummary}) — shadow_act 및 각 AIDE 요청 끝단에 직접 전달됨 (원문 비저장 격리)`
+        : 'LIB 외부 기억 미연결 — 최근 완료 챗과 직전 종결부 기준으로 판단'
+    ];
+    const guardrailText = koLang
+      ? [
+          '[PREVIOUS — 경량 PASS 0 기억 가드레일 (원문 중복 복사 생략)]',
+          '- 최근 완료 챗·직전 종결부·LIB 외부 기억 원문은 아래 각 섹션과 요청 끝단에 직접 제공되므로 원문을 중복 나열하지 않는다.',
+          '- 기억 가드레일 (오기억·혼동 금지):',
+          ...doNotMisremember.map(item => `  · ${item}`)
+        ].join('\n')
+      : [
+          '[PREVIOUS — LIGHTWEIGHT PASS 0 MEMORY GUARDRAIL (NO RAW CHAT DUPLICATION)]',
+          '- Earlier completed turns, the exact terminal scene, and bound LIB external memory are already supplied in their dedicated sections below; synthesize them silently in PASS 0 without redundant raw dumps.',
+          '- Memory guardrails (do not misremember):',
+          ...doNotMisremember.map(item => `  · ${item}`)
+        ].join('\n');
+    return {
+      hasContent: true,
+      lightweightGuardrailOnly: true,
+      usesLibEvidence: usesLib,
+      what_happened: whatHappened,
+      ongoing_consequences: [],
+      do_not_misremember: doNotMisremember,
+      libFacts: [],
+      recentEvents: [],
+      text: guardrailText
     };
   };
 
@@ -39169,46 +40070,66 @@ function mountMemorySuiteReanalysisReview(container,config) {
   };
 
   const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions, ledger = null) => {
+    const koLang = isKoreanDraftLang(settings);
     const previousText = ledger?.previousRecord?.text || '';
     const sourceRules = gradiaEffectiveSourceRules(settings);
-    const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
-    const recentChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.earlierTurnsText || '', sourceRules), 2200) || '(그보다 앞선 완료 RP 턴 없음)';
+    const systemContext = compact(recent.systemContext || '', 4000) || (koLang ? '(별도 시스템/개발자 메시지 없음)' : '(no extra system/developer messages)');
+    const recentChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.earlierTurnsText || '', sourceRules), 2200) || (koLang ? '(그보다 앞선 완료 RP 턴 없음)' : '(no earlier completed turns)');
     const previousUserInput = gradiaProjectSourceText(previousUserInputForPrompt(recent), sourceRules);
     const terminalScene = compactMiddle(
       gradiaProjectSourceText(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', sourceRules),
       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
-    ) || '(직전 AI 응답 종결부 없음)';
-    const lorebookContext = referencePacketBlockForPrompt(recent) || '(활성 로어북/캐릭터/페르소나 참조 없음 또는 접근 불가)';
-    const othersInfo = compact(recent.othersInfo || '', 2500) || '(Others Info / 보조 패킷 없음)';
+    ) || (koLang ? '(직전 AI 응답 종결부 없음)' : '(no preceding assistant passage)');
+    const lorebookContext = referencePacketBlockForPrompt(recent) || (koLang ? '(활성 로어북/캐릭터/페르소나 참조 없음 또는 접근 불가)' : '(no active lorebook/character/persona references available)');
+    const othersInfo = compact(recent.othersInfo || '', 2500) || (koLang ? '(Others Info / 보조 패킷 없음)' : '(no Others Info / auxiliary packet)');
+    const closingDirective = koLang
+      ? (isAuthorDirectedDraftMode(settings)
+          ? (rpScopeLocksCast(settings)
+              ? (rpImpersonationScope(settings) === 'all'
+                  ? '현재 유저 인풋이 이 장면의 원본이다. 페르소나의 행동과 대사를 포함해 적힌 내용을 빠짐없이, 적힌 순서대로 감각 묘사와 함께 문장으로 옮겨라. 인물의 행동·대사와 전개를 지어내지 말고, 적힌 내용을 다 쓰면 멈춰라. 인풋이 짧으면 응답도 짧다. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 물건 꺼내기, 자물쇠나 문 열기, 앞장서기, 말하기처럼 인풋에 없는 행동과 그 결과는 한 줄도 쓰지 마라. 인풋이 제안이면 그 자리까지 가는 모습까지만 쓴다. 사건을 더하지 말고, 인풋에 이미 있는 것 가운데 아직 풀리지 않은 것(아직 잠긴 것, 답이 없는 것)에 초점을 두고 끝내라.'
+                  : '현재 유저 인풋이 이 장면의 원본이다. 페르소나와 다른 인물의 행동·대사를 적힌 내용 그대로, 적힌 순서대로 빠짐없이 묘사하라. 그 행동을 할 때의 표정, 몸짓, 말투, 숨은 연출해도 된다. 그러나 인풋에 없는 새 행동, 대사, 결정은 쓰지 마라. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 인풋에 행동이 없는 인물은 시선이나 표정이 반응으로 바뀌는 것도 쓰지 마라. 주변 인물이 물건을 꺼내거나 문을 열거나 앞장서거나 말하는 것도 인풋에 없으면 쓰지 마라. 날씨, 소리, 먼 기척 같은 세계의 변화는 자율적으로 쓰고, 마지막은 인물을 움직이지 않는 세계의 변화 하나로 끝내라. 그 변화는 설명되지 않은 채 남아야 하며 다시 잠잠해지면 안 된다. 질문일 필요는 없고, 페르소나의 다음 선택을 정해서도 안 된다.')
+              : '직전 응답까지의 일은 다시 쓰지 마라. 현재 유저 인풋에서 페르소나의 행동/대사는 이미 일어난 일이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 마라. 인풋에 적힌 다른 인물의 행동·대사와 상황은 아직 쓰이지 않았으니 맨 앞에서부터 적힌 순서대로 빠짐없이 먼저 묘사하라. 적힌 끝 지점으로 건너뛰지 마라. 그 뒤 NPC·세계의 반응과 인과적 결과를 작성하고, 페르소나의 다음 선택이 필요해지는 순간 멈춰라. 마지막에는 장면에 있는 인물이나 세계가 페르소나에게 건네는 것(내민 물건, 대답을 기다리는 말, 눈앞의 변화) 하나를 남겨라. 질문일 필요는 없고, 일을 매듭짓지 마라. 복도의 발소리, 새로 나타난 사람, 어디선가 들리는 소리처럼 끝을 만들려고 끌어온 방해로 끝내지 마라.')
+          : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
+            ? '직전 완료 턴의 끝과 현재 유저 인풋의 사용자가 직접 쓴 장면 요소를 하나의 연속된 사건으로 자연스럽게 결합한 뒤, 그에 대한 반응과 결과까지 이어지는 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.'
+            : '첫 문장은 직전 응답이 끝난 바로 그 장소와 그 순간에서 시작하라. 그보다 앞선 장소로 돌아가거나 이미 끝난 장면을 다시 쓰거나 요약하지 마라. 직전 완료 턴의 끝을 현재 장면의 사실적 출발점으로 삼고, 현재 유저 입력은 이미 수행된 플레이어 행동이 아니라 작가의 장면 지시/소재로 해석하라. 작가가 명시한 사건·결과·경계는 지키되 문장을 기계적으로 재현하지 말고, 유저 페르소나를 포함한 전체 인물을 집필하여 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.')
+      : (isAuthorDirectedDraftMode(settings)
+          ? (rpScopeLocksCast(settings)
+              ? (rpImpersonationScope(settings) === 'all'
+                  ? 'The current user input is the sole script for this scene. Render everything written—including persona actions and dialogue—in exact order with sensory detail. Do not invent new actions, dialogue, or plot turns, and stop once everything written is staged. Short input gets a short response. Characters present may keep their established appearance, position, and held items, but forbid any unrequested new action, line, reaction, decision, or outcome. End focusing on what remains unresolved inside the input.'
+                  : 'The current user input is the primary script for character actions and dialogue. Render everything written for the persona and others in exact order with expressive facial cues, gesture, tone, and breath, but never invent unprompted character actions, dialogue, reactions, or decisions. World/environmental shifts (weather, ambient sound, distant motion) may evolve autonomously; end on one unresolved environmental change without steering the persona’s next choice.')
+              : 'Do not replay anything already covered before the previous response. Persona actions and dialogue in the current user input are already performed—do not restage them or invent new player actions. First stage all other characters’ actions/situations stated in the input in order from the start without skipping ahead, then write NPC/world reactions and causal consequences, stopping where a new player choice is needed. Leave one concrete thing offered or unfolding before the persona without artificial corridor-footstep interruptions.')
+          : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
+            ? 'Blend the terminal beat of the previous completed turn seamlessly with the user-authored scene elements in the current input as one continuous event, then write the first complete RP response_draft carrying reactions and consequences forward without prematurely resolving the scene unless the author directed an ending. Leave one concrete unresolved thread from what characters noticed, found, or said, without pulling in sudden offscreen interruptions.'
+            : 'Begin the first sentence at the exact place and instant where the previous response ended; never backtrack or summarize. Treat the previous terminal state as the literal starting point and interpret the current input as the author’s scene brief/seed rather than already-enacted player behavior. Author the full cast (including the user persona within explicit author-fixed limits) to produce the first complete RP response_draft now, stopping before premature resolution with one concrete unresolved thread already inside the scene.');
     return [
       ...(previousText ? [previousText, ''] : []),
-      '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 실제 장면 작성에 사용]',
+      koLang ? '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 실제 장면 작성에 사용]' : '[CANON & CHARACTER REFERENCES — USE SELECTED LORE IN PROSE]',
       lorebookContext,
       '',
-      `[그보다 앞선 최근 완료 챗 / 보조 연속성 자료]`,
+      koLang ? '[그보다 앞선 최근 완료 챗 / 보조 연속성 자료]' : '[EARLIER COMPLETED TURNS / AUXILIARY CONTINUITY]',
       recentChat,
       '',
-      '[시스템 메시지]',
+      koLang ? '[시스템 메시지]' : '[SYSTEM MESSAGES]',
       systemContext,
       '',
-      '[Others Info / 보조 패킷]',
+      koLang ? '[Others Info / 보조 패킷]' : '[OTHERS INFO / AUXILIARY PACKET]',
       othersInfo,
       '',
-      '[창작 지침]',
-      creativeInstructions || '(창작 지침 없음)',
+      koLang ? '[창작 지침]' : '[CREATIVE DIRECTION]',
+      creativeInstructions || (koLang ? '(창작 지침 없음)' : '(no creative direction)'),
       '',
-      '[동일 턴 실행 계보]',
+      koLang ? '[동일 턴 실행 계보]' : '[SAME-TURN RUN LINEAGE]',
       `run_id: ${recent?.runLineage?.runId || ''}`,
       `current_input_hash: ${recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent))}`,
       '',
       buildCurrentRunHardAnchor(recent, '', { includeSources: false }, settings),
       '',
-      '[현재 유저 인풋 U[n]]',
-      submittedCurrentInput(recent) || '(최신 유저 입력 없음)',
+      koLang ? '[현재 유저 인풋 U[n]]' : '[CURRENT USER INPUT U[n]]',
+      submittedCurrentInput(recent) || (koLang ? '(최신 유저 입력 없음)' : '(no current user input)'),
       '',
-      buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent)),
+      buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent), '', settings),
       '',
-      previousUserInput ? `[직전 유저 입력 — 이미 일어난 일, 아래 직전 AI 응답이 이에 답했다]\n${previousUserInput}\n` : '',
+      previousUserInput ? `${koLang ? '[직전 유저 입력 — 이미 일어난 일, 아래 직전 AI 응답이 이에 답했다]' : '[PREVIOUS USER INPUT — ALREADY HAPPENED; PRECEDING ASSISTANT RESPONSE ANSWERED THIS]'}\n${previousUserInput}\n` : '',
       '[EXACT TERMINAL SCENE STATE — retain at prompt tail]',
       terminalScene,
       recent.inputAssistGeneratedContinuation
@@ -39219,55 +40140,52 @@ function mountMemorySuiteReanalysisReview(container,config) {
       '',
       shadowDraftLengthBeatContract(settings, 'write'),
       '',
-      isAuthorDirectedDraftMode(settings)
-        ? (rpScopeLocksCast(settings)
-            ? (rpImpersonationScope(settings) === 'all'
-                ? '현재 유저 인풋이 이 장면의 원본이다. 페르소나의 행동과 대사를 포함해 적힌 내용을 빠짐없이, 적힌 순서대로 감각 묘사와 함께 문장으로 옮겨라. 인물의 행동·대사와 전개를 지어내지 말고, 적힌 내용을 다 쓰면 멈춰라. 인풋이 짧으면 응답도 짧다. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 물건 꺼내기, 자물쇠나 문 열기, 앞장서기, 말하기처럼 인풋에 없는 행동과 그 결과는 한 줄도 쓰지 마라. 인풋이 제안이면 그 자리까지 가는 모습까지만 쓴다. 사건을 더하지 말고, 인풋에 이미 있는 것 가운데 아직 풀리지 않은 것(아직 잠긴 것, 답이 없는 것)에 초점을 두고 끝내라.'
-                : '현재 유저 인풋이 이 장면의 원본이다. 페르소나와 다른 인물의 행동·대사를 적힌 내용 그대로, 적힌 순서대로 빠짐없이 묘사하라. 그 행동을 할 때의 표정, 몸짓, 말투, 숨은 연출해도 된다. 그러나 인풋에 없는 새 행동, 대사, 결정은 쓰지 마라. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 인풋에 행동이 없는 인물은 시선이나 표정이 반응으로 바뀌는 것도 쓰지 마라. 주변 인물이 물건을 꺼내거나 문을 열거나 앞장서거나 말하는 것도 인풋에 없으면 쓰지 마라. 날씨, 소리, 먼 기척 같은 세계의 변화는 자율적으로 쓰고, 마지막은 인물을 움직이지 않는 세계의 변화 하나로 끝내라. 그 변화는 설명되지 않은 채 남아야 하며 다시 잠잠해지면 안 된다. 질문일 필요는 없고, 페르소나의 다음 선택을 정해서도 안 된다.')
-            : '직전 응답까지의 일은 다시 쓰지 마라. 현재 유저 인풋에서 페르소나의 행동/대사는 이미 일어난 일이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 마라. 인풋에 적힌 다른 인물의 행동·대사와 상황은 아직 쓰이지 않았으니 맨 앞에서부터 적힌 순서대로 빠짐없이 먼저 묘사하라. 적힌 끝 지점으로 건너뛰지 마라. 그 뒤 NPC·세계의 반응과 인과적 결과를 작성하고, 페르소나의 다음 선택이 필요해지는 순간 멈춰라. 마지막에는 장면에 있는 인물이나 세계가 페르소나에게 건네는 것(내민 물건, 대답을 기다리는 말, 눈앞의 변화) 하나를 남겨라. 질문일 필요는 없고, 일을 매듭짓지 마라. 복도의 발소리, 새로 나타난 사람, 어디선가 들리는 소리처럼 끝을 만들려고 끌어온 방해로 끝내지 마라.')
-        : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
-          ? '직전 완료 턴의 끝과 현재 유저 인풋의 사용자가 직접 쓴 장면 요소를 하나의 연속된 사건으로 자연스럽게 결합한 뒤, 그에 대한 반응과 결과까지 이어지는 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.'
-          : '첫 문장은 직전 응답이 끝난 바로 그 장소와 그 순간에서 시작하라. 그보다 앞선 장소로 돌아가거나 이미 끝난 장면을 다시 쓰거나 요약하지 마라. 직전 완료 턴의 끝을 현재 장면의 사실적 출발점으로 삼고, 현재 유저 입력은 이미 수행된 플레이어 행동이 아니라 작가의 장면 지시/소재로 해석하라. 작가가 명시한 사건·결과·경계는 지키되 문장을 기계적으로 재현하지 말고, 유저 페르소나를 포함한 전체 인물을 집필하여 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.'
+      closingDirective
     ].join('\n');
   };
 
 
   const buildAideDraftUserPrompt = (stageName, recent, previous, settings, creativeInstructions) => {
+    const koLang = isKoreanDraftLang(settings);
     const sourceRules = gradiaEffectiveSourceRules(settings);
-    const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
-    const previousDraft = stageDraft(previous) || '(직전 에이전트 초안 없음)';
-    const previousChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.completeTurnsText || recent.visibleText || recent.text || '', sourceRules), 4200) || '(이전 완료 챗 없음)';
+    const systemContext = compact(recent.systemContext || '', 4000) || (koLang ? '(별도 시스템/개발자 메시지 없음)' : '(no extra system/developer messages)');
+    const previousDraft = stageDraft(previous) || (koLang ? '(직전 에이전트 초안 없음)' : '(no previous stage draft)');
+    const previousChat = compactRecentTurnsTail(gradiaProjectSourceText(recent.completeTurnsText || recent.visibleText || recent.text || '', sourceRules), 4200) || (koLang ? '(이전 완료 챗 없음)' : '(no earlier completed chat)');
     const runId = recent?.runLineage?.runId || '';
     const currentInputHash = recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent));
     const inputDraftHash = stableDraftHash(previousDraft);
     return [
-      '[동일 턴 초안 계보 잠금]',
+      koLang ? '[동일 턴 초안 계보 잠금]' : '[SAME-TURN DRAFT LINEAGE LOCK]',
       `run_id: ${runId}`,
       `current_input_hash: ${currentInputHash}`,
       `input_draft_hash: ${inputDraftHash}`,
       `previous_run_id: ${recent?.runLineage?.previousRunId || '(none)'}`,
       `forbidden_prior_draft_hashes: ${(recent?.runLineage?.forbiddenPriorDraftHashes || []).join(', ') || '(none)'}`,
       '',
-      '[동적 AIDE 실행 위치]',
-      `전체 순서: SHADOW ACT → ${aideOrderLabel(recent?.aideExecution?.order || settings?.aideStageOrder)}`,
-      `현재 단계 위치: ${(recent?.aideExecution?.index ?? 0) + 2} / 4`,
-      `직전 파이프라인 단계: ${recent?.aideExecution?.previousStage || previous?.stage || 'shadow_act'}`,
-      `이미 완료된 AIDE: ${(recent?.aideExecution?.completed || []).join(', ') || '(없음)'}`,
-      '순서와 무관하게 현재 단계의 전문 영역을 원본 문맥에서 독립적으로 다시 검사한다. 아직 실행되지 않은 AIDE의 노트를 요구하거나 기다리지 않는다.',
+      koLang ? '[동적 AIDE 실행 위치]' : '[DYNAMIC AIDE POSITION]',
+      `${koLang ? '전체 순서' : 'Pipeline order'}: SHADOW ACT → ${aideOrderLabel(recent?.aideExecution?.order || settings?.aideStageOrder)}`,
+      `${koLang ? '현재 단계 위치' : 'Current step'}: ${(recent?.aideExecution?.index ?? 0) + 2} / 4`,
+      `${koLang ? '직전 파이프라인 단계' : 'Previous pipeline stage'}: ${recent?.aideExecution?.previousStage || previous?.stage || 'shadow_act'}`,
+      `${koLang ? '이미 완료된 AIDE' : 'Completed AIDEs'}: ${(recent?.aideExecution?.completed || []).join(', ') || (koLang ? '(없음)' : '(none)')}`,
+      koLang
+        ? '순서와 무관하게 현재 단계의 전문 영역을 원본 문맥에서 독립적으로 다시 검사한다. 아직 실행되지 않은 AIDE의 노트를 요구하거나 기다리지 않는다.'
+        : 'Inspect your domain independently from the source context regardless of execution order. Never require or wait for unrun AIDE notes.',
       '',
-      '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 현재 초안 검토에 사용]',
-      referencePacketBlockForPrompt(recent) || '(이 단계에서 인물·페르소나·로어 참고 자료를 사용하지 않음)',
+      koLang ? '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 현재 초안 검토에 사용]' : '[CANON & CHARACTER REFERENCES — INSPECT AGAINST CURRENT DRAFT]',
+      referencePacketBlockForPrompt(recent) || (koLang ? '(이 단계에서 인물·페르소나·로어 참고 자료를 사용하지 않음)' : '(no character/persona/lore references supplied for this stage)'),
       '',
-      '아래 CURRENT_SAME_TURN_DRAFT만 이번 단계의 재작성 대상이다. 이전 챗의 assistant 응답과 previous_run의 모든 초안은 읽기 전용 과거 자료이며 초안 후보가 아니다.',
+      koLang
+        ? '아래 CURRENT_SAME_TURN_DRAFT만 이번 단계의 재작성 대상이다. 이전 챗의 assistant 응답과 previous_run의 모든 초안은 읽기 전용 과거 자료이며 초안 후보가 아니다.'
+        : 'Only CURRENT_SAME_TURN_DRAFT below is the revision target for this stage. Earlier assistant responses and prior-run drafts are read-only history.',
       '',
-      '[시스템 메시지]',
+      koLang ? '[시스템 메시지]' : '[SYSTEM MESSAGES]',
       systemContext,
       '',
-      `[최근 완료 챗 / 읽기 전용 사실·말투 증거 / 재작성 대상 아님]`,
+      koLang ? '[최근 완료 챗 / 읽기 전용 사실·말투 증거 / 재작성 대상 아님]' : '[RECENT COMPLETED CHAT / READ-ONLY EVIDENCE / NOT A REWRITE TARGET]',
       previousChat,
       '',
-      '[창작 지침]',
-      creativeInstructions || '(창작 지침 없음)',
+      koLang ? '[창작 지침]' : '[CREATIVE DIRECTION]',
+      creativeInstructions || (koLang ? '(창작 지침 없음)' : '(no creative direction)'),
       '',
       `<CURRENT_SAME_TURN_DRAFT run_id="${runId}" draft_hash="${inputDraftHash}">`,
       compactMiddle(previousDraft, settings.maxPreviousStageChars),
@@ -39275,17 +40193,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
       '',
       buildCurrentRunHardAnchor(recent, previousDraft, { includeSources: false }, settings),
       '',
-      '[유저 인풋 / 동일 run의 원 요청]',
-      submittedCurrentInput(recent) || '(최신 유저 입력 없음)',
+      koLang ? '[유저 인풋 / 동일 run의 원 요청]' : '[CURRENT USER INPUT / ORIGINAL REQUEST FOR THIS RUN]',
+      submittedCurrentInput(recent) || (koLang ? '(최신 유저 입력 없음)' : '(no current user input)'),
       '',
-      buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent), previousDraft),
+      buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent), previousDraft, settings),
       '',
-      [
+      (koLang ? [
         `${STAGE_DEF_MAP[stageName]?.label || stageName} 단계로 CURRENT_SAME_TURN_DRAFT를 같은 턴의 더 나은 complete RP response_draft로 전체 재작성하라.`,
         '이전 챗의 마지막 assistant 응답이나 previous_run에서 생성된 어떤 초안도 복사하거나 되돌아가지 마라. 출력은 반드시 input_draft_hash가 가리키는 현재 run 직전 단계 초안의 후속 버전이어야 한다.',
         '새 다음 전개를 이어 쓰지 말고, 직전 초안의 장면 범위 안에서 문장·대사·행동·정보 배치를 가다듬고 필요한 부분만 확장하라.',
         '직전 초안에 상태창/이미지 명령 형식이 있으면 유지하되, # 응답/볼륨/챕터/Chatindex/자동 타임스탬프 래퍼(예: ⏱️[YYYY-MM-DD...])는 최신 유저가 명시적으로 요구하지 않는 한 제거하라. 단, "밤 10:20 PM, 시끌벅적한 고기집의 한구석."처럼 시간과 장소를 서술하는 장면 도입문은 본문이므로 보존하라.'
-      ].join('\n')
+      ] : [
+        `Rewrite CURRENT_SAME_TURN_DRAFT as an improved complete same-turn RP response_draft from the perspective of ${stageName}.`,
+        'Never copy or revert to an earlier completed assistant response or any prior-run draft. Your output must directly follow the candidate identified by input_draft_hash.',
+        'Do not advance to a new sequel scene; refine phrasing, dialogue, physical action, and detail placement within the same turn boundary.',
+        'Preserve functional status/image-command formats if required by the chat, while removing unrequested serial wrappers (# Response, volume/chapter headers, Chatindex, automatic timestamp headers).'
+      ]).join('\n')
     ].join('\n');
   };
 
@@ -39367,13 +40290,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const parts = [];
     const prevRec = isPlainObject(ledger.previousRecord) ? ledger.previousRecord : null;
     if (prevRec && (prevRec.what_happened?.length || prevRec.ongoing_consequences?.length || prevRec.do_not_misremember?.length || prevRec.text)) {
-      const prevLines = prevRec.what_happened?.length || prevRec.ongoing_consequences?.length || prevRec.do_not_misremember?.length
-        ? compactAnalysisDomain({
-            ...(prevRec.what_happened?.length ? { what_happened: prevRec.what_happened } : {}),
-            ...(prevRec.ongoing_consequences?.length ? { ongoing_consequences: prevRec.ongoing_consequences } : {}),
-            ...(prevRec.do_not_misremember?.length ? { do_not_misremember: prevRec.do_not_misremember } : {})
-          }, 1600)
-        : compact(prevRec.text || '', 1600);
+      const prevLines = prevRec.lightweightGuardrailOnly === true
+        ? (prevRec.do_not_misremember?.length ? compactAnalysisDomain({ do_not_misremember: prevRec.do_not_misremember }, 1600) : '')
+        : (prevRec.what_happened?.length || prevRec.ongoing_consequences?.length || prevRec.do_not_misremember?.length
+            ? compactAnalysisDomain({
+                ...(prevRec.what_happened?.length ? { what_happened: prevRec.what_happened } : {}),
+                ...(prevRec.ongoing_consequences?.length ? { ongoing_consequences: prevRec.ongoing_consequences } : {}),
+                ...(prevRec.do_not_misremember?.length ? { do_not_misremember: prevRec.do_not_misremember } : {})
+              }, 1600)
+            : compact(prevRec.text || '', 1600));
       if (prevLines) {
         parts.push(`[PREVIOUS — CONFIRMED PAST RECORD (LIB + RECENT CHAT, READ ONLY)]\nDo not misstate, swap actors on, or contradict these established past events:\n${prevLines}`);
       }
@@ -43848,7 +44773,7 @@ function createGradiaModelContextBudget({ digest }) {
     const beginRead = async (input = {}) => {
       invalidate('LIB_READ_SUPERSEDED');
       const requestedBudget = input.evidenceBudget || libEvidenceBudget();
-      const evidenceBudget = Object.freeze({maxChars:requestedBudget.maxChars,maxBytes:requestedBudget.maxBytes});
+      const evidenceBudget = Object.freeze({maxChars:requestedBudget.maxChars,maxBytes:requestedBudget.maxBytes,ownerShares:requestedBudget.ownerShares || null});
       const record = { generation: ++generation, controller: new AbortController(), reason: '', corpus: null, evidence: null, draft: '' };
       active = record;
       const abort = () => stop(record, 'LIB_READ_CANCELED');
@@ -43915,7 +44840,13 @@ function createGradiaModelContextBudget({ digest }) {
           const targetOwners = Array.isArray(routeOwners) ? allowedOwners.filter(o => routeOwners.includes(o)) : allowedOwners;
           if (Array.isArray(routeOwners) && !targetOwners.length) fail('LIB_READ_OWNERS_DISABLED');
 
-          const answers = await Promise.all(targetOwners.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
+          const ownerShares = evidenceBudget.ownerShares;
+          const answers = await Promise.all(targetOwners.map(owner => {
+            const ownerShare = ownerShares ? Number(ownerShares[owner] || 0) : 0;
+            return guarded(() => ownerShare > 0
+              ? dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal, { recallBudgetChars: ownerShare })
+              : dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
+          }));
           const kept = [];
           for (const [index, owner] of targetOwners.entries()) {
             const selected = answers[index];
@@ -53868,21 +54799,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           : { at: Date.now(), record: null };
       }
     } else if (normalizePreviousStageMode(shadowEnv.settings?.previousStageMode ?? shadowEnv.settings?.previous_stage_mode ?? 'auto') !== 'off') {
-      const detPrev = buildShadowPreviousRecord(shadowEnv.recent, shadowEnv.settings);
-      if (detPrev?.hasContent) {
-        ledger.previousRecord = detPrev;
+      const lightPrev = buildLightweightPreviousGuardrail(shadowEnv.recent, shadowEnv.settings, {
+        usesLibEvidence,
+        libChars: libReadSession?.block?.length || 0,
+        memoryRecall: Runtime.lastMemoryRecall
+      });
+      if (lightPrev?.hasContent) {
+        ledger.previousRecord = lightPrev;
       }
       if (prevScopeKey) {
-        const uiPrev = usesLibEvidence
-          ? buildShadowPreviousRecord(shadowEnv.recent, { ...shadowEnv.settings, [LIB_EVIDENCE_CONTEXT]: null })
-          : detPrev;
         Runtime.shadowPrevious[prevScopeKey] = {
           at: Date.now(),
-          record: uiPrev?.hasContent
-            ? uiPrev
-            : (usesLibEvidence
-              ? { hasContent: true, what_happened: ['LIB 외부 기억 원장 바인딩 활성 (경량 기준선 적용)'], unresolved_hooks: [], must_keep_facts: [], state_carryover: [] }
-              : null)
+          record: lightPrev?.hasContent ? lightPrev : null
         };
       }
     } else if (prevScopeKey) {
@@ -59939,9 +60867,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const button = (action, label, primary = false) => { const node = mockupNode('button', primary ? 'btn btn--sm btn--primary' : 'btn btn--sm', label); node.type = 'button'; node.dataset.workScaleAction = action; return node; };
     const profileId = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
     const firstAgent = agents[BEFORE_STAGE_DEFS[0]?.id] || {};
+    const sharedPlan = gradiaSharedRecallPlan(runtime);
+    const sharedSummary = sharedPlan
+      ? `공통 예산 연동 중: 총 ${sharedPlan.totalChars.toLocaleString('ko-KR')}자 (${sharedPlan.activeOwners.map(o => `${o.toUpperCase()} ${Number(sharedPlan.ownerShares[o] || 0).toLocaleString('ko-KR')}`).join(' / ')})`
+      : '';
     const nodes = [mockupNode('p', 'hint', profileId === 'custom'
-      ? `직접 조정 · 최근 ${firstAgent.turnWindow || DEFAULT_RECENT_TURNS}턴 · 참조 ${Number(firstAgent.maxChars || 0).toLocaleString('ko-KR')}자 · 기억 ${Number(runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS.custom).toLocaleString('ko-KR')}자`
+      ? `직접 조정 · 최근 ${firstAgent.turnWindow || DEFAULT_RECENT_TURNS}턴 · 참조 ${Number(firstAgent.maxChars || 0).toLocaleString('ko-KR')}자 · 기억 ${sharedPlan ? `${sharedPlan.contentTotalChars.toLocaleString('ko-KR')}자(공통)` : `${Number(runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS.custom).toLocaleString('ko-KR')}자`}`
       : simpleProfileSummary(profileId))];
+    if (sharedSummary) {
+      const sharedNote = mockupNode('p', 'hint', sharedSummary);
+      sharedNote.dataset.workScaleSharedBudget = 'true';
+      nodes.push(sharedNote);
+    }
     const budgetField = mockupNode('label', 'field');
     budgetField.append(mockupNode('span', 'label', '초안 예산 프리셋'));
     const budgetSelect = mockupNode('select', 'input');
@@ -59956,7 +60893,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       budgetSelect.append(option);
     }
     budgetSelect.value = normalizeDraftBudgetPreset(runtime.draftBudgetPreset);
-    budgetField.append(budgetSelect, mockupNode('span', 'hint', '토큰 상한과 low 추론은 Ollama의 DeepSeek V4.1 Flash에 적용됩니다.'));
+    budgetField.append(budgetSelect, mockupNode('span', 'hint', '선택한 프리셋의 토큰 상한과 low 추론이 모든 초안 파이프라인 모델에 공통 적용됩니다.'));
     nodes.push(budgetField);
     const check = mockupNode('div', 'stack stack--sm'); check.dataset.workScaleCheck = 'true';
     for (const stage of inspection.stages) {
@@ -59987,7 +60924,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       };
       field('최근 턴 수', 'turns', firstAgent.turnWindow || DEFAULT_RECENT_TURNS);
       field('참조 자료 (자)', 'reference', firstAgent.maxChars || REFERENCE_PROFILE_CAPS.balanced);
-      field('기억 상한 (자)', 'memory', runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS[profileId]);
+      field(sharedPlan ? '기억 상한 (자 · 공통 예산 우선)' : '기억 상한 (자)', 'memory', runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS[profileId]);
+      if (sharedPlan) fields.append(mockupNode('p', 'hint', '기억 주입 공통 예산이 켜져 있어 실제 기억 상한은 공통 예산 배분 값을 따릅니다.'));
       for (const presetName of new Set(inspection.stages.filter(stage => stage.need).map(stage => stage.presetName))) field(`${presetName} 맥스 토큰`, 'maxTokens', clampInt(providers[presetName]?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), presetName);
       nodes.push(fields);
     }
@@ -60191,7 +61129,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const group = choice.parentElement, choices = [...group.querySelectorAll(':scope > .choice')], index = choices.indexOf(choice);
         if (group.id === 'q-runmode') { runtimeModePick(index); return; }
         if (group.id === 'q-weight') { applyMultiPipelineModeToGui(index === 0 ? 'lightweight' : 'heavyweight'); return; }
-        if (group.id === 'q-previous') { mockupRuntime().previousStageMode = PREVIOUS_STAGE_MODES[index] || 'auto'; markGuiDirty(); syncMockupGui(); return; }
+        if (group.id === 'q-previous') { mockupRuntime().previousStageMode = PREVIOUS_STAGE_MODES[index] || 'auto'; markGuiDirty(); void renderSettingsGui(); return; }
         if (group.id === 'q-quality') { if (index >= 0) applyQuickProfileToGui(['fast','balanced','quality'][index]); return; }
         if (group.id === 'q-length') { if (index >= 0) applySimpleLengthToGui(['compact','standard','detailed','extended'][index]); return; }
         if (group.id === 'q-language') { if (index >= 0) applyInternalDraftLanguageToGui(['korean','english','japanese'][index]); return; }
@@ -63801,6 +64739,68 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           isDisposed: () => Runtime.unloaded === true || !host.isConnected
         });
       }
+      let budgetCard = page.querySelector('[data-gradia-recall-budget-card]');
+      if (!budgetCard) {
+        budgetCard = document.createElement('section');
+        budgetCard.className = 'card';
+        budgetCard.dataset.gradiaRecallBudgetCard = 'true';
+        const bHead = mockupNode('div', 'card__head');
+        const bText = mockupNode('div');
+        bText.append(
+          mockupNode('h3', '기억 예산 · 컨텍스트 통합 설정'),
+          mockupNode('p', 'hint', '통합 프리셋·공통 예산·LIBRA 컨텍스트 자동 정리와 GRADIA 연동을 한 곳에서 설정하고 자매 플러그인에 동시 반영합니다.')
+        );
+        bHead.append(bText);
+        const budgetHost = document.createElement('div');
+        budgetHost.dataset.gradiaRecallBudgetHost = 'true';
+        budgetCard.append(bHead, budgetHost);
+        sourceCard.after(budgetCard);
+      }
+      const budgetHost = budgetCard.querySelector('[data-gradia-recall-budget-host]');
+      if (budgetHost && !budgetHost.querySelector('[data-recall-budget]')) {
+        const budgetBox = document.createElement('div');
+        budgetBox.className = 'ms-source-settings';
+        const budgetStyle = document.createElement('style');
+        budgetStyle.textContent = `
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:13px;line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:8px;background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+` + memorySuiteSourceFinderCss();
+        budgetBox.appendChild(budgetStyle);
+        budgetHost.appendChild(budgetBox);
+        const panel = mountMemorySuiteRecallBudgetPanel(budgetBox, {
+          owner: 'gradia',
+          policy: getGradiaSourceInput(),
+          sync: getGradiaSourceRuleSync(),
+          isDisposed: () => Runtime.unloaded === true || !budgetBox.isConnected,
+          suggestMaxContextTokens: () => workScaleContextBudget(mockupRuntime()).contextTokens || 0,
+          getGradiaReserveEstimate: () => {
+            const rt = mockupRuntime();
+            return Math.min(
+              clampInt(rt.maxInjectionChars, 1500, 60000, DEFAULT_MAX_INJECTION_CHARS),
+              Math.ceil(clampInt(rt.targetDraftMaxChars, 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS) * 1.2)
+            );
+          },
+          getPreserveMismatchWarning: (draftBudget, ctx) => {
+            if (ctx && ctx.cutterEnabled === false) return '';
+            const preserve = Number.isInteger(ctx?.preserveMessages) && ctx.preserveMessages > 0
+              ? ctx.preserveMessages
+              : memorySuiteRecallBudgetContextPolicy(draftBudget || memorySuiteRecallBudget('gradia')).preserveMessages;
+            const win = clampInt(Gui.state?.agents?.shadow_act?.turnWindow, 1, 50, DEFAULT_RECENT_TURNS);
+            return win * 2 > preserve
+              ? `GRADIA 최근 턴 창(${win}턴=${win * 2}메시지)이 LIBRA 보존 기준(${preserve}메시지)보다 큽니다.`
+              : '';
+          },
+          onApplied: () => {
+            mockupRefreshStatus();
+            void renderSettingsGui();
+          }
+        });
+        getGradiaSourceInput().ready().then(() => {
+          if (Runtime.unloaded !== true && budgetBox.isConnected) panel.load();
+        }).catch(() => {});
+      }
     }
 
         if(!Gui.characterLoreCatalogLoadedAt&&!Gui.characterLoreCatalogLoading)void refreshCharacterLoreCatalog(false);
@@ -64807,11 +65807,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0)) || (message.recallBudgetChars !== undefined && !(Number.isSafeInteger(message.recallBudgetChars) && message.recallBudgetChars >= 1 && message.recallBudgetChars <= 160000))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0, ...(message.recallBudgetChars ? { recallBudgetChars: message.recallBudgetChars } : {}) });
         result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
@@ -64936,9 +65936,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
+  const select = async (owner, scope, queryText, signal, extraHints = {}) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner), ...(extraHints && typeof extraHints === 'object' ? extraHints : {}) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
         || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
@@ -66764,6 +67764,46 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     debugSpatialTopology({ recent = {}, settings = null } = {}) {
       const targetSettings = settings || Runtime.settings || {};
       return cloneJson(resolveSpatialTopology(recent, targetSettings));
+    },
+    debugParseSceneHud({ body = '', settings = null } = {}) {
+      const targetSettings = settings || Runtime.settings || {};
+      return cloneJson(parseSceneHudBlock(body, targetSettings));
+    },
+    debugBodyStateSleepNotes({ scopeKey = '' } = {}) {
+      return cloneJson(bodyStateSleepNotes(compact(scopeKey || Runtime.activeScopeKey || '', 512)));
+    },
+    debugApplyDraftBudgetToStagePreset({ preset = {}, budget = {}, pipelineMode = 'full' } = {}) {
+      return cloneJson(applyDraftBudgetToStagePreset(preset, budget, pipelineMode));
+    },
+    debugExtensionPersonHelpers({ recent = {}, settings = null, body = '', name = '' } = {}) {
+      const targetSettings = settings || Runtime.settings || {};
+      return cloneJson({
+        scenePeople: extensionScenePeople(recent, targetSettings),
+        givenName: name ? extensionGivenName(name) : '',
+        mentionsName: name && body ? extensionTextMentionsName(body, name) : false
+      });
+    },
+    debugBuildShadowActDraftUserPrompt({ recent = {}, settings = {}, creativeInstructions = '', ledger = null } = {}) {
+      return buildShadowActDraftUserPrompt(recent, settings, creativeInstructions, ledger);
+    },
+    debugBuildLivingWorldEngineBlock({ stageName = 'shadow_act', recent = {}, settings = {}, ledger = {}, phase = 'writing' } = {}) {
+      return buildLivingWorldEngineBlock(stageName, recent, settings, ledger, phase);
+    },
+    debugBuildNsfwGuidanceBlock({ settings = {}, phase = 'writing' } = {}) {
+      return buildNsfwGuidanceBlock(settings, phase);
+    },
+    debugCompileBaseQualityForStage({ stage = 'shadow_act', phase = 'writing', settings = {} } = {}) {
+      return compileBaseQualityForStage(stage, phase, settings);
+    },
+    debugDialogueScanEchoPatterns({ recent = {}, draftText = '' } = {}) {
+      return cloneJson(dialogueScanEchoPatterns(recent, draftText));
+    },
+    debugInputAssistPromptContracts({ settings = {} } = {}) {
+      return cloneJson({
+        languageContract: buildInternalDraftLanguageContract(settings, 'writing'),
+        rpChoice: authorDirectedInputAssistInstruction({}, {}, settings),
+        novelChoice: novelInputAssistChoiceInstruction(settings)
+      });
     },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
