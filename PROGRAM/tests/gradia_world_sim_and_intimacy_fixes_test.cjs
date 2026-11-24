@@ -1725,3 +1725,405 @@ test('17) Male ejaculation pace (-100~+100 지루↔조루), forced hold-back de
   const ganghyeonPace = Object.values(pacesAfterTile).find(item => item?.name === '강현');
   assert.ok(ganghyeonPace && ganghyeonPace.tier === 'very_slow' && ganghyeonPace.pace <= -60, `Tile 6 change persisted to malePaces: ${JSON.stringify(ganghyeonPace)}`);
 });
+
+test('18) Quoted/phone-message mentions (구민지) never count as on-scene physical presence across intimacy, forced-bond, or relsim', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const scopeKey = 'motel-absent-mention-18a';
+  f.host.plugin.debugSetActiveScope(scopeKey, '푸딩');
+  await f.host.plugin.debugIntimacyLoadCards();
+
+  const settings = {
+    ...(await f.host.plugin.getRuntimeSettings()),
+    mode: 'normal',
+    writingMode: 'rp',
+    nsfwGuidanceEnabled: true,
+    nsfwMode: 'explicit',
+    enableCharacterAide: true,
+    enablePlotAide: true,
+    enableIntimacyAide: true,
+    enableForcedBondAide: true,
+    enableRelationshipSimAide: true,
+    forcedBondAuto: true,
+    forcedBondCards: {
+      [scopeKey]: [
+        { id: 'bond-minji', from: '@persona', to: '구민지', direction: 'mutual', tones: ['wariness', 'camaraderie'], stage: 'tension', pressure: 'explicit' },
+        { id: 'bond-soyeon', from: '@persona', to: '천소연', direction: 'mutual', tones: ['affection'], stage: 'tension', pressure: 'explicit' }
+      ]
+    }
+  };
+  await f.host.plugin.debugRelationshipSimSetPair('bond-minji', { status: 'friend' });
+  await f.host.plugin.debugRelationshipSimSetPair('bond-soyeon', { status: 'lovers' });
+
+  f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '천하연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: 'lore' },
+        { name: '천소연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: 'lore' },
+        { name: '구민지', gender: 'female', consent_style: 'requires_consent', sensitive_zones: '음핵', dull_zones: '', basis: '구민지 로어' }
+      ]
+    }
+  });
+
+  // 18a: Pre-contaminate 구민지 in settled gauges, then run the actual motel scene with HUD @|천소연 @|천하연 + phone message/spoken mention
+  const seedMinjiUser = '구민지가 손으로 자신의 가슴을 어루만졌다.';
+  f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female', 구민지: 'female' },
+    settings,
+    recent: {
+      visibleMessages: [{ role: 'user', content: seedMinjiUser }],
+      latestUser: seedMinjiUser
+    }
+  });
+  f.host.plugin.debugIntimacyRecord({ stageName: 'aide_character', settings, parsed: { intimacyReadings: [] } });
+
+  const phoneMsgAssistant = [
+    '옆 탁자 위에서 진동이 났다. 화면이 켜졌다.',
+    '"민지야."',
+    '"오늘 안에 정산 끝내라고."',
+    '◈CG\nTIME|2027.04.26(월)|15:20|출근일\nLOC|광안리 근처 모텔 2층 방|none|맑음\n@|천하연|hayeon\n@|천소연|soyeon\n◈'
+  ].join('\n');
+  const climaxAssistant = [
+    '그가 소연의 질내로 삽입해 움직이기 시작했다. 소연의 다리가 그의 옆구리를 감았다. 안쪽이 오래 조였다.',
+    '하연이 침대 옆에 걸터앉았다. "정산, 오 시 전에 하자고 했어." "민지가 뭐라고 할지 알지."',
+    '◈CG\nTIME|2027.04.26(월)|15:40|출근일\nLOC|광안리 근처 모텔 2층 방|none|맑음\n@|천소연|soyeon\n@|천하연|hayeon\n◈'
+  ].join('\n');
+  const followUser = '푸딩이 소연의 가슴과 음핵을 부드럽게 애무하며 입을 맞췄다.';
+
+  const hudPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female', 구민지: 'female' },
+    settings,
+    recent: {
+      visibleMessages: [
+        { role: 'assistant', content: phoneMsgAssistant },
+        { role: 'assistant', content: climaxAssistant }
+      ],
+      latestUser: followUser
+    }
+  });
+  assert.equal(hudPkt.gauges.some(g => g.name === '구민지'), false, 'HUD @|천소연 @|천하연 must exclude mentioned-only 구민지 from gauges');
+  assert.ok(hudPkt.gauges.some(g => g.name === '천소연') && hudPkt.gauges.some(g => g.name === '천하연'));
+  const reloadedGauges = await f.host.plugin.debugGaugeContinuityLoad();
+  const settledKeys = Object.keys(reloadedGauges?.intimacyGauges?.[scopeKey]?.settled || {});
+  assert.equal(settledKeys.some(k => /구민지/.test(k)), false, 'stale settled gauge for absent 구민지 is pruned when HUD names are authoritative');
+
+  // 18c: With HUD @|천소연 @|천하연, forced_bond must not roll 구민지 on-scene and relsim must emit no verdict for 구민지
+  const bondBlock = f.host.plugin.debugForcedBondStageBlock({
+    stageName: 'aide_plot',
+    settings,
+    recent: {
+      runLineage: { runId: 'bond-hud-18c', currentInputHash: 'hc1', priorAssistantHash: 'ha1' },
+      visibleMessages: [
+        { role: 'assistant', content: phoneMsgAssistant },
+        { role: 'assistant', content: climaxAssistant }
+      ],
+      latestUser: followUser
+    }
+  });
+  const onSceneBondLines = bondBlock.split('\n').filter(line => /Main Bond Roll:|Ripple Bond Roll:/.test(line)).join('\n');
+  assert.doesNotMatch(onSceneBondLines, /구민지/, `HUD-absent 구민지 must not roll as on-scene bond: ${onSceneBondLines}`);
+
+  const relPrepHud = await f.host.plugin.debugRelationshipSimPrepare({
+    settings,
+    recent: {
+      runLineage: { runId: 'rel-hud-18c', currentInputHash: 'rc1', priorAssistantHash: 'ra1' },
+      visibleMessages: [
+        { role: 'assistant', content: phoneMsgAssistant },
+        { role: 'assistant', content: climaxAssistant }
+      ],
+      latestUser: '좋아한다고 고백한다. 오늘 밤 데이트하러 가자고 말한다.'
+    }
+  });
+  assert.equal((relPrepHud.verdicts || []).some(v => /구민지/.test(`${v.from} ${v.to}`)), false, 'HUD-absent 구민지 must not produce relsim verdicts');
+
+  // 18b: Even WITHOUT HUD, spoken dialogue ("민지가 뭐라고 할지 알지.") and phone message ("민지에게서 문자가 왔다.") must exclude 구민지
+  const noHudScope = 'nohud-absent-mention-18b';
+  f.host.plugin.debugSetActiveScope(noHudScope, '푸딩');
+  const noHudSettings = {
+    ...settings,
+    forcedBondCards: {
+      [noHudScope]: [
+        { id: 'bond-minji-2', from: '@persona', to: '구민지', direction: 'mutual', tones: ['wariness', 'camaraderie'], stage: 'tension', pressure: 'explicit' }
+      ]
+    }
+  };
+  await f.host.plugin.debugRelationshipSimSetPair('bond-minji-2', { status: 'friend' });
+  f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: noHudSettings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '천소연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: 'lore' },
+        { name: '구민지', gender: 'female', consent_style: 'requires_consent', sensitive_zones: '음핵', dull_zones: '', basis: '구민지 로어' }
+      ]
+    }
+  });
+  const noHudMessages = [
+    { role: 'assistant', content: '탁자 위 스마트폰에 진동이 났다. 민지에게서 문자가 왔다.\n"민지야."' },
+    { role: 'assistant', content: '소연이 그의 어깨에 기대어 숨을 골랐다. "민지가 뭐라고 할지 알지."\n그녀의 허벅지 안쪽이 다시 떨렸다.' }
+  ];
+  const noHudPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey: noHudScope,
+    profileGenders: { 푸딩: 'male', 천소연: 'female', 구민지: 'female' },
+    settings: noHudSettings,
+    recent: {
+      visibleMessages: noHudMessages,
+      latestUser: '푸딩은 소연의 허리를 감싸 안고 귓가에 속삭였다.'
+    }
+  });
+  assert.equal(noHudPkt.gauges.some(g => g.name === '구민지'), false, 'Non-HUD phone/quote mention of 구민지 must not enter intimacy gauges');
+  assert.ok(noHudPkt.gauges.some(g => g.name === '천소연'));
+
+  const noHudBondBlock = f.host.plugin.debugForcedBondStageBlock({
+    stageName: 'aide_plot',
+    settings: noHudSettings,
+    recent: {
+      runLineage: { runId: 'bond-nohud-18b', currentInputHash: 'hc2', priorAssistantHash: 'ha2' },
+      visibleMessages: noHudMessages,
+      latestUser: '푸딩은 소연의 손을 잡고 숨을 골랐다.'
+    }
+  });
+  const noHudOnSceneLines = noHudBondBlock.split('\n').filter(line => /Main Bond Roll:|Ripple Bond Roll:/.test(line)).join('\n');
+  assert.doesNotMatch(noHudOnSceneLines, /구민지/, `Non-HUD phone/quote mention must not trigger on-scene forced bond: ${noHudOnSceneLines}`);
+
+  const noHudRelPrep = await f.host.plugin.debugRelationshipSimPrepare({
+    settings: noHudSettings,
+    recent: {
+      runLineage: { runId: 'rel-nohud-18b', currentInputHash: 'rc2', priorAssistantHash: 'ra2' },
+      visibleMessages: noHudMessages,
+      latestUser: '소연에게 좋아한다고 고백한다.'
+    }
+  });
+  assert.equal((noHudRelPrep.verdicts || []).some(v => /구민지/.test(`${v.from} ${v.to}`)), false, 'Non-HUD phone/quote mention must not trigger relsim verdicts');
+
+  // 18d: Explicit physical arrival in latestUser DOES recognize 구민지 on-scene even when prior HUD omitted her
+  f.host.plugin.debugSetActiveScope(scopeKey, '푸딩');
+  const arrivalUser = '구민지가 문을 열고 방 안으로 들어왔다. 구민지가 하연의 손목을 잡고 가슴을 어루만졌다.';
+  const arrivalPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female', 구민지: 'female' },
+    settings,
+    recent: {
+      visibleMessages: [{ role: 'assistant', content: climaxAssistant }],
+      latestUser: arrivalUser
+    }
+  });
+  assert.equal(arrivalPkt.gauges.some(g => g.name === '구민지'), true, 'explicit physical arrival in latestUser includes 구민지 on-scene');
+});
+
+test('19) Spatial sub-room split, Tier-1 adjacent observer handoff, facility acoustics, and exposureIntent (conceal/oblivious/provoke)', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const scopeKey = 'spatial-subroom-19a';
+  f.host.plugin.debugSetActiveScope(scopeKey, '푸딩');
+  await f.host.plugin.debugIntimacyLoadCards();
+  const baseSettings = {
+    ...(await f.host.plugin.getRuntimeSettings()),
+    mode: 'normal',
+    writingMode: 'rp',
+    nsfwGuidanceEnabled: true,
+    nsfwMode: 'explicit',
+    enableCharacterAide: true,
+    enableWorldAide: true,
+    enablePlotAide: true,
+    enableIntimacyAide: true,
+    enableWorldDynamicsAide: true
+  };
+  f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: baseSettings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '천하연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: '차분하고 현실적인 성격' },
+        { name: '천소연', gender: 'female', sensitive_zones: '유두, 음핵', dull_zones: '', basis: '수줍음이 많고 비밀을 엄수하려 소리를 죽이는 성격' }
+      ]
+    }
+  });
+
+  // 19a: Motel room -> bathroom split with 천소연 while 천하연 remains outside in the motel bedroom
+  const motelRoomAssistant = '하연이 물병을 집어 들었다. "너 씻고 와. 소연이도."\n◈CG\nTIME|2027.04.26(월)|15:55|출근일\nLOC|광안리 근처 모텔 2층 방|none|맑음\n@|천하연|hayeon\n@|천소연|soyeon\n◈';
+  const splitUser = '소연과 함께 씻으러 들어왔다. 컨디션이 안 좋은 소연은 몸을 만족스럽게 움직이지 못했고 대신 씻겨주게 되었다. 하지만 씻겨주는 중에 소연을 뒤에서 안고 양손으로 그녀의 유두와 음핵을 살살 만지기 시작했다.';
+  const splitRecent = {
+    runLineage: { runId: 'sub-19a', currentInputHash: 'h19a', priorAssistantHash: 'a19a' },
+    visibleMessages: [{ role: 'assistant', content: motelRoomAssistant }],
+    latestUser: splitUser
+  };
+
+  const topoA = f.host.plugin.debugSpatialTopology({ recent: splitRecent, settings: baseSettings });
+  assert.equal(topoA.active, true, 'sub-room split detected');
+  assert.equal(topoA.subRoomId, 'bathroom');
+  assert.ok(topoA.inSubScene.some(n => /소연/.test(n)), `inSubScene includes 천소연: ${JSON.stringify(topoA.inSubScene)}`);
+  assert.ok(topoA.adjacentObservers.some(n => /하연/.test(n)), `adjacentObservers includes 천하연: ${JSON.stringify(topoA.adjacentObservers)}`);
+
+  const pktA = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female' },
+    settings: baseSettings,
+    recent: splitRecent
+  });
+  assert.equal(pktA.gauges.some(g => g.name === '천하연'), false, 'Tier-1 천하연 outside bathroom must be excluded from intimacy gauges');
+  assert.ok(pktA.gauges.some(g => g.name === '천소연'), 'Tier-0 천소연 inside bathroom stays in gauges');
+  assert.ok(pktA.externalReaction, 'externalReaction computed during intimate split');
+  assert.equal(pktA.externalReaction.nearbyActor, '천하연', 'Tier-1 천하연 promoted to 1st-priority external observer');
+  assert.equal(pktA.externalReaction.observerProximity, 'adjacent_sub_room');
+  assert.equal(pktA.externalReaction.spaceType, 'private');
+  assert.equal(pktA.externalReaction.acoustics?.ambientMasking, 'shower_running');
+
+  const wdPacketA = f.host.plugin.debugWorldDynamicsPacket({ recent: splitRecent, settings: baseSettings });
+  assert.match(wdPacketA, /\[SPATIAL TOPOLOGY & ADJACENT OBSERVERS/);
+  assert.match(wdPacketA, /천하연/);
+
+  // 19b: Shower stops + dead silence + climax brink sharply escalates external notice risk for 천하연
+  const bathroomAssist1 = '샤워기 물소리 아래 소연이 입술을 깨물고 숨을 삼켰다.\n◈CG\nTIME|2027.04.26(월)|16:00|출근일\nLOC|광안리 근처 모텔 2층 방|none|맑음\n@|천하연|hayeon\n@|천소연|soyeon\n◈';
+  const silenceRecent = {
+    runLineage: { runId: 'sub-19b', currentInputHash: 'h19b', priorAssistantHash: 'a19b' },
+    visibleMessages: [
+      { role: 'assistant', content: motelRoomAssistant },
+      { role: 'user', content: splitUser },
+      { role: 'assistant', content: bathroomAssist1 }
+    ],
+    latestUser: '샤워기 물을 껐다. 욕실 안에 정적이 흘렀다. 소연이 곧 절정에 달할 듯 다리를 떨며 신음을 터뜨릴 듯했다.'
+  };
+  const pktB = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem',
+    personaName: '푸딩',
+    scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female' },
+    settings: baseSettings,
+    recent: silenceRecent
+  });
+  assert.equal(pktB.externalReaction.acoustics?.ambientMasking, 'dead_silence');
+  assert.equal(pktB.externalReaction.nearbyActor, '천하연');
+  assert.ok(pktB.externalReaction.score > pktA.externalReaction.score, `stopping shower + silence must raise risk (${pktB.externalReaction.score} > ${pktA.externalReaction.score})`);
+
+  // 19c: Exposure intent (conceal vs provoke) in thin motel vs blockedByAcoustics in luxury soundproof suite
+  const thinMotelScope = 'acoustics-thin-19c';
+  f.host.plugin.debugSetActiveScope(thinMotelScope, '푸딩');
+  const thinAssist = '노후 모텔의 얇은 문 너머 거실에 하연이 앉아 있었다.\n◈CG\nLOC|노후 모텔 방|none|맑음\n@|천하연|hayeon\n@|천소연|soyeon\n◈';
+  const scoreForIntent = async intent => {
+    const sk = `${thinMotelScope}-${intent}`;
+    f.host.plugin.debugSetActiveScope(sk, '푸딩');
+    f.host.plugin.debugIntimacyRecord({
+      stageName: 'aide_character',
+      settings: baseSettings,
+      parsed: {
+        intimacyReadings: [],
+        intimacyProfiles: [
+          { name: '천하연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: '로어' },
+          { name: '천소연', gender: 'female', exposure_intent: intent, sensitive_zones: '음핵', dull_zones: '', basis: '로어' }
+        ]
+      }
+    });
+    const r = {
+      runLineage: { runId: `intent-${intent}`, currentInputHash: `hi-${intent}`, priorAssistantHash: `ha-${intent}` },
+      visibleMessages: [{ role: 'assistant', content: thinAssist }],
+      latestUser: '소연과 함께 욕실로 씻으러 들어가 그녀의 음핵을 어루만지며 삽입했다.'
+    };
+    return f.host.plugin.debugIntimacyPacket({
+      characterName: 'ClauGem', personaName: '푸딩', scopeKey: sk,
+      profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female' },
+      settings: baseSettings, recent: r
+    });
+  };
+  const pktConceal = await scoreForIntent('conceal');
+  const pktProvoke = await scoreForIntent('provoke');
+  assert.equal(pktConceal.externalReaction.exposureIntent?.dominantIntent, 'conceal');
+  assert.equal(pktProvoke.externalReaction.exposureIntent?.dominantIntent, 'provoke');
+  assert.ok(pktProvoke.externalReaction.score > pktConceal.externalReaction.score, `provoke (${pktProvoke.externalReaction.score}) > conceal (${pktConceal.externalReaction.score})`);
+
+  const luxScope = 'acoustics-luxury-19c';
+  f.host.plugin.debugSetActiveScope(luxScope, '푸딩');
+  f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: baseSettings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '천하연', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: '로어' },
+        { name: '천소연', gender: 'female', exposure_intent: 'provoke', sensitive_zones: '음핵', dull_zones: '', basis: '들키는 스릴을 즐겨 일부러 신음을 키우는 성격' }
+      ]
+    }
+  });
+  const luxAssist = '5성급 고급 호텔 프라이빗 스위트룸, 완벽한 방음 시공과 두꺼운 방음문으로 외부와 차단되어 있다.\n◈CG\nLOC|5성급 고급 호텔 프라이빗 스위트룸|none|맑음\n@|천하연|hayeon\n@|천소연|soyeon\n◈';
+  const luxRecent = {
+    runLineage: { runId: 'lux-19c', currentInputHash: 'hlux', priorAssistantHash: 'alux' },
+    visibleMessages: [{ role: 'assistant', content: luxAssist }],
+    latestUser: '소연과 함께 욕실로 들어가 샤워기 물소리가 쏟아지는 가운데 그녀가 들으라는 듯 일부러 크게 신음을 내며 벽을 짚고 삽입했다.'
+  };
+  const pktLux = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem', personaName: '푸딩', scopeKey: luxScope,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female' },
+    settings: baseSettings, recent: luxRecent
+  });
+  assert.equal(pktLux.externalReaction.acoustics?.soundproofing, 'very_high');
+  assert.equal(pktLux.externalReaction.blockedByAcoustics, true, 'luxury soundproofing + shower blocks provoke intent');
+  assert.ok(pktLux.externalReaction.score <= 55, `luxury acoustic cap keeps score <= 55, got ${pktLux.externalReaction.score}`);
+  assert.match(pktLux.externalReaction.promptDirective, /설비 차폐로 발각 의도 무산/);
+
+  // 19d: Exiting the sub-room clears active split and restores 천하연 back on-scene
+  f.host.plugin.debugSetActiveScope(scopeKey, '푸딩');
+  const exitRecent = {
+    runLineage: { runId: 'sub-19d', currentInputHash: 'h19d', priorAssistantHash: 'a19d' },
+    visibleMessages: [
+      { role: 'assistant', content: motelRoomAssistant },
+      { role: 'user', content: splitUser },
+      { role: 'assistant', content: bathroomAssist1 },
+      { role: 'user', content: silenceRecent.latestUser },
+      { role: 'assistant', content: bathroomAssist1 }
+    ],
+    latestUser: '씻고 욕실에서 나와 방으로 돌아왔다. 하연이 침대 위 소연과 함께 키스하며 가슴을 애무했다.'
+  };
+  const topoExit = f.host.plugin.debugSpatialTopology({ recent: exitRecent, settings: baseSettings });
+  assert.equal(topoExit.active, false, 'sub-room exit clears active split');
+  const pktExit = f.host.plugin.debugIntimacyPacket({
+    characterName: 'ClauGem', personaName: '푸딩', scopeKey,
+    profileGenders: { 푸딩: 'male', 천하연: 'female', 천소연: 'female' },
+    settings: baseSettings, recent: exitRecent
+  });
+  assert.equal(pktExit.gauges.some(g => g.name === '천하연'), true, '천하연 restored on-scene after exiting bathroom');
+  assert.equal(pktExit.gauges.some(g => g.name === '천소연'), true, '천소연 remains on-scene after exiting bathroom');
+
+  // 19e: Lore auto-estimation for exposureIntent + GUI [data-intimacy-card-field="exposureIntent"] persistence
+  await f.host.plugin.openSettingsGui();
+  await new Promise(r => setTimeout(r, 60));
+  const guiScope = 'exposure-gui-19e';
+  f.host.plugin.debugSetActiveScope(guiScope, '푸딩');
+  await f.host.plugin.debugIntimacyLoadCards();
+  const autoRec = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: baseSettings,
+    parsed: {
+      intimacyReadings: [],
+      intimacyProfiles: [
+        { name: '한서윤', gender: 'female', sensitive_zones: '귀', dull_zones: '', basis: '비밀을 엄수하고 들킬까 두려워 소리를 죽이는 조심스러운 성격' },
+        { name: '차유나', gender: 'female', sensitive_zones: '음핵', dull_zones: '', basis: '들키는 스릴을 즐기며 과시 욕구가 강해 일부러 신음을 키우는 성격' }
+      ]
+    }
+  });
+  assert.equal(autoRec.cards.find(c => c.name === '한서윤')?.exposureIntent, 'conceal');
+  assert.equal(autoRec.cards.find(c => c.name === '차유나')?.exposureIntent, 'provoke');
+
+  await f.host.plugin.debugNavigateGui('chat');
+  const expSelects = [...f.document.querySelectorAll('[data-intimacy-card-field="exposureIntent"]')];
+  assert.ok(expSelects.length >= 2, 'GUI renders exposureIntent selects for cards');
+  expSelects[0].value = 'provoke';
+  expSelects[0].dispatchEvent(new f.document.defaultView.Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 60));
+  const reloadedCards = (await f.host.plugin.debugIntimacyLoadCards())[guiScope] || [];
+  assert.equal(reloadedCards[0]?.exposureIntent, 'provoke', 'GUI exposureIntent edit persisted');
+});

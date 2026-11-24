@@ -4157,6 +4157,7 @@ ${BIANCA_PERSONA_TEXT}`;
     bodyStateVerdicts: {},
     worldDynamicsReadings: {},
     worldDynamicsTelemetry: {},
+    spatialTopology: {},
     worldSimLogs: null,
     intimacyReadings: {},
     intimacyTelemetry: {},
@@ -27313,11 +27314,40 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const n = compact(value || '', 40);
     return !!n && EXTENSION_PERSON_NAME_RE.test(n) && !EXTENSION_NON_PERSON_NAME_RE.test(n);
   };
+  const SCENE_REMOTE_OR_MENTION_RE = /(?:문자|메시지|카톡|톡이|톡을|전화|통화|알림|진동이\s*났|화면이\s*켜지|스마트폰|휴대폰|핸드폰|폰\s*화면|부재중|연락이\s*왔|연락했|연락을|답장|발신|수신|언급|얘기(?:를|가|만|했)|이야기(?:를|가|만|했)|소문|소식|text\s*message|phone\s*call|notification|mentioned)/i;
+  const SCENE_PHYSICAL_PRESENCE_RE = /(?:들어왔|들어섰|문을\s*열고|나타났|다가왔|걸어왔|마주\s*앉|옆에\s*앉|침대\s*위|끌어안|입을\s*맞|키스|삽입|만졌|안겼|올라탔|눈을\s*마주쳤|walked\s+in|entered|stepped\s+in|sat\s+beside)/i;
+  const stripQuotedAndRemoteSceneText = rawText => {
+    const base = typeof stripNonProseSceneTags === 'function' ? stripNonProseSceneTags(rawText) : String(rawText || '');
+    const unquoted = base
+      .replace(/"[^"\n]*"/g, ' ')
+      .replace(/“[^”\n]*”/g, ' ')
+      .replace(/「[^」\n]*」/g, ' ')
+      .replace(/『[^』\n]*』/g, ' ');
+    return unquoted
+      .split(/\n+|(?<=[.!?。！？])\s+/)
+      .map(seg => seg.trim())
+      .filter(seg => seg && (!SCENE_REMOTE_OR_MENTION_RE.test(seg) || SCENE_PHYSICAL_PRESENCE_RE.test(seg)))
+      .join('\n');
+  };
   const extensionScenePeople = (recent = {}) => {
     const index = Runtime.activeEntityIndex;
+    const hudNames = typeof worldDynamicsHudPresentNames === 'function' ? worldDynamicsHudPresentNames(recent) : [];
+    const inputText = stripQuotedAndRemoteSceneText(recent.latestUser || '');
+    const inputEntities = index && inputText ? continuityEntitiesInText(inputText, index).filter(extensionIsPersonName) : [];
+    if (hudNames.length > 0) {
+      const out = [];
+      const add = raw => {
+        const clean = compact(raw || '', 60);
+        if (!clean || !extensionIsPersonName(clean)) return;
+        if (!out.some(existing => existing === clean || extensionSameOrGivenName(existing, clean))) out.push(clean);
+      };
+      for (const n of hudNames) add(n);
+      for (const n of inputEntities) add(n);
+      return out;
+    }
     if (!index) return [];
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : [];
-    const sceneText = [...messages.map(message => message?.content || ''), recent.latestUser || ''].join('\n');
+    const sceneText = [...messages.map(message => stripQuotedAndRemoteSceneText(message?.content || '')), inputText].filter(Boolean).join('\n');
     return continuityEntitiesInText(sceneText, index).filter(extensionIsPersonName);
   };
   // The character card's name, when it names a person. A group or world card ("클로젬 여행동아리")
@@ -27362,16 +27392,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
     const lastAssistant = [...messages].reverse().find(m => m?.role !== 'user');
-    const lastBody = stripNonProseSceneTags(text(lastAssistant?.content || ''));
-    const inputBody = stripNonProseSceneTags(text(recent.latestUser || ''));
+    const lastBody = stripQuotedAndRemoteSceneText(text(lastAssistant?.content || ''));
+    const inputBody = stripQuotedAndRemoteSceneText(text(recent.latestUser || ''));
     const hudNames = worldDynamicsHudPresentNames(recent);
     const recentMsgs = messages.slice(-2);
-    const entityNames = extensionScenePeople({ ...recent, visibleMessages: recentMsgs });
+    const entityNames = hudNames.length
+      ? (Runtime.activeEntityIndex && inputBody ? continuityEntitiesInText(inputBody, Runtime.activeEntityIndex).filter(extensionIsPersonName) : [])
+      : extensionScenePeople({ ...recent, visibleMessages: recentMsgs });
     const out = [];
     const add = raw => {
       const clean = compact(raw || '', 60);
       if (!clean || !extensionIsPersonName(clean)) return;
-      if (!out.some(existing => extensionSameOrGivenName(existing, clean))) out.push(clean);
+      const idx = out.findIndex(existing => extensionSameOrGivenName(existing, clean));
+      if (idx < 0) {
+        out.push(clean);
+      } else if (clean.length > out[idx].length) {
+        out[idx] = clean;
+      }
     };
     for (const n of hudNames) add(n);
     for (const n of entityNames) add(n);
@@ -27392,6 +27429,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         continue;
       }
       if (proseScope && extensionTextMentionsName(proseScope, candidate)) add(candidate);
+    }
+    const topo = typeof resolveSpatialTopology === 'function' ? resolveSpatialTopology(recent, settings) : null;
+    if (topo?.active && Array.isArray(topo.adjacentObservers) && topo.adjacentObservers.length) {
+      return out.filter(person => !topo.adjacentObservers.some(obs => extensionSameOrGivenName(obs, person)));
     }
     return out;
   };
@@ -27549,12 +27590,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // Without user cards (and unless the user turned it off), 억결 binds the persona to the
   // character card's person and whoever else is in the scene, at most two, and reads each
   // bond's tone from canon, lore and the scene. These auto bonds act like cards this turn.
-  const forcedBondAutoCards = (recent = {}) => {
+  const forcedBondAutoCards = (recent = {}, settings = {}) => {
     const people = [];
-    const scenePeople = extensionScenePeople(recent);
-    const inputText = String(recent?.latestUser || '');
-    const inputPeople = inputText ? scenePeople.filter(name => extensionLineNames(inputText, name)) : [];
-    for (const name of [extensionCardPerson(recent, scenePeople), ...inputPeople, ...scenePeople]) {
+    const present = onScenePeopleNow(recent, settings);
+    const hudActive = worldDynamicsHudPresentNames(recent).length > 0;
+    const inputText = stripQuotedAndRemoteSceneText(String(recent?.latestUser || ''));
+    const inputPeople = inputText ? present.filter(name => extensionLineNames(inputText, name)) : [];
+    const candidates = hudActive ? [...inputPeople, ...present] : [...inputPeople, ...present, extensionCardPerson(recent, present)];
+    for (const name of candidates) {
       if (!name || bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName)) continue;
       if (people.some(known => extensionSamePerson(known, name))) continue;
       people.push(name);
@@ -27568,7 +27611,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const forcedBondCardsInPlay = (settings = {}, recent = {}) => {
     const cards = forcedBondCardsForScope(settings, compact(Runtime.activeScopeKey || '', 512)).filter(card => card.to);
     if (cards.length || settings.forcedBondAuto === false) return cards;
-    return forcedBondAutoCards(recent);
+    return forcedBondAutoCards(recent, settings);
   };
   // A stage returns bond output only when 억결 is active; the shape stays unchanged otherwise.
   const forcedBondOutputKind = (stageName, settings = {}) => {
@@ -27909,6 +27952,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const sanitizeSameSexCard = card => sanitizeForcedBondCardForSameSex(card, scopeKey, settings, recent);
     const effectiveOnSceneCards = (Array.isArray(onSceneCards) ? onSceneCards : []).map(sanitizeSameSexCard).filter(Boolean);
     const allCards = forcedBondCardsForScope(settings, scopeKey);
+    const hudNames = worldDynamicsHudPresentNames(recent);
     const presentList = onScenePeopleNow(recent, settings);
     const present = new Set(presentList.map(n => normalizeContinuityAlias(n)));
     const isPresentParty = name => {
@@ -28028,8 +28072,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       });
       if (card.sameSexNonRomantic) {
         beatSynthesis.beatIntent = `${beatSynthesis.beatIntent} (strictly non-romantic collegial/rivalry/platonic interaction only)`;
-        beatSynthesis.beatIntentKo = `${beatSynthesis.beatIntentKo} (동성 간 연애 감정·성적 긴장 금지, 동료·견제·인간적 관계로만 묘사)`;
-        beatSynthesis.contextualDirectiveKo = `${beatSynthesis.contextualDirectiveKo} [동성 연애 금지: 동료·견제·업무/인간적 거리감으로만 표현하고 연애적 호감이나 성적 긴장으로 엮지 말 것]`;
+        beatSynthesis.beatIntentKo = `${beatSynthesis.beatIntentKo} (동성 간 로맨스·성적 긴장 금지, 동료·견제·인간적 관계로만 묘사)`;
+        beatSynthesis.contextualDirectiveKo = `${beatSynthesis.contextualDirectiveKo} [동성 비로맨스 제한: 동료·견제·업무/인간적 거리감으로만 표현하고 사적 호감이나 성적 긴장으로 엮지 말 것]`;
       }
       return {
         cardId: card.id,
@@ -28051,7 +28095,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ...beatSynthesis
       };
     };
-    for (const card of effectiveOnSceneCards.slice(0, 4)) {
+    const filteredOnSceneCards = (hudNames.length > 0 || presentList.length > 0)
+      ? effectiveOnSceneCards.filter(card => isPresentParty(card.from) && isPresentParty(card.to))
+      : effectiveOnSceneCards;
+    for (const card of filteredOnSceneCards.slice(0, 4)) {
       rolls.push(rollCard(card, false));
     }
     for (const card of filteredOffScene.slice(0, 2)) {
@@ -29728,17 +29775,205 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ]);
   const worldDynamicsHudPresentNames = (recent = {}) => {
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
-    const lastAssistant = [...messages].reverse().find(m => m?.role !== 'user');
-    const body = String(lastAssistant?.content || '');
-    const names = [];
-    for (const match of body.matchAll(/^@\|([^\n|]{2,40})/gm)) {
-      const name = compact(match[1], 40);
-      if (extensionIsPersonName(name)) names.push(name);
+    const assistants = messages.filter(m => m?.role !== 'user');
+    const lastBody = assistants.length ? assistants[assistants.length - 1]?.content : (recent?.latestAssistant || '');
+    const parseHud = bodyStr => {
+      const str = String(bodyStr || '');
+      const hasCg = /◈CG[\s\S]*?◈/.test(str);
+      const loc = typeof extractHudLocation === 'function' ? extractHudLocation(str) : '';
+      const names = [];
+      for (const match of str.matchAll(/^@\|([^\n|]{2,40})/gm)) {
+        const name = compact(match[1], 40);
+        if (extensionIsPersonName(name)) names.push(name);
+      }
+      return { hasCg, loc, names };
+    };
+    const lastHud = parseHud(lastBody || '');
+    if (lastHud.names.length) return lastHud.names;
+    if (lastHud.hasCg && assistants.length >= 2) {
+      const prevHud = parseHud(assistants[assistants.length - 2]?.content || '');
+      if (prevHud.names.length && (!lastHud.loc || !prevHud.loc || prevHud.loc === lastHud.loc)) {
+        return prevHud.names;
+      }
     }
-    return names;
+    return [];
+  };
+  const SPATIAL_SUB_ROOMS = Object.freeze([
+    ['bathroom', '욕실·화장실', /욕실|화장실|샤워실|샤워\s*부스|세면실|씻으러|씻기\s*위해|씻고\s*나|bathroom|shower\s*room|washroom|restroom/i],
+    ['balcony', '베란다·발코니·테라스', /베란다|발코니|테라스|야외\s*테라스|balcony|terrace|veranda/i],
+    ['dressing_room', '드레스룸·탈의실·옷방', /드레스룸|탈의실|옷방|파우더룸|dressing\s*room|walk-in\s*closet|fitting\s*room/i],
+    ['inner_room', '안방·안쪽 방·침실·서재·옆방', /안쪽\s*방|안방|건너방|옆방|작은방|서재|침실\s*안|inner\s*room|study\s*room|side\s*room|adjacent\s*room/i],
+    ['storage_nook', '창고·다용도실·보조실·탕비실', /창고|다용도실|보조실|탕비실|storage\s*room|utility\s*room|pantry/i]
+  ]);
+  const SUB_ROOM_ENTER_RE = /들어갔|들어왔|들어섰|들어가|씻으러|데리고|따로|이동했|옮겼|건너갔|나갔|피했|숨었|stepped\s+into|went\s+into|entered|took\s+[^.!?\n]{0,24}into/i;
+  const SUB_ROOM_EXIT_RE = /(?:욕실|화장실|샤워실|베란다|발코니|드레스룸|탈의실|안쪽\s*방|안방|서재|창고|세면실)(?:에서|을|를)?\s*(?:나와|나왔|나섰|나가|돌아왔|돌아가)|(?:모두|같이|함께)\s*(?:방|거실|침실)(?:으로|에)?\s*(?:돌아왔|나왔)|모두\s*모였|came\s+back\s+out|stepped\s+out\s+of\s+the\s+(?:bathroom|balcony|room)|returned\s+to\s+the\s+room/i;
+  const SUB_ROOM_STAY_OUT_RE = /남아|남았|기다리|밖에\s*있|문\s*밖|침대\s*(?:위|옆)|stay(?:ed|ing)?\s+behind|waited\s+outside/i;
+  const resolveSpatialTopology = (recent = {}, settings = {}) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const input = text(recent.latestUser || '');
+    const inputHash = compact(recent?.runLineage?.currentInputHash || stableDraftHash(input), 40);
+    const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
+    const assistants = messages.filter(m => m?.role !== 'user');
+    const lastAssistant = assistants.length ? assistants[assistants.length - 1] : null;
+    const parentPlace = (typeof extractHudLocation === 'function'
+      ? (extractHudLocation(input) || [...messages].reverse().map(m => extractHudLocation(m?.content || '')).find(Boolean) || '')
+      : '');
+    const physicalInput = stripQuotedAndRemoteSceneText(input);
+    const physicalLast = stripQuotedAndRemoteSceneText(text(lastAssistant?.content || ''));
+    const hudNames = worldDynamicsHudPresentNames(recent);
+    const prevTopo = scopeKey ? (Runtime.spatialTopology?.[scopeKey] || null) : null;
+
+    let detectedSub = null;
+    for (const [id, label, pattern] of SPATIAL_SUB_ROOMS) {
+      if (pattern.test(physicalInput)) {
+        detectedSub = { id, label, pattern };
+        break;
+      }
+    }
+
+    const placeChanged = !!(prevTopo?.active && prevTopo.parentPlace && parentPlace && prevTopo.parentPlace !== parentPlace);
+    const exitedInLastAssistant = !!(
+      prevTopo?.active
+      && inputHash && prevTopo.lastInputHash && inputHash !== prevTopo.lastInputHash
+      && physicalLast && SUB_ROOM_EXIT_RE.test(physicalLast)
+      && !(detectedSub && SUB_ROOM_ENTER_RE.test(physicalInput))
+    );
+    const exitedSubRoom = !!(physicalInput && SUB_ROOM_EXIT_RE.test(physicalInput)) || exitedInLastAssistant;
+    if (placeChanged || exitedSubRoom) {
+      if (scopeKey && Runtime.spatialTopology) delete Runtime.spatialTopology[scopeKey];
+      return {
+        active: false,
+        parentPlace,
+        subRoom: '',
+        subRoomId: '',
+        inSubScene: [],
+        adjacentObservers: [],
+        turnsInSubRoom: 0,
+        barrier: '',
+        lastInputHash: inputHash
+      };
+    }
+
+    const knownCast = [
+      ...(Array.isArray(settings?.worldSimulatorCast) ? settings.worldSimulatorCast : []),
+      ...(Array.isArray(recent?.offSceneCast) ? recent.offSceneCast : []),
+      ...intimacyCardsForScope(scopeKey).map(c => c?.name),
+      ...forcedBondCardsForScope(settings, scopeKey).flatMap(c => [c?.from, c?.to]),
+      ...bodyStateCardsForScope(settings, scopeKey).map(c => c?.name),
+      ...relsimProfilesForScope(scopeKey).map(c => c?.name),
+      Runtime.activeCharacterName
+    ].filter(Boolean);
+    const resolveFullName = raw => {
+      const clean = compact(raw || '', 60);
+      if (!clean) return '';
+      const longer = knownCast.find(k => k && extensionSameOrGivenName(k, clean) && k.length > clean.length);
+      return longer || clean;
+    };
+
+    const parentRoomPool = [];
+    const pushPool = raw => {
+      const full = resolveFullName(raw);
+      if (!full || !extensionIsPersonName(full)) return;
+      if (bodyStateIsPersona(full) || extensionSamePerson(full, Runtime.activePersonaName)) return;
+      if (!parentRoomPool.some(p => extensionSameOrGivenName(p, full))) parentRoomPool.push(full);
+    };
+    if (hudNames.length > 0) {
+      for (const h of hudNames) pushPool(h);
+    } else if (prevTopo?.active) {
+      for (const p of [...(prevTopo.inSubScene || []), ...(prevTopo.adjacentObservers || [])]) pushPool(p);
+    } else if (physicalLast) {
+      if (Runtime.activeEntityIndex) {
+        for (const e of continuityEntitiesInText(physicalLast, Runtime.activeEntityIndex)) pushPool(e);
+      }
+      for (const k of knownCast) {
+        if (extensionTextMentionsName(physicalLast, k)) pushPool(k);
+      }
+    }
+
+    if (detectedSub && (SUB_ROOM_ENTER_RE.test(physicalInput) || !prevTopo?.active) && parentRoomPool.length >= 2) {
+      const inputSentences = physicalInput.split(/\n+|(?<=[.!?。！？])\s+/).map(s => s.trim()).filter(Boolean);
+      const enterClauses = inputSentences.filter(s => (detectedSub.pattern.test(s) || SUB_ROOM_ENTER_RE.test(s)) && !SUB_ROOM_STAY_OUT_RE.test(s));
+      const scanBlock = enterClauses.length ? enterClauses.join('\n') : physicalInput;
+      const inSub = parentRoomPool.filter(n => extensionTextMentionsName(scanBlock, n) && !inputSentences.some(s => SUB_ROOM_STAY_OUT_RE.test(s) && extensionTextMentionsName(s, n) && !detectedSub.pattern.test(s)));
+      if (inSub.length >= 1 && inSub.length < parentRoomPool.length) {
+        const adjacentObservers = parentRoomPool.filter(n => !inSub.some(s => extensionSameOrGivenName(s, n)));
+        const nextTopo = {
+          active: true,
+          parentPlace,
+          subRoom: detectedSub.label,
+          subRoomId: detectedSub.id,
+          inSubScene: inSub,
+          adjacentObservers,
+          turnsInSubRoom: 1,
+          barrier: '문·벽 하나 사이 (동일 장소 내 인접 공간)',
+          lastInputHash: inputHash
+        };
+        if (scopeKey) {
+          if (!Runtime.spatialTopology) Runtime.spatialTopology = {};
+          Runtime.spatialTopology[scopeKey] = nextTopo;
+        }
+        return nextTopo;
+      }
+    }
+
+    if (prevTopo?.active) {
+      const nextInSub = [...(prevTopo.inSubScene || [])];
+      let nextAdj = [...(prevTopo.adjacentObservers || [])];
+      if (physicalInput && nextAdj.length) {
+        const joiners = nextAdj.filter(obs => extensionTextMentionsName(physicalInput, obs) && SUB_ROOM_ENTER_RE.test(physicalInput) && !SUB_ROOM_STAY_OUT_RE.test(physicalInput));
+        for (const j of joiners) {
+          if (!nextInSub.some(p => extensionSameOrGivenName(p, j))) nextInSub.push(j);
+        }
+        nextAdj = nextAdj.filter(obs => !joiners.some(j => extensionSameOrGivenName(j, obs)));
+      }
+      if (!nextAdj.length) {
+        if (scopeKey && Runtime.spatialTopology) delete Runtime.spatialTopology[scopeKey];
+        return {
+          active: false,
+          parentPlace: parentPlace || prevTopo.parentPlace,
+          subRoom: detectedSub?.label || prevTopo.subRoom || '',
+          subRoomId: detectedSub?.id || prevTopo.subRoomId || '',
+          inSubScene: nextInSub,
+          adjacentObservers: [],
+          turnsInSubRoom: 0,
+          barrier: '',
+          lastInputHash: inputHash
+        };
+      }
+      const turns = (inputHash && prevTopo.lastInputHash && inputHash === prevTopo.lastInputHash)
+        ? (Number(prevTopo.turnsInSubRoom) || 1)
+        : ((Number(prevTopo.turnsInSubRoom) || 1) + 1);
+      const updated = {
+        ...prevTopo,
+        active: true,
+        parentPlace: parentPlace || prevTopo.parentPlace,
+        inSubScene: nextInSub,
+        adjacentObservers: nextAdj,
+        turnsInSubRoom: turns,
+        lastInputHash: inputHash || prevTopo.lastInputHash
+      };
+      if (scopeKey) {
+        if (!Runtime.spatialTopology) Runtime.spatialTopology = {};
+        Runtime.spatialTopology[scopeKey] = updated;
+      }
+      return updated;
+    }
+
+    return {
+      active: false,
+      parentPlace,
+      subRoom: detectedSub?.label || '',
+      subRoomId: detectedSub?.id || '',
+      inSubScene: [],
+      adjacentObservers: [],
+      turnsInSubRoom: 0,
+      barrier: '',
+      lastInputHash: inputHash
+    };
   };
   const WORLD_SIM_NON_PERSON_KINDS = new Set(['rule', 'system', 'location', 'place', 'item', 'concept', 'lore', 'meta']);
   const worldDynamicsOffSceneCast = (recent = {}, settings = {}) => {
+    const topo = resolveSpatialTopology(recent, settings);
     const index = Runtime.activeEntityIndex;
     const indexNames = Array.isArray(index?.entries)
       ? index.entries
@@ -29749,6 +29984,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           .map(e => e?.canonical || '')
       : [];
     const candidates = [
+      ...(topo?.active && Array.isArray(topo.adjacentObservers) ? topo.adjacentObservers : []),
       ...(Array.isArray(settings?.worldSimulatorCast) ? settings.worldSimulatorCast : []),
       ...(Array.isArray(recent?.offSceneCast) ? recent.offSceneCast : []),
       ...indexNames
@@ -29950,6 +30186,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return { offSceneCast, rawOffSceneCast, maleRestriction, roll: null, chance: 0, triggered: false, suppressed: 'due_movement_active', actor: '', companion: '', actionType: null, spaceType };
     }
     if (intimacyScene(recent).engaged) {
+      const topo = resolveSpatialTopology(recent, settings);
+      if (topo?.active && Array.isArray(topo.adjacentObservers) && topo.adjacentObservers.length) {
+        return {
+          offSceneCast,
+          rawOffSceneCast,
+          maleRestriction,
+          roll: null,
+          chance: 0,
+          triggered: false,
+          suppressed: 'intimate_adjacent_handoff',
+          adjacentObservers: topo.adjacentObservers,
+          subRoom: topo.subRoom,
+          parentPlace: topo.parentPlace,
+          turnsInSubRoom: topo.turnsInSubRoom,
+          actor: topo.adjacentObservers[0],
+          companion: '',
+          actionType: null,
+          spaceType
+        };
+      }
       return { offSceneCast, rawOffSceneCast, maleRestriction, roll: null, chance: 0, triggered: false, suppressed: 'intimate_scene_delegated', actor: '', companion: '', actionType: null, spaceType };
     }
     const seedBase = [scopeKey, 'world_sim', stableDraftHash(input), stableDraftHash(priorAssistant)].join('|');
@@ -30065,16 +30321,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
         return `- [${ev.storyDate || (ev.storyDay !== null ? `day ${ev.storyDay}` : 'log')}] ${who}${where}${why}: ${ev.summary}${intTag}`;
       })
     ] : [];
+    const topoNow = resolveSpatialTopology(recent, settings);
+    const topologyLines = (topoNow?.active && topoNow.adjacentObservers?.length) ? [
+      '[SPATIAL TOPOLOGY & ADJACENT OBSERVERS (세부 공간 분리 · 문밖 최인접 인물)]',
+      `- 상위 장소: ${topoNow.parentPlace || '실내'} / 현재 밀실·세부 공간: ${topoNow.subRoom} (안: ${topoNow.inSubScene.join(', ') || '없음'} · 경과 ${topoNow.turnsInSubRoom}턴)`,
+      `- 문밖 인접 외부 인물 (Tier 1): ${topoNow.adjacentObservers.join(', ')} — 물리적 문·벽 너머에 남아 세부 공간 안의 비밀 행위를 아직 모르며, 정사 외부반응 1순위 인지 후보입니다.`
+    ] : [];
     const simLines = sim.offSceneCast.length ? [
       '[OFF-SCENE WORLD SIMULATOR]',
       `Off-scene cast pool: ${sim.offSceneCast.join(', ')}`,
-      sim.suppressed === 'intimate_scene_delegated'
-        ? 'Simulator status: deferred to Intimacy EXTERNAL REACTION during active sexual encounter (which may draw from the off-scene cast pool above).'
-        : sim.suppressed === 'due_movement_active'
-          ? 'Simulator status: deferred because an established movement above is already due this turn.'
-          : sim.triggered
-            ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${(() => { const from = offstageRoster.find(item => extensionSamePerson(item.name, sim.actor))?.place || ''; return from ? ` (from ${from})` : ''; })()}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). REQUIRED THIS TURN: one visible trace of it early or mid-scene, consistent with their lore/personality — at most one, subtle, without hijacking the scene or ending the turn. If the turn cannot carry it, say why in world_readings instead of dropping it.`
-            : `Dice roll: ${sim.roll}/100 >= ${sim.chance}% → QUIET TURN (surface no random off-scene ripple this turn).`
+      sim.suppressed === 'intimate_adjacent_handoff'
+        ? `Simulator status: delegated with adjacent observer handoff — ${sim.adjacentObservers.join(', ')} waiting right outside ${sim.subRoom || 'sub-room'} (${sim.parentPlace || 'same venue'}, turn ${sim.turnsInSubRoom || 1}) as 1st-priority Intimacy EXTERNAL REACTION witness.`
+        : sim.suppressed === 'intimate_scene_delegated'
+          ? 'Simulator status: deferred to Intimacy EXTERNAL REACTION during active sexual encounter (which may draw from the off-scene cast pool above).'
+          : sim.suppressed === 'due_movement_active'
+            ? 'Simulator status: deferred because an established movement above is already due this turn.'
+            : sim.triggered
+              ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${(() => { const from = offstageRoster.find(item => extensionSamePerson(item.name, sim.actor))?.place || ''; return from ? ` (from ${from})` : ''; })()}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). REQUIRED THIS TURN: one visible trace of it early or mid-scene, consistent with their lore/personality — at most one, subtle, without hijacking the scene or ending the turn. If the turn cannot carry it, say why in world_readings instead of dropping it.`
+              : `Dice roll: ${sim.roll}/100 >= ${sim.chance}% → QUIET TURN (surface no random off-scene ripple this turn).`
     ] : [];
     return compact([
       clock ? `Story clock (LIBRA): day ${clock.day}${clock.estimated ? ' (estimated)' : ''}${clock.timeOfDay ? ` · ${clock.timeOfDay}` : ''}${clock.date ? ` · ${clock.date}` : ''}.` : 'Story clock: none. Elapsed days are known only where the story states dates or relative days.',
@@ -30087,6 +30351,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? `Candidate this turn: #${candidate + 1}. Surface it only if it can reach this scene and no recorded ending covers it; when the current input touches another listed movement, prefer that one.`
           : 'No listed movement has come due. Surface nothing unless the current input itself reaches one of them.')
         : '',
+      ...topologyLines,
       ...rosterLines,
       ...persistentLines,
       ...simLines
@@ -31274,27 +31539,151 @@ Begin directly with the in-world response and finish the complete same-turn draf
     high: '높음',
     critical: '매우 높음'
   });
+  const INTIMACY_SHOWER_STOP_RE = /(?:샤워기|물|수도|수도꼭지|온수)(?:을|를)?\s*(?:껐|잠갔|멈췄)|물소리(?:가|도)?\s*(?:멎|그쳤|멈췄|사라졌)|turned\s+off\s+the\s+(?:shower|water)/i;
+  const INTIMACY_SHOWER_RUN_RE = /샤워기|씻으러|물줄기|물소리|물을\s*(?:틀|켜|맞)|흐르는\s*물|shower(?:ing)?|running\s+water/i;
+  const INTIMACY_FAN_MEDIA_RE = /환풍기|배기팬|음악|노래|tv|텔레비전|빗소리|파도\s*소리|exhaust\s+fan|music|\btv\b|rain|waves/i;
+  const INTIMACY_DEAD_SILENCE_RE = /정적|적막|쥐\s*죽은|아무\s*소리(?:도|가)?\s*없|조용해졌|dead\s+silence/i;
+  const INTIMACY_PROVOKE_INPUT_RE = /들으라는\s*듯|들키(?:고\s*싶|려)|알아차리(?:게|라)|소리를\s*(?:더|크게|높여|일부러)|문\s*(?:쪽|앞|너머)(?:로|에)?\s*(?:밀착|기대|붙)|벽을\s*(?:치|두드리|짚)|과시|deliberately\s+loud|want(?:ed|s)?\s+(?:them|her|him)\s+to\s+hear/i;
+  const INTIMACY_CONCEAL_INPUT_RE = /입을\s*(?:막|틀어막)|소리를\s*(?:죽|삼|참|낮)|들키지\s*않|비밀|속삭|숨죽|quietly|muffle|don't\s+let\s+(?:them|her|him)\s+hear/i;
+  const inferFacilityAcoustics = (recent = {}, placeObj = {}, topology = null, settings = {}) => {
+    const rawInput = text(recent.latestUser || '');
+    const rawMessages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
+      .filter(m => m?.role !== 'user')
+      .map(m => text(m?.content || ''))
+      .filter(Boolean);
+    const hudLocation = extractHudLocation(rawInput) || [...rawMessages].reverse().map(extractHudLocation).find(Boolean) || '';
+    const input = stripNonProseSceneTags(rawInput);
+    const window = rawMessages.slice(-INTIMACY_RECENT_WINDOW).map(stripNonProseSceneTags);
+    const lastWindow = window.length ? window[window.length - 1] : '';
+    const combined = [input, ...window, hudLocation].filter(Boolean).join('\n');
+
+    let soundproofing = 'medium';
+    let soundproofingLabel = '보통 방음';
+    let attenuation = 1.0;
+    let baseCap = 165;
+    if (/완벽한\s*방음|방음\s*시공|이중\s*(?:방음)?문|두꺼운\s*(?:방음)?문|방음벽|최고급\s*호텔|5성급|VIP\s*스위트|프라이빗\s*스위트|soundproof(?:ed|ing)?|double[- ]glazed|luxury\s*(?:hotel|suite)/i.test(combined)) {
+      soundproofing = 'very_high';
+      soundproofingLabel = '최상 방음';
+      attenuation = 0.45;
+      baseCap = 55;
+    } else if (/방음(?:이|은)?\s*(?:잘|괜찮|탄탄|되어)|중급\s*호텔|신축\s*(?:호텔|오피스텔|빌라)|두꺼운\s*문|heavy\s+door/i.test(combined)) {
+      soundproofing = 'high';
+      soundproofingLabel = '양호 방음';
+      attenuation = 0.72;
+      baseCap = 115;
+    } else if (/얇은\s*(?:문|벽)|합판문|방음(?:이|도)?\s*(?:안|부족|취약|허술|약하)|노후\s*(?:모텔|여관|건물)|허름한\s*(?:모텔|여관)|목조|소리(?:가|도)?\s*(?:잘|다)\s*새|thin\s*(?:door|wall)|poor\s+soundproofing/i.test(combined)) {
+      soundproofing = 'low';
+      soundproofingLabel = '취약 방음';
+      attenuation = 1.2;
+      baseCap = 200;
+    }
+
+    let ambientMasking = 'none';
+    let ambientMaskingLabel = '배경 소음 없음';
+    let maskingDelta = 0;
+    let ambientCapDelta = 0;
+    const showerStopped = INTIMACY_SHOWER_STOP_RE.test(input)
+      || (INTIMACY_SHOWER_STOP_RE.test(lastWindow) && !INTIMACY_SHOWER_RUN_RE.test(input));
+    const showerActive = !showerStopped && (
+      INTIMACY_SHOWER_RUN_RE.test(input)
+      || (topology?.subRoomId === 'bathroom' && INTIMACY_SHOWER_RUN_RE.test([input, lastWindow].filter(Boolean).join('\n')))
+    );
+    if (showerActive) {
+      ambientMasking = 'shower_running';
+      ambientMaskingLabel = '샤워·물소리 마스킹';
+      maskingDelta = -28;
+      ambientCapDelta = -20;
+    } else if (INTIMACY_DEAD_SILENCE_RE.test(input) || (showerStopped && INTIMACY_DEAD_SILENCE_RE.test(combined))) {
+      ambientMasking = 'dead_silence';
+      ambientMaskingLabel = '정적(소음 증폭)';
+      maskingDelta = 18;
+      ambientCapDelta = 25;
+    } else if (INTIMACY_FAN_MEDIA_RE.test(combined)) {
+      ambientMasking = 'fan_or_media';
+      ambientMaskingLabel = '배경음·환풍기 마스킹';
+      maskingDelta = -14;
+      ambientCapDelta = -10;
+    } else if (INTIMACY_DEAD_SILENCE_RE.test(combined)) {
+      ambientMasking = 'dead_silence';
+      ambientMaskingLabel = '정적(소음 증폭)';
+      maskingDelta = 18;
+      ambientCapDelta = 25;
+    }
+
+    let visualBarrier = 'closed_door';
+    let visualBarrierLabel = '닫힌 불투명 문';
+    let visualFloor = 0;
+    let visualCapDelta = 0;
+    if (INTIMACY_STEALTH_EXPOSED_RE.test(combined)) {
+      visualBarrier = 'ajar';
+      visualBarrierLabel = '문틈·개방(시각·청각 직통)';
+      visualFloor = 185;
+      visualCapDelta = 35;
+    } else if (/반투명\s*유리|유리문|불투명\s*유리|간유리|실루엣|frosted\s*glass|glass\s*door/i.test(combined)) {
+      visualBarrier = 'frosted_glass';
+      visualBarrierLabel = '반투명 유리문(실루엣 노출)';
+      visualCapDelta = 25;
+    } else if (INTIMACY_STEALTH_HIDDEN_RE.test(combined)) {
+      visualBarrier = 'opaque_locked';
+      visualBarrierLabel = '잠긴 불투명 문';
+      visualCapDelta = -10;
+    }
+
+    const enclosed = placeObj.spaceType === 'private'
+      || placeObj.isEnSuite === true
+      || soundproofing === 'very_high'
+      || soundproofing === 'high';
+    const transmissionCap = enclosed
+      ? Math.max(35, Math.min(200, Math.max(visualFloor, baseCap + ambientCapDelta + visualCapDelta)))
+      : 200;
+
+    return {
+      soundproofing,
+      soundproofingLabel,
+      attenuation,
+      ambientMasking,
+      ambientMaskingLabel,
+      maskingDelta,
+      visualBarrier,
+      visualBarrierLabel,
+      transmissionCap
+    };
+  };
   const buildIntimacyExternalReactionTier = (ext = {}, settings = null, scopeKey = '', recent = {}) => {
     const score = Number(ext.score || 0);
     const maxScore = Number(ext.maxScore || INTIMACY_EXTERNAL_MAX_SCORE || 200);
     const noticed = ext.noticed === true;
     const extFactorsText = Array.isArray(ext.factors) ? ext.factors.join(',') : '';
+    const actorName = compact(ext.nearbyActor || '', 80);
+    const isAdjacentSubRoom = ext.observerProximity === 'adjacent_sub_room' && !!actorName;
+    const subRoomLabel = compact(ext.spatialTopology?.subRoom || '세부 공간', 40);
     const isLockedPrivate = ext.spaceType === 'private'
       && (/은밀·잠금/.test(extFactorsText) || Number(ext.breakdown?.stealth || 0) < 0)
       && !/노출·개방/.test(extFactorsText);
     const isPrivate = ext.spaceType === 'private' && !/노출·개방/.test(extFactorsText);
-    const channelKo = isLockedPrivate
-      ? '잠긴 밀실(물리적으로 문이 잠겨 있으므로 무단 침입·문을 열고 들어오는 전개는 금지; 복도 발소리·옆방 벽 너머 진동·문고리/노크·인터폰/전화·이미 같은 방에 있는 동행자의 반응 등 닫힌 공간을 전제로 한 청각·간접 접촉 채널만 사용)'
-      : isPrivate
-        ? '실내 공간(문 틈·벽 너머 소리, 복도 발걸음, 문밖 인기척 등 실내 경계 채널 사용)'
-        : '개방·반개방 공간(시선·실루엣·다가오는 발소리·반쯤 열린 문·주변 통행 등 직접/간접 목격 채널 사용)';
-    const actorName = compact(ext.nearbyActor || '', 80);
+    const channelKo = isAdjacentSubRoom
+      ? `동일 장소 내 인접 공간 분리(문·벽 너머 바로 밖에 ${actorName} 대기 중, ${subRoomLabel} 안의 행위는 아직 모름 — ${ext.acoustics?.visualBarrierLabel || '닫힌 문'}·${ext.acoustics?.soundproofingLabel || '보통 방음'})`
+      : isLockedPrivate
+        ? '잠긴 밀실(물리적으로 문이 잠겨 있으므로 무단 침입·문을 열고 들어오는 전개는 금지; 복도 발소리·옆방 벽 너머 진동·문고리/노크·인터폰/전화·이미 같은 방에 있는 동행자의 반응 등 닫힌 공간을 전제로 한 청각·간접 접촉 채널만 사용)'
+        : isPrivate
+          ? '실내 공간(문 틈·벽 너머 소리, 복도 발걸음, 문밖 인기척 등 실내 경계 채널 사용)'
+          : '개방·반개방 공간(시선·실루엣·다가오는 발소리·반쯤 열린 문·주변 통행 등 직접/간접 목격 채널 사용)';
     const actorLore = actorName && typeof personLoreReactionBrief === 'function'
       ? personLoreReactionBrief(actorName, scopeKey, settings, recent)
       : '';
     const actorHintKo = actorName
-      ? `후보 제3자 ${actorName}${actorLore ? ` [로어 성격: ${actorLore}]` : ''} — 이 장소·시간대에 물리적으로 있을 수 있을 때만 활용하고, 부적절하면 장소에 어울리는 주변 인물(옆방 손님·복도 행인·관리자 등)을 사용하라.`
+      ? (isAdjacentSubRoom
+        ? `최인접 문밖 관찰자 ${actorName}${actorLore ? ` [로어 성격: ${actorLore}]` : ''} — 지금 바로 인접 공간에 남아 있으므로 문밖에서의 반응(노크·물어보기·침묵하며 듣기·배려/추궁)은 이 인물의 로어와 관계에 맞춰 묘사하라.`
+        : `후보 제3자 ${actorName}${actorLore ? ` [로어 성격: ${actorLore}]` : ''} — 이 장소·시간대에 물리적으로 있을 수 있을 때만 활용하고, 부적절하면 장소에 어울리는 주변 인물(옆방 손님·복도 행인·관리자 등)을 사용하라.`)
       : '장소와 시간대에 어울리는 자연스러운 주변 인물(복도·인접 공간 손님, 관리자, 행인 등)을 활용하라.';
+    const intentCode = ext.exposureIntent?.dominantIntent || 'oblivious';
+    const intentCue = ext.blockedByAcoustics && intentCode === 'provoke'
+      ? ` [설비 차폐로 발각 의도 무산: ${ext.acoustics?.soundproofingLabel || '고방음'}·${ext.acoustics?.ambientMaskingLabel || '차음'} 조건(전달 상한 ${ext.acoustics?.transmissionCap}/200) 때문에 당사자가 들키려 소리를 높이거나 벽을 짚어도 밖의 인물에게는 거의 새어 나가지 않는다.]`
+      : intentCode === 'provoke'
+        ? ' [발각 유도 태도(provoke): 당사자가 일부러 문밖 인물이 알아차리게 소리를 키우거나 벽·문 쪽에 몸을 기대어 흔적을 남기려 한다.]'
+        : intentCode === 'conceal'
+          ? ` [은닉·조심 태도(conceal): 당사자가 들키지 않으려 입을 틀어막고 호흡을 죽이며${ext.acoustics?.ambientMasking === 'shower_running' ? ' 물소리에 소음을 가리며' : ''} 조심스럽게 움직인다.]`
+          : '';
 
     if (score < 60) {
       return noticed
@@ -31303,14 +31692,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
             tierLabelKo: '낮은 경계 · 먼 바깥 소음',
             badgeTone: 'info',
             reactionSummaryKo: '멀리서 스치는 희미한 바깥 소음에 잠깐 귀를 기울이나 곧 안심하고 행위를 이어감',
-            promptDirective: `멀리서 들리는 옅은 바깥 소음에 캐릭터가 잠깐 귀를 기울이지만 안전함을 확인하고 행위를 자연스럽게 이어가라. (${channelKo})`
+            promptDirective: `멀리서 들리는 옅은 바깥 소음에 캐릭터가 잠깐 귀를 기울이지만 안전함을 확인하고 행위를 자연스럽게 이어가라. (${channelKo})${intentCue}`
           }
         : {
             tierId: 'quiet',
-            tierLabelKo: '안정 · 외부 기척 없음',
+            tierLabelKo: ext.blockedByAcoustics ? '설비 차폐 · 외부 미전달' : '안정 · 외부 기척 없음',
             badgeTone: 'ok',
-            reactionSummaryKo: '차단된 공간감 속에서 외부 방해 없이 서로의 호흡과 접촉에 온전히 집중함',
-            promptDirective: '외부 기척 없이 사적이고 안정된 분위기 속에서 서로의 호흡과 접촉에 집중하라. 인위적인 방해나 갑작스러운 발각을 만들지 마라.'
+            reactionSummaryKo: ext.blockedByAcoustics
+              ? '두꺼운 방음·배경 소음 차폐로 소리가 밖으로 새지 않아 외부 인물이 인지하지 못함'
+              : '차단된 공간감 속에서 외부 방해 없이 서로의 호흡과 접촉에 온전히 집중함',
+            promptDirective: `${ext.blockedByAcoustics ? '건물 방음·배경 소음 차폐로 소리가 밖으로 전달되지 않아 문밖 인물이 전혀 눈치채지 못한다.' : '외부 기척 없이 사적이고 안정된 분위기 속에서 서로의 호흡과 접촉에 집중하라. 인위적인 방해나 갑작스러운 발각을 만들지 마라.'}${intentCue}`
           };
     }
     if (score < 80) {
@@ -31320,14 +31711,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
             tierLabelKo: '낮은 경계 · 스쳐 가는 인기척',
             badgeTone: 'warn',
             reactionSummaryKo: '지나가는 발소리·바깥 기척이 어렴풋이 들려 순간 움찔하며 입술을 다물었다가 이어감',
-            promptDirective: `바깥을 스쳐 가는 발소리·기척이 어렴풋이 닿아 캐릭터가 순간 움찔하며 입술을 다물고 숨을 고른 뒤 행위를 이어가는 반응을 그려라. (${channelKo} · ${actorHintKo})`
+            promptDirective: `바깥을 스쳐 가는 발소리·기척이 어렴풋이 닿아 캐릭터가 순간 움찔하며 입술을 다물고 숨을 고른 뒤 행위를 이어가는 반응을 그려라. (${channelKo} · ${actorHintKo})${intentCue}`
           }
         : {
             tierId: 'faint',
             tierLabelKo: '낮은 긴장 · 주변 소음 의식',
             badgeTone: 'info',
-            reactionSummaryKo: '창밖·복도의 옅은 생활 소음에 순간 자기 목소리 크기를 의식하며 숨소리를 낮춤',
-            promptDirective: `창밖·복도의 옅은 생활 소음이 스치며 캐릭터가 순간 자신의 숨소리와 목소리 크기를 의식해 톤을 낮추는 미세한 긴장을 묘사하라. (${channelKo})`
+            reactionSummaryKo: isAdjacentSubRoom
+              ? `문밖 ${actorName}의 존재를 의식해 숨소리와 물소리 너머 울림을 낮추며 긴장함`
+              : '창밖·복도의 옅은 생활 소음에 순간 자기 목소리 크기를 의식하며 숨소리를 낮춤',
+            promptDirective: `${isAdjacentSubRoom ? `문밖 바로 인접 공간의 ${actorName}을 의식하며` : '창밖·복도의 옅은 생활 소음이 스치며'} 캐릭터가 순간 자신의 숨소리와 목소리 크기를 의식해 톤을 조절하는 미세한 긴장을 묘사하라. (${channelKo})${intentCue}`
           };
     }
     if (score < 120) {
@@ -31336,15 +31729,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
             tierId: 'moderate',
             tierLabelKo: '간접 인지 · 외부 기척 반응',
             badgeTone: 'warn',
-            reactionSummaryKo: '새어 나온 소리·기척에 밖의 제3자가 멈칫하거나 기척을 내고, 당사자가 화들짝 숨을 죽이며 몸을 굳힘',
-            promptDirective: `새어 나온 신음·마찰음 또는 기척을 외부의 제3자가 간접적으로 눈치챈다. 복도에서 멈칫하는 발소리·벽 너머 움직임/기침·노크/메시지 또는 로어 성격상 못 본 척 비켜 주는 기척을 구체적으로 묘사하고, 이에 장면 안 NPC가 화들짝 숨을 죽이며 움직임을 좁히거나 입을 막아 버티는 반응을 그려라. (${channelKo} · ${actorHintKo})`
+            reactionSummaryKo: isAdjacentSubRoom
+              ? `새어 나온 소리·기척에 문밖 ${actorName}이 멈칫하거나 기척을 내며 의심하기 시작함`
+              : '새어 나온 소리·기척에 밖의 제3자가 멈칫하거나 기척을 내고, 당사자가 화들짝 숨을 죽이며 몸을 굳힘',
+            promptDirective: `새어 나온 신음·마찰음 또는 기척을 외부의 제3자가 간접적으로 눈치챈다. ${isAdjacentSubRoom ? `바로 문밖의 ${actorName}이 멈칫하거나 문 쪽을 의식해 노크·기척을 내는` : '복도에서 멈칫하는 발소리·벽 너머 움직임/기침·노크/메시지 또는 로어 성격상 못 본 척 비켜 주는 기척을'} 구체적으로 묘사하고, 장면 안 NPC가 로어와 발각 의도에 맞게 반응하도록 그려라. (${channelKo} · ${actorHintKo})${intentCue}`
           }
         : {
             tierId: 'moderate',
             tierLabelKo: '중간 경계 · 소리 새어나감 긴장',
             badgeTone: 'info',
-            reactionSummaryKo: '복도·벽 너머 기척과 삐걱임·신음이 밖으로 새어 나갈까 봐 움찔하며 입술·시트를 물고 소리를 삼킴',
-            promptDirective: `제3자에게 직접 발각되지는 않았으나 게이지(${score}/${maxScore})에 걸맞은 외부 긴장이 반드시 본문에 나타나야 한다. 복도 발걸음·옆방 기척이나 침대 삐걱임·마찰음·거친 신음이 밖으로 새어 나갈 듯한 아슬아슬함에, 장면 안 NPC가 자기 로어 성격대로 문·벽 쪽을 의식해 움찔하거나 입술·시트를 깨물고 입을 틀어막아 소리를 죽이며 몸을 움츠리는 반응을 묘사하라. (${channelKo})`
+            reactionSummaryKo: isAdjacentSubRoom
+              ? `문밖 ${actorName}에게 신음·마찰음이 새어 나갈까 봐 아슬아슬한 긴장이 감돎`
+              : '복도·벽 너머 기척과 삐걱임·신음이 밖으로 새어 나갈까 봐 움찔하며 입술·시트를 물고 소리를 삼킴',
+            promptDirective: `제3자에게 직접 발각되지는 않았으나 게이지(${score}/${maxScore})에 걸맞은 외부 긴장이 반드시 본문에 나타나야 한다. ${isAdjacentSubRoom ? `바로 문 너머 ${actorName}에게 삐걱임·마찰음·신음이 새어 나갈 듯한 아슬아슬함에` : '복도 발걸음·옆방 기척이나 침대 삐걱임·마찰음·거친 신음이 밖으로 새어 나갈 듯한 아슬아슬함에'} 장면 안 NPC가 자기 로어 성격과 태도에 맞게 문·벽 쪽을 의식해 반응하도록 묘사하라. (${channelKo})${intentCue}`
           };
     }
     if (score < 160) {
@@ -31353,15 +31750,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
             tierId: 'high',
             tierLabelKo: '제3자 인지 · 직접/간접 개입',
             badgeTone: 'warn',
-            reactionSummaryKo: '제3자가 소리·실루엣을 분명히 알아채고 공간·성격에 맞는 개입(문밖 부름·노크·기척 경고 또는 회피)을 보임',
-            promptDirective: `제3자가 소리·기척·실루엣을 분명히 알아채고 직접 훼방·간접 경고·모른 척 회피 중 성격과 관계에 맞는 반응(문밖 노크·부름·시선·발걸음 정지 등)을 보인다. 이에 장면 안 NPC가 로어 성격에 맞게 급히 소리를 멎거나 몸을 웅크리며 대응하는 반응을 그려라. (${channelKo} · ${actorHintKo})`
+            reactionSummaryKo: isAdjacentSubRoom
+              ? `문밖 ${actorName}이 이상한 소리·기척을 분명히 알아채고 노크·호출 또는 문밖 반응을 보임`
+              : '제3자가 소리·실루엣을 분명히 알아채고 공간·성격에 맞는 개입(문밖 부름·노크·기척 경고 또는 회피)을 보임',
+            promptDirective: `${isAdjacentSubRoom ? `바로 문밖의 ${actorName}이` : '제3자가'} 소리·기척·실루엣을 분명히 알아채고 직접 훼방·간접 경고·모른 척 회피 중 성격과 관계에 맞는 반응(문밖 노크·부름·시선·발걸음 정지 등)을 보인다. 이에 장면 안 NPC가 로어 성격에 맞게 대응하는 반응을 그려라. (${channelKo} · ${actorHintKo})${intentCue}`
           }
         : {
             tierId: 'high',
             tierLabelKo: '고위험 · 발각 직전 아슬아슬함',
             badgeTone: 'warn',
             reactionSummaryKo: '바로 문 앞·지근거리를 스치는 뚜렷한 인기척에 숨을 멈추고 동작을 늦추며 아슬아슬하게 넘김',
-            promptDirective: `발각 직전 고위험 긴장(${score}/${maxScore})이다. 바로 문 앞·벽 너머를 지나가는 뚜렷한 발걸음·말소리에 캐릭터가 숨을 턱 막고 동작을 늦추거나 시트·상대 어깨를 틀어쥐며 신음을 필사적으로 삼켜 아슬아슬하게 넘어가는 장면을 묘사하라. (${channelKo})`
+            promptDirective: `발각 직전 고위험 긴장(${score}/${maxScore})이다. 바로 문 앞·벽 너머를 지나가는 뚜렷한 발걸음·말소리에 캐릭터가 숨을 턱 막고 동작을 늦추거나 시트·상대 어깨를 틀어쥐며 신음을 삼켜 아슬아슬하게 넘어가는 장면을 묘사하라. (${channelKo})${intentCue}`
           };
     }
     return noticed
@@ -31369,18 +31768,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
           tierId: 'critical',
           tierLabelKo: '극한 노출 · 발각 및 즉각 반응',
           badgeTone: 'warn',
-          reactionSummaryKo: '극한 노출로 제3자가 즉각 포착·반응(거센 노크·문밖 호출·목격 개입 등)하고 당사자들이 급정지·당황함',
-          promptDirective: `극한 노출(${score}/${maxScore})로 제3자가 즉각 포착하고 강하게 반응한다. 공간 경계를 지키면서도 거센 노크·문밖 호출 또는 직접 목격·제지·충격 회피 등 성격과 관계에 맞는 즉각 개입을 전개하고, 당사자들이 화들짝 멈추거나 수습하려는 긴박한 반응을 그려라. (${channelKo} · ${actorHintKo})`
+          reactionSummaryKo: isAdjacentSubRoom
+            ? `극한 노출로 문밖 ${actorName}이 즉각 포착해 강하게 반응(노크·문밖 호출·진입 시도 등)함`
+            : '극한 노출로 제3자가 즉각 포착·반응(거센 노크·문밖 호출·목격 개입 등)하고 당사자들이 급정지·당황함',
+          promptDirective: `극한 노출(${score}/${maxScore})로 ${isAdjacentSubRoom ? `문밖의 ${actorName}이` : '제3자가'} 즉각 포착하고 강하게 반응한다. 공간 경계를 지키면서도 거센 노크·문밖 호출 또는 직접 목격·제지·충격 회피 등 성격과 관계에 맞는 즉각 개입을 전개하고, 당사자들이 반응하는 긴박한 장면을 그려라. (${channelKo} · ${actorHintKo})${intentCue}`
         }
       : {
           tierId: 'critical',
           tierLabelKo: '극한 노출 · 일촉즉발 위기',
           badgeTone: 'warn',
           reactionSummaryKo: '한계치에 달한 소란·노출로 문 앞 정지 등 일촉즉발 기척이 덮쳐 오며 패닉에 가깝게 숨을 죽이고 제동함',
-          promptDirective: `노출·소음 게이지가 극한(${score}/${maxScore})에 달했다. 바로 코앞까지 닥친 인기척·정지한 발소리·문고리/커튼 너머 그림자 등 일촉즉발 위기를 묘사하고, NPC가 패닉에 가깝게 숨을 틀어막고 동작을 급제동하며 긴장에 떠는 반응을 그려라. (${channelKo})`
+          promptDirective: `노출·소음 게이지가 극한(${score}/${maxScore})에 달했다. 바로 코앞까지 닥친 인기척·정지한 발소리·문고리/커튼 너머 그림자 등 일촉즉발 위기를 묘사하고, NPC가 패닉에 가깝게 숨을 틀어막고 동작을 급제동하며 긴장에 떠는 반응을 그려라. (${channelKo})${intentCue}`
         };
   };
-  const computeIntimacyExternalReaction = (recent = {}, scene = {}, settings = null) => {
+  const computeIntimacyExternalReaction = (recent = {}, scene = {}, settings = null, context = {}) => {
     const rawInput = text(recent.latestUser || '');
     const rawMessages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .map(message => text(message?.content || ''))
@@ -31392,7 +31793,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const window = rawWindow.map(stripNonProseSceneTags);
     const windowJoined = [...window].reverse().join('\n');
     const combined = [input, ...window].filter(Boolean).join('\n');
+    const scopeKey = compact(Runtime.activeScopeKey || '', 256);
 
+    const topology = context?.spatialTopology || (typeof resolveSpatialTopology === 'function' ? resolveSpatialTopology(recent, settings || {}) : null);
     let matchedPlace = null;
     for (const [id, label, crowdDelta, spaceType, pattern] of INTIMACY_EXTERNAL_PLACES) {
       if (pattern.test(input)) { matchedPlace = { id, label, crowdDelta, spaceType }; break; }
@@ -31407,13 +31810,73 @@ Begin directly with the in-world response and finish the complete same-turn draf
         if (pattern.test(windowJoined)) { matchedPlace = { id, label, crowdDelta, spaceType }; break; }
       }
     }
+
+    // Reclassify indoor en-suite sub-rooms (e.g. bathroom/dressing room inside motel/home) as private rather than public restroom +25.
+    const parentVenuePrivate = INTIMACY_EXTERNAL_PLACES.find(([id]) => id === 'private_room')?.[4]?.test([hudLocation, windowJoined].filter(Boolean).join('\n'));
+    const enSuiteSubIds = new Set(['bathroom', 'dressing_room', 'inner_room', 'storage_nook']);
+    if (topology?.subRoomId && enSuiteSubIds.has(topology.subRoomId) && (parentVenuePrivate || topology.active)) {
+      const parentName = hudLocation || '실내';
+      matchedPlace = {
+        id: 'en_suite_private',
+        label: `${parentName} 내 ${topology.subRoom}`,
+        crowdDelta: -10,
+        spaceType: 'private',
+        isEnSuite: true
+      };
+    } else if (matchedPlace?.id === 'restroom' && parentVenuePrivate && !/공용|지하철|백화점|카페|식당|학교|공원/.test(combined)) {
+      matchedPlace = {
+        id: 'en_suite_private',
+        label: `${hudLocation || '실내'} 내 욕실·화장실`,
+        crowdDelta: -10,
+        spaceType: 'private',
+        isEnSuite: true
+      };
+    }
     const placeObj = matchedPlace || { id: 'unspecified', label: '미지정 공간', crowdDelta: 0, spaceType: 'private' };
-    const placeLabel = hudLocation || placeObj.label;
-    const scopeKey = compact(Runtime.activeScopeKey || '', 256);
+    const placeLabel = placeObj.isEnSuite ? placeObj.label : (hudLocation || placeObj.label);
+
+    const acoustics = inferFacilityAcoustics(recent, placeObj, topology, settings || {});
+
+    const activeCards = Array.isArray(context?.cards) ? context.cards : intimacyCardsForScope(scopeKey);
+    const activeGaugeNames = Array.isArray(context?.gauges) && context.gauges.length
+      ? context.gauges.map(g => g.name).filter(Boolean)
+      : (topology?.active && Array.isArray(topology.inSubScene) && topology.inSubScene.length
+        ? topology.inSubScene
+        : []);
+    const participantCards = activeGaugeNames.length
+      ? activeGaugeNames.map(n => activeCards.find(c => c.name && extensionSameOrGivenName(c.name, n))).filter(Boolean)
+      : activeCards.filter(c => !topology?.adjacentObservers?.some(obs => extensionSameOrGivenName(obs, c.name)));
+
+    let dominantIntent = 'oblivious';
+    const hasProvokeInput = INTIMACY_PROVOKE_INPUT_RE.test(input);
+    const hasConcealInput = INTIMACY_CONCEAL_INPUT_RE.test(input);
+    if (hasProvokeInput) {
+      dominantIntent = 'provoke';
+    } else if (hasConcealInput) {
+      dominantIntent = 'conceal';
+    } else {
+      const cardIntents = participantCards.map(card => {
+        const loreText = typeof collectSafeCharacterLoreText === 'function' ? collectSafeCharacterLoreText(card.name, scopeKey, settings || {}, recent) : '';
+        return inferIntimacyExcitementPrefs(card, loreText).exposureIntent || 'oblivious';
+      });
+      if (cardIntents.includes('provoke')) dominantIntent = 'provoke';
+      else if (cardIntents.includes('conceal')) dominantIntent = 'conceal';
+      else if (topology?.active && topology.adjacentObservers?.length && cardIntents.length) dominantIntent = 'conceal';
+    }
+    const exposureIntentLabel = INTIMACY_EXPOSURE_INTENT_LABELS[dominantIntent] || (dominantIntent === 'oblivious' ? '자연 몰입' : dominantIntent);
 
     let crowdMod = 0;
     const factors = [];
     if (placeObj.crowdDelta !== 0) factors.push(`장소(${placeLabel} ${placeObj.crowdDelta > 0 ? `+${placeObj.crowdDelta}` : placeObj.crowdDelta})`);
+
+    const adjacentObservers = (topology?.active && Array.isArray(topology.adjacentObservers)) ? topology.adjacentObservers : [];
+    const observerProximity = adjacentObservers.length ? 'adjacent_sub_room' : 'distant';
+    let adjacentBoost = 0;
+    if (adjacentObservers.length) {
+      const turnHold = Math.min(20, Math.max(0, ((Number(topology.turnsInSubRoom) || 1) - 1) * 8));
+      adjacentBoost = 35 + turnHold;
+      factors.push(`문밖 최인접 인물(${adjacentObservers[0]} +${adjacentBoost})`);
+    }
     if (INTIMACY_CROWD_HIGH_RE.test(combined)) { crowdMod += 25; factors.push('혼잡(+25)'); }
     if (INTIMACY_CROWD_NEARBY_RE.test(combined)) { crowdMod += 25; factors.push('주변 기척·동거인(+25)'); }
     if (INTIMACY_CROWD_LOW_RE.test(combined)) { crowdMod -= 25; factors.push('한적함(-25)'); }
@@ -31432,20 +31895,51 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (INTIMACY_STEALTH_EXPOSED_RE.test(combined)) { stealthMod += 30; factors.push('노출·개방(+30)'); }
     if (INTIMACY_STEALTH_HIDDEN_RE.test(combined)) { stealthMod -= 25; factors.push('은밀·잠금(-25)'); }
 
-    const rawScore = INTIMACY_EXTERNAL_BASE_SCORE + placeObj.crowdDelta + crowdMod + loudnessMod + stealthMod;
-    const score = Math.max(0, Math.min(INTIMACY_EXTERNAL_MAX_SCORE, rawScore));
+    let intentDelta = 0;
+    if (dominantIntent === 'provoke') {
+      intentDelta = 35;
+      factors.push('발각 유도·과시(+35)');
+    } else if (dominantIntent === 'conceal') {
+      intentDelta = INTIMACY_LOUD_LOW_RE.test(combined) ? -5 : -15;
+      factors.push(`은닉·조심(${intentDelta})`);
+    }
+    if (acoustics.maskingDelta !== 0) {
+      factors.push(`${acoustics.ambientMaskingLabel}(${acoustics.maskingDelta > 0 ? `+${acoustics.maskingDelta}` : acoustics.maskingDelta})`);
+    }
+    if (acoustics.attenuation !== 1.0 || acoustics.transmissionCap < 200) {
+      factors.push(`${acoustics.soundproofingLabel}·${acoustics.visualBarrierLabel}(×${acoustics.attenuation}, 상한 ${acoustics.transmissionCap})`);
+    }
+
+    const unattenuatedScore = Math.max(0, Math.min(INTIMACY_EXTERNAL_MAX_SCORE, INTIMACY_EXTERNAL_BASE_SCORE + placeObj.crowdDelta + adjacentBoost + crowdMod + loudnessMod + stealthMod + intentDelta));
+    const attenuatedRaw = Math.max(0, Math.round((unattenuatedScore + acoustics.maskingDelta) * acoustics.attenuation));
+    const score = Math.max(0, Math.min(acoustics.transmissionCap, attenuatedRaw));
+    const blockedByAcoustics = (acoustics.transmissionCap < 140 || acoustics.attenuation < 0.75 || acoustics.maskingDelta <= -20)
+      && (score < unattenuatedScore - 15 || (dominantIntent === 'provoke' && score < 80));
     const noticeChance = Math.max(5, Math.min(98, Math.round(score / 2)));
     const priorAssistant = window[window.length - 1] || '';
     const roll = relsimSeedRoll([scopeKey, 'intimacy_ext', stableDraftHash(input), stableDraftHash(priorAssistant)].join('|'));
     const noticed = roll < noticeChance;
     const riskBand = score >= 160 ? 'critical' : score >= 120 ? 'high' : score >= 80 ? 'moderate' : 'low';
     const riskLabelKo = INTIMACY_EXTERNAL_RISK_KO[riskBand] || riskBand;
-    const offScenePool = worldDynamicsOffSceneCast(recent);
+    const offScenePool = worldDynamicsOffSceneCast(recent, settings || {});
     const actorRoll = offScenePool.length
       ? relsimSeedRoll([scopeKey, 'intimacy_ext_actor', stableDraftHash(input), stableDraftHash(priorAssistant)].join('|'))
       : 0;
-    const nearbyActor = offScenePool.length ? offScenePool[actorRoll % offScenePool.length] : '';
-    const breakdown = { place: placeObj.crowdDelta, crowding: crowdMod, loudness: loudnessMod, stealth: stealthMod };
+    const nearbyActor = adjacentObservers.length
+      ? adjacentObservers[0]
+      : (offScenePool.length ? offScenePool[actorRoll % offScenePool.length] : '');
+    const breakdown = {
+      place: placeObj.crowdDelta,
+      adjacentBoost,
+      crowding: crowdMod,
+      loudness: loudnessMod,
+      stealth: stealthMod,
+      intent: intentDelta,
+      masking: acoustics.maskingDelta,
+      attenuation: acoustics.attenuation,
+      transmissionCap: acoustics.transmissionCap
+    };
+    const exposureIntent = { dominantIntent, exposureIntentLabel };
     const tier = buildIntimacyExternalReactionTier({
       score,
       maxScore: INTIMACY_EXTERNAL_MAX_SCORE,
@@ -31454,11 +31948,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
       spaceType: placeObj.spaceType,
       breakdown,
       factors,
-      nearbyActor
+      nearbyActor,
+      observerProximity,
+      spatialTopology: topology,
+      acoustics,
+      exposureIntent,
+      blockedByAcoustics
     }, settings, scopeKey, recent);
     return {
       baseScore: INTIMACY_EXTERNAL_BASE_SCORE,
       score,
+      unattenuatedScore,
       maxScore: INTIMACY_EXTERNAL_MAX_SCORE,
       noticeChance,
       roll,
@@ -31469,6 +31969,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       placeCategory: placeObj.label,
       spaceType: placeObj.spaceType,
       nearbyActor,
+      adjacentObservers,
+      observerProximity,
+      spatialTopology: topology,
+      acoustics,
+      exposureIntent,
+      blockedByAcoustics,
       offScenePool,
       breakdown,
       factors,
@@ -31913,6 +32419,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     dislikes: '도구·구속·억압 싫어함',
     neutral: '보통(상황에 따름)'
   });
+  const INTIMACY_EXPOSURE_INTENTS = Object.freeze(['', 'conceal', 'oblivious', 'provoke']);
+  const INTIMACY_EXPOSURE_INTENT_LABELS = Object.freeze({
+    '': '자동(로어 추정)',
+    conceal: '은닉·조심 (들키지 않으려 소리 억제)',
+    oblivious: '자연 몰입 (주변 의식 약함)',
+    provoke: '발각 유도·과시 (일부러 소리·흔적 노출)'
+  });
   const intimacyClampExcitement = value => Math.max(-100, Math.min(100, Math.round(Number(value) || 0)));
   const intimacyExcitementStimMult = excitement => {
     const e = intimacyClampExcitement(excitement);
@@ -31966,10 +32479,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
         restraintToyStyle = 'likes';
       }
     }
+    let exposureIntent = INTIMACY_EXPOSURE_INTENTS.includes(card?.exposureIntent) ? card.exposureIntent : '';
+    if (!exposureIntent && corpus) {
+      if (/(?:들키(?:고\s*싶|는\s*걸|는\s*스릴)|발각[^\n.?!]{0,14}(?:즐기|좋아|흥분|원함|유도)|과시[^\n.?!]{0,14}(?:좋아|즐기|성향|욕)|노출[^\n.?!]{0,14}(?:좋아|즐기|흥분)|질투\s*유발|일부러\s*(?:소리|신음)|exhibitionis|wants?\s+to\s+be\s+caught)/i.test(corpus)) {
+        exposureIntent = 'provoke';
+      } else if (/(?:비밀\s*(?:유지|엄수)|들키(?:면\s*안|지\s*않|는\s*걸\s*두려|길\s*꺼림)|소리를\s*(?:죽이|삼키|참)|눈치[^\n.?!]{0,12}(?:많|살피|보)|신중|조심스러|은밀|체면|소심|수줍|shy|secretive|fear(?:s|ful)?\s+of\s+discovery)/i.test(corpus)) {
+        exposureIntent = 'conceal';
+      }
+    }
     return {
       consentStyle,
       initiativeStyle,
       restraintToyStyle,
+      exposureIntent,
       turnOns: compact(card?.turnOns || '', 240),
       turnOffs: compact(card?.turnOffs || '', 240)
     };
@@ -32208,6 +32730,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       consentStyle: prefs.consentStyle,
       initiativeStyle: prefs.initiativeStyle,
       restraintToyStyle: prefs.restraintToyStyle,
+      exposureIntent: prefs.exposureIntent,
       turnOns: compact(finalTurnOns.join(', '), 240),
       turnOffs: compact(finalTurnOffs.join(', '), 240),
       sensitiveZones: compact(sensZoneIds.map(id => INTIMACY_ZONE_KO_LABELS[id] || id).join(', '), 240),
@@ -32226,6 +32749,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const rawConsent = compact(value.consentStyle ?? value.consent_style ?? '', 32);
     const rawInitiative = compact(value.initiativeStyle ?? value.initiative_style ?? '', 32);
     const rawRestraint = compact(value.restraintToyStyle ?? value.restraint_toy_style ?? '', 32);
+    const rawExposure = compact(value.exposureIntent ?? value.exposure_intent ?? '', 32);
     const userClearedFields = Array.isArray(value.userClearedFields)
       ? [...new Set(value.userClearedFields.map(v => compact(v, 32)).filter(Boolean))].slice(0, 12)
       : [];
@@ -32246,6 +32770,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       consentStyle: INTIMACY_CONSENT_STYLES.includes(rawConsent) ? rawConsent : '',
       initiativeStyle: INTIMACY_INITIATIVE_STYLES.includes(rawInitiative) ? rawInitiative : '',
       restraintToyStyle: INTIMACY_RESTRAINT_TOY_STYLES.includes(rawRestraint) ? rawRestraint : '',
+      exposureIntent: INTIMACY_EXPOSURE_INTENTS.includes(rawExposure) ? rawExposure : '',
       turnOns: compact(value.turnOns ?? value.turn_ons ?? '', 240),
       turnOffs: compact(value.turnOffs ?? value.turn_offs ?? '', 240),
       userClearedFields,
@@ -32439,7 +32964,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (!card?.name) return card;
       const cleared = new Set(Array.isArray(card.userClearedFields) ? card.userClearedFields : []);
       const needsTextFill = ['turnOns', 'turnOffs', 'sensitiveZones', 'dullZones'].some(f => !String(card[f] || '').trim() && !cleared.has(f));
-      const needsAxisFill = card.origin !== 'user' && ['consentStyle', 'initiativeStyle', 'restraintToyStyle'].some(f => !String(card[f] || '').trim() && !cleared.has(f));
+      const needsAxisFill = card.origin !== 'user' && ['consentStyle', 'initiativeStyle', 'restraintToyStyle', 'exposureIntent'].some(f => !String(card[f] || '').trim() && !cleared.has(f));
       if (!needsTextFill && !needsAxisFill) return card;
       const resolvedGender = (typeof intimacyCardGender === 'function' ? intimacyCardGender(card, card.name, settings, scope) : '')
         || card.gender
@@ -32467,7 +32992,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
       }
       if (next.origin !== 'user') {
-        for (const f of ['consentStyle', 'initiativeStyle', 'restraintToyStyle']) {
+        for (const f of ['consentStyle', 'initiativeStyle', 'restraintToyStyle', 'exposureIntent']) {
           if (!String(next[f] || '').trim() && !cleared.has(f) && inferred[f]) {
             next[f] = inferred[f];
             cardChanged = true;
@@ -32773,6 +33298,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       card?.consentStyle ? `consent: ${INTIMACY_CONSENT_STYLE_LABELS[card.consentStyle] || card.consentStyle}` : '',
       card?.initiativeStyle ? `initiative: ${INTIMACY_INITIATIVE_STYLE_LABELS[card.initiativeStyle] || card.initiativeStyle}` : '',
       card?.restraintToyStyle ? `restraints/toys: ${INTIMACY_RESTRAINT_TOY_STYLE_LABELS[card.restraintToyStyle] || card.restraintToyStyle}` : '',
+      card?.exposureIntent ? `exposure: ${INTIMACY_EXPOSURE_INTENT_LABELS[card.exposureIntent] || card.exposureIntent}` : '',
       card?.turnOns ? `turn-ons: ${card.turnOns}` : '',
       card?.turnOffs ? `turn-offs: ${card.turnOffs}` : ''
     ].filter(Boolean);
@@ -33039,7 +33565,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_USER_FORCES_PASSIVE_RE = /가만히\s*(?:있어|누워|대고)|움직이지\s*마|시키는\s*대로|내가\s*(?:알아서|다\s*할|주도)|stay\s+still|don't\s+move|let\s+me\s+control/i;
   const INTIMACY_NPC_REFUSAL_IN_PRIOR_RE = /(?:그만|멈춰|싫어|하지\s*마|놔|떨어져|안\s*돼|중단|거부)(?:해|요|라고|라며)?|밀어냈|뿌리쳤|몸을\s*뺐|행위를\s*중단|stop\s+it|get\s+off/i;
   const INTIMACY_USER_STOPS_RE = /멈췄다|그만뒀다|손을\s*뗐다|물러났다|빠져나왔다|중단했다|미안|사과|stopped|pulled\s+away|apologized/i;
-  const computeIntimacyParticipantGauges = (recent = {}, cards = [], scene = null, externalReaction = null, settings = {}) => {
+  const computeIntimacyParticipantGauges = (recent = {}, cards = [], scene = null, externalReaction = null, settings = {}, spatialTopology = null) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const input = text(recent.latestUser || '');
     const inputHasStim = intimacyMatchedBodyParts(input).length > 0;
@@ -33077,9 +33603,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     } else if (settleInfo?.chat && (scene?.engaged || inputHasStim)) {
       settleInfo.chat.idleTurns = 0;
     }
+    const hudNames = worldDynamicsHudPresentNames(recent);
+    const physicalInput = stripQuotedAndRemoteSceneText(input);
+    const physicalLast = stripQuotedAndRemoteSceneText(lastAssistant);
     const recentMsgsSlice = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-2) : [];
     const presentNames = [
-      ...worldDynamicsHudPresentNames(recent),
+      ...hudNames,
       ...extensionScenePeople({ ...recent, visibleMessages: recentMsgsSlice })
     ].filter(Boolean);
     const personaName = compact(Runtime.activePersonaName || '', 80);
@@ -33098,18 +33627,52 @@ Begin directly with the in-world response and finish the complete same-turn draf
         names[idx] = raw;
       }
     };
+    const topo = spatialTopology || (typeof resolveSpatialTopology === 'function' ? resolveSpatialTopology(recent, settings) : null);
+    const adjacentOut = (topo?.active && Array.isArray(topo.adjacentObservers)) ? topo.adjacentObservers : [];
+    const isAdjacentOut = candidate => !!candidate && adjacentOut.some(obs => extensionSameOrGivenName(obs, candidate));
     for (const raw of presentNames) {
-      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName))) continue;
+      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName)) || isAdjacentOut(raw)) continue;
       addName(raw);
     }
-    const cardScanSteps = presentNames.length ? [input, lastAssistant].filter(Boolean) : seedSteps;
-    const cardPerson = extensionCardPerson(recent, presentNames);
+    const cardScanSteps = hudNames.length
+      ? [physicalInput].filter(Boolean)
+      : (presentNames.length ? [physicalInput, physicalLast].filter(Boolean) : seedSteps.map(stripQuotedAndRemoteSceneText).filter(Boolean));
+    const cardPerson = hudNames.length ? '' : extensionCardPerson(recent, presentNames);
     for (const raw of [...cards.map(c => c.name), cardPerson].filter(Boolean)) {
-      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName))) continue;
+      if (bodyStateIsPersona(raw) || (personaName && extensionSameOrGivenName(raw, personaName)) || isAdjacentOut(raw)) continue;
+      if (hudNames.some(h => extensionSameOrGivenName(h, raw))) {
+        addName(raw);
+        continue;
+      }
       if (cardScanSteps.some(step => extensionLineNames(step, raw) || extensionTextMentionsName(step, raw))) addName(raw);
+    }
+    if (topo?.active && Array.isArray(topo.inSubScene)) {
+      for (const subName of topo.inSubScene) {
+        if (!subName || bodyStateIsPersona(subName) || (personaName && extensionSameOrGivenName(subName, personaName))) continue;
+        addName(subName);
+      }
     }
     if (personaMentioned || (personaName && (settledMap[compact(personaName, 80).toLowerCase()] || scene?.engaged || inputHasStim))) {
       addName(personaName);
+    }
+    if (hudNames.length && names.length && scopeKey) {
+      const gaugeScope = Runtime.intimacyGauges?.[scopeKey];
+      let prunedStale = false;
+      const pruneBucket = bucket => {
+        if (!bucket || typeof bucket !== 'object') return;
+        for (const key of Object.keys(bucket)) {
+          const entryName = compact(bucket[key]?.name || key, 80);
+          if (!entryName || bodyStateIsPersona(entryName) || (personaName && extensionSameOrGivenName(entryName, personaName))) continue;
+          if (!names.some(n => extensionSameOrGivenName(n, entryName)) && !isAdjacentOut(entryName)) {
+            delete bucket[key];
+            prunedStale = true;
+          }
+        }
+      };
+      pruneBucket(settledMap);
+      if (gaugeScope?.baseline && gaugeScope.baseline !== settledMap) pruneBucket(gaugeScope.baseline);
+      if (gaugeScope?.settled) pruneBucket(gaugeScope.settled);
+      if (prunedStale) void saveIntimacyCards().catch(() => {});
     }
     const intercourseOngoing = !!(
       scene?.phase === 'intercourse'
@@ -34529,9 +35092,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const ext = telemetry.externalReaction;
     if (ext) {
       const riskKo = ext.riskLabelKo || INTIMACY_EXTERNAL_RISK_KO[ext.riskBand] || ext.riskBand;
+      const topoTag = ext.spatialTopology?.active && ext.adjacentObservers?.length
+        ? ` · 세부공간:${ext.spatialTopology.subRoom} (문밖:${ext.adjacentObservers.join(',')})`
+        : '';
+      const acTag = ext.acoustics
+        ? ` · 설비:${ext.acoustics.soundproofingLabel}/${ext.acoustics.ambientMaskingLabel}/상한${ext.acoustics.transmissionCap}${ext.blockedByAcoustics ? '(설비 차폐)' : ''}`
+        : '';
+      const intentTag = ext.exposureIntent?.dominantIntent && ext.exposureIntent.dominantIntent !== 'oblivious'
+        ? ` · 노출태도:${ext.exposureIntent.exposureIntentLabel}`
+        : '';
       notes.push({
         title: `외부반응 · ${ext.place} (${ext.score}/${ext.maxScore})`,
-        body: `[${ext.tierLabelKo || (ext.noticed ? '인지됨' : '미인지')}] ${ext.noticed ? `인지됨 (제3자 반응 발생${ext.nearbyActor ? ` · 후보 제3자: ${ext.nearbyActor}` : ''})` : '미인지'} · 인지 확률 ${ext.noticeChance}% (위험도 ${riskKo})${ext.factors?.length ? ` · ${ext.factors.join(', ')}` : ''}${ext.reactionSummaryKo ? ` — 발현 반응: ${ext.reactionSummaryKo}` : ''}`
+        body: `[${ext.tierLabelKo || (ext.noticed ? '인지됨' : '미인지')}] ${ext.noticed ? `인지됨 (제3자 반응 발생${ext.nearbyActor ? ` · 후보 제3자: ${ext.nearbyActor}` : ''})` : '미인지'} · 인지 확률 ${ext.noticeChance}% (위험도 ${riskKo})${topoTag}${acTag}${intentTag}${ext.factors?.length ? ` · ${ext.factors.join(', ')}` : ''}${ext.reactionSummaryKo ? ` — 발현 반응: ${ext.reactionSummaryKo}` : ''}`
       });
     }
     for (const cv of telemetry.contraception || []) {
@@ -34582,10 +35154,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const cards = intimacyCardsForScope(scopeKey);
     const existingTelemetry = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey] : null;
     const reuseSettled = !!(options?.preserveSettledTelemetry && existingTelemetry?.readingApplied && Array.isArray(existingTelemetry.gauges));
+    const spatialTopology = (!reuseSettled && typeof resolveSpatialTopology === 'function')
+      ? resolveSpatialTopology(recent, settings || {})
+      : (existingTelemetry?.externalReaction?.spatialTopology || null);
     const externalReaction = reuseSettled
-      ? (existingTelemetry.externalReaction ?? (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null))
-      : (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings) : null);
-    const gauges = reuseSettled ? existingTelemetry.gauges : computeIntimacyParticipantGauges(recent, cards, scene, externalReaction, settings);
+      ? (existingTelemetry.externalReaction ?? (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings, { spatialTopology, cards }) : null))
+      : (scene.engaged ? computeIntimacyExternalReaction(recent, scene, settings, { spatialTopology, cards }) : null);
+    const gauges = reuseSettled
+      ? existingTelemetry.gauges
+      : computeIntimacyParticipantGauges(recent, cards, scene, externalReaction, settings, spatialTopology);
     const contraception = reuseSettled
       ? (Array.isArray(existingTelemetry.contraception) ? existingTelemetry.contraception : [])
       : (scene.engaged ? computeIntimacyContraceptionVerdicts(recent, cards, scene, gauges, externalReaction, settings) : []);
@@ -34624,10 +35201,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? [
               `EXTERNAL REACTION (외부반응 — THIRD-PARTY NOTICE & GAUGE-DRIVEN TENSION; applies in public, semi-public, AND private spaces):`,
               `- Place: ${externalReaction.place} (${externalReaction.spaceType}) · Notice score: ${externalReaction.score}/${externalReaction.maxScore} (base ${externalReaction.baseScore}; ${externalReaction.factors.length ? externalReaction.factors.join(', ') : 'no extra modifiers'}) · Notice chance: ${externalReaction.noticeChance}% · Risk: ${externalReaction.riskBand.toUpperCase()} (${externalReaction.riskLabelKo}) · Gauge tier: ${externalReaction.tierLabelKo}`,
+              (externalReaction.spatialTopology?.active && externalReaction.adjacentObservers?.length)
+                ? `- Sub-room isolation: inside ${externalReaction.spatialTopology.subRoom} of ${externalReaction.spatialTopology.parentPlace || 'venue'} (turn ${externalReaction.spatialTopology.turnsInSubRoom}); adjacent outside observer(s): ${externalReaction.adjacentObservers.join(', ')} (remain unaware unless sound/leak crosses the barrier).`
+                : '',
+              externalReaction.acoustics
+                ? `- Acoustics & barrier: ${externalReaction.acoustics.soundproofingLabel} (×${externalReaction.acoustics.attenuation}), ${externalReaction.acoustics.ambientMaskingLabel}, ${externalReaction.acoustics.visualBarrierLabel}, transmission cap ${externalReaction.acoustics.transmissionCap}/200${externalReaction.blockedByAcoustics ? ' [BLOCKED BY ACOUSTICS: leakage capped by soundproofing/masking]' : ''}.`
+                : '',
+              externalReaction.exposureIntent
+                ? `- Participant exposure stance: ${externalReaction.exposureIntent.dominantIntent} (${externalReaction.exposureIntent.exposureIntentLabel}).`
+                : '',
               `- Verdict: ${externalReaction.noticed ? 'NOTICED THIS TURN — a third party outside the act notices (sound, movement, silhouette, ajar door, etc.). Portray their reaction according to who they are and the situation (direct interference, indirect interference, or ignoring/unbothered).' : 'NOT YET NOTICED — no third party discovers them this turn, but you MUST still portray the gauge-appropriate external tension/muffling reaction below without forcing discovery.'}`,
               `- Gauge-driven reaction directive: ${externalReaction.promptDirective}`,
-              (externalReaction.noticed || externalReaction.score >= 120) && externalReaction.nearbyActor
-                ? `- Suggested nearby third party (from off-scene cast): ${externalReaction.nearbyActor} (use if physically plausible for this place/hour; otherwise another fitting cast member or bystander).`
+              (externalReaction.noticed || externalReaction.score >= 120 || externalReaction.observerProximity === 'adjacent_sub_room') && externalReaction.nearbyActor
+                ? `- Priority nearby third party (${externalReaction.observerProximity === 'adjacent_sub_room' ? 'right outside sub-room barrier' : 'from off-scene cast'}): ${externalReaction.nearbyActor} (use their lore/relationship when portraying any outside reaction, pause, knock, or restraint awareness).`
                 : ''
             ].filter(Boolean).join('\n')
           : '',
@@ -34639,11 +35225,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
   };
   const INTIMACY_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. Realize each participant’s EXCITEMENT GAUGE (-100..+100): high excitement means active pursuit, amplified sensitivity, and wanting more; negative excitement cools into stiff, stone-like unresponsiveness or biting back moans even while physical climax still climbs from touch. For male participants, honor EJACULATION PACE (-100..+100): positive scores (조루) accept stimulation faster with low restraint; negative scores (지루) absorb stimulation slowly with high stamina; when HELD BACK ON THE BRINK or holding back by force ("억지로 참아 사정 지연"), show teeth-clenched restraint, slowed thrusts, held breath, and strained delay even for premature males. Honor consent/restraint/initiative preferences: dominant-initiative NPCs attempt to take the lead without waiting for user instruction; submissive NPCs forced to lead hesitate or resist; when an immediate halt roll triggers, stop and refuse the act; when the user resumes after an NPC halt/refusal, voice active pleas, protests, threats, condemnation, or physical resistance even while suppressed physiological climax still rises from incoming touch. At climax peak (절정 도달 100/100), portray loss of vocal self-control alongside muscle spasms as involuntary spoken vocalization matched to mouth state: muffled quotes ("으으음…!", "흐읍…!") if mouth is covered/blocked rather than silent narration, or unrestrained moans/cries ("아아…!") if open, followed by dazed afterglow. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction in their own lore voice, personality strength (fierce pushback vs meek protest vs high-affection trust acceptance), and natural Korean diction ("노콘"/"생으로" for unprotected sex) — never illogically demanding "밖에." right after confirming a condom is on/re-worn, distinguishing base bunching (slip risk while glans stays covered) from genuine tip tear/complete slip-off failure, and when re-seating a rolled-up condom always describe rolling/pulling it DOWN to the base ("밑동까지 다시 끌어내렸다/말아 내렸다"), never UP ("끌어올렸다", which pulls it off). Never invent an unintroduced condom/rubber (콘돔·고무) mid-act. Enact EXTERNAL REACTION gauge tiers on the page.',
-    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, excitement level (-100..+100: eager initiative vs stone-like freezing/suppression), male ejaculation stamina/pace (-100 지루 ~ +100 조루, including forced holding back to delay climax), consent/restraint/initiative preferences (dominant self-lead vs submissive reluctance to lead), refusal/halt or active post-halt resistance (pleas, threats, condemnation, physical pushback when resumed against their refusal), arousal, climax vocalization (even when emotionally cold if climax gauge peaks), reaction to contraception/slip-risk/failure/unprotected contact (grounded in lore, personality strength vs meekness, relationship, high-affection trust vs boundary pushback, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. Do not force non-penetrated bystanders to react as if penetrated. If a third party notices (EXTERNAL REACTION), ensure their reaction fits that character.',
-    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on; distinguish base bunching slip-risk where the glans stays covered from genuine tear/full slip-off failure, track re-wearing in chronological order, and enforce anatomical direction when fixing a rolled-up condom: re-seating rolls/pulls DOWN to the base "밑동까지 끌어내리다", never UP "끌어올리다" which removes it; no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel.',
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. Realize each participant’s EXCITEMENT GAUGE (-100..+100): high excitement means active pursuit, amplified sensitivity, and wanting more; negative excitement cools into stiff, stone-like unresponsiveness or biting back moans even while physical climax still climbs from touch. For male participants, honor EJACULATION PACE (-100..+100): positive scores (조루) accept stimulation faster with low restraint; negative scores (지루) absorb stimulation slowly with high stamina; when HELD BACK ON THE BRINK or holding back by force ("억지로 참아 사정 지연"), show teeth-clenched restraint, slowed thrusts, held breath, and strained delay even for premature males. Honor consent/restraint/initiative/exposure preferences: dominant-initiative NPCs attempt to take the lead without waiting for user instruction; submissive NPCs forced to lead hesitate or resist; when an immediate halt roll triggers, stop and refuse the act; when the user resumes after an NPC halt/refusal, voice active pleas, protests, threats, condemnation, or physical resistance even while suppressed physiological climax still rises from incoming touch. When SUB-ROOM ISOLATION is active, an adjacent observer outside the door/wall stays unaware unless acoustic/visual leakage crosses the barrier; conceal-stance participants muffle sound or rely on running water, while provoke-stance participants deliberately raise volume or lean against walls/doors — yet if [BLOCKED BY ACOUSTICS] is active, thick soundproofing/masking swallows their attempt so outside witnesses do not hear. At climax peak (절정 도달 100/100), portray loss of vocal self-control alongside muscle spasms as involuntary spoken vocalization matched to mouth state: muffled quotes ("으으음…!", "흐읍…!") if mouth is covered/blocked rather than silent narration, or unrestrained moans/cries ("아아…!") if open, followed by dazed afterglow. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction in their own lore voice, personality strength (fierce pushback vs meek protest vs high-affection trust acceptance), and natural Korean diction ("노콘"/"생으로" for unprotected sex) — never illogically demanding "밖에." right after confirming a condom is on/re-worn, distinguishing base bunching (slip risk while glans stays covered) from genuine tip tear/complete slip-off failure, and when re-seating a rolled-up condom always describe rolling/pulling it DOWN to the base ("밑동까지 다시 끌어내렸다/말아 내렸다"), never UP ("끌어올렸다", which pulls it off). Never invent an unintroduced condom/rubber (콘돔·고무) mid-act. Enact EXTERNAL REACTION gauge tiers on the page.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, excitement level (-100..+100: eager initiative vs stone-like freezing/suppression), male ejaculation stamina/pace (-100 지루 ~ +100 조루, including forced holding back to delay climax), consent/restraint/initiative/exposure preferences (dominant self-lead vs submissive reluctance to lead; conceal muffling vs provoke deliberate loudness), refusal/halt or active post-halt resistance (pleas, threats, condemnation, physical pushback when resumed against their refusal), arousal, climax vocalization (even when emotionally cold if climax gauge peaks), reaction to contraception/slip-risk/failure/unprotected contact (grounded in lore, personality strength vs meekness, relationship, high-affection trust vs boundary pushback, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. Do not force non-penetrated bystanders or adjacent outside observers to react as if in the act. If a third party (especially an adjacent outside companion) notices (EXTERNAL REACTION), ensure their reaction fits that character.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, sub-room spatial barriers (outsiders in the outer room remain unaware of silent/soundproofed acts in an enclosed bathroom/sub-room unless leakage occurs, and facility soundproofing/ambient masking limits cannot be violated by fiat), barrier state (no phantom condom/고무 appearing mid-act when none was put on; distinguish base bunching slip-risk where the glans stays covered from genuine tear/full slip-off failure, track re-wearing in chronological order, and enforce anatomical direction when fixing a rolled-up condom: re-seating rolls/pulls DOWN to the base "밑동까지 끌어내리다", never UP "끌어올리다" which removes it; no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel.',
     aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open; respect any NPC halt decision or ongoing post-halt struggle.',
-    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal, excitement (-100..+100), male ejaculation stamina, and state. Write a preference profile (including consent_style, initiative_style, restraint_toy_style, turn_ons, turn_offs, and male ejaculation_pace) for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a participant ignores an active EXCITEMENT GAUGE directive, male EJACULATION PACE / forced-hold delay, initiative drive, halt verdict, or post-halt resistance escalation; a climax lacks involuntary vocalization matched to mouth state; a position is impossible or changes without a transition; continuity breaks (including phantom condoms, misread re-worn condoms, or contradictory "밖에." right after confirming condom wear); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal, excitement (-100..+100), male ejaculation stamina, and state. Write a preference profile (including consent_style, initiative_style, restraint_toy_style, exposure_intent, turn_ons, turn_offs, and male ejaculation_pace) for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; sub-room epistemic isolation or facility acoustics limits are violated; a participant ignores an active EXCITEMENT GAUGE directive, male EJACULATION PACE / forced-hold delay, exposure stance, initiative drive, halt verdict, or post-halt resistance escalation; a climax lacks involuntary vocalization matched to mouth state; a position is impossible or changes without a transition; continuity breaks (including phantom condoms, misread re-worn condoms, or contradictory "밖에." right after confirming condom wear); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
   });
   const intimacyOutputKind = (stageName, settings = {}) => {
     if (!intimacyStageActive(settings)) return '';
@@ -34741,7 +35327,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
         intimacy_body_responses: { type: 'array', items: closedJsonObject({ name: str, zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, physical: str, reaction: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, male_size: { type: 'string', enum: ['', ...INTIMACY_MALE_SIZES] }, male_size_cm: { type: 'number' }, male_size_basis: str, ejaculation_pace: { type: 'integer' }, ejaculation_pace_basis: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, consent_style: { type: 'string', enum: [...INTIMACY_CONSENT_STYLES] }, initiative_style: { type: 'string', enum: [...INTIMACY_INITIATIVE_STYLES] }, restraint_toy_style: { type: 'string', enum: [...INTIMACY_RESTRAINT_TOY_STYLES] }, turn_ons: str, turn_offs: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, male_size: { type: 'string', enum: ['', ...INTIMACY_MALE_SIZES] }, male_size_cm: { type: 'number' }, male_size_basis: str, ejaculation_pace: { type: 'integer' }, ejaculation_pace_basis: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, consent_style: { type: 'string', enum: [...INTIMACY_CONSENT_STYLES] }, initiative_style: { type: 'string', enum: [...INTIMACY_INITIATIVE_STYLES] }, restraint_toy_style: { type: 'string', enum: [...INTIMACY_RESTRAINT_TOY_STYLES] }, exposure_intent: { type: 'string', enum: [...INTIMACY_EXPOSURE_INTENTS] }, turn_ons: str, turn_offs: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -35002,6 +35588,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         consentStyle: raw?.consent_style,
         initiativeStyle: raw?.initiative_style,
         restraintToyStyle: raw?.restraint_toy_style,
+        exposureIntent: raw?.exposure_intent,
         turnOns: raw?.turn_ons,
         turnOffs: raw?.turn_offs,
         foreplayStance: raw?.foreplay_stance,
@@ -35078,6 +35665,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           if (!next.consentStyle && card.consentStyle) { next.consentStyle = card.consentStyle; touched = true; }
           if (!next.initiativeStyle && card.initiativeStyle) { next.initiativeStyle = card.initiativeStyle; touched = true; }
           if (!next.restraintToyStyle && card.restraintToyStyle) { next.restraintToyStyle = card.restraintToyStyle; touched = true; }
+          if (!next.exposureIntent && card.exposureIntent) { next.exposureIntent = card.exposureIntent; touched = true; }
         }
         if (touched) {
           cards[existingIdx] = next;
@@ -35773,12 +36361,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   // Someone is in the scene when the alias index finds them in it or the scene names them outright;
   // with no index at all every pair counts.
-  const relsimInScene = (recent = {}) => {
-    const present = extensionScenePeople(recent);
+  const relsimInScene = (recent = {}, settings = {}) => {
+    const hudNames = worldDynamicsHudPresentNames(recent);
+    const present = onScenePeopleNow(recent, settings);
+    if (hudNames.length > 0) {
+      return name => relsimIsPersona(name) || present.some(person => extensionSameOrGivenName(person, name));
+    }
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : [];
-    const sceneText = [...messages.map(message => message?.content || ''), recent.latestUser || ''].join('\n');
-    return name => relsimIsPersona(name) || (!present.length && !Runtime.activeEntityIndex)
-      || present.some(person => extensionSamePerson(person, name)) || (!!name && sceneText.includes(name));
+    const physicalText = [
+      ...messages.map(message => stripQuotedAndRemoteSceneText(message?.content || '')),
+      stripQuotedAndRemoteSceneText(recent.latestUser || '')
+    ].filter(Boolean).join('\n');
+    return name => relsimIsPersona(name)
+      || (!present.length && !Runtime.activeEntityIndex && !physicalText.trim())
+      || present.some(person => extensionSameOrGivenName(person, name))
+      || (!!name && extensionTextMentionsName(physicalText, name));
   };
   const RELSIM_SESSION_EXIT_RE = /(?:집에\s*(?:돌아왔|왔|갔)|귀가|각자\s*(?:돌아갔|헤어졌)|다음\s*날\s*(?:아침|이\s*되)|아침이\s*되|next\s+morning|went\s+home|parted\s+ways)/i;
   const relsimVerdicts = ({ scopeKey, settings, recent, chat, identity }) => {
@@ -35853,7 +36450,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       || intimacy.phase === 'climax'
       || INTIMACY_PENETRATIVE_ACT_RE.test(sceneText.input)
       || INTIMACY_PENETRATIVE_ACT_RE.test(sceneText.last);
-    const inScene = relsimInScene(recent);
+    const inScene = relsimInScene(recent, settings);
     const inSceneCards = relsimCards(settings, scopeKey).filter(card => {
       const pair = relsimPairState(chat, card);
       return !!pair.status && inScene(card.from) && inScene(card.to);
@@ -36056,7 +36653,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const gate = relationshipSimModeGate(settings);
     const cards = relsimCards(settings, scopeKey);
     const pairs = cards.map(card => relsimPairLine(card, relsimPairState(prepared.chat, card)));
-    const inScene = relsimInScene(recent);
+    const inScene = relsimInScene(recent, settings);
     const depiction = cards.filter(card => [card.from, card.to].every(inScene))
       .flatMap(card => relsimDepictionLines(card, relsimPairState(prepared.chat, card), scopeKey, prepared.story, gate)).slice(0, 14);
     const profileNames = Array.from(new Set(cards.flatMap(card => [card.from, card.to])));
@@ -52347,6 +52944,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (Object.keys(nextMalePaces).length) Runtime.intimacyMalePaces[key] = nextMalePaces;
     else delete Runtime.intimacyMalePaces[key];
+    if (Runtime.spatialTopology && key) delete Runtime.spatialTopology[key];
 
     // Preserve user-authored intimacy card profiles while restoring turn-accumulated zoneStats/hashes.
     if (!Runtime.intimacyCards) Runtime.intimacyCards = {};
@@ -60943,7 +61541,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       guiEl('div', { class: 'opt-grid' }, [
         field('동의 방식', selectOpt('consentStyle', INTIMACY_CONSENT_STYLE_LABELS)),
         field('주도권 성향', selectOpt('initiativeStyle', INTIMACY_INITIATIVE_STYLE_LABELS)),
-        field('도구·구속·눈가리개', selectOpt('restraintToyStyle', INTIMACY_RESTRAINT_TOY_STYLE_LABELS))
+        field('도구·구속·눈가리개', selectOpt('restraintToyStyle', INTIMACY_RESTRAINT_TOY_STYLE_LABELS)),
+        field('발각·노출 태도', selectOpt('exposureIntent', INTIMACY_EXPOSURE_INTENT_LABELS))
       ]),
       guiEl('div', { class: 'opt-grid' }, [
         field('흥분 요소 (Turn-Ons)', input('turnOns', card.turnOns || '', '예: 키스, 귀 애무, 눈가리개, 수갑')),
@@ -60990,11 +61589,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         title: '인물별 신체 반응 및 연속 게이지',
         body: '절정·윤활(여성·성별 미확인) / 사정(남성 전용)과 흥분(-100~+100)은 턴과 재시작을 넘어 이어집니다. 성별은 신체 도식 → 선호 카드 → 프로필 순서로 단일 판정합니다.'
       });
+      const extTopoInfo = ext?.spatialTopology?.active && ext?.adjacentObservers?.length
+        ? ` · 세부공간:${ext.spatialTopology.subRoom}(문밖 최인접:${ext.adjacentObservers.join(',')})`
+        : '';
+      const extAcousticsInfo = ext?.acoustics
+        ? ` · 설비:${ext.acoustics.soundproofingLabel}/${ext.acoustics.ambientMaskingLabel}/상한${ext.acoustics.transmissionCap}${ext.blockedByAcoustics ? '(설비 차폐)' : ''}`
+        : '';
+      const extIntentInfo = ext?.exposureIntent?.dominantIntent && ext.exposureIntent.dominantIntent !== 'oblivious'
+        ? ` · 태도:${ext.exposureIntent.exposureIntentLabel}`
+        : '';
       const extCard = ext ? guiReadingCard({
         badge: ext.tierLabelKo || (ext.noticed ? '인지됨 · 제3자 반응' : '미인지'),
         badgeTone: ext.badgeTone || (ext.noticed ? 'warn' : 'info'),
         title: `외부반응 · ${ext.place} (${ext.score}/${ext.maxScore})`,
-        body: `${ext.noticed ? '인지됨' : '미인지'} · 인지 확률 ${ext.noticeChance}% (위험도 ${ext.riskLabelKo || INTIMACY_EXTERNAL_RISK_KO[ext.riskBand] || ext.riskBand})${ext.nearbyActor ? ` · 후보 제3자: ${ext.nearbyActor}` : ''}${ext.factors?.length ? ` · ${ext.factors.join(', ')}` : ''}${ext.reactionSummaryKo ? ` — 발현 반응: ${ext.reactionSummaryKo}` : ''}`,
+        body: `${ext.noticed ? '인지됨' : '미인지'} · 인지 확률 ${ext.noticeChance}% (위험도 ${ext.riskLabelKo || INTIMACY_EXTERNAL_RISK_KO[ext.riskBand] || ext.riskBand})${ext.nearbyActor ? ` · 후보 제3자: ${ext.nearbyActor}` : ''}${extTopoInfo}${extAcousticsInfo}${extIntentInfo}${ext.factors?.length ? ` · ${ext.factors.join(', ')}` : ''}${ext.reactionSummaryKo ? ` — 발현 반응: ${ext.reactionSummaryKo}` : ''}`,
         meters: [
           { label: '외부반응 게이지', value: ext.score, max: ext.maxScore || 200, variant: ext.score >= 120 || ext.noticed ? 'climax' : 'ejac', suffix: `${ext.score}/${ext.maxScore || 200}` },
           { label: '인지 확률', value: ext.noticeChance, max: 100, variant: ext.noticed ? 'climax' : 'lub', suffix: `${ext.noticeChance}%` }
@@ -61197,7 +61805,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
         updated.zoneStats = nextZoneStats;
       }
-      if (['turnOns', 'turnOffs', 'sensitiveZones', 'dullZones', 'consentStyle', 'initiativeStyle', 'restraintToyStyle'].includes(key)) {
+      if (['turnOns', 'turnOffs', 'sensitiveZones', 'dullZones', 'consentStyle', 'initiativeStyle', 'restraintToyStyle', 'exposureIntent'].includes(key)) {
         const cleared = new Set(Array.isArray(card.userClearedFields) ? card.userClearedFields : []);
         if (String(nextVal || '').trim() === '') cleared.add(key);
         else cleared.delete(key);
@@ -66152,6 +66760,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugEstimateMaleEjacPaceFromLore({ name = '', loreText = '' } = {}) {
       return cloneJson(estimateMaleEjacPaceFromLore(name, loreText));
+    },
+    debugSpatialTopology({ recent = {}, settings = null } = {}) {
+      const targetSettings = settings || Runtime.settings || {};
+      return cloneJson(resolveSpatialTopology(recent, targetSettings));
     },
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
