@@ -646,3 +646,42 @@ test('sleeping NPC tracks sleep depth (100 to 200), sleep aids, soothing deepeni
   assert.match(repeated, /repeat bonus \+\d+ \(streak #3\)/);
   assert.match(repeated, /near-wake bonus \+\d+/);
 });
+
+test('multi-female sexual scene excludes unpenetrated bystander from conception exposure', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const scopeKey = 'multi-female-bystander-scope';
+  const settings = {
+    writingMode: 'rp',
+    rpImpersonationScope: 'persona',
+    enableBodyStateAide: true,
+    mode: 'normal',
+    bodyStateReproduction: true,
+    bodyStateCards: {
+      [scopeKey]: [
+        { name: '천하연', gender: 'female', cycleLength: 28, lastPeriodStart: '이야기 46일째' },
+        { name: '천소연', gender: 'female', cycleLength: 28, lastPeriodStart: '이야기 46일째' }
+      ]
+    }
+  };
+  const packet = f.host.plugin.debugBodyStatePacket({
+    personaName: '푸딩',
+    characterName: '천하연',
+    scopeKey,
+    profileGenders: { 천하연: 'female', 천소연: 'female', 푸딩: 'male' },
+    libText: '[STORY CLOCK] 현재: 이야기 60일째 · 밤',
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '푸딩이 천하연의 질내에 사정하자 천소연이 놀라 숨을 삼키며 천하연의 어깨에 손을 얹었다.' }
+      ],
+      latestUser: '푸딩이 천하연의 허리를 붙잡은 채 숨을 몰아쉬었다.'
+    },
+    settings
+  });
+  const hayeonIdx = packet.indexOf('- 천하연:');
+  const soyeonIdx = packet.indexOf('- 천소연:');
+  assert.ok(hayeonIdx >= 0 && soyeonIdx > hayeonIdx, 'both female reports present in packet');
+  const hayeonSection = packet.slice(hayeonIdx, soyeonIdx);
+  const soyeonSection = packet.slice(soyeonIdx);
+  assert.match(hayeonSection, /sexual contact|PREGNANT/, 'penetrated female 천하연 receives sexual contact evaluation');
+  assert.doesNotMatch(soyeonSection, /sexual contact|PREGNANT/, 'unpenetrated bystander 천소연 must NOT receive sexual exposure or pregnancy roll');
+});

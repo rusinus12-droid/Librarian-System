@@ -909,6 +909,11 @@
   const STORAGE_LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
   // 관계 시뮬레이터 relationship state, per chat: the one extension-AIDE store (user decision 2026-11-19).
   const STORAGE_RELATIONSHIP_STATE_KEY = 'serial_gradation_agents_for_rp:relationship_state:v1';
+  // Per-chat turn timeline checkpoints for reroll/rollback rewind of readings and turn-mutated state.
+  const STORAGE_TURN_TIMELINE_KEY = 'serial_gradation_agents_for_rp:turn_timeline:v1';
+  const TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT = 24;
+  const TURN_TIMELINE_MAX_CHATS = 16;
+  const TURN_TIMELINE_RECENT_REWOUND_MAX = 4;
   const STORAGE_SOURCE_INPUT_PREFS_KEY = 'serial_gradation_agents_for_rp:source_input_prefs:v1';
   const LOCAL_PROVIDER_SECRETS_KEY = 'serial_gradation_agents_for_rp:provider_secrets:v1';
   
@@ -4167,6 +4172,9 @@ ${BIANCA_PERSONA_TEXT}`;
     relsimRun: null,
     // Lore-estimated cards for 상태 AIDE, 억결 AIDE, and NPC 반응 경향성: loaded once and written through.
     loreCards: null,
+    turnTimeline: null,
+    turnTimelineMemory: {},
+    activeTurnTimelineContext: null,
     last: null,
     lastAuxiliarySkip: null,
     lastBeforeContext: null,
@@ -7649,7 +7657,8 @@ ${BIANCA_PERSONA_TEXT}`;
       loadWorldSimLogs().catch(error => warn('[world sim logs load failed]', error)),
       loadLoreCards().catch(error => warn('[lore cards load failed]', error)),
       loadRelationshipState().catch(error => warn('[relationship state load failed]', error)),
-      typeof loadGaugeContinuity === 'function' ? loadGaugeContinuity().catch(error => warn('[gauge continuity load failed]', error)) : Promise.resolve()
+      typeof loadGaugeContinuity === 'function' ? loadGaugeContinuity().catch(error => warn('[gauge continuity load failed]', error)) : Promise.resolve(),
+      typeof loadTurnTimeline === 'function' ? loadTurnTimeline().catch(error => warn('[turn timeline load failed]', error)) : Promise.resolve()
     ]);
     settings.stageOptions = {};
     for (const def of CONFIGURABLE_STAGE_DEFS) {
@@ -29013,6 +29022,59 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return { phase: 'luteal', signs: 'calmer, a little tired' };
   };
 
+  const bodyStateLineIsSexRecipient = (line, name, castNames = [], settings = {}, scopeKey = '') => {
+    if (!BODY_STATE_SEX_RE.test(line)) return false;
+    const targets = Array.from(new Set((castNames || []).filter(Boolean)));
+    const scopeCards = scopeKey ? bodyStateCardsForScope(settings, scopeKey) : [];
+    const otherFemales = targets.filter(other => {
+      if (!other || other === name || extensionSamePerson(other, name)) return false;
+      if (other === FORCED_BOND_PERSONA || (Runtime.activePersonaName && extensionSamePerson(other, Runtime.activePersonaName))) return false;
+      if (!bodyStateLineMentions(line, other)) return false;
+      const otherCard = scopeCards.find(c => c.name && (c.name === other || extensionSamePerson(c.name, other))) || null;
+      if (canonicalCharacterGender(otherCard?.gender) === 'male') return false;
+      const fertility = bodyStateCanConceive(other, otherCard, false);
+      if (fertility?.value === false) return false;
+      const otherGender = inferGenderFromCachedRisuLore(other);
+      return otherGender !== 'male';
+    });
+    if (!otherFemales.length) return true;
+    const allNames = [name, ...otherFemales];
+    if (typeof intimacyBodyPartOwners === 'function') {
+      const owners = intimacyBodyPartOwners(line, allNames);
+      const explicitOwners = new Set([
+        ...(owners.get('vaginal_canal') || []),
+        ...(owners.get('cervix') || [])
+      ].filter(owner => owner && owner !== '__female__' && owner !== '__male__'));
+      if (explicitOwners.size > 0) {
+        return Array.from(explicitOwners).some(owner => extensionSameOrGivenName(owner, name));
+      }
+    }
+    const nonSexualObserverRe = /(?:지켜보|바라보|그\s*말을\s*들었|숨을\s*삼켰|놀라|어깨|고개를|눈을\s*떴|속삭였|말했|물었)/;
+    const subClauses = String(line || '').split(/(?:,|하자|하며|하면서|동안|가운데|사이|(?<=[가-힣])고\s+|지만|는데)/).filter(Boolean);
+    const sexRe = new RegExp(`${BODY_STATE_SEX_RE.source}|${INTIMACY_PENETRATIVE_ACT_RE.source}|${INTIMACY_CREAMPIE_RE.source}`, 'i');
+    const sexClauses = subClauses.filter(c => sexRe.test(c));
+    if (sexClauses.length) {
+      const namedInSexClause = sexClauses.filter(c => allNames.some(person => bodyStateLineMentions(c, person)));
+      if (namedInSexClause.length) {
+        const selfInSex = namedInSexClause.some(c => bodyStateLineMentions(c, name));
+        if (selfInSex) return true;
+        const selfInObserverOnly = subClauses.some(c => !sexRe.test(c) && nonSexualObserverRe.test(c) && bodyStateLineMentions(c, name));
+        if (selfInObserverOnly || !selfInSex) return false;
+      }
+    }
+    const sexMatch = BODY_STATE_SEX_RE.exec(line);
+    if (sexMatch) {
+      const distFor = person => {
+        const idx = String(line || '').indexOf(person === FORCED_BOND_PERSONA ? (Runtime.activePersonaName || '') : person);
+        return idx >= 0 ? Math.abs(idx - sexMatch.index) : Infinity;
+      };
+      const selfDist = distFor(name);
+      const minOtherDist = Math.min(...otherFemales.map(distFor));
+      if (Number.isFinite(minOtherDist) && selfDist > minOtherDist) return false;
+    }
+    return true;
+  };
+
   const bodyStateCharacterReport = (name, entries, settings, now, gate, scopeKey, context = {}) => {
     const { clock = null, present = false } = context;
     const card = bodyStateCardsForScope(settings, scopeKey)
@@ -29178,7 +29240,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const closedAt = records.find(row => row.kind !== 'pregnant' && row.age.days !== null)?.age.days ?? null;
 
     if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate && newestRecord?.kind !== 'pregnant') {
-      const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
+      const exposures = mine.filter(entry => bodyStateLineIsSexRecipient(entry.line, name, context.castNames, settings, scopeKey))
         .filter(entry => closedAt === null || (() => { const days = recordAge(entry).days; return days === null || days < closedAt; })());
       const emergencyEntries = mine
         .map((entry, index) => ({ entry, index, age: recordAge(entry) }))
@@ -29319,10 +29381,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scenePeople = extensionScenePeople(recent);
     const cardPerson = extensionCardPerson(recent, scenePeople);
     const sleepItems = [];
-    const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
+    const castNames = bodyStateCast(settings, recent);
+    const reports = castNames.map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
       clock,
       recent,
       sleepItems,
+      castNames,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
         || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
@@ -29658,6 +29722,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       id: compact(value.id || '', 64) || `wsim-${Date.now().toString(36)}`,
       at: Number(value.at) || Date.now(),
       inputHash: compact(value.inputHash || '', 40),
+      turnMessageCount: value.turnMessageCount !== null && value.turnMessageCount !== undefined && Number.isInteger(Number(value.turnMessageCount)) && Number(value.turnMessageCount) >= 0 ? Number(value.turnMessageCount) : null,
       storyDay: Number.isFinite(Number(value.storyDay)) ? Number(value.storyDay) : null,
       storyDate: compact(value.storyDate || '', 32),
       actors,
@@ -30240,6 +30305,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       }
       const savedEvent = appendWorldSimEvent(scopeKey, {
         inputHash: sim?.inputHash || '',
+        turnMessageCount: Number.isInteger(Runtime.activeTurnTimelineContext?.sig?.count) ? Runtime.activeTurnTimelineContext.sig.count : null,
         storyDay: sim?.storyDay ?? null,
         storyDate: sim?.storyDate || '',
         actors,
@@ -30435,11 +30501,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     && settings?.mode !== 'off'
     && dialogueModeGate(settings) !== 'skip';
   const DIALOGUE_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, situational fit (intimacy, date, work/service, public stealth, conflict), and strict physical speech causality (characters currently deep-kissing, mouth-occupied, or choking cannot speak crisp fluent lines without either separating lips/mouth first or slurring/muffling their words).',
-    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, situational register, and conversational intent, obeys physical speech causality (no crisp fluent speech while locked in a deep kiss or mouth-occupied), and flag any echo-loop repetition or flat voice blending.',
-    aide_world: 'World AIDE: verify physical speech causality (a mouth engaged in a deep kiss/tongue contact, oral act, or hand-cover cannot articulate normal clear dialogue unless lips physically separate first or speech is muffled/slurred) and verify that dialogue register (workplace/service vs private vs intimate vs date, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
+    shadow_act: 'SHADOW: write every spoken line with real human speechcraft — no echo-loop Q&A ("~이야?" → "~이야."), no empty filler ping-pong, distinct diction and honorifics per speaker, subtext over flat exposition, situational fit (intimacy, date, work/service, public stealth, conflict), strict physical speech causality (characters currently deep-kissing, mouth-occupied, hand-muffled, or choking cannot speak crisp fluent lines without either separating lips/mouth first or slurring/muffling their words), mandatory involuntary climax vocalization dialogue matched to mouth state (when reaching orgasm with mouth covered by a hand, emit muffled cries like "으으음…!" / "흐읍…!" in quotes rather than silent narration; when uncovered, emit unrestrained cries like "아아…!"), and natural Korean contraception diction ("노콘"/"생으로" for unprotected sex; never force illogical "밖에." right after confirming condom wear).',
+    aide_character: 'Character AIDE: verify that each speaker’s dialogue carries their distinct idiolect, honorifics, situational register, and conversational intent, obeys physical speech causality (no crisp fluent speech while locked in a deep kiss, hand-muffled, or mouth-occupied), emits involuntary vocalization dialogue during climax appropriate to mouth state and character voice, and flag any echo-loop repetition or flat voice blending.',
+    aide_world: 'World AIDE: verify physical speech causality (a mouth engaged in a deep kiss/tongue contact, oral act, or hand-cover cannot articulate normal clear dialogue unless lips/hand physically separate first or speech is muffled/slurred — yet at climax peak, involuntary vocalization must break through as muffled cries or open moans instead of pure silence) and verify that dialogue register (workplace/service vs private vs intimate vs date, public vs secluded) and social/seniority honorifics fit the setting and listeners.',
     aide_plot: 'Plot AIDE: verify that every spoken line moves the interaction (probe, tease, dodge, pressure, bargain, reassure, test a boundary) in character and situation rather than stalling in repetitive filler exchanges.',
-    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet (including [장면 상황·대화 톤] and [물리 발화 제약]), then inspect every spoken line in CURRENT_SAME_TURN_DRAFT. Enforce situational fit (intimacy, date, work/customer service, public stealth, conflict, private), enforce physical speech causality (if a speaker is deep-kissing/mouth-occupied and speaks crisp fluent dialogue without an explicit lip-separation beat before the quote, either insert a causal lip-separation beat right before the quote when not physically restrained OR rewrite the quote into muffled/slurred articulation), break echo-loop Q&A, cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext in edits. Report every grounded repair in dialogue_repairs. Return edits: [] only when the dialogue already fits both situation and physical causality, and say so in analysis.summary.'
+    aide_dialogue: 'Dialogue & Speechcraft AIDE: read the verification notes and the DIALOGUE & SPEECHCRAFT packet (including [장면 상황·대화 톤] and [물리 발화 제약]), then inspect every spoken line in CURRENT_SAME_TURN_DRAFT. Enforce situational fit (intimacy, climax peak, date, work/customer service, public stealth, conflict, private), enforce physical speech causality (if a speaker is deep-kissing/mouth-occupied/hand-muffled and speaks crisp fluent dialogue without an explicit mouth-clearing beat before the quote, either insert a causal clearing beat right before the quote when not physically restrained OR rewrite the quote into muffled/slurred articulation), ensure climax/orgasm scenes never leave the climaxing character completely voiceless (insert muffled "으으음…!"/"흐읍…!" when hand-muffled or open "아아…!" cry when unobstructed), break echo-loop Q&A, cut empty filler, restore each speaker’s distinct voice and honorifics, and replace flat on-the-nose lines with subtext in edits. Report every grounded repair in dialogue_repairs. Return edits: [] only when the dialogue already fits both situation and physical causality, and say so in analysis.summary.'
   });
   const DIALOGUE_ISSUES = Object.freeze(['speech_causality', 'situational_fit', 'echo_loop', 'flat_filler', 'voice_blend', 'register_mismatch', 'on_the_nose', 'stiff_rhythm']);
   const DIALOGUE_ISSUE_LABELS = Object.freeze({
@@ -30456,26 +30522,34 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const DIALOGUE_MAX_ITEMS = 8;
   const DIALOGUE_CRAFT_PRINCIPLES = Object.freeze([
     '1. Physical Speech Causality & Articulation (발화 물리 인과·구강 제약): Never let a character who is deep-kissing (lips locked, tongue inside mouth, head held), mouth-occupied (oral act, hand over mouth, gag, mouth full), choking, or unconscious utter crisp, fluent sentences. Either (a) depict a clear physical beat breaking lip contact / freeing the mouth BEFORE the dialogue (only if not physically restrained), OR (b) render slurred, muffled, broken syllables (“으읍… 나, 중에…” / “흐, 잠…깐…”) or non-verbal action.',
-    '2. Situational Dialogue Fit (상황·장면 맞춤 화술): Match tone, diction, line length, and social mask to the active scene — breathless/intimate fragments or muffled words in intimacy, warm teasing/tension on dates, polite role-bound register in workplace/customer service, hushed veiled phrasing around nearby third parties, sharp pressure in conflict.',
-    '3. Break Echo-Loops (메아리 문답 금지): Real speakers almost never answer "~이야?" with "~이야.", "~거야?" with "~거야.", or "~맞아?" with "~맞아.". Answer obliquely — deflect, counter-question, address the unspoken motive, shift the frame, respond with silence/action, or move the beat one step forward.',
-    '4. Subtext & Implicature (언외의 의미·함축): Convey desire, embarrassment, jealousy, reluctance, or tension through word choice, hesitation, teasing, understatement, or evasion — never flatly state obvious feelings or what both speakers already know.',
-    '5. Pragmatic Turn Function (대사의 목적): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Cut empty filler confirmations; a physical beat or brief silence beats a throwaway line.',
-    '6. Distinct Character Idiolect & Korean Spoken Rhythm (인물별 화법·구어체 호흡): Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Omit already-understood subjects and allow natural interruptions or action-interleaved speech.'
+    '2. Involuntary Climax Vocalization (절정 시 비자발적 발화·소리 통제 상실): At climax/orgasm peak, pleasure overwhelms voluntary muscular and vocal control as the mind whites out. Never describe climax purely through silent narration while omitting spoken/vocalized dialogue: if the character’s mouth is covered or muffled by a hand, break through with muffled vocalization quotes (“으으음…!”, “흐읍…!”); if unobstructed, break through with unrestrained moans or ragged cries (“아아…!”, “하아, 으아…!”) rather than sterile silence, overriding general quietness/stealth.',
+    '3. Situational Dialogue Fit & Natural Korean Intimacy Diction (상황·장면 맞춤 화술): Match tone, diction, line length, and social mask to the active scene — breathless/intimate fragments or muffled words in intimacy, warm teasing/tension on dates, polite role-bound register in workplace/customer service, hushed veiled phrasing around nearby third parties (except climax peak), sharp pressure in conflict. For unprotected intercourse, use natural Korean colloquial terms (“노콘”, “생으로”) rather than stiff phrasing, and never force illogical “밖에.” demands right after confirming a condom is worn.',
+    '4. Break Echo-Loops (메아리 문답 금지): Real speakers almost never answer "~이야?" with "~이야.", "~거야?" with "~거야.", or "~맞아?" with "~맞아.". Answer obliquely — deflect, counter-question, address the unspoken motive, shift the frame, respond with silence/action, or move the beat one step forward.',
+    '5. Subtext & Implicature (언외의 의미·함축): Convey desire, embarrassment, jealousy, reluctance, or tension through word choice, hesitation, teasing, understatement, or evasion — never flatly state obvious feelings or what both speakers already know.',
+    '6. Pragmatic Turn Function & Korean Spoken Rhythm (대사의 목적·구어체 호흡): Every spoken line must execute a conversational move (probe, tease, dodge, bargain, concede, pressure, reassure, test a boundary). Enforce each character’s own cadence, sentence endings (어미), and Korean honorifics (존댓말/반말/호칭). Cut empty filler; omit understood subjects.'
   ]);
   const DIALOGUE_KISS_ACTIVE_RE = /키스(?:를|가)?\s*(?:나누|나눴|하|했|이어|계속|퍼부|파고들|깊어)|입술(?:을|이|에)?\s*(?:맞대|맞닿|부딪|포개|덮|삼키|물|빨|파고들)|혀(?:가|를|로|끝)?\s*(?:섞|얽|밀어\s*넣|파고들|들어왔|들어가|감아|감싸|훑)|입\s*(?:속|안)으로\s*혀|deep[- ]?kiss|tongues?\s+(?:entwined|tangled|inside|plunged)|lips?\s+(?:locked|pressed)/i;
   const DIALOGUE_KISS_LOCKED_RE = /물러나려고\s*해도[^\n.!?]{0,24}허락하지\s*않|뒤통수[^\n.!?]{0,24}(?:붙잡|눌러|감싸|고정)|고개(?:를|가)?\s*(?:고정|붙잡|놓지\s*않)|입술(?:을|이)?\s*떼지\s*못|놓아주지\s*않|escap(?:e|ing)\s+the\s+kiss|held\s+(?:her|his)\s+head/i;
   const DIALOGUE_KISS_BREAK_RE = /(?:입술|입|얼굴)(?:을|이)?\s*(?:떼|떨어뜨|떨어졌|거두|거뒀|풀어|풀었)|키스(?:를|가)?\s*(?:멈추|멈췄|그만|풀|끊|끝)|고개(?:를)?\s*(?:돌려|돌렸|젖혀|젖혔|빼내|뺐|뒤로\s*빼)|pulled\s+(?:their\s+)?(?:lips|mouth|face)\s+away|broke\s+the\s+kiss|parted\s+(?:their\s+)?lips/i;
   const DIALOGUE_KISS_BREAK_NEG_RE = /떼지\s*못|풀지\s*못|못\s*하|못하|허락하지\s*않|떼지\s*않고/;
   const DIALOGUE_ORAL_ACTIVE_RE = /(?:페니스|자지|음경|귀두|남성기|손가락|재갈|입마개|손)(?:이|가|을|를|로)?[^\n.?!]{0,20}(?:입\s*(?:안|속)|목구멍|입을?\s*막|틀어막|물고\s*(?:있|빨)|삼키|파고들)|펠라(?:티오|치오)?|딥쓰롯|사까시|이라마|쿠니|커닐링구스|음핵(?:을|에)?\s*(?:입술|혀)(?:로|를)\s*(?:핥|빨|파묻)|mouth\s+(?:full|occupied|covered)|gag(?:ged)?|fellatio|deepthroat/i;
+  const DIALOGUE_HAND_MUFFLED_RE = /(?:손(?:으로|등으로|바닥으로)?[^\n.?!]{0,20}입(?:을|이|으로)?\s*(?:갔|막|틀어막|가리|눌러)|입(?:으로|을)\s*(?:손이\s*갔|막은\s*손|틀어막)|손등으로\s*위를\s*막[^\n.?!]{0,24}손바닥|hand\s+over\s+(?:her|his)\s+mouth|clamped\s+(?:a|her|his)\s+hand\s+over\s+(?:her|his)\s+mouth)/i;
+  const DIALOGUE_CLIMAX_PROSE_RE = /(?:절정(?:에|이|을)?\s*(?:달하|도달|맞|느끼|터지|밀려)|오르가즘|배가\s*위로\s*꺾|경련이\s*시작|전신(?:이|을)?\s*(?:경련|떨리며|굳었다가)|몸이\s*아래에서부터\s*들렸|climaxe[ds]|orgasm)/i;
+  const DIALOGUE_CLIMAX_VOCAL_QUOTE_RE = /(?:으+음|흐+읍|으+읍|으+윽|흐+윽|아+아|하+아|흐+아|응+아|으+아|아+악|흐+으|응+으|하+으|ah+|oh+|mm+|ngh+|hm+)/i;
   const DIALOGUE_MOUTH_FREE_RE = /입(?:에서|을|이)?\s*(?:빼내|뺐|떼어|떼었|풀어|치워|치웠|내뱉|놓아)|손(?:을|이)?\s*(?:떼|치우|내리|풀)|재갈(?:을)?\s*(?:풀|빼)|pulled\s+out\s+of\s+(?:her|his)\s+mouth/i;
   const DIALOGUE_BREATHLESS_RE = /숨(?:을|이)?\s*(?:고르(?:지|려다|내지)?\s*못|가빠|헐떡|턱\s*끝|가쁘|몰아쉬|거칠)|헉헉|신음|panting|breathless|gasping\s+for\s+air/i;
-  const DIALOGUE_SLURRED_SPEECH_RE = /(?:^|[….\-\s"“「])(?:으+읍|흐+읍|하+읍|응+읍|음+[….\-~]|흡|흐+ㄱ|끅|응[….~]+|흐[….~]+|으응|아읍)|(?:[가-힣]{1,2}[,…\-]\s*[가-힣]{1,2}[,…\-])/;
+  const DIALOGUE_SLURRED_SPEECH_RE = /(?:^|[….\-\s"“「])(?:으+읍|으+음|흐+읍|하+읍|응+읍|음+[….\-~]|흡|흐+ㄱ|으+윽|끅|응[….~]+|흐[….~]+|으응|아읍)|(?:[가-힣]{1,2}[,…\-]\s*[가-힣]{1,2}[,…\-])/;
   const dialogueIsSlurredOrVocalQuote = rawQuote => {
     const inner = String(rawQuote || '').replace(/^["“「]+|["”」]+$/g, '').trim();
     if (!inner) return true;
     if (DIALOGUE_SLURRED_SPEECH_RE.test(inner)) return true;
     const stripped = inner.replace(/[….\s,!?\-~"“”「」]/g, '');
     return stripped.length <= 2;
+  };
+  const dialogueIsClimaxVocalQuote = rawQuote => {
+    const inner = String(rawQuote || '').replace(/^["“「]+|["”」]+$/g, '').trim();
+    if (!inner) return false;
+    return DIALOGUE_CLIMAX_VOCAL_QUOTE_RE.test(inner) || DIALOGUE_SLURRED_SPEECH_RE.test(inner);
   };
   const dialogueDetectSpeechConstraints = (recent = {}, draftText = '') => {
     const input = text(recent?.latestUser || '');
@@ -30489,6 +30563,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     let kissActive = false;
     let kissLocked = false;
     let oralActive = false;
+    let handMuffled = false;
     let breathless = false;
     let asleep = false;
     for (const step of contextSteps) {
@@ -30501,31 +30576,52 @@ Begin directly with the in-world response and finish the complete same-turn draf
           kissActive = false;
           kissLocked = false;
         }
-        if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralActive = true;
-        if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) oralActive = false;
+        if (DIALOGUE_HAND_MUFFLED_RE.test(clause)) handMuffled = true;
+        else if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralActive = true;
+        if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
+          oralActive = false;
+          handMuffled = false;
+        }
         if (DIALOGUE_BREATHLESS_RE.test(clause)) breathless = true;
         if (/깊(?:이|게)\s*잠(?:든|들)|수면\s*중|의식(?:이|을)?\s*(?:잃|없)|fast\s+asleep|unconscious/i.test(clause)) asleep = true;
       }
     }
+    const targetDraft = stripNonProseSceneTags(text(draftText || ''));
+    let draftHandMuffled = handMuffled;
+    if (targetDraft) {
+      for (const clause of targetDraft.split(/(?:\.(?!\d)|[!?;\n])+/)) {
+        if (!clause.trim()) continue;
+        if (DIALOGUE_HAND_MUFFLED_RE.test(clause)) draftHandMuffled = true;
+        else if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) draftHandMuffled = false;
+      }
+    }
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const intGauges = scopeKey ? (Runtime.intimacyTelemetry?.[scopeKey]?.gauges || []) : [];
+    const climaxTelemetryActive = intGauges.some(g => g && !bodyStateIsPersona(g.name) && (g.climaxTriggeredThisTurn || ((g.climaxGauge || 0) >= 85 && !g.interruptedBrink)));
+    const climaxProseDetected = Boolean(targetDraft && DIALOGUE_CLIMAX_PROSE_RE.test(targetDraft));
+    const climaxVocalNeeded = climaxTelemetryActive || climaxProseDetected;
+
     const constraints = [];
     if (kissActive) constraints.push({ kind: 'deep_kiss', locked: kissLocked, label: kissLocked ? '딥키스·고개 고정 중' : '키스·입술 밀착 중' });
     if (oralActive) constraints.push({ kind: 'mouth_occupied', locked: false, label: '구강 점유·입 막힘 중' });
+    if (handMuffled || draftHandMuffled) constraints.push({ kind: 'hand_muffled', locked: false, label: '손으로 입 막힘·소리 억누름 중' });
+    if (climaxVocalNeeded) constraints.push({ kind: 'climax_vocalization', locked: false, label: '절정 도달·비자발 발화 필수' });
     if (breathless) constraints.push({ kind: 'breathless_intimacy', locked: false, label: '호흡 가쁨·신음 섞임 상태' });
     if (asleep) constraints.push({ kind: 'asleep_or_drowsy', locked: false, label: '수면·반수면 발화 제한' });
 
     const violations = [];
-    const targetDraft = stripNonProseSceneTags(text(draftText || ''));
-    if (targetDraft && (kissActive || oralActive)) {
+    if (targetDraft && (kissActive || oralActive || handMuffled || draftHandMuffled)) {
       let kissOn = kissActive;
       let oralOn = oralActive;
+      let handOn = handMuffled;
       const parts = targetDraft.split(/("[^"\n]{1,220}"|“[^”\n]{1,220}”|「[^」\n]{1,220}」)/g);
       for (let i = 0; i < parts.length; i += 1) {
         const seg = parts[i];
         if (!seg) continue;
         if (i % 2 === 1) {
-          if ((kissOn || oralOn) && !dialogueIsSlurredOrVocalQuote(seg)) {
+          if ((kissOn || oralOn || handOn) && !dialogueIsSlurredOrVocalQuote(seg)) {
             const inner = compact(seg.replace(/^["“「]+|["”」]+$/g, ''), 48);
-            const activeKind = oralOn ? 'mouth_occupied' : 'deep_kiss';
+            const activeKind = oralOn ? 'mouth_occupied' : (handOn ? 'hand_muffled' : 'deep_kiss');
             violations.push(`Speech causality violation (${activeKind}): clear speech "${inner}" without separating lips/mouth first or slurring`);
           }
         } else {
@@ -30533,13 +30629,28 @@ Begin directly with the in-world response and finish the complete same-turn draf
             if (!clause.trim()) continue;
             if (DIALOGUE_KISS_ACTIVE_RE.test(clause)) kissOn = true;
             if (DIALOGUE_KISS_BREAK_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) kissOn = false;
-            if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralOn = true;
-            if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) oralOn = false;
+            if (DIALOGUE_HAND_MUFFLED_RE.test(clause)) handOn = true;
+            else if (DIALOGUE_ORAL_ACTIVE_RE.test(clause)) oralOn = true;
+            if (DIALOGUE_MOUTH_FREE_RE.test(clause) && !DIALOGUE_KISS_BREAK_NEG_RE.test(clause)) {
+              oralOn = false;
+              handOn = false;
+            }
           }
         }
       }
     }
-    return { constraints, kissActive, kissLocked, oralActive, breathless, asleep, violations: [...new Set(violations)].slice(0, 6) };
+    if (targetDraft && (climaxProseDetected || climaxTelemetryActive)) {
+      const draftQuotes = dialogueExtractQuotes(targetDraft);
+      const hasVocalQuote = draftQuotes.some(dialogueIsClimaxVocalQuote);
+      if (!hasVocalQuote) {
+        if (draftHandMuffled || oralActive) {
+          violations.push('Missing climax vocalization (hand_muffled): climax prose has no muffled vocalization dialogue (must emit e.g. "으으음…!" / "흐읍…!" instead of narration-only silence)');
+        } else {
+          violations.push('Missing climax vocalization (unrestrained): climax prose has no involuntary moan/cry dialogue (must emit e.g. "아아…!" / ragged cry)');
+        }
+      }
+    }
+    return { constraints, kissActive, kissLocked, oralActive, handMuffled: draftHandMuffled || handMuffled, climaxVocalNeeded, breathless, asleep, violations: [...new Set(violations)].slice(0, 6) };
   };
   const dialogueDetectSituations = (recent = {}, settings = {}) => {
     const input = text(recent?.latestUser || '');
@@ -30547,14 +30658,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const corpus = [...msgs, input].join('\n');
     const scene = typeof intimacyScene === 'function' ? intimacyScene(recent) : null;
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
-    const extNotice = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey]?.externalReaction : null;
+    const intTel = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey] : null;
+    const extNotice = intTel?.externalReaction || null;
     const relChat = scopeKey && typeof relsimChat === 'function' ? relsimChat(scopeKey) : null;
     const situations = [];
+    const climaxActive = (intTel?.gauges || []).some(g => g && !bodyStateIsPersona(g.name) && (g.climaxTriggeredThisTurn || ((g.climaxGauge || 0) >= 85 && !g.interruptedBrink)))
+      || DIALOGUE_CLIMAX_PROSE_RE.test(corpus);
+    if (climaxActive) {
+      situations.push({
+        id: 'climax_peak',
+        label: '절정 도달·통제 불능 발화',
+        guidance: '쾌감이 통제력을 넘겨 머리가 하얘지고 소리 억제가 무너지는 순간. 입을 손으로 막았으면 지문만으로 끝내지 말고 "으으음…!"/"흐읍…!" 같은 억눌린 발화 대사를, 입이 열려 있으면 "아아…!"·괴성·깨진 숨소리를 반드시 대사로 출력할 것(제3자 청취 위험보다 절정 시 통제 상실이 우선하며, 은밀함은 입 막힘·억눌린 대사로 표현).'
+      });
+    }
+    if (intTel?.contraception?.length) {
+      const stanceSummary = intTel.contraception.map(c => `${c.displayName || forcedBondDisplayName(c.name)}:${c.badgeLabel}`).join(', ');
+      situations.push({
+        id: 'contraception_stance',
+        label: '피임·안전 반응 톤',
+        guidance: `${stanceSummary} — 무피임은 한국어 구어 "노콘"/"생으로"를 자연스럽게 쓰고, 콘돔 착용·재착용이 확인된 상태에서 맥락 없이 "밖에."를 강요하지 말며, 피임 실패 시 성격(드셈/기약함)과 호감·신뢰도에 맞는 반응 수위를 유지할 것.`
+      });
+    }
     if (scene?.engaged || DIALOGUE_KISS_ACTIVE_RE.test(corpus) || DIALOGUE_ORAL_ACTIVE_RE.test(corpus)) {
       situations.push({
         id: 'intimacy',
         label: '정사·밀착 스킨십',
-        guidance: '호흡·신체 감각·접촉 리듬에 맞춘 짧은 단문·속삭임·여운 위주로 쓰고, 장황하거나 평온한 일상 대화 금지(입술/구강 점유 시 발화 물리 인과 엄수).'
+        guidance: '호흡·신체 감각·접촉 리듬에 맞춘 짧은 단문·속삭임·여운 위주로 쓰고, 장황하거나 평온한 일상 대화 금지(입술/구강/손 막힘 점유 시 발화 물리 인과 엄수).'
       });
     }
     if (/손님|고객|주문|계산|결제|카운터|매장|가게|알바|아르바이트|직장|사무실|회의|상사|거래처|업무|근무|응대|병원|진료|수업|강의|customer|client|order|counter|cashier|office|meeting|workplace/i.test(corpus)) {
@@ -30706,12 +30835,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ];
     if (causality.constraints.length) {
       const labels = causality.constraints.map(c => c.label).join(' · ');
-      const remedy = causality.kissActive || causality.oralActive
-        ? (causality.kissLocked
+      const remedyParts = [];
+      if (causality.kissActive || causality.oralActive) {
+        remedyParts.push(causality.kissLocked
           ? '상대가 고개를 고정해 입술을 떼기 어려운 상태이므로, 발화가 나온다면 반드시 "으읍… / 흐…"처럼 뭉개지고 끊기는 발음이나 비언어 반응으로 묘사할 것(또는 먼저 물리적으로 고개를 돌려 입을 떼어내는 명확한 동작 뒤에 대사할 것).'
-          : '키스/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.')
-        : '호흡이 가쁘거나 각성도가 낮은 상태에 맞게 대사 길이·호흡 단절·신음 섞임을 조절할 것.';
-      lines.push(`[물리 발화 제약]: ${labels} 감지됨 → ${remedy}`);
+          : '키스/구강 점유 중에는 말하기 직전에 입술/입을 떼어내는 명확한 동작을 먼저 서술하거나, 입을 떼지 않은 상태라면 발음이 뭉개지도록 수정할 것.');
+      }
+      if (causality.handMuffled) {
+        remedyParts.push('손으로 입을 막아 소리를 틀어막은 상태이므로, 또렷한 문장 대신 손을 치우거나 손 아래·목구멍으로 새어 나오는 억눌린 발화("으으음…!", "흐읍…!")로 묘사할 것.');
+      }
+      if (causality.climaxVocalNeeded) {
+        remedyParts.push(causality.handMuffled || causality.oralActive
+          ? '절정 순간에는 쾌감이 통제력을 넘기므로 지문만으로 끝내지 말고 입을 막은 상태에 맞는 억눌린 비자발 발화 대사("으으음…!"/"흐읍…!")를 반드시 포함할 것.'
+          : '절정 순간에는 머리가 하얘지며 소리 통제가 무너지므로 지문으로만 넘기지 말고 "아아…!"·괴성·깨진 신음 같은 비자발 발화 대사를 반드시 포함할 것.');
+      }
+      if (!remedyParts.length) {
+        remedyParts.push('호흡이 가쁘거나 각성도가 낮은 상태에 맞게 대사 길이·호흡 단절·신음 섞임을 조절할 것.');
+      }
+      lines.push(`[물리 발화 제약]: ${labels} 감지됨 → ${remedyParts.join(' ')}`);
     }
     lines.push(
       scan.flags.length
@@ -31633,6 +31774,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       lastPriorAssistantHash: compact(raw.lastPriorAssistantHash || '', 40),
       lastInputKey: compact(raw.lastInputKey || '', 400),
       lastKnownTailHashes: Array.isArray(raw.lastKnownTailHashes) ? raw.lastKnownTailHashes.map(h => compact(h || '', 40)).filter(Boolean).slice(-4) : [],
+      lastAssistantCount: Math.max(0, parseInt(raw.lastAssistantCount, 10) || 0),
       idleTurns: Math.max(0, Number(raw.idleTurns) || 0)
     };
   };
@@ -31794,7 +31936,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!scopeKey) return null;
     if (!Runtime.intimacyGauges) Runtime.intimacyGauges = {};
     if (!Runtime.intimacyGauges[scopeKey] && create) {
-      Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], idleTurns: 0 };
+      Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
     }
     return Runtime.intimacyGauges[scopeKey] || null;
   };
@@ -31810,15 +31952,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const priorAssistantHash = compact(lineage.priorAssistantHash || stableDraftHash(recent?.latestAssistant || lastMsg || ''), 40);
     const tailHashes = assistantMessages.slice(-4).map(m => compact(stableDraftHash(m), 40));
     const isReroll = !!chat.lastInputHash && inputHash === chat.lastInputHash && priorAssistantHash === chat.lastPriorAssistantHash;
+    const isSamePrefix = (!!chat.lastPriorAssistantHash && chat.lastPriorAssistantHash !== '00000000'
+      && priorAssistantHash === chat.lastPriorAssistantHash
+      && (!chat.lastAssistantCount || assistantMessages.length <= chat.lastAssistantCount))
+      || (chat.lastPriorAssistantHash === '00000000' && priorAssistantHash === '00000000'
+      && assistantMessages.length === 0 && !!chat.lastInputHash);
+    const isTurnRetry = isReroll || isSamePrefix;
     let changed = false;
 
     const settledHasData = Object.values(chat.settled || {}).some(v => v && (v.climax > 0 || v.ejaculation > 0 || v.lubrication > 0));
-    const matchesTranscript = !assistantMessages.length
-      || ((!chat.lastPriorAssistantHash || chat.lastPriorAssistantHash === '00000000') && assistantMessages.length === 1)
-      || (Array.isArray(chat.lastKnownTailHashes) && chat.lastKnownTailHashes.some(h => h && tailHashes.includes(h)))
-      || (!!chat.lastInputKey && !!previousUser && chat.lastInputKey === previousUser);
+    const priorTailHashes = tailHashes.slice(0, -1);
+    const matchesTranscript = (!assistantMessages.length && !chat.lastInputHash)
+      || ((!chat.lastPriorAssistantHash || chat.lastPriorAssistantHash === '00000000')
+        && assistantMessages.length === 1 && !!priorAssistantHash && priorAssistantHash !== '00000000')
+      || (!!chat.lastPriorAssistantHash && chat.lastPriorAssistantHash !== '00000000'
+        && priorTailHashes.includes(chat.lastPriorAssistantHash))
+      || (!!chat.lastInputKey && !!previousUser && chat.lastInputKey === previousUser && !isSamePrefix);
 
-    if (!isReroll && settledHasData && matchesTranscript) {
+    if (!isTurnRetry && settledHasData && matchesTranscript) {
       const nextBase = {};
       for (const [k, v] of Object.entries(chat.settled || {})) {
         nextBase[k] = normalizeIntimacyGaugeEntry({
@@ -31849,13 +32000,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
       }
       chat.baseline = nextBase;
       changed = true;
-    } else if (!isReroll && (!settledHasData || !matchesTranscript)) {
+    } else if (!isTurnRetry && (!settledHasData || !matchesTranscript)) {
       chat.baseline = {};
     }
     // Keep pending array clean for backwards callers
     chat.pending = [];
-    const activeSettled = isReroll ? (chat.baseline || {}) : (settledHasData && matchesTranscript ? (chat.baseline || {}) : {});
-    return { chat, changed, isReroll, isContinuation: settledHasData && matchesTranscript, activeSettled, inputHash, priorAssistantHash, tailHashes, inputKey: intimacyInputKey(input) };
+    const activeSettled = isTurnRetry ? (chat.baseline || {}) : (settledHasData && matchesTranscript ? (chat.baseline || {}) : {});
+    return { chat, changed, isReroll: isTurnRetry, exactReroll: isReroll, isContinuation: !isTurnRetry && settledHasData && matchesTranscript, activeSettled, inputHash, priorAssistantHash, tailHashes, assistantCount: assistantMessages.length, inputKey: intimacyInputKey(input) };
   };
   const intimacyCardLine = card => {
     const zoneSummary = INTIMACY_BODY_PARTS
@@ -32134,7 +32285,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (scopeKey && Runtime.intimacyGauges?.[scopeKey]) {
         const cur = Runtime.intimacyGauges[scopeKey];
         if (Object.keys(cur.settled || {}).length || Object.keys(cur.baseline || {}).length || (cur.pending || []).length || cur.idleTurns) {
-          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], idleTurns: 0 };
+          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
           void saveIntimacyCards().catch(() => {});
         }
       }
@@ -32155,7 +32306,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (settleInfo?.chat) {
         settleInfo.chat.idleTurns = (settleInfo.chat.idleTurns || 0) + 1;
         if (settleInfo.chat.idleTurns >= INTIMACY_IDLE_CLEAR_TURNS) {
-          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], idleTurns: 0 };
+          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
           void saveIntimacyCards().catch(() => {});
           return [];
         }
@@ -32637,9 +32788,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const climaxStateText = interruptedBrink
         ? `INTERRUPTED ON THE BRINK (외부 간접 개입으로 절정 불발 — halted by third-party presence/sound${externalReaction?.nearbyActor ? ` near ${externalReaction.nearbyActor}` : ''}; portray aborted crest, held breath, trembling frustration)`
         : climaxTriggeredThisTurn
-          ? 'CLIMAX REACHED (100/100 — portray unmistakable climax this turn: 떨림·경련·가빠진 호흡)'
+          ? 'CLIMAX REACHED (100/100 — portray unmistakable climax this turn: 떨림·경련·가빠진 호흡 + 입 상태에 맞는 비자발적 절정 발화 대사[입 막힘 시 "으으음…!"/"흐읍…!", 비차단 시 "아아…!"·통제 불능 신음/괴성] 및 직후 멍하고 나른한 이완 여운)'
           : climaxGauge >= 80
-            ? 'on the edge of climax (가쁜 호흡·신음 억제 한계·다리 떨림 직전)'
+            ? 'on the edge of climax (가쁜 호흡·신음 억제 한계·목소리 갈라짐·다리 떨림 직전)'
             : climaxGauge >= 50
               ? 'arousal high (달아오른 숨결·골반 밀착·열기 고조)'
               : climaxGauge >= 25
@@ -32710,14 +32861,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
         settleInfo.chat.lastPriorAssistantHash = settleInfo.priorAssistantHash;
         settleInfo.chat.lastInputKey = settleInfo.inputKey;
         settleInfo.chat.lastKnownTailHashes = settleInfo.tailHashes;
+        settleInfo.chat.lastAssistantCount = settleInfo.assistantCount;
       }
       void saveIntimacyCards().catch(() => {});
     }
     return gauges;
   };
   const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌|굴러\s*내려|말려\s*내려|뿌리까지\s*(?:덮|감싸))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워)|콘돔\s*착용|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?:wore|wearing|with|used)\s+a\s+condom/i;
+  const INTIMACY_CONDOM_REWEAR_RE = /(?:다시\s*(?:끼웠|끼워|끼고|씌웠|씌워|착용|썼)|새\s*(?:콘돔|고무|것?)(?:을|를)?\s*(?:끼|씌)|고쳐\s*(?:끼웠|씌웠|잡았)|put\s+(?:it|a\s+new\s+one)\s+back\s+on)/i;
   const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:없이|안\s*(?:끼|쓰|하|챙)|못\s*(?:끼|쓰)|빼고|거부|치우)|피임\s*(?:안\s*(?:하|했)|없이|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|(?:안|속|질내|자궁)(?:에|에다|으로)\s*(?:그대로\s*)?(?:싸|사정|쏟|부어)|질내\s*사정|안싸|\braw\b|bareback|without\s+(?:a\s+)?condom|no\s+protection|creampie/i;
-  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?\s*(?:찢어|터졌|터져|빠졌|빠져|벗겨|말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^.\n]{0,18}뭉쳐|뭉쳐\s*(?:있|버렸))|(?:뭉친\s*자리|콘돔|고무)[^.\n]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:condom|rubber)\s+(?:broke|ripped|slipped|bunched|rolled\s+up|burst)/i;
+  const INTIMACY_CONDOM_SLIP_RISK_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?[^\n.?!]{0,20}(?:말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^\n.?!]{0,18}(?:몰려|뭉쳐|접혀)|뭉쳐\s*(?:있|버렸)|접혀\s*있)|(?:뭉친\s*(?:자리|테두리)|콘돔|고무)[^\n.?!]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|(?:condom|rubber)\s+(?:bunched|rolled\s+up)/i;
+  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
   const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;
   const INTIMACY_ONGOING_BIRTH_CONTROL_RE = /경구\s*피임약|피임약(?:을)?\s*(?:복용|먹고|챙겨\s*먹|먹어)|미레나|루프\s*(?:시술|착용)|임플라논|(?:on|taking)\s+(?:the\s+)?(?:birth\s+control\s+)?pill|has\s+an?\s+iud/i;
   const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸|사정|쏟았|부었|가득\s*채웠)|안싸|came\s+inside|creampie/i;
@@ -32785,8 +32939,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!src) return [];
     const rules = [
       [/원칙|엄격|진지|보수적|냉정|철저|이성적|꼼꼼|계획적|규율|질서|strict|disciplined|rational|cautious/i, '원칙·신중함'],
-      [/자존심|도도|까칠|거침없|직설|당당|기센|승부욕|츤데레|무뚝뚝|퉁명|proud|blunt|sharp-tongued|tsundere/i, '도도·직설적 기질'],
-      [/수줍|부끄|내성적|소심|조심스럽|여린|순진|겁이\s*많|말수\s*적|shy|timid|bashful|reserved/i, '수줍음·조심스러움'],
+      [/자존심|도도|까칠|거침없|직설|당당|기\s*센|드세|드센|강단|강경|성깔|단호|승부욕|츤데레|무뚝뚝|퉁명|proud|blunt|sharp-tongued|tsundere|fierce|feisty|strong-willed/i, '도도·직설적 기질'],
+      [/수줍|부끄|내성적|소심|조심스럽|여린|순진|겁이\s*많|말수\s*적|기(?:가)?\s*약|소극|위축|겁먹|유약|shy|timid|bashful|reserved|meek|submissive|fragile/i, '수줍음·조심스러움'],
       [/나른|게으르|느긋|무심|덤덤|고양이|퇴폐|귀찮|건조|냉소|lazy|languid|aloof|cat-like|nonchalant|dry/i, '나른·무심한 여유'],
       [/체념|현실적|포기|받아들이|담담|무덤덤|한숨|달관|resigned|pragmatic|accepting|matter-of-fact/i, '체념·현실적 수용'],
       [/다정|헌신|따뜻|배려|온순|자상|챙기|순종|gentle|caring|devoted|warm/i, '다정·헌신적'],
@@ -32801,7 +32955,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const buildContraceptionLoreVoiceCue = (loreTags = [], loreBrief = '', dispLabel = '') => {
     const hints = [];
     if (loreTags.includes('나른·무심한 여유') || loreTags.includes('체념·현실적 수용')) {
-      hints.push('과장된 비명이나 억지 수줍음 대신 나른한 한숨·체념 섞인 짧은 말투(예: 낮게 "밖에.", "어쩔 수 없네" 등 건조한 수용/선 긋기)');
+      hints.push('과장된 비명이나 억지 수줍음 대신 나른한 한숨·체념 섞인 짧은 말투(예: 낮은 한숨·건조한 선 긋기나 짧은 현실적 대응)');
     }
     if (loreTags.includes('도도·직설적 기질')) {
       hints.push('눈빛·직설적인 촌철살인이나 자존심 섞인 냉정한 선 긋기');
@@ -32846,7 +33000,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       || scene.phase === 'climax'
       || (INTIMACY_PENETRATIVE_ACT_RE.test(encounterText) && !/손가락(?:만|으로만)|fingering\s+only/i.test(latestStep));
     const explicitContraceptionTalk = INTIMACY_CONDOM_PUT_ON_RE.test(encounterText)
+      || INTIMACY_CONDOM_REWEAR_RE.test(encounterText)
       || INTIMACY_CONDOM_NEGATED_RE.test(encounterText)
+      || INTIMACY_CONDOM_SLIP_RISK_RE.test(encounterText)
       || INTIMACY_CONDOM_FAILED_RE.test(encounterText)
       || INTIMACY_WITHDRAWAL_RE.test(encounterText);
     if (!penetrativeActive && !explicitContraceptionTalk) return [];
@@ -32864,32 +33020,72 @@ Begin directly with the in-world response and finish the complete same-turn draf
       && personaGender === 'female';
     if (allConfirmedFemaleOnly) return [];
 
-    // Filter to NPC participants actually engaged in the sexual act (exclude bystanders in the same room).
-    const activeReadingNames = (scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [])
-      .filter(r => ['foreplay', 'intercourse', 'climax'].includes(r?.phase))
-      .map(r => r.participant)
-      .filter(Boolean);
+    // Filter strictly to female NPCs who are actual penetrative recipients (exclude non-penetrated bystanders or foreplay-only companions).
+    const activeReadings = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [];
     const nonPersonaGauges = gauges.filter(g => !bodyStateIsPersona(g.name) && (!personaName || !extensionSamePerson(g.name, personaName)));
     const femaleNpcGauges = nonPersonaGauges.filter(g => g.gender !== 'male');
     let targetGauges = [];
     if (femaleNpcGauges.length <= 1) {
       targetGauges = femaleNpcGauges;
     } else {
-      targetGauges = femaleNpcGauges.filter(g => {
-        if (activeReadingNames.some(rName => extensionSameOrGivenName(rName, g.name))) return true;
-        if ((g.climaxGauge || 0) > 0 || (g.lubricationGauge || 0) > 0 || (g.lastTurnDeltaClimax || 0) > 0 || (g.stimulatedParts?.length || 0) > 0) return true;
-        const linesWithName = forcedBondSentences(encounterText).filter(line => extensionLineNames(line, g.name));
-        return linesWithName.some(line =>
-          INTIMACY_PENETRATIVE_ACT_RE.test(line)
-          || INTIMACY_CONDOM_PUT_ON_RE.test(line)
-          || INTIMACY_CONDOM_NEGATED_RE.test(line)
-          || INTIMACY_CONDOM_FAILED_RE.test(line)
-          || INTIMACY_WITHDRAWAL_RE.test(line)
-        );
-      });
+      const nonPenileOnlyRe = /(?:손가락(?:만|으로만)|장난감|바이브|딜도|fingering\s+only)/i;
+      const penileSentences = forcedBondSentences(encounterText).filter(line => !nonPenileOnlyRe.test(line));
+      const femaleNames = femaleNpcGauges.map(g => g.name).filter(Boolean);
+      const owners = typeof intimacyBodyPartOwners === 'function'
+        ? intimacyBodyPartOwners(penileSentences.join('\n'), femaleNames)
+        : new Map();
+      const recipientNames = new Set();
+      for (const zoneId of ['vaginal_canal', 'cervix']) {
+        for (const owner of (owners.get(zoneId) || [])) {
+          if (owner && owner !== '__female__' && owner !== '__male__') recipientNames.add(owner);
+        }
+      }
+      for (const sentence of penileSentences) {
+        if (!INTIMACY_PENETRATIVE_ACT_RE.test(sentence) && !INTIMACY_CREAMPIE_RE.test(sentence)) continue;
+        const subClauses = sentence.split(/(?:,|하자|하며|하면서|동안|가운데|사이|(?<=[가-힣])고\s+|지만|는데)/).filter(Boolean);
+        let prevObjName = '';
+        for (const sub of subClauses) {
+          const namedInSub = femaleNames.filter(fn => extensionLineNames(sub, fn));
+          if (namedInSub.length === 1) {
+            const fn = namedInSub[0];
+            if (new RegExp(`${escapeRegex(fn)}\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`).test(sub)) {
+              prevObjName = fn;
+            }
+          }
+          if (INTIMACY_PENETRATIVE_ACT_RE.test(sub) || INTIMACY_CREAMPIE_RE.test(sub)) {
+            if (namedInSub.length === 1) {
+              recipientNames.add(namedInSub[0]);
+            } else if (namedInSub.length > 1) {
+              for (const fn of namedInSub) {
+                if (new RegExp(`${escapeRegex(fn)}\\s*(?:을|를|에게|한테|의\\s*(?:안|속|질|보지|몸|허리|다리))`).test(sub)) {
+                  recipientNames.add(fn);
+                }
+              }
+            } else if (prevObjName) {
+              recipientNames.add(prevObjName);
+            }
+          }
+        }
+      }
+      for (const r of activeReadings) {
+        if (!r?.participant || !['intercourse', 'climax'].includes(r?.phase)) continue;
+        const matchedG = femaleNpcGauges.find(g => extensionSameOrGivenName(r.participant, g.name));
+        if (!matchedG) continue;
+        const hasVaginalStim = (matchedG.stimulatedParts || []).some(p => /질내|자궁경부|vaginal|cervix/i.test(p));
+        if (hasVaginalStim || INTIMACY_PENETRATIVE_ACT_RE.test(r.summary || '') || INTIMACY_CREAMPIE_RE.test(r.summary || '')) {
+          recipientNames.add(matchedG.name);
+        }
+      }
+      targetGauges = femaleNpcGauges.filter(g =>
+        Array.from(recipientNames).some(rName => extensionSameOrGivenName(rName, g.name))
+      );
+      if (!targetGauges.length) {
+        targetGauges = femaleNpcGauges.filter(g => (g.stimulatedParts || []).some(p => /질내|자궁경부|vaginal|cervix/i.test(p)));
+      }
       if (!targetGauges.length) {
         const primary = femaleNpcGauges.find(g => Runtime.activeCharacterName && extensionSameOrGivenName(g.name, Runtime.activeCharacterName));
-        targetGauges = [primary || femaleNpcGauges[0]];
+        const activeG = [...femaleNpcGauges].sort((a, b) => ((b.lastTurnDeltaClimax || 0) - (a.lastTurnDeltaClimax || 0)) || ((b.climaxGauge || 0) - (a.climaxGauge || 0)))[0];
+        targetGauges = [(activeG && (activeG.lastTurnDeltaClimax || 0) > 0) ? activeG : (primary || femaleNpcGauges[0])];
       }
     }
     if (!targetGauges.length) {
@@ -32911,15 +33107,42 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ? String(libBlock).split(/\n+/).flatMap(full => forcedBondSentences(full).map(line => ({ source: 'LIB', line, full, relative: bodyStateRelativeDays(line) })))
       : [];
 
-    // Step-by-step barrier/contraception state across active encounter window (later action overrides earlier; slippage beats intact condom).
+    // Chronological clause-by-clause barrier/contraception state across active encounter window.
+    const condomEverMentioned = /(?:콘돔|고무|라텍스|condom|rubber|latex)/i.test(encounterText);
     let latestBarrierState = '';
+    let rewornAfterSlip = false;
     for (const step of encounterSteps) {
-      if (INTIMACY_CONDOM_FAILED_RE.test(step)) latestBarrierState = 'condom_failed';
-      else if (INTIMACY_CONDOM_NEGATED_RE.test(step)) latestBarrierState = 'none_explicit';
-      else if (INTIMACY_CONDOM_PUT_ON_RE.test(step)) latestBarrierState = 'condom';
-      else if (INTIMACY_WITHDRAWAL_RE.test(step)) latestBarrierState = 'withdrawal';
+      const cleanedStep = stripNonProseSceneTags(step);
+      for (const clause of cleanedStep.split(/(?:\.(?!\d)|[!?;\n])+/)) {
+        if (!clause.trim()) continue;
+        const failIdx = INTIMACY_CONDOM_FAILED_RE.test(clause) ? clause.search(INTIMACY_CONDOM_FAILED_RE) : -1;
+        const slipIdx = INTIMACY_CONDOM_SLIP_RISK_RE.test(clause) ? clause.search(INTIMACY_CONDOM_SLIP_RISK_RE) : -1;
+        const putOnHit = INTIMACY_CONDOM_PUT_ON_RE.test(clause) || (condomEverMentioned && INTIMACY_CONDOM_REWEAR_RE.test(clause));
+        const putOnIdx = INTIMACY_CONDOM_PUT_ON_RE.test(clause)
+          ? clause.search(INTIMACY_CONDOM_PUT_ON_RE)
+          : (condomEverMentioned && INTIMACY_CONDOM_REWEAR_RE.test(clause) ? clause.search(INTIMACY_CONDOM_REWEAR_RE) : -1);
+        const negatedIdx = INTIMACY_CONDOM_NEGATED_RE.test(clause) ? clause.search(INTIMACY_CONDOM_NEGATED_RE) : -1;
+        const withdrawalIdx = INTIMACY_WITHDRAWAL_RE.test(clause) ? clause.search(INTIMACY_WITHDRAWAL_RE) : -1;
+        const candidates = [
+          failIdx >= 0 ? ['condom_failed', failIdx] : null,
+          slipIdx >= 0 ? ['condom_slip_risk', slipIdx] : null,
+          putOnHit && putOnIdx >= 0 ? ['condom', putOnIdx] : null,
+          negatedIdx >= 0 ? ['none_explicit', negatedIdx] : null,
+          withdrawalIdx >= 0 ? ['withdrawal', withdrawalIdx] : null
+        ].filter(Boolean).sort((a, b) => a[1] - b[1]);
+        for (const [kind] of candidates) {
+          if (kind === 'condom') {
+            if (latestBarrierState === 'condom_slip_risk' || latestBarrierState === 'condom_failed') rewornAfterSlip = true;
+            latestBarrierState = 'condom';
+          } else if (kind === 'withdrawal') {
+            if (latestBarrierState !== 'condom') latestBarrierState = 'withdrawal';
+          } else {
+            latestBarrierState = kind;
+          }
+        }
+      }
     }
-    const withdrawalRequested = INTIMACY_WITHDRAWAL_RE.test(encounterText) || latestBarrierState === 'withdrawal';
+    const withdrawalRequested = latestBarrierState !== 'condom' && (INTIMACY_WITHDRAWAL_RE.test(encounterText) || latestBarrierState === 'withdrawal');
     const creampieAttemptOrDone = INTIMACY_CREAMPIE_RE.test(encounterText);
     const explicitSafeDayConsentInAct = /(?:생리\s*중|안전일)(?:이라|이니까|이니)?[^\n.?!]{0,24}(?:괜찮|그냥\s*해|피임\s*(?:안|필요\s*없)|넣어|해도\s*돼)/i.test(encounterText);
 
@@ -32950,15 +33173,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
       let isProtected = false;
       if (latestBarrierState === 'condom') {
         method = 'condom';
-        methodLabel = '콘돔 착용';
+        methodLabel = rewornAfterSlip ? '콘돔 착용 (밀림 후 재착용 확인)' : '콘돔 착용';
         isProtected = true;
       } else if (cardOngoingMethod || ongoingPillInText) {
         method = cardOngoingMethod || 'pill';
         methodLabel = BODY_STATE_CONTRACEPTION?.[method]?.label || '사전 피임(복용/장치)';
         isProtected = true;
+      } else if (latestBarrierState === 'condom_slip_risk') {
+        method = 'condom_slip_risk';
+        methodLabel = '콘돔 밀림·이탈 위험 (밑동 뭉침 · 귀두 피복 유지, 완전 실패 아님)';
+        isProtected = false;
       } else if (latestBarrierState === 'condom_failed') {
         method = 'condom_failed';
-        methodLabel = '콘돔 파손·이탈 (뭉침·맨살 노출로 피임 실패)';
+        methodLabel = '콘돔 파손·완전 이탈 (피임 실패)';
         isProtected = false;
       } else if (latestBarrierState === 'none_explicit') {
         method = 'none_explicit';
@@ -33099,6 +33326,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
       // 6. Synthesize stance & lore-seeded behavioral reaction
       const lowTrust = dispLevel === 'hostile' || dispLevel === 'dislike' || mood <= -45;
+      const isFiercePersonality = loreTags.includes('도도·직설적 기질')
+        || loreTags.includes('원칙·신중함')
+        || /드세|드센|기\s*센|강단|강경|성깔|단호|까칠|거침없|fierce|feisty|strong-willed/i.test(safeLoreText);
+      const isMeekPersonality = !isFiercePersonality
+        && (loreTags.includes('수줍음·조심스러움') || /기(?:가)?\s*약|소심|위축|소극|여린|순종|timid|meek|shy/i.test(safeLoreText));
+      const highAffectionTrust = relTier === 'married_or_engaged'
+        || relTier === 'deep_lovers'
+        || (dispLevel === 'affection' && mood >= 20)
+        || (relStatus === 'lovers' && ['like', 'affection'].includes(dispLevel) && mood >= 15);
       const feverOrPain = /발열|몸살|배를?\s*움츠|생리통|아프|통증|cramp|fever/i.test(knownBodyText)
         || /발열|몸살|생리통|하복부\s*통증|cramp|fever/i.test(libCycleText);
       const loreSeedHint = [loreTags.length ? `기질(${loreTags.join('·')})` : '', loreBrief ? `로어(${compact(loreBrief, 95)})` : ''].filter(Boolean).join(' · ');
@@ -33106,10 +33342,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? ' [연속성 잠금: 현재 장면에 콘돔·고무 착용 정황이 없으므로 서술 도중 없던 콘돔이 갑자기 착용된 상태로 바꾸지 말 것.]'
         : '';
       const failedCondomWarn = method === 'condom_failed'
-        ? ' [주의: 고무가 밑동 쪽으로 뭉치거나 파손·이탈되어 맨살이 드러난 피임 실패 상태이므로 안전한 피임으로 오인하지 말고 노출·당혹·후속 대처를 반영할 것.]'
-        : '';
+        ? ' [주의: 콘돔 끝·귀두 부위가 찢어지거나 완전히 빠져 피임이 실패한 상태이므로 안전한 피임으로 오인하지 말고 즉각적인 인지·당혹·후속 대처를 반영할 것.]'
+        : (method === 'condom_slip_risk'
+          ? ' [주의: 고무가 밑동 쪽으로 말려 뭉치며 기둥 하부 맨살이 드러난 이탈 위험 상태이나, 귀두를 감싼 머리 부분이 찢어지거나 빠진 완전 피임 실패는 아니므로 위치 점검·재착용 유도 또는 조건부 경계 수준으로 반응할 것.]'
+          : '');
       const withdrawalNote = withdrawalRequested
-        ? ' 대사에 담긴 질외사정 요구(예: "밖에.", "밖으로")를 무시하고 임의로 질내사정으로 흘러가지 말 것.'
+        ? ' 대사에 담긴 질외사정 요구(예: "노콘/생으로 하려면 밖에.", "밖에.")를 무시하고 임의로 질내사정으로 흘러가지 말 것.'
         : '';
       const contextTag = [
         `피임:${methodLabel}`,
@@ -33130,7 +33368,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         badgeLabel = `피임 확인 (${methodLabel})`;
         badgeTone = 'ok';
         summaryKo = `${methodLabel} 상태로 피임 우려 없이 인물 성격과 관계 온도에 맞춰 반응합니다.`;
-        promptDirective = `${displayName}의 피임은 확인됨(${methodLabel}). 무피임 공포나 억지 질책을 넣지 말고 ${loreStyleCue}과 현재 호감도(${dispLabel})에 맞게 자연스럽게 몰입하거나 반응하라.`;
+        promptDirective = `${displayName}의 피임은 확인됨(${methodLabel}). 콘돔 착용${rewornAfterSlip ? '(밀림 확인 후 재착용)' : ''}이 확인된 상태에서 맥락 없이 "밖에."/"안엔 안 돼"를 요구하거나 무피임 공포·억지 질책을 넣지 말고, ${loreStyleCue}과 현재 호감도(${dispLabel})에 맞게 자연스럽게 몰입하거나(노콘 전환을 따질 때만 "생으로/노콘으로 하려면 밖에."로) 반응하라.`;
       } else if (g.sleeping && (g.wakefulnessGauge || 0) < 70) {
         stanceCode = 'asleep_unaware';
         badgeLabel = '피임 미실시 · 수면 중 미인지';
@@ -33143,6 +33381,38 @@ Begin directly with the in-world response and finish the complete same-turn draf
         badgeTone = 'info';
         summaryKo = `${cycleLabel}이므로 피임 미실시에 따른 임신 공포 대신 현재 몸 상태와 관계 맥락에 맞춰 반응합니다.`;
         promptDirective = `${cycleLabel} 상태(${loreSeedHint || '로어 기반'}). 임신 공포 반응 대신 몸의 부담·감정선·관계 맥락에 집중해 ${loreStyleCue}로 반응하라.${noPhantomCondomLock}`;
+      } else if (method === 'condom_slip_risk') {
+        stanceCode = 'condom_slip_risk_check';
+        badgeLabel = '콘돔 밀림·이탈 위험 · 위치 점검·재착용 경계';
+        badgeTone = 'warn';
+        summaryKo = `${relLabel}에서 고무가 밑동 쪽으로 말려 뭉치며 맨살이 일부 드러났으나 귀두 피복은 유지되어 완전한 피임 실패 전 단계이므로, 빠질 위험을 의식해 위치 점검·고쳐 쓰기를 유도합니다.`;
+        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 콘돔이 밑동 쪽으로 말려 올라가 맨살이 조금 드러났지만 귀두 부분은 아직 덮여 있어 완전한 피임 실패가 아닌 이탈 위험 단계다. 과장된 파국 반응이나 무조건적인 "밖에." 강요 대신, ${loreStyleCue}에 맞춰 잠깐 멈춰 위치를 고쳐 쓰게 하거나 빠짐 여부를 확인하며, 만약 노콘·생으로 이어가려 한다면 "생으로/노콘으로 하려면 밖에." 식으로 조건부 경계를 분명히 드러내라.${failedCondomWarn}${withdrawalNote}`;
+      } else if (method === 'condom_failed' && cycleWindow !== 'menstrual_safe') {
+        if (highAffectionTrust && effectiveChildPlan !== 'none' && cycleWindow !== 'fertile_danger') {
+          stanceCode = 'condom_failed_trust_accept';
+          badgeLabel = '피임 실패 · 고호감·신뢰 조건부 수용';
+          badgeTone = 'info';
+          summaryKo = `콘돔 파손·완전 이탈로 피임이 실패했으나 높은 호감과 신뢰(${relLabel})를 바탕으로 상대를 믿고 조건부 수용합니다.`;
+          promptDirective = `[필수 실현] 콘돔 파손·완전 이탈로 실제 피임 실패가 발생했으나, 상대에 대한 호감(${dispLabel})과 신뢰가 높다. 무조건 밀어내거나 획일적인 "밖에."를 반복하지 말고, ${loreStyleCue}에 맞춰 잠시 숨을 고른 뒤 상대를 믿는 태도(예: "책임질 거라면 괜찮아." 결의·신뢰 톤)로 조건부 수용하는 반응을 그려라.${failedCondomWarn}${withdrawalNote}`;
+        } else if (isFiercePersonality || lowTrust || relTier === 'casual_or_onenight') {
+          stanceCode = 'condom_failed_fierce_resist';
+          badgeLabel = '피임 실패 · 격렬한 제지·저항';
+          badgeTone = 'warn';
+          summaryKo = `콘돔 파손·완전 이탈을 인지한 즉시 피임 중시·강한 기질(${loreSeedHint || dispLabel})에 따라 격렬하게 저항·제지합니다.`;
+          promptDirective = `[필수 실현] 콘돔 파손·완전 이탈로 실제 피임이 실패했다. 피임을 중시하고 드세며 강단 있는 성격(${loreSeedHint || relLabel})답게 즉각 몸을 빼고 밀어내며 격렬한 제지·저항을 표출하고, 즉시 중단·새 콘돔 교체·노콘 거부("생으로/노콘으로 안에는 절대 안 돼")를 강하게 요구하라.${creampieAttemptOrDone ? ' 이미 질내사정이 벌어졌다면 충격·분노와 사후피임약 대처 추궁까지 연결하라.' : ''}${failedCondomWarn}${withdrawalNote}`;
+        } else if (isMeekPersonality) {
+          stanceCode = 'condom_failed_meek_protest';
+          badgeLabel = '피임 실패 · 조용한 항의·소극적 제지';
+          badgeTone = 'warn';
+          summaryKo = `콘돔 파손·완전 이탈로 피임이 실패했으나 기가 약하고 조심스러운 기질에 따라 조용하고 위축된 항의로 제지합니다.`;
+          promptDirective = `[필수 실현] 콘돔 파손·완전 이탈로 실제 피임이 실패했으나 기가 약하고 조심스러운 성격(${loreSeedHint || relLabel})이다. 거칠게 밀쳐내기보다 손끝으로 팔·어깨를 붙잡으며 떨리는 작은 목소리로 조용한 항의·만류(예: "잠깐만요… 찢어진 것 같은데…", "생으로는 안 될 것 같아요…")를 전하며 소극적이지만 분명히 멈춤을 청하라.${failedCondomWarn}${withdrawalNote}`;
+        } else {
+          stanceCode = 'condom_failed_cautious_response';
+          badgeLabel = '피임 실패 · 중단·대처 요구';
+          badgeTone = 'warn';
+          summaryKo = `콘돔 파손·완전 이탈로 피임이 실패하여 로어 성격과 관계 온도에 맞춰 중단·교체 또는 사후 대처를 요구합니다.`;
+          promptDirective = `[필수 실현] 콘돔 파손·완전 이탈로 실제 피임이 실패했다(${relLabel}·호감 ${dispLabel}). ${loreStyleCue}에 맞춰 당혹감과 함께 즉각 움직임을 멈춰 새 콘돔 교체·사후피임약 확인 또는 "노콘/생으로 하려면 밖에." 같은 명확한 현실 대처를 그려라.${failedCondomWarn}${withdrawalNote}`;
+        }
       } else if ((lowTrust || relTier === 'casual_or_onenight') && !explicitSafeDayConsentInAct) {
         stanceCode = 'demand_stop_anger';
         badgeLabel = creampieAttemptOrDone ? '피임 미실시 · 무피임 질내사정 경악·격노' : '피임 미실시 · 즉시 제지·분노';
@@ -33154,14 +33424,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
         badgeLabel = '피임 미실시 · 생리·안전일 감안 수용';
         badgeTone = 'info';
         summaryKo = `생리 중(안전일 · ${cycleSource})임을 인지하여 임신 걱정으로 거부하기보다 안전일이라 괜찮다고 감안·허용하며${feverOrPain ? ' 생리통·열감과 ' : ' '}로어 성격대로 반응합니다.`;
-        promptDirective = `[필수 실현] ${koJosa(displayName, '은/는')} 본인이 ${cycleLabel}(${cycleSource}) 상태임을 안다. 가임기로 오인해 막연히 패닉하지 말고, 생리 중이라 임신 위험은 낮다는 인식 아래 ${loreStyleCue}로 묵인·허용하거나 조심스럽게 선(예: 체념 어린 "밖에.", 천천히 등)을 그어라(단, ${feverOrPain ? '생리통·열감·하복부 뻐근함과 ' : ''}${loreSeedHint || '관계 온도'}를 함께 드러낼 것).${withdrawalNote}${failedCondomWarn}${noPhantomCondomLock}`;
+        promptDirective = `[필수 실현] ${koJosa(displayName, '은/는')} 본인이 ${cycleLabel}(${cycleSource}) 상태임을 안다. 가임기로 오인해 막연히 패닉하지 말고, 생리 중이라 임신 위험은 낮다는 인식 아래 ${loreStyleCue}로 묵인·허용하거나 조심스럽게 선(예: 체념 어린 "생으로 할 거면 밖에.", 천천히 등)을 그어라(단, ${feverOrPain ? '생리통·열감·하복부 뻐근함과 ' : ''}${loreSeedHint || '관계 온도'}를 함께 드러낼 것).${withdrawalNote}${failedCondomWarn}${noPhantomCondomLock}`;
       } else if (relTier === 'married_or_engaged' || relTier === 'deep_lovers') {
         if (effectiveChildPlan === 'none') {
           stanceCode = 'committed_no_child_caution';
           badgeLabel = '피임 미실시 · 자녀계획 없음 주의';
           badgeTone = 'warn';
           summaryKo = `${relLabel}이지만 자녀 계획이 없어 피임 없는 진행을 의식하며 질외사정이나 피임을 챙기려 합니다.`;
-          promptDirective = `[필수 실현] ${relLabel}로 애정은 깊지만 자녀 계획이 없다(${childPlanLabel}). ${loreStyleCue}로 "밖에." 같은 질외사정 당부나 멈춤·다음 피임 요구를 성격답게 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
+          promptDirective = `[필수 실현] ${relLabel}로 애정은 깊지만 자녀 계획이 없다(${childPlanLabel}). ${loreStyleCue}로 "생으로 하려면 밖에." 같은 질외사정 당부나 멈춤·다음 피임 요구를 성격답게 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
         } else {
           stanceCode = 'committed_subjective_accept';
           badgeLabel = '피임 미실시 · 깊은 관계·주관적 수용';
@@ -33174,15 +33444,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
         badgeLabel = cycleWindow === 'fertile_danger' ? '피임 미실시 · 위험일 불안·질외 요구' : '피임 미실시 · 임신 우려·피임 의식';
         badgeTone = 'warn';
         summaryKo = `${relLabel}에서 ${cycleWindow === 'fertile_danger' ? '배란·위험일' : childPlanLabel} 부담이 겹쳐 흥분 속에서도 안에는 절대 싸지 말라며 강하게 의식·제지합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}인데 ${cycleWindow === 'fertile_danger' ? '배란·위험일이라 임신 위험이 매우 크다' : '아직 임신·자녀 계획이 없다'}. ${loreStyleCue}에 맞춰 열기 속에서도 불안·체념·경계심을 담아 "밖에." 같은 짧은 질외 요구, 손목 잡기, 혹은 중단 요구 등 캐릭터다운 실제 방어 반응을 선명히 그려라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
+        promptDirective = `[필수 실현] ${relLabel}인데 ${cycleWindow === 'fertile_danger' ? '배란·위험일이라 임신 위험이 매우 크다' : '아직 임신·자녀 계획이 없다'}. ${loreStyleCue}에 맞춰 열기 속에서도 불안·체념·경계심을 담아 "노콘으로 하려면 밖에." 같은 짧은 질외 요구, 손목 잡기, 혹은 중단 요구 등 캐릭터다운 실제 방어 반응을 선명히 그려라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
       } else {
         stanceCode = 'dating_hesitant_or_swept';
         badgeLabel = method === 'withdrawal'
           ? '불완전 피임(질외) · 긴장·수용/당부'
-          : (method === 'condom_failed' ? '콘돔 이탈·뭉침 · 맨살 노출 경계' : '피임 미실시 · 망설임과 열기 교차');
+          : '피임 미실시 · 망설임과 열기 교차';
         badgeTone = 'warn';
-        summaryKo = `${relLabel}에서 ${method === 'condom_failed' ? '고무가 뭉쳐 맨살이 드러난 상태를 의식하며' : method === 'withdrawal' ? '질외사정("밖에.")을 전제로 긴장·타협하며' : `피임 없이(${methodLabel}) 맞닿은 감각을 의식하며`} 로어 성격에 따라 반응합니다.`;
-        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 ${methodLabel} 상태로 진행 중. ${loreStyleCue}에 따라 아무 생각 없이 넘기지 말고, 인물의 말투로 질외 요구("밖에.", "안에는 안 돼"), 체념 섞인 타협, 또는 흔들리는 내적 갈등을 구체적으로 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
+        summaryKo = `${relLabel}에서 ${method === 'withdrawal' ? '질외사정("노콘/생으로 하려면 밖에.")을 전제로 긴장·타협하며' : `노콘·피임 없이(${methodLabel}) 맞닿은 감각을 의식하며`} 로어 성격에 따라 반응합니다.`;
+        promptDirective = `[필수 실현] ${relLabel}·호감(${dispLabel})에서 ${methodLabel} 상태로 진행 중. ${loreStyleCue}에 따라 아무 생각 없이 넘기지 말고, 인물의 말투로 노콘/생 조건부 질외 당부("생으로 하려면 밖에.", "노콘으로 안엔 안 돼"), 체념 섞인 타협, 또는 흔들리는 내적 갈등을 구체적으로 드러내라.${failedCondomWarn}${withdrawalNote}${noPhantomCondomLock}`;
       }
 
       return {
@@ -33312,11 +33582,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
   };
   const INTIMACY_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction to contraception/menstruation/unprotected contact in their own lore voice and situation — including diverse reactions such as terse resigned withdrawal requests ("밖에.") or dry/strict pushback, avoiding repetitive stock lines or generic shyness. Never invent an unintroduced condom/rubber (콘돔·고무) mid-act when none was put on, and never treat slipped/bunched rubber as intact protection. Enact EXTERNAL REACTION gauge tiers on the page: when NOTICED THIS TURN, stage a third party noticing through a concrete sensory channel and reacting in character; when gauge >= 60 even if not yet noticed, portray the corresponding environmental cues and NPC sound-muffling/tension in character.',
-    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, reaction to contraception/unprotected contact (grounded in lore, relationship, favorability, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. If a third party notices (EXTERNAL REACTION), ensure their reaction (direct interference, indirect interference, or ignoring) fits that character’s personality, role, and relationship.',
-    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on, no treating slipped/bunched rubber as protected, and no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel (sound, sightline, ajar/unlocked door, proximity).',
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. At climax peak (절정 도달 100/100), portray loss of vocal self-control alongside muscle spasms as involuntary spoken vocalization matched to mouth state: muffled quotes ("으으음…!", "흐읍…!") if mouth is covered/blocked rather than silent narration, or unrestrained moans/cries ("아아…!") if open, followed by dazed afterglow. If CONTRACEPTION & LORE-BASED REACTION VERDICT is present, realize the character’s reaction in their own lore voice, personality strength (fierce pushback vs meek protest vs high-affection trust acceptance), and natural Korean diction ("노콘"/"생으로" for unprotected sex) — never illogically demanding "밖에." right after confirming a condom is on/re-worn, distinguishing base bunching (slip risk while glans stays covered) from genuine tip tear/complete slip-off failure. Never invent an unintroduced condom/rubber (콘돔·고무) mid-act. Enact EXTERNAL REACTION gauge tiers on the page.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, climax vocalization, reaction to contraception/slip-risk/failure/unprotected contact (grounded in lore, personality strength vs meekness, relationship, high-affection trust vs boundary pushback, menstrual/safe window, and child plan), and voice stay their own — diverse per character lore rather than generic shyness or repetitive stock phrases — and fit the relationship, limits on record, and preference card. Do not force non-penetrated bystanders to react as if penetrated. If a third party notices (EXTERNAL REACTION), ensure their reaction fits that character.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, barrier state (no phantom condom/고무 appearing mid-act when none was put on; distinguish base bunching slip-risk where the glans stays covered from genuine tear/full slip-off failure, and track re-wearing in chronological order; no carrying over a condom from a resolved prior encounter), and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel.',
     aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open.',
-    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks (including phantom condoms or misread slipped rubber); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier (including 60+/200 corridor/wall tension, muffling, notice/non-notice, or third-party reaction) contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a climax lacks involuntary vocalization matched to mouth state; a position is impossible or changes without a transition; continuity breaks (including phantom condoms, misread re-worn condoms, or contradictory "밖에." right after confirming condom wear); a participant acts against their preference card or against the CONTRACEPTION & LORE-BASED REACTION VERDICT without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION gauge tier contradicts or is missing from the scene. Return edits: [] when the draft already fits, and say so in analysis.summary.'
   });
   const intimacyOutputKind = (stageName, settings = {}) => {
     if (!intimacyStageActive(settings)) return '';
@@ -34043,6 +34313,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           at: Number(item.at) || 0,
           turn: Math.max(0, Number(item.turn) || 0),
           inputHash: compact(item.inputHash || '', 40),
+          turnMessageCount: item.turnMessageCount !== null && item.turnMessageCount !== undefined && Number.isInteger(Number(item.turnMessageCount)) && Number(item.turnMessageCount) >= 0 ? Number(item.turnMessageCount) : null,
           cardId: compact(item.cardId || '', 64),
           from: compact(item.from || '', 60),
           to: compact(item.to || '', 60),
@@ -35149,6 +35420,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
             at: Date.now(),
             turn: chat.turn || 0,
             inputHash: sim.inputHash || '',
+            turnMessageCount: Number.isInteger(Runtime.activeTurnTimelineContext?.sig?.count) ? Runtime.activeTurnTimelineContext.sig.count : null,
             cardId: r.card,
             from,
             to,
@@ -35230,12 +35502,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (g.interruptedBrink) {
         mustRealize.push(`- [외부 간접 개입으로 절정 불발] ${label} — 절정 직전(${g.climaxGauge || g.ejaculationGauge}/100)에 외부 인기척·간접 개입${intTel.externalReaction?.nearbyActor ? `(${intTel.externalReaction.nearbyActor})` : ''} 때문에 멈칫하며 절정에 이르지 못하고 가쁜 숨과 떨림·잔열만 남긴다.${loreNote}`);
       } else if (g.climaxTriggeredThisTurn) {
-        mustRealize.push(`- [절정 도달 100/100] ${label} — 전신 경련·떨림·가빠진 숨결·애액 분비(${g.lubricationGauge || 0}/100)와 함께 분명한 절정 도달을 회피 없이 묘사하라.${loreNote}`);
+        mustRealize.push(`- [절정 도달 100/100] ${label} — 전신 경련·떨림·가빠진 숨결·애액 분비(${g.lubricationGauge || 0}/100)와 함께 분명한 절정 도달을 묘사하고, 입 상태에 맞는 비자발적 절정 발화 대사(입을 손으로 막은 상태면 "으으음…!"/"흐읍…!" 같은 억눌린 발화 대사, 입이 열린 상태면 "아아…!"·괴성·깨진 신음) 및 직후 멍하고 나른한 이완 여운을 회피 없이 그려라.${loreNote}`);
       } else if (g.ejaculationTriggeredThisTurn) {
         mustRealize.push(`- [사정 도달 100/100] ${label} — 더 이상 참지 못하고 격렬한 수축과 사정에 이르는 과정을 분명히 묘사하라.${loreNote}`);
       } else if (g.showClimax && (g.climaxGauge || 0) >= 50) {
         const tierCue = g.climaxGauge >= 80
-          ? '숨이 턱 끝까지 차오르고 허벅지 떨림과 신음 억제가 한계에 달한 직전 상태를 그려라.'
+          ? '숨이 턱 끝까지 차오르고 허벅지 떨림·목소리 갈라짐과 신음 억제가 한계에 달한 직전 상태를 그려라.'
           : '호흡이 눈에 띄게 가빠지고 홍조와 촉촉한 반응이 고조됨을 행동으로 그려라.';
         mustRealize.push(`- [여성 게이지 ${g.climaxGauge}/100 · 애액 ${g.lubricationGauge || 0}/100] ${label} — ${tierCue}${loreNote}`);
       } else if (g.showEjac && (g.ejaculationGauge || 0) >= 50) {
@@ -50617,6 +50889,763 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
 
+  // ===========================================================================
+  // GRADIA Per-Chat Turn-Timeline Checkpoint & Rewind Engine (Reroll & Rollback)
+  // ===========================================================================
+  // Anchors all "이 채팅" readings and turn-mutated stores to the canonical
+  // chat message prefix chain. Never stores LIB externalEvidence or readings on disk.
+  const sanitizeTurnTimelinePersistedState = (rawState, scopeKey = '') => {
+    const src = rawState && typeof rawState === 'object' && !Array.isArray(rawState) ? rawState : {};
+    const key = compact(scopeKey || '__scope__', 512);
+    const cleanLore = normalizeLoreCardsStore({
+      bodyState: src.loreCards?.bodyState ? { [key]: src.loreCards.bodyState } : {},
+      forcedBond: src.loreCards?.forcedBond ? { [key]: src.loreCards.forcedBond } : {},
+      npcDisposition: src.loreCards?.npcDisposition ? { [key]: src.loreCards.npcDisposition } : {},
+      romancePrefs: src.loreCards?.romancePrefs ? { [key]: src.loreCards.romancePrefs } : {}
+    });
+    return {
+      intimacyGauges: src.intimacyGauges ? normalizeIntimacyGaugeScope(src.intimacyGauges) : null,
+      intimacyCards: Array.isArray(src.intimacyCards) ? (normalizeIntimacyCardMap({ [key]: src.intimacyCards })[key] || []) : [],
+      intimacyMaleSizes: src.intimacyMaleSizes && typeof src.intimacyMaleSizes === 'object'
+        ? (normalizeIntimacyMaleSizeMap({ [key]: src.intimacyMaleSizes })[key] || {})
+        : {},
+      bodyStateSleep: src.bodyStateSleep ? (normalizeBodyStateSleepMap({ [key]: src.bodyStateSleep })[key] || null) : null,
+      worldSimLogs: Array.isArray(src.worldSimLogs) ? (normalizeWorldSimLogMap({ [key]: src.worldSimLogs })[key] || []) : [],
+      relationshipState: src.relationshipState ? normalizeRelsimChat(src.relationshipState) : null,
+      loreCards: {
+        bodyState: cleanLore.bodyState[key] || [],
+        forcedBond: cleanLore.forcedBond[key] || [],
+        npcDisposition: cleanLore.npcDisposition[key] || [],
+        romancePrefs: cleanLore.romancePrefs[key] || []
+      }
+    };
+  };
+  const normalizeTurnTimelineEntry = (raw, scopeKey = '') => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const id = compact(raw.id || '', 80);
+    const kind = raw.kind === 'turn' ? 'turn' : 'baseline';
+    const baseCount = Math.max(0, parseInt(raw.baseCount, 10) || 0);
+    const baseHash = compact(raw.baseHash || '', 40);
+    if (!id || !baseHash) return null;
+    const hasCommitted = raw.committedCount !== null && raw.committedCount !== undefined && raw.committedCount !== ''
+      && Number.isInteger(Number(raw.committedCount)) && Number(raw.committedCount) >= 0;
+    return {
+      id,
+      kind,
+      at: Number(raw.at) || Date.now(),
+      baseCount,
+      baseHash,
+      inputHash: compact(raw.inputHash || '', 40),
+      withUserCount: Math.max(0, parseInt(raw.withUserCount, 10) || baseCount),
+      withUserHash: compact(raw.withUserHash || '', 40),
+      committedCount: hasCommitted ? Number(raw.committedCount) : null,
+      committedHash: compact(raw.committedHash || '', 40),
+      state: sanitizeTurnTimelinePersistedState(raw.state, scopeKey)
+    };
+  };
+  const normalizeTurnTimelineChat = (raw, scopeKey = '') => {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    let entries = (Array.isArray(src.entries) ? src.entries : [])
+      .map(item => normalizeTurnTimelineEntry(item, scopeKey))
+      .filter(Boolean);
+    if (entries.length > TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT) {
+      const rootAnchor = entries[0]?.kind === 'baseline' && entries[0]?.baseCount === 0 ? entries[0] : null;
+      const tailLimit = rootAnchor ? TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT - 1 : TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT;
+      const tail = entries.slice(-tailLimit);
+      entries = rootAnchor && !tail.some(item => item.id === rootAnchor.id) ? [rootAnchor, ...tail] : tail;
+    }
+    const recentRewound = (Array.isArray(src.recentRewound) ? src.recentRewound : [])
+      .map(item => normalizeTurnTimelineEntry(item, scopeKey))
+      .filter(Boolean)
+      .slice(-TURN_TIMELINE_RECENT_REWOUND_MAX);
+    const rawHeadId = compact(src.headId || '', 80);
+    const headId = entries.some(item => item.id === rawHeadId)
+      ? rawHeadId
+      : (entries[entries.length - 1]?.id || '');
+    return {
+      updatedAt: Number(src.updatedAt) || Date.now(),
+      headId,
+      entries,
+      recentRewound
+    };
+  };
+  const normalizeTurnTimelineStore = value => {
+    const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
+    const raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    const chatsSrc = raw.chats && typeof raw.chats === 'object' && !Array.isArray(raw.chats) ? raw.chats : {};
+    const pairs = [];
+    for (const [rawKey, chatVal] of Object.entries(chatsSrc)) {
+      const scopeKey = compact(rawKey, 512);
+      if (!scopeKey) continue;
+      const normalized = normalizeTurnTimelineChat(chatVal, scopeKey);
+      if (normalized.entries.length || normalized.recentRewound.length) {
+        pairs.push([scopeKey, normalized]);
+      }
+    }
+    pairs.sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0));
+    const chats = {};
+    for (const [scopeKey, normalized] of pairs.slice(0, TURN_TIMELINE_MAX_CHATS)) {
+      chats[scopeKey] = normalized;
+    }
+    return { chats };
+  };
+  const loadTurnTimeline = async () => {
+    if (Runtime.turnTimeline) return Runtime.turnTimeline;
+    const stored = await readObject(STORAGE_TURN_TIMELINE_KEY, {});
+    Runtime.turnTimeline = normalizeTurnTimelineStore(stored);
+    return Runtime.turnTimeline;
+  };
+  const saveTurnTimeline = async () => writeObject(STORAGE_TURN_TIMELINE_KEY, {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    ...normalizeTurnTimelineStore(Runtime.turnTimeline || {})
+  });
+  const ensureTurnTimelineChat = scopeKey => {
+    const key = compact(scopeKey, 512);
+    if (!key) return null;
+    if (!Runtime.turnTimeline) Runtime.turnTimeline = { chats: {} };
+    if (!Runtime.turnTimeline.chats[key]) {
+      Runtime.turnTimeline.chats[key] = { updatedAt: Date.now(), headId: '', entries: [], recentRewound: [] };
+    }
+    return Runtime.turnTimeline.chats[key];
+  };
+  const ensureTurnTimelineMemory = scopeKey => {
+    const key = compact(scopeKey, 512);
+    if (!key) return { byId: {}, rewoundByKey: {} };
+    if (!Runtime.turnTimelineMemory || typeof Runtime.turnTimelineMemory !== 'object') Runtime.turnTimelineMemory = {};
+    if (!Runtime.turnTimelineMemory[key]) Runtime.turnTimelineMemory[key] = { byId: {}, rewoundByKey: {} };
+    return Runtime.turnTimelineMemory[key];
+  };
+  const buildGradiaChatTimelineSignature = (rawMessages = [], options = {}) => {
+    const list = Array.isArray(rawMessages) ? rawMessages : [];
+    const disabledThrough = list.reduce((last, msg, idx) => (msg?.disabled === 'allBefore' ? idx : last), -1);
+    const streamAssistantIdx = options.isStreaming === true
+      ? list.map(msg => currentTurnRole(msg)).lastIndexOf('assistant')
+      : -1;
+    const charName = text(options.characterName || '').trim();
+    const userName = text(options.userName || '').trim();
+    const normalized = [];
+    for (let idx = 0; idx < list.length; idx += 1) {
+      const m = list[idx];
+      if (!m || typeof m !== 'object' || Array.isArray(m)) continue;
+      if (idx <= disabledThrough || m.disabled === true || m.isComment === true) continue;
+      if (m.turnMeta?.greeting === true || m.turnMeta?.blocked) continue;
+      if (streamAssistantIdx >= 0 && idx === streamAssistantIdx) continue;
+      const role = currentTurnRole(m);
+      if (role !== 'user' && role !== 'assistant') continue;
+      const rawBody = contentToText(m.turnMeta?.stageContent ?? m.data ?? m.content ?? '').replace(/\r\n/g, '\n');
+      if (!rawBody.trim() || isSgaInjectionText(rawBody)) continue;
+      const withPlaceholders = (charName || userName)
+        ? applyBasicRisuPlaceholdersForRag(rawBody, charName, userName || 'User')
+        : rawBody;
+      const clean = sanitizeMessageContentForHistory(role, withPlaceholders).trim();
+      if (!clean || isLikelyMetaUserMessage(clean) || isOthersInfoMessage(clean)) continue;
+      const normKey = normalizeForLoreMatch(clean) || clean.replace(/\s+/g, ' ').trim();
+      const contentHash = stableDraftHash(normKey);
+      normalized.push({ role, contentHash, isCurrentInput: m.turnMeta?.currentInput === true });
+    }
+    let inputHash = compact(options.currentInputHash || '', 40);
+    if (!inputHash && options.currentInputText) {
+      const rawInput = text(options.currentInputText || '').replace(/\r\n/g, '\n');
+      const withPlaceholders = (charName || userName)
+        ? applyBasicRisuPlaceholdersForRag(rawInput, charName, userName || 'User')
+        : rawInput;
+      const cleanInput = sanitizeMessageContentForHistory('user', withPlaceholders).trim();
+      if (cleanInput) {
+        inputHash = stableDraftHash(normalizeForLoreMatch(cleanInput) || cleanInput.replace(/\s+/g, ' ').trim());
+      }
+    }
+    if (options.excludeTrailingCurrentUser === true && normalized.length > 0) {
+      const tail = normalized[normalized.length - 1];
+      if (tail.role === 'user' && (tail.isCurrentInput === true || (inputHash && tail.contentHash === inputHash))) {
+        normalized.pop();
+      }
+    }
+    const chain = ['00000000'];
+    for (const msg of normalized) {
+      chain.push(stableDraftHash(`${chain[chain.length - 1]}|${msg.role}|${msg.contentHash}`));
+    }
+    const count = normalized.length;
+    const hash = chain[count];
+    const withUserCount = inputHash ? count + 1 : count;
+    const withUserHash = inputHash ? stableDraftHash(`${hash}|user|${inputHash}`) : '';
+    return { messages: normalized, count, hash, chain, inputHash, withUserCount, withUserHash };
+  };
+  const captureGradiaTurnPersistedState = scopeKey => {
+    const key = compact(scopeKey, 512);
+    const lore = Runtime.loreCards || {};
+    return sanitizeTurnTimelinePersistedState({
+      intimacyGauges: Runtime.intimacyGauges?.[key] ? cloneJson(Runtime.intimacyGauges[key]) : null,
+      intimacyCards: Array.isArray(Runtime.intimacyCards?.[key]) ? cloneJson(Runtime.intimacyCards[key]) : [],
+      intimacyMaleSizes: Runtime.intimacyMaleSizes?.[key] ? cloneJson(Runtime.intimacyMaleSizes[key]) : {},
+      bodyStateSleep: Runtime.bodyStateSleep?.[key] ? cloneJson(Runtime.bodyStateSleep[key]) : null,
+      worldSimLogs: Array.isArray(Runtime.worldSimLogs?.[key]) ? cloneJson(Runtime.worldSimLogs[key]) : [],
+      relationshipState: Runtime.relationshipState?.chats?.[key] ? cloneJson(Runtime.relationshipState.chats[key]) : null,
+      loreCards: {
+        bodyState: Array.isArray(lore.bodyState?.[key]) ? cloneJson(lore.bodyState[key]) : [],
+        forcedBond: Array.isArray(lore.forcedBond?.[key]) ? cloneJson(lore.forcedBond[key]) : [],
+        npcDisposition: Array.isArray(lore.npcDisposition?.[key]) ? cloneJson(lore.npcDisposition[key]) : [],
+        romancePrefs: Array.isArray(lore.romancePrefs?.[key]) ? cloneJson(lore.romancePrefs[key]) : []
+      }
+    }, key);
+  };
+  const captureGradiaTurnMemoryReadings = scopeKey => {
+    const key = compact(scopeKey, 512);
+    const sameScope = !key || Runtime.activeScopeKey === key;
+    return cloneJson({
+      shadowPrevious: Runtime.shadowPrevious?.[key] || null,
+      bodyStateReadings: Runtime.bodyStateReadings?.[key] || null,
+      bodyStateVerdicts: Runtime.bodyStateVerdicts?.[key] || null,
+      worldDynamicsReadings: Runtime.worldDynamicsReadings?.[key] || null,
+      worldDynamicsTelemetry: Runtime.worldDynamicsTelemetry?.[key] || null,
+      intimacyReadings: Runtime.intimacyReadings?.[key] || null,
+      intimacyTelemetry: Runtime.intimacyTelemetry?.[key] || null,
+      forcedBondReadings: Runtime.forcedBondReadings?.[key] || null,
+      forcedBondTelemetry: Runtime.forcedBondTelemetry?.[key] || null,
+      relationshipSimReadings: Runtime.relationshipSimReadings?.[key] || null,
+      knowledgeBoundaryReadings: Runtime.knowledgeBoundaryReadings?.[key] || null,
+      dialogueReadings: Runtime.dialogueReadings?.[key] || null,
+      dialogueRepairs: Runtime.dialogueRepairs?.[key] || null,
+      sceneVarianceHistory: Runtime.sceneVarianceHistory?.[key] || null,
+      sceneFixations: Runtime.sceneFixations?.[key] || null,
+      sceneVarianceRun: sameScope ? (Runtime.sceneVarianceRun || null) : null,
+      scenePurposeRun: sameScope ? (Runtime.scenePurposeRun || null) : null,
+      sceneArcSource: sameScope ? (Runtime.sceneArcSource || null) : null,
+      sceneFixationDetected: sameScope ? (Runtime.sceneFixationDetected || null) : null
+    });
+  };
+  const clearGradiaTurnMemoryReadings = (scopeKey, options = {}) => {
+    const key = compact(scopeKey, 512);
+    if (!key) return;
+    delete Runtime.bodyStateReadings?.[key];
+    delete Runtime.bodyStateVerdicts?.[key];
+    delete Runtime.worldDynamicsReadings?.[key];
+    delete Runtime.worldDynamicsTelemetry?.[key];
+    delete Runtime.intimacyReadings?.[key];
+    delete Runtime.forcedBondReadings?.[key];
+    delete Runtime.forcedBondTelemetry?.[key];
+    delete Runtime.relationshipSimReadings?.[key];
+    delete Runtime.knowledgeBoundaryReadings?.[key];
+    delete Runtime.dialogueReadings?.[key];
+    delete Runtime.dialogueRepairs?.[key];
+    if (Runtime.intimacyTelemetry?.[key]) {
+      Runtime.intimacyTelemetry[key] = { ...Runtime.intimacyTelemetry[key], readingApplied: false };
+    }
+    Runtime.relsimRun = null;
+    if (options.includePrevious === true) {
+      delete Runtime.shadowPrevious?.[key];
+      delete Runtime.sceneVarianceHistory?.[key];
+      delete Runtime.intimacyTelemetry?.[key];
+      delete Runtime.sceneFixations?.[key];
+      if (!Runtime.activeScopeKey || Runtime.activeScopeKey === key) {
+        Runtime.sceneVarianceRun = null;
+        Runtime.scenePurposeRun = null;
+        Runtime.sceneArcSource = null;
+        Runtime.sceneFixationDetected = null;
+      }
+    }
+  };
+  const restoreGradiaTurnState = async (scopeKey, persistedState, memoryReadings = null, options = {}) => {
+    const key = compact(scopeKey, 512);
+    if (!key) return;
+    const snap = sanitizeTurnTimelinePersistedState(persistedState, key);
+
+    if (!Runtime.intimacyGauges) Runtime.intimacyGauges = {};
+    if (snap.intimacyGauges) Runtime.intimacyGauges[key] = cloneJson(snap.intimacyGauges);
+    else delete Runtime.intimacyGauges[key];
+
+    if (!Runtime.bodyStateSleep) Runtime.bodyStateSleep = {};
+    if (snap.bodyStateSleep) Runtime.bodyStateSleep[key] = cloneJson(snap.bodyStateSleep);
+    else delete Runtime.bodyStateSleep[key];
+
+    if (!Runtime.worldSimLogs) Runtime.worldSimLogs = {};
+    if (snap.worldSimLogs.length) Runtime.worldSimLogs[key] = cloneJson(snap.worldSimLogs);
+    else delete Runtime.worldSimLogs[key];
+
+    if (!Runtime.relationshipState) Runtime.relationshipState = { chats: {} };
+    if (!Runtime.relationshipState.chats) Runtime.relationshipState.chats = {};
+    const prevRelPairs = Runtime.relationshipState.chats[key]?.pairs || {};
+    const userPairs = {};
+    for (const [pId, pVal] of Object.entries(prevRelPairs)) {
+      if (pVal?.origin === 'user') userPairs[pId] = cloneJson(pVal);
+    }
+    if (snap.relationshipState) {
+      const nextRelChat = cloneJson(snap.relationshipState);
+      for (const [pId, pVal] of Object.entries(userPairs)) {
+        nextRelChat.pairs[pId] = nextRelChat.pairs[pId]
+          ? {
+              ...nextRelChat.pairs[pId],
+              status: pVal.status || nextRelChat.pairs[pId].status,
+              statusSince: pVal.statusSince || nextRelChat.pairs[pId].statusSince,
+              datingSince: pVal.datingSince || nextRelChat.pairs[pId].datingSince,
+              disclosure: pVal.disclosure || nextRelChat.pairs[pId].disclosure,
+              knownBy: pVal.knownBy?.length ? cloneJson(pVal.knownBy) : nextRelChat.pairs[pId].knownBy,
+              lead: pVal.lead || nextRelChat.pairs[pId].lead,
+              leadReasons: pVal.leadReasons?.length ? cloneJson(pVal.leadReasons) : nextRelChat.pairs[pId].leadReasons,
+              origin: 'user'
+            }
+          : cloneJson(pVal);
+      }
+      Runtime.relationshipState.chats[key] = nextRelChat;
+    } else if (Object.keys(userPairs).length) {
+      Runtime.relationshipState.chats[key] = { ...emptyRelsimChat(), pairs: userPairs };
+    } else {
+      delete Runtime.relationshipState.chats[key];
+    }
+
+    // Preserve user-authored male size entries; restore lore-estimated ones from snapshot.
+    if (!Runtime.intimacyMaleSizes) Runtime.intimacyMaleSizes = {};
+    const prevMaleSizes = Runtime.intimacyMaleSizes[key] || {};
+    const nextMaleSizes = cloneJson(snap.intimacyMaleSizes || {});
+    for (const [mKey, mVal] of Object.entries(prevMaleSizes)) {
+      if (mVal?.origin === 'user') nextMaleSizes[mKey] = cloneJson(mVal);
+    }
+    if (Object.keys(nextMaleSizes).length) Runtime.intimacyMaleSizes[key] = nextMaleSizes;
+    else delete Runtime.intimacyMaleSizes[key];
+
+    // Preserve user-authored intimacy card profiles while restoring turn-accumulated zoneStats/hashes.
+    if (!Runtime.intimacyCards) Runtime.intimacyCards = {};
+    const prevIntCards = Array.isArray(Runtime.intimacyCards[key]) ? Runtime.intimacyCards[key] : [];
+    const snapIntCards = cloneJson(snap.intimacyCards || []);
+    const nextIntCards = [];
+    for (const sc of snapIntCards) {
+      const userCard = prevIntCards.find(c => c?.origin === 'user' && c.name && (c.name === sc.name || extensionSameOrGivenName(c.name, sc.name)));
+      if (userCard) {
+        nextIntCards.push(normalizeIntimacyCard({
+          ...userCard,
+          zoneStats: cloneJson(sc.zoneStats),
+          lastZoneUpdateHash: sc.lastZoneUpdateHash || '',
+          lastAssistantZoneUpdateHash: sc.lastAssistantZoneUpdateHash || ''
+        }));
+      } else {
+        nextIntCards.push(sc);
+      }
+    }
+    for (const uc of prevIntCards) {
+      if (uc?.origin !== 'user') continue;
+      if (!nextIntCards.some(c => c.name && (c.name === uc.name || extensionSameOrGivenName(c.name, uc.name)))) {
+        nextIntCards.push(normalizeIntimacyCard({
+          ...uc,
+          zoneStats: normalizeIntimacyZoneStats(null, uc.sensitiveZones || '', uc.dullZones || ''),
+          lastZoneUpdateHash: '',
+          lastAssistantZoneUpdateHash: ''
+        }));
+      }
+    }
+    if (nextIntCards.length) Runtime.intimacyCards[key] = nextIntCards;
+    else delete Runtime.intimacyCards[key];
+
+    // Preserve profile cards in loreCards while reverting turn-mutated fields (forcedBond stage/offstage, bodyState offstage) without touching dismissed.
+    const lore = ensureLoreCardsMemory();
+    const restoreLoreBucket = (bucketName, matchFn, revertFn) => {
+      if (!lore[bucketName]) lore[bucketName] = {};
+      const currentList = Array.isArray(lore[bucketName][key]) ? cloneJson(lore[bucketName][key]) : [];
+      const snapList = Array.isArray(snap.loreCards[bucketName]) ? cloneJson(snap.loreCards[bucketName]) : [];
+      const merged = [];
+      for (const curItem of currentList) {
+        const snapMatch = snapList.find(s => matchFn(curItem, s)) || null;
+        merged.push(revertFn ? revertFn(curItem, snapMatch) : curItem);
+      }
+      for (const snapItem of snapList) {
+        if (!merged.some(item => matchFn(item, snapItem))) merged.push(snapItem);
+      }
+      if (merged.length) lore[bucketName][key] = merged;
+      else delete lore[bucketName][key];
+    };
+    restoreLoreBucket(
+      'bodyState',
+      (a, b) => a?.name && b?.name && (a.name === b.name || extensionSameOrGivenName(a.name, b.name)),
+      (cur, snapItem) => ({
+        ...cur,
+        offstagePlace: snapItem?.offstagePlace || '',
+        offstageActivity: snapItem?.offstageActivity || '',
+        offstageUpdatedAt: snapItem?.offstageUpdatedAt || 0
+      })
+    );
+    restoreLoreBucket(
+      'forcedBond',
+      (a, b) => (a?.id && b?.id && a.id === b.id) || (a?.from && b?.from && forcedBondSamePair(a, b, a.direction === 'mutual' || b.direction === 'mutual')),
+      (cur, snapItem) => ({
+        ...cur,
+        ...(snapItem?.stage ? { stage: snapItem.stage } : {}),
+        lastOffstageSummary: snapItem?.lastOffstageSummary || ''
+      })
+    );
+    restoreLoreBucket(
+      'npcDisposition',
+      (a, b) => a?.name && b?.name && (a.name === b.name || extensionSameOrGivenName(a.name, b.name)),
+      null
+    );
+    restoreLoreBucket(
+      'romancePrefs',
+      (a, b) => a?.name && b?.name && (a.name === b.name || extensionSameOrGivenName(a.name, b.name)),
+      null
+    );
+
+    Runtime.relsimRun = null;
+    if (memoryReadings && typeof memoryReadings === 'object') {
+      const memSnap = cloneJson(memoryReadings);
+      const restoreBucket = (bucketName, val) => {
+        if (!Runtime[bucketName] || typeof Runtime[bucketName] !== 'object') Runtime[bucketName] = {};
+        if (val) Runtime[bucketName][key] = val;
+        else delete Runtime[bucketName][key];
+      };
+      restoreBucket('shadowPrevious', memSnap.shadowPrevious);
+      restoreBucket('bodyStateReadings', memSnap.bodyStateReadings);
+      restoreBucket('bodyStateVerdicts', memSnap.bodyStateVerdicts);
+      restoreBucket('worldDynamicsReadings', memSnap.worldDynamicsReadings);
+      restoreBucket('worldDynamicsTelemetry', memSnap.worldDynamicsTelemetry);
+      restoreBucket('intimacyReadings', memSnap.intimacyReadings);
+      restoreBucket('intimacyTelemetry', memSnap.intimacyTelemetry);
+      restoreBucket('forcedBondReadings', memSnap.forcedBondReadings);
+      restoreBucket('forcedBondTelemetry', memSnap.forcedBondTelemetry);
+      restoreBucket('relationshipSimReadings', memSnap.relationshipSimReadings);
+      restoreBucket('knowledgeBoundaryReadings', memSnap.knowledgeBoundaryReadings);
+      restoreBucket('dialogueReadings', memSnap.dialogueReadings);
+      restoreBucket('dialogueRepairs', memSnap.dialogueRepairs);
+      restoreBucket('sceneVarianceHistory', memSnap.sceneVarianceHistory);
+      restoreBucket('sceneFixations', memSnap.sceneFixations);
+      if (!Runtime.activeScopeKey || Runtime.activeScopeKey === key) {
+        Runtime.sceneVarianceRun = memSnap.sceneVarianceRun || null;
+        Runtime.scenePurposeRun = memSnap.scenePurposeRun || null;
+        Runtime.sceneArcSource = memSnap.sceneArcSource || null;
+        Runtime.sceneFixationDetected = memSnap.sceneFixationDetected || null;
+      }
+    } else {
+      clearGradiaTurnMemoryReadings(key, { includePrevious: true });
+      if (Runtime.intimacyGauges?.[key]) hydrateIntimacyTelemetryFromStorage();
+    }
+
+    if (options.persist !== false) {
+      await Promise.allSettled([
+        saveIntimacyCards(),
+        saveGaugeContinuity(),
+        saveWorldSimLogs(),
+        saveRelationshipState(),
+        saveLoreCards()
+      ]);
+    }
+  };
+  const rewindGradiaTurnStateFallback = async (scopeKey, currentCount = 0, options = {}) => {
+    const key = compact(scopeKey, 512);
+    if (!key) return;
+    clearGradiaTurnMemoryReadings(key, { includePrevious: true });
+    if (Runtime.intimacyGauges?.[key]) delete Runtime.intimacyGauges[key];
+    if (Runtime.bodyStateSleep?.[key]) delete Runtime.bodyStateSleep[key];
+    if (Runtime.relationshipState?.chats?.[key]) {
+      const chat = Runtime.relationshipState.chats[key];
+      chat.pending = [];
+      chat.lastInputHash = '';
+      if (Array.isArray(chat.bondHistory)) {
+        chat.bondHistory = chat.bondHistory.filter(item => !(Number.isInteger(item?.turnMessageCount) && item.turnMessageCount >= currentCount));
+      }
+    }
+    if (Array.isArray(Runtime.worldSimLogs?.[key])) {
+      Runtime.worldSimLogs[key] = Runtime.worldSimLogs[key].filter(ev => !(Number.isInteger(ev?.turnMessageCount) && ev.turnMessageCount >= currentCount));
+    }
+    if (options.persist !== false) {
+      await Promise.allSettled([
+        saveIntimacyCards(),
+        saveGaugeContinuity(),
+        saveWorldSimLogs(),
+        saveRelationshipState()
+      ]);
+    }
+  };
+  const isTimelineEntryValidForSig = (entry, sig, mode = 'before_turn') => {
+    if (!entry || !sig) return false;
+    if (entry.kind === 'baseline') {
+      return entry.committedCount !== null && entry.committedCount <= sig.count && sig.chain[entry.committedCount] === entry.committedHash;
+    }
+    if (entry.committedCount !== null) {
+      return entry.committedCount <= sig.count && sig.chain[entry.committedCount] === entry.committedHash;
+    }
+    if (mode === 'inspect') {
+      if (sig.count === entry.withUserCount && sig.chain[entry.withUserCount] === entry.withUserHash) {
+        return true;
+      }
+      return sig.count > entry.withUserCount
+        && sig.chain[entry.withUserCount] === entry.withUserHash
+        && sig.messages[entry.withUserCount]?.role === 'assistant';
+    }
+    return sig.count > entry.withUserCount && sig.chain[entry.withUserCount] === entry.withUserHash;
+  };
+  const stashRewoundTimelineEntries = (chatTl, mem, droppedEntries = []) => {
+    for (const entry of droppedEntries) {
+      if (!entry) continue;
+      if (entry.kind === 'turn' && entry.inputHash) {
+        const key = `${entry.baseHash}|${entry.inputHash}`;
+        chatTl.recentRewound = [
+          ...(chatTl.recentRewound || []).filter(item => `${item.baseHash}|${item.inputHash}` !== key),
+          cloneJson(entry)
+        ].slice(-TURN_TIMELINE_RECENT_REWOUND_MAX);
+        if (mem?.byId?.[entry.id]) {
+          mem.rewoundByKey[key] = cloneJson(mem.byId[entry.id]);
+        }
+      }
+      if (mem?.byId?.[entry.id]) delete mem.byId[entry.id];
+    }
+  };
+  const makeTimelineBaselineEntry = (scopeKey, count, hash) => ({
+    id: `tl-base-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    kind: 'baseline',
+    at: Date.now(),
+    baseCount: count,
+    baseHash: hash,
+    inputHash: '',
+    withUserCount: count,
+    withUserHash: '',
+    committedCount: count,
+    committedHash: hash,
+    state: captureGradiaTurnPersistedState(scopeKey)
+  });
+  const reconcileGradiaChatTimeline = async (scopeKey, rawMessages = [], options = {}) => {
+    const key = compact(scopeKey, 512);
+    if (!key) return { action: 'no_scope', changed: false, sig: null, preTurnEntryId: '' };
+    await Promise.allSettled([
+      loadTurnTimeline(),
+      loadIntimacyCards(),
+      loadGaugeContinuity(),
+      loadWorldSimLogs(),
+      loadRelationshipState(),
+      loadLoreCards()
+    ]);
+    const mode = options.mode === 'inspect' ? 'inspect' : 'before_turn';
+    if (mode === 'inspect' && (Runtime.inFlight === true || options.isStreaming === true)) {
+      return { action: 'busy', changed: false, sig: null, preTurnEntryId: '' };
+    }
+    const sig = buildGradiaChatTimelineSignature(rawMessages, {
+      excludeTrailingCurrentUser: mode === 'before_turn',
+      currentInputText: options.currentInputText || '',
+      currentInputHash: options.currentInputHash || '',
+      characterName: options.characterName || '',
+      userName: options.userName || '',
+      isStreaming: options.isStreaming === true
+    });
+    const chatTl = ensureTurnTimelineChat(key);
+    const mem = ensureTurnTimelineMemory(key);
+
+    if (mode === 'before_turn') {
+      if (!chatTl.entries.length) {
+        const baseline = makeTimelineBaselineEntry(key, sig.count, sig.hash);
+        chatTl.entries = [baseline];
+        chatTl.headId = baseline.id;
+        chatTl.updatedAt = Date.now();
+        mem.byId[baseline.id] = captureGradiaTurnMemoryReadings(key);
+        clearGradiaTurnMemoryReadings(key);
+        await saveTurnTimeline();
+        return { action: 'initialized', changed: false, sig, preTurnEntryId: baseline.id };
+      }
+      const head = chatTl.entries.find(e => e.id === chatTl.headId) || chatTl.entries[chatTl.entries.length - 1];
+      if (isTimelineEntryValidForSig(head, sig, 'before_turn')) {
+        if (head.kind === 'turn' && head.committedCount === null) {
+          head.committedCount = sig.count;
+          head.committedHash = sig.hash;
+          head.state = captureGradiaTurnPersistedState(key);
+          if (!mem.byId[head.id]) mem.byId[head.id] = captureGradiaTurnMemoryReadings(key);
+        }
+        const headCount = head.committedCount ?? head.baseCount;
+        if (sig.count > headCount) {
+          const baseline = makeTimelineBaselineEntry(key, sig.count, sig.hash);
+          chatTl.entries.push(baseline);
+          chatTl.headId = baseline.id;
+          mem.byId[baseline.id] = captureGradiaTurnMemoryReadings(key);
+        } else {
+          chatTl.headId = head.id;
+        }
+        chatTl.updatedAt = Date.now();
+        clearGradiaTurnMemoryReadings(key);
+        await saveTurnTimeline();
+        return { action: 'advance', changed: false, sig, preTurnEntryId: chatTl.headId };
+      }
+
+      const isExactReroll = head?.kind === 'turn'
+        && sig.count === head.baseCount
+        && sig.hash === head.baseHash
+        && !!sig.inputHash
+        && sig.inputHash === head.inputHash;
+      let matchIdx = -1;
+      for (let i = chatTl.entries.length - 1; i >= 0; i -= 1) {
+        if (isTimelineEntryValidForSig(chatTl.entries[i], sig, 'before_turn')) {
+          matchIdx = i;
+          break;
+        }
+      }
+      const dropped = chatTl.entries.slice(matchIdx + 1);
+      stashRewoundTimelineEntries(chatTl, mem, dropped);
+
+      if (matchIdx >= 0) {
+        const match = chatTl.entries[matchIdx];
+        chatTl.entries = chatTl.entries.slice(0, matchIdx + 1);
+        chatTl.headId = match.id;
+        await restoreGradiaTurnState(key, match.state, mem.byId[match.id] || null);
+        clearGradiaTurnMemoryReadings(key);
+        const matchCount = match.committedCount ?? match.baseCount;
+        if (sig.count > matchCount) {
+          const baseline = makeTimelineBaselineEntry(key, sig.count, sig.hash);
+          chatTl.entries.push(baseline);
+          chatTl.headId = baseline.id;
+          mem.byId[baseline.id] = captureGradiaTurnMemoryReadings(key);
+        }
+        chatTl.updatedAt = Date.now();
+        await saveTurnTimeline();
+        return {
+          action: isExactReroll ? 'reroll_rewound' : 'rollback_rewound',
+          changed: true,
+          rewoundTo: matchCount,
+          sig,
+          preTurnEntryId: chatTl.headId
+        };
+      }
+
+      await rewindGradiaTurnStateFallback(key, sig.count);
+      const fallbackBase = makeTimelineBaselineEntry(key, sig.count, sig.hash);
+      chatTl.entries = [fallbackBase];
+      chatTl.headId = fallbackBase.id;
+      chatTl.updatedAt = Date.now();
+      mem.byId[fallbackBase.id] = captureGradiaTurnMemoryReadings(key);
+      await saveTurnTimeline();
+      return { action: 'rollback_fallback', changed: true, rewoundTo: sig.count, sig, preTurnEntryId: fallbackBase.id };
+    }
+
+    // mode === 'inspect'
+    if (!chatTl.entries.length) {
+      return { action: 'noop', changed: false, sig, preTurnEntryId: '' };
+    }
+    const head = chatTl.entries.find(e => e.id === chatTl.headId) || chatTl.entries[chatTl.entries.length - 1];
+    if (isTimelineEntryValidForSig(head, sig, 'inspect')) {
+      if (head.kind === 'turn' && head.committedCount === null
+        && sig.count > head.withUserCount && sig.messages[head.withUserCount]?.role === 'assistant') {
+        head.committedCount = sig.count;
+        head.committedHash = sig.hash;
+        head.state = captureGradiaTurnPersistedState(key);
+        if (!mem.byId[head.id]) mem.byId[head.id] = captureGradiaTurnMemoryReadings(key);
+        chatTl.updatedAt = Date.now();
+        await saveTurnTimeline();
+      }
+      return { action: 'current', changed: false, sig, preTurnEntryId: head.id };
+    }
+    let matchIdx = -1;
+    for (let i = chatTl.entries.length - 1; i >= 0; i -= 1) {
+      if (isTimelineEntryValidForSig(chatTl.entries[i], sig, 'inspect')) {
+        matchIdx = i;
+        break;
+      }
+    }
+    const dropped = chatTl.entries.slice(matchIdx + 1);
+    stashRewoundTimelineEntries(chatTl, mem, dropped);
+
+    if (matchIdx >= 0) {
+      const match = chatTl.entries[matchIdx];
+      chatTl.entries = chatTl.entries.slice(0, matchIdx + 1);
+      chatTl.headId = match.id;
+      await restoreGradiaTurnState(key, match.state, mem.byId[match.id] || null);
+      chatTl.updatedAt = Date.now();
+      await saveTurnTimeline();
+      return {
+        action: 'inspect_rewound',
+        changed: true,
+        rewoundTo: match.committedCount ?? match.baseCount,
+        sig,
+        preTurnEntryId: match.id
+      };
+    }
+
+    await rewindGradiaTurnStateFallback(key, sig.count);
+    const fallbackBase = makeTimelineBaselineEntry(key, sig.count, sig.hash);
+    chatTl.entries = [fallbackBase];
+    chatTl.headId = fallbackBase.id;
+    chatTl.updatedAt = Date.now();
+    mem.byId[fallbackBase.id] = captureGradiaTurnMemoryReadings(key);
+    await saveTurnTimeline();
+    return { action: 'inspect_fallback', changed: true, rewoundTo: sig.count, sig, preTurnEntryId: fallbackBase.id };
+  };
+  const commitGradiaTurnTimelineAfterRun = async (scopeKey, timelineCtx) => {
+    const key = compact(scopeKey, 512);
+    const sig = timelineCtx?.sig;
+    if (!key || !sig) return null;
+    await loadTurnTimeline();
+    const chatTl = ensureTurnTimelineChat(key);
+    const mem = ensureTurnTimelineMemory(key);
+    const turnEntry = {
+      id: `tl-turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      kind: 'turn',
+      at: Date.now(),
+      baseCount: sig.count,
+      baseHash: sig.hash,
+      inputHash: sig.inputHash,
+      withUserCount: sig.withUserCount,
+      withUserHash: sig.withUserHash,
+      committedCount: null,
+      committedHash: '',
+      state: captureGradiaTurnPersistedState(key)
+    };
+    mem.byId[turnEntry.id] = captureGradiaTurnMemoryReadings(key);
+    chatTl.entries = chatTl.entries.filter(item => !(item.kind === 'turn' && item.committedCount === null && item.baseCount === sig.count && item.baseHash === sig.hash));
+    chatTl.entries.push(turnEntry);
+    if (chatTl.entries.length > TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT) {
+      const rootAnchor = chatTl.entries[0]?.kind === 'baseline' && chatTl.entries[0]?.baseCount === 0 ? chatTl.entries[0] : null;
+      const tailLimit = rootAnchor ? TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT - 1 : TURN_TIMELINE_MAX_CHECKPOINTS_PER_CHAT;
+      const tail = chatTl.entries.slice(-tailLimit);
+      const nextEntries = rootAnchor && !tail.some(item => item.id === rootAnchor.id) ? [rootAnchor, ...tail] : tail;
+      const keepIds = new Set(nextEntries.map(item => item.id));
+      for (const oldId of Object.keys(mem.byId)) {
+        if (!keepIds.has(oldId)) delete mem.byId[oldId];
+      }
+      chatTl.entries = nextEntries;
+    }
+    chatTl.headId = turnEntry.id;
+    chatTl.updatedAt = Date.now();
+    await saveTurnTimeline();
+    return turnEntry;
+  };
+  const rollbackGradiaFailedRun = async (scopeKey, timelineCtx) => {
+    const key = compact(scopeKey, 512);
+    const preId = compact(timelineCtx?.preTurnEntryId || '', 80);
+    if (!key || !preId) return false;
+    await loadTurnTimeline();
+    const chatTl = ensureTurnTimelineChat(key);
+    const mem = ensureTurnTimelineMemory(key);
+    const entry = chatTl?.entries?.find(item => item.id === preId) || null;
+    if (!entry) return false;
+    chatTl.headId = entry.id;
+    chatTl.updatedAt = Date.now();
+    await restoreGradiaTurnState(key, entry.state, mem.byId[entry.id] || null);
+    await saveTurnTimeline();
+    return true;
+  };
+  const restoreGradiaTurnForDraftCheckpointReuse = async (scopeKey, rawMessages = [], currentInputText = '', options = {}) => {
+    const key = compact(scopeKey, 512);
+    if (!key) return false;
+    await loadTurnTimeline();
+    const chatTl = ensureTurnTimelineChat(key);
+    const mem = ensureTurnTimelineMemory(key);
+    const sig = buildGradiaChatTimelineSignature(rawMessages, {
+      excludeTrailingCurrentUser: true,
+      currentInputText,
+      characterName: options.characterName || '',
+      userName: options.userName || ''
+    });
+    if (!sig.inputHash) return false;
+    const head = chatTl.entries.find(e => e.id === chatTl.headId) || chatTl.entries[chatTl.entries.length - 1];
+    if (head?.kind === 'turn' && head.baseHash === sig.hash && head.inputHash === sig.inputHash) return false;
+    const matchKey = `${sig.hash}|${sig.inputHash}`;
+    const rewound = (chatTl.recentRewound || []).find(item => `${item.baseHash}|${item.inputHash}` === matchKey);
+    if (!rewound) return false;
+    const restored = { ...cloneJson(rewound), committedCount: null, committedHash: '' };
+    const memSnap = mem.rewoundByKey?.[matchKey] ? cloneJson(mem.rewoundByKey[matchKey]) : null;
+    if (memSnap) mem.byId[restored.id] = memSnap;
+    chatTl.entries = [
+      ...chatTl.entries.filter(item => item.id !== restored.id && !(item.kind === 'turn' && item.committedCount === null && item.baseCount === sig.count && item.baseHash === sig.hash)),
+      restored
+    ];
+    chatTl.headId = restored.id;
+    chatTl.updatedAt = Date.now();
+    await restoreGradiaTurnState(key, restored.state, memSnap);
+    await saveTurnTimeline();
+    return true;
+  };
+
   const runPipeline = async (messages, type, settings) => {
     const pipelineStartedAt = Date.now();
     const callTelemetry = ensureCallTelemetry(settings, 'pipeline');
@@ -50721,6 +51750,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
       })
     });
+    let turnTimelineScopeKey = '';
+    let turnTimelineCtx = null;
+    let turnTimelineCommitted = false;
     try {
     let current = null;
     let risuSnapshot = null;
@@ -51060,11 +52092,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
     await Promise.allSettled([
       syncGradiaSourceInputRulesFromLib(),
+      loadLoreCards(),
+      loadRelationshipState(),
+      loadWorldSimLogs(),
+      loadIntimacyCards(),
       typeof loadGaugeContinuity === 'function' ? loadGaugeContinuity() : Promise.resolve(),
-      intimacyStageActive(settings) ? loadIntimacyCards() : Promise.resolve()
+      loadTurnTimeline()
     ]);
     const shadowEnv = await prepareStage('shadow_act', null);
     const prevScopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (prevScopeKey) {
+      turnTimelineScopeKey = prevScopeKey;
+      const timelineRawMessages = risuSnapshot?.actualChatContext?.messages || messages;
+      turnTimelineCtx = await reconcileGradiaChatTimeline(prevScopeKey, timelineRawMessages, {
+        mode: 'before_turn',
+        currentInputText: submittedCurrentInput(shadowEnv.recent),
+        characterName: firstFilled(risuSnapshot?.character?.nickname, risuSnapshot?.character?.name, risuSnapshot?.character?.charName, Runtime.activeCharacterName),
+        userName: firstFilled(risuSnapshot?.persona?.name, Runtime.activePersonaName, 'User')
+      });
+      Runtime.activeTurnTimelineContext = { scopeKey: prevScopeKey, ...turnTimelineCtx };
+    }
     if (isPreviousStageEnabled(shadowEnv.settings)) {
       beginStageModelTiming('previous');
       const prevRecord = await runPreviousStage(shadowEnv.recent, shadowEnv.settings, ledger);
@@ -51331,6 +52378,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
       injection = await libReadSession.finalize(injection);
     }
+    if (!suppressedReason && !!injection && turnTimelineScopeKey && turnTimelineCtx) {
+      await commitGradiaTurnTimelineAfterRun(turnTimelineScopeKey, turnTimelineCtx);
+      turnTimelineCommitted = true;
+    }
     return {
       ok: !!injection,
       reason: suppressedReason,
@@ -51359,6 +52410,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       type
     };
     } catch (error) { libReadSession.close(); throw error; }
+    finally {
+      if (turnTimelineScopeKey && turnTimelineCtx && !turnTimelineCommitted) {
+        try { await rollbackGradiaFailedRun(turnTimelineScopeKey, turnTimelineCtx); }
+        catch (rollbackError) { warn('turn_timeline_failed_rollback_error', rollbackError); }
+      }
+      Runtime.activeTurnTimelineContext = null;
+    }
   };
 
   // RisuAI stores the user message before requesting a reply, and a reroll pops the old
@@ -51854,6 +52912,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.worldSimLogs = null;
     Runtime.gaugeContinuityLoaded = false;
     Runtime.bodyStateSleep = {};
+    Runtime.turnTimeline = null;
+    Runtime.turnTimelineMemory = {};
+    Runtime.activeTurnTimelineContext = null;
     if (typeof Gui !== 'undefined' && Gui) {
       Gui.state = null;
       Gui.stateLoadedAt = 0;
@@ -52803,6 +53864,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (applied) {
           try { await touchDraftCheckpoint(draftCheckpoint); }
           catch (error) { warn('draft_checkpoint_touch_failed', error); }
+          try {
+            let reuseScopeKey = compact(Runtime.activeScopeKey || '', 512);
+            let reuseRawMessages = messages;
+            let reuseCharName = Runtime.activeCharacterName || '';
+            let reuseUserName = Runtime.activePersonaName || '';
+            const reuseSnap = await loadRisuStaticContextSnapshot(requestSettings, { viewOnly: true });
+            if (reuseSnap?.character) {
+              reuseScopeKey = loreContinuityScopeKey(reuseSnap.character, reuseSnap.chatInfo?.chat) || reuseScopeKey;
+              if (reuseScopeKey) Runtime.activeScopeKey = reuseScopeKey;
+              reuseCharName = firstFilled(reuseSnap.character?.nickname, reuseSnap.character?.name, reuseSnap.character?.charName) || reuseCharName;
+              reuseUserName = firstFilled(reuseSnap.persona?.name, 'User') || reuseUserName;
+              if (Array.isArray(reuseSnap.chatInfo?.chat?.message)) reuseRawMessages = reuseSnap.chatInfo.chat.message;
+            }
+            if (reuseScopeKey) {
+              await restoreGradiaTurnForDraftCheckpointReuse(reuseScopeKey, reuseRawMessages, currentTurnResolution.text, {
+                characterName: reuseCharName,
+                userName: reuseUserName
+              });
+            }
+          } catch (error) {
+            warn('draft_checkpoint_turn_timeline_restore_failed', error);
+          }
           storeRequestReuseEntry(fingerprint, draftCheckpoint);
           await updatePipelineWorkPanel('이전에 저장한 GRADIA 초안을 다시 전달했습니다 · 응답 모델이 장면을 작성하고 있습니다…', 'awaiting_response', {
             busy: true,
@@ -61282,10 +62365,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const snapshot = await loadRisuStaticContextSnapshot(await loadSettings(), { viewOnly: true });
       const key = snapshot?.character ? loreContinuityScopeKey(snapshot.character, snapshot.chatInfo?.chat) : '';
-      if (!key || key === Runtime.activeScopeKey) return false;
-      Runtime.activeScopeKey = key;
-      pruneGradiaRuntimeScopeMaps(Runtime.activeScopeKey);
-      return true;
+      if (!key) return false;
+      const scopeChanged = key !== Runtime.activeScopeKey;
+      if (scopeChanged) {
+        Runtime.activeScopeKey = key;
+        pruneGradiaRuntimeScopeMaps(Runtime.activeScopeKey);
+      }
+      const inspectRes = await reconcileGradiaChatTimeline(key, snapshot?.chatInfo?.chat?.message || [], {
+        mode: 'inspect',
+        characterName: firstFilled(snapshot?.character?.nickname, snapshot?.character?.name, snapshot?.character?.charName),
+        userName: firstFilled(snapshot?.persona?.name, 'User'),
+        isStreaming: snapshot?.chatInfo?.chat?.isStreaming === true
+      });
+      return scopeChanged || inspectRes?.changed === true;
     } catch (error) { warn('forced_bond_scope_read_failed', error); return false; }
   };
 
@@ -63779,6 +64871,41 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     debugWorldDynamicsState() {
       const scopeKey = Runtime.activeScopeKey || '';
       return cloneJson({ scopeKey, readings: Runtime.worldDynamicsReadings?.[scopeKey] || null, telemetry: Runtime.worldDynamicsTelemetry?.[scopeKey] || null });
+    },
+    async debugTurnTimelineReconcile({ scopeKey = '', messages = [], mode = 'before_turn', currentInputText = '', isStreaming = false, characterName = '', userName = '' } = {}) {
+      const key = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      if (key) Runtime.activeScopeKey = key;
+      const res = await reconcileGradiaChatTimeline(key, messages, { mode, currentInputText, isStreaming, characterName, userName });
+      if (mode === 'before_turn' && res?.sig) Runtime.activeTurnTimelineContext = { scopeKey: key, ...res };
+      return cloneJson(res);
+    },
+    async debugTurnTimelineCommit({ scopeKey = '' } = {}) {
+      const key = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      const entry = await commitGradiaTurnTimelineAfterRun(key, Runtime.activeTurnTimelineContext);
+      Runtime.activeTurnTimelineContext = null;
+      return cloneJson(entry);
+    },
+    async debugTurnTimelineRollbackFailed({ scopeKey = '' } = {}) {
+      const key = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      const ok = await rollbackGradiaFailedRun(key, Runtime.activeTurnTimelineContext);
+      Runtime.activeTurnTimelineContext = null;
+      return ok;
+    },
+    debugTurnTimelineState(scopeKey = '') {
+      const key = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      return cloneJson({
+        scopeKey: key,
+        persisted: Runtime.turnTimeline?.chats?.[key] || null,
+        memoryKeys: Object.keys(Runtime.turnTimelineMemory?.[key]?.byId || {}),
+        rewoundKeys: Object.keys(Runtime.turnTimelineMemory?.[key]?.rewoundByKey || {}),
+        readings: captureGradiaTurnMemoryReadings(key),
+        state: captureGradiaTurnPersistedState(key)
+      });
+    },
+    async debugTurnTimelineLoad() {
+      Runtime.turnTimeline = null;
+      Runtime.turnTimelineMemory = {};
+      return cloneJson(await loadTurnTimeline());
     },
     debugPruneRuntimeScopeMaps(keepScopeKey = Runtime.activeScopeKey) {
       pruneGradiaRuntimeScopeMaps(keepScopeKey);

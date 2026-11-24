@@ -550,7 +550,7 @@ test('10) rubber condom/slippage recognition, prior-encounter isolation, no-phan
   assert.equal(rolledPkt.contraception[0].protected, true);
   assert.equal(rolledPkt.contraception[0].stanceCode, 'protected_confirmed');
 
-  // 10b: Rubber bunched at base exposing bare skin -> condom_failed (unprotected)
+  // 10b: Rubber bunched at base exposing lower shaft skin while glans stays covered -> condom_slip_risk (NOT definitive failure)
   const slippedPkt = f.host.plugin.debugIntimacyPacket({
     ...baseArgs,
     recent: {
@@ -561,10 +561,10 @@ test('10) rubber condom/slippage recognition, prior-encounter isolation, no-phan
       latestUser: '푸딩은 천하연의 허리를 잡은 채 멈칫하며 숨을 삼켰다.'
     }
   });
-  assert.equal(slippedPkt.contraception[0].method, 'condom_failed');
+  assert.equal(slippedPkt.contraception[0].method, 'condom_slip_risk');
   assert.equal(slippedPkt.contraception[0].protected, false);
-  assert.notEqual(slippedPkt.contraception[0].stanceCode, 'protected_confirmed');
-  assert.match(slippedPkt.contraception[0].promptDirective, /맨살|뭉쳐|피임 실패/);
+  assert.equal(slippedPkt.contraception[0].stanceCode, 'condom_slip_risk_check');
+  assert.match(slippedPkt.contraception[0].promptDirective, /이탈 위험|귀두|완전한 피임 실패|노콘|생으로/);
 
   // 10c: Resolved previous encounter condom must NOT carry into a new bare encounter + continuity lock active
   const isolatedPkt = f.host.plugin.debugIntimacyPacket({
@@ -787,4 +787,145 @@ test('12) Lore-based male genitalia size estimation, persistent recording, and f
   assert.ok(deltas.large < deltas.very_large, `expected large (${deltas.large}) < very_large (${deltas.very_large})`);
   assert.ok(lubs.very_small < lubs.average && lubs.average < lubs.very_large, `expected lubrication monotonic (${JSON.stringify(lubs)})`);
   assert.equal(foreplayDeltas.very_small, foreplayDeltas.very_large, 'non-penetrative foreplay stimulation must not change with male genitalia size');
+});
+
+test('13) Climax vocalization directives, chronological condom re-wear, bystander exclusion, and personality×affection contraception reactions', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+
+  // 13a: Chronological condom re-wear after base bunching ("고무가 밑동 쪽으로 몰려... 아까 그때. 다시 끼웠어.") -> protected condom
+  const rewearPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'condom-rewear-13a',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'condom-rewear-13a': { default: 'like', npcs: [{ name: '천하연', level: 'like', note: '나른하고 솔직한 편' }] } }
+    },
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '고무가 밑동 쪽으로 몰려 접혀 있었다. 푸딩이 "아까 그때. 다시 끼웠어."라고 말하며 하연의 안으로 삽입했다.' }
+      ],
+      latestUser: '푸딩이 움직임을 이어갔다.'
+    }
+  });
+  assert.equal(rewearPkt.contraception[0].method, 'condom');
+  assert.equal(rewearPkt.contraception[0].protected, true);
+  assert.equal(rewearPkt.contraception[0].stanceCode, 'protected_confirmed');
+  assert.match(rewearPkt.contraception[0].promptDirective, /재착용|확인됨/);
+
+  // 13b: Multi-female bystander exclusion (only 천하연 penetrated; 천소연 watches/speaks nearby after earlier foreplay)
+  const bystanderPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'bystander-exclude-13b',
+    profileGenders: { 천하연: 'female', 천소연: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'bystander-exclude-13b': { default: 'like', npcs: [{ name: '천하연', level: 'like' }, { name: '천소연', level: 'like' }] } }
+    },
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '잠시 전 푸딩이 천소연의 뺨에 입을 맞췄다. 이어서 푸딩이 천하연의 안으로 삽입해 허리를 움직였다. 고무가 밑동 쪽으로 몰려 접혀 있었다.' },
+        { role: 'char', content: '천소연의 손이 어깨에서 떨어졌다가 목덜미에 걸쳤다. 천소연이 물었다. "지금 그거, 진짜로 하는 말이지."' }
+      ],
+      latestUser: '푸딩은 천하연의 허리를 쥔 채 숨을 삼켰다.'
+    }
+  });
+  assert.equal(bystanderPkt.contraception.length, 1, 'contraception verdict issues ONLY for penetrated female');
+  assert.equal(bystanderPkt.contraception[0].name, '천하연');
+
+  // 13c: Genuine condom failure (tip torn / completely slipped off) branches across fierce vs meek vs high-affection trust
+  const failRecentFor = name => ({
+    visibleMessages: [
+      { role: 'char', content: `푸딩이 콘돔을 끼우고 ${name}의 안으로 삽입해 움직이다가 콘돔 끝부분이 찢어져 완전히 벗겨졌다.` }
+    ],
+    latestUser: `푸딩이 멈칫하며 ${name}의 앞에서 찢어진 콘돔을 확인했다.`
+  });
+  const fierceFail = f.host.plugin.debugIntimacyPacket({
+    characterName: '강서연',
+    personaName: '푸딩',
+    scopeKey: 'fail-fierce-13c',
+    profileGenders: { 강서연: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'fail-fierce-13c': { default: 'like', npcs: [{ name: '강서연', level: 'like', note: '기가 세고 드세며 원칙적인 성격' }] } }
+    },
+    recent: failRecentFor('강서연')
+  });
+  assert.equal(fierceFail.contraception[0].method, 'condom_failed');
+  assert.equal(fierceFail.contraception[0].stanceCode, 'condom_failed_fierce_resist');
+  assert.match(fierceFail.contraception[0].promptDirective, /격렬한 제지·저항/);
+
+  const meekFail = f.host.plugin.debugIntimacyPacket({
+    characterName: '한유진',
+    personaName: '푸딩',
+    scopeKey: 'fail-meek-13c',
+    profileGenders: { 한유진: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'fail-meek-13c': { default: 'like', npcs: [{ name: '한유진', level: 'like', note: '기가 약하고 소심하며 수줍음이 많은 편' }] } }
+    },
+    recent: failRecentFor('한유진')
+  });
+  assert.equal(meekFail.contraception[0].method, 'condom_failed');
+  assert.equal(meekFail.contraception[0].stanceCode, 'condom_failed_meek_protest');
+  assert.match(meekFail.contraception[0].promptDirective, /조용한 항의/);
+
+  const trustFail = f.host.plugin.debugIntimacyPacket({
+    characterName: '이채원',
+    personaName: '푸딩',
+    scopeKey: 'fail-trust-13c',
+    profileGenders: { 이채원: 'female', 푸딩: 'male' },
+    settings: {
+      mode: 'normal',
+      writing_mode: 'rp',
+      npcDisposition: { 'fail-trust-13c': { default: 'affection', npcs: [{ name: '이채원', level: 'affection', note: '오래된 연인이자 깊은 신뢰를 보내는 다정한 성격' }] } }
+    },
+    recent: failRecentFor('이채원')
+  });
+  assert.equal(trustFail.contraception[0].method, 'condom_failed');
+  assert.equal(trustFail.contraception[0].stanceCode, 'condom_failed_trust_accept');
+  assert.match(trustFail.contraception[0].promptDirective, /책임질 거라면 괜찮아/);
+
+  // 13d: Female climax 100/100 directive enforces involuntary vocalization matched to mouth state
+  const scopeClimax = 'climax-vocal-13d';
+  f.host.plugin.debugSetActiveScope(scopeClimax, '천하연');
+  await f.host.plugin.debugIntimacySetCard({
+    name: '천하연',
+    patch: {
+      gender: 'female',
+      sensitiveZones: '질내·음핵',
+      zoneStats: {
+        vaginal_canal: { sensitivity: 95, development: 80 },
+        clitoris_vulva: { sensitivity: 95, development: 80 }
+      }
+    }
+  });
+  let climaxPkt = null;
+  const msgs13d = [];
+  for (let turn = 1; turn <= 4; turn += 1) {
+    const uText = `(${turn}회차) 푸딩이 천하연의 질내 깊숙이 찔러대며 음핵을 강하게 몰아붙인다.`;
+    climaxPkt = f.host.plugin.debugIntimacyPacket({
+      characterName: '천하연',
+      personaName: '푸딩',
+      scopeKey: scopeClimax,
+      profileGenders: { 천하연: 'female', 푸딩: 'male' },
+      recent: {
+        visibleMessages: [...msgs13d],
+        latestUser: uText
+      }
+    });
+    msgs13d.push({ role: 'user', content: uText });
+    msgs13d.push({ role: 'char', content: `(${turn}회차) 천하연이 숨을 헐떡이며 허리를 떨었다.` });
+    if (climaxPkt.gauges.find(g => g.name === '천하연')?.climaxTriggeredThisTurn) break;
+  }
+  const fGauge = climaxPkt.gauges.find(g => g.name === '천하연');
+  assert.equal(fGauge.climaxTriggeredThisTurn, true, 'climax triggers within intense escalating turns');
+  assert.match(fGauge.line, /으으음|아아/);
+  assert.match(climaxPkt.text, /으으음|아아/);
 });

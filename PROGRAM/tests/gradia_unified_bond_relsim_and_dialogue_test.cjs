@@ -299,3 +299,97 @@ test('5) dialogue AIDE enforces physical speech causality (deep kiss / slurring 
   assert.equal(applied.changed, true);
   assert.match(applied.draftText, /입술을 떼어내며 숨을 몰아쉬었다\.\n“대답은 나중에\.”/);
 });
+
+test('Dialogue AIDE detects hand-over-mouth muffling, enforces climax vocalization per mouth state, and bridges contraception tone', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.host.plugin.debugSetActiveScope('dialogue-climax-test', '하연');
+  const settings = {
+    ...(await f.host.plugin.getRuntimeSettings()),
+    mode: 'normal',
+    writingMode: 'rp',
+    enableDialogueAide: true,
+    enableCharacterAide: true
+  };
+
+  // 1. Hand over mouth + climax narration with zero vocalization quote -> violation flagged
+  const handClimaxRecent = {
+    visibleMessages: [
+      { role: 'char', content: '하연의 손이 입으로 갔다. 손등으로 위를 막고 손바닥으로 아래를 막았다.' }
+    ],
+    latestUser: '푸딩이 움직임을 이어가자 하연의 허리가 들렸다.'
+  };
+  const silentClimaxDraft = '하연의 몸이 아래에서부터 들렸다. 배가 위로 꺾였고, 꺾인 자리에서 경련이 시작됐다. 입을 막은 손 아래에서 알아들을 수 없는 소리가 새어 나왔다.';
+  const recMissingHand = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: handClimaxRecent,
+    draftBefore: silentClimaxDraft,
+    draftAfter: silentClimaxDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.ok(recMissingHand.reading.draftStats.causalityViolations >= 1, 'hand-muffled climax without vocal quote triggers violation');
+
+  const stageBlockHand = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: handClimaxRecent,
+    ledger: { currentStageDraft: silentClimaxDraft },
+    phase: 'analysis'
+  });
+  assert.match(stageBlockHand, /손으로 입 막힘·소리 억누름 중/);
+  assert.match(stageBlockHand, /절정 도달·비자발 발화 필수/);
+  assert.match(stageBlockHand, /Missing climax vocalization \(hand_muffled\)/);
+
+  // 2. Climax WITH muffled vocal quote -> zero violation
+  const vocalizedHandDraft = '하연의 손이 입으로 갔다. 손등으로 위를 막고 손바닥으로 아래를 막았다. 배가 위로 꺾이며 경련이 시작됐다.\n"으으음…! 흐읍……!"';
+  const recOkHand = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: handClimaxRecent,
+    draftBefore: vocalizedHandDraft,
+    draftAfter: vocalizedHandDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.equal(recOkHand.reading.draftStats.causalityViolations, 0, 'muffled climax vocalization satisfies causality');
+
+  // 3. Unobstructed climax narration without quote -> unrestrained violation flagged
+  const openClimaxDraft = '하연의 몸이 아래에서부터 들렸다. 배가 위로 꺾였고, 전신이 경련하며 다리가 떨렸다.';
+  const recMissingOpen = f.host.plugin.debugDialogueRecord({
+    stageName: 'aide_character',
+    settings,
+    recent: { visibleMessages: [], latestUser: '하연이 절정에 달한다.' },
+    draftBefore: openClimaxDraft,
+    draftAfter: openClimaxDraft,
+    parsed: { dialogueCheck: [], dialogueRepairs: [] }
+  });
+  assert.ok(recMissingOpen.reading.draftStats.causalityViolations >= 1, 'unobstructed climax without vocal quote triggers violation');
+
+  const stageBlockOpen = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { visibleMessages: [], latestUser: '하연이 절정에 달한다.' },
+    ledger: { currentStageDraft: openClimaxDraft },
+    phase: 'analysis'
+  });
+  assert.match(stageBlockOpen, /Missing climax vocalization \(unrestrained\)/);
+
+  // 4. Intimacy telemetry contraception stance bridges into Dialogue AIDE packet
+  f.host.plugin.debugIntimacyPacket({
+    characterName: '천하연',
+    personaName: '푸딩',
+    scopeKey: 'dialogue-climax-test',
+    profileGenders: { 천하연: 'female', 푸딩: 'male' },
+    recent: {
+      visibleMessages: [{ role: 'char', content: '고무가 밑동 쪽으로 몰려 접혀 있었다. 푸딩이 "아까 그때. 다시 끼웠어."라고 말했다.' }],
+      latestUser: '푸딩이 천하연의 안으로 삽입했다.'
+    }
+  });
+  const bridgedBlock = f.host.plugin.debugDialogueStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: { visibleMessages: [], latestUser: '천하연이 숨을 내뱉었다.' },
+    phase: 'writing'
+  });
+  assert.match(bridgedBlock, /피임·안전 반응 톤/);
+  assert.match(bridgedBlock, /노콘|생으로/);
+});
