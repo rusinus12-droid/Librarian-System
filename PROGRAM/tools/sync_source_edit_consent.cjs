@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..'),check=process.argv.includes('--check');
 if(process.argv.slice(2).some(v=>v!=='--check'))throw Error('unknown_source_input_sync_argument');
 const input=fs.readFileSync(path.join(root,'sdk/MemorySuiteSourceInput.libra.source.js'),'utf8').trimEnd();
-for(const name of ['LIBRA.js','HAYAKU_Locator_Continuity.js','Flashback_Memory.js']){
+for(const name of ['LIBRA.js','HAYAKU_Locator_Continuity.js','Flashback_Memory.js','GRADIA.js']){
  const file=path.join(root,'plugins',name),text=fs.readFileSync(file,'utf8');
  const start='/* LIBRA SOURCE INPUT POLICY v1',end='/* END LIBRA SOURCE INPUT POLICY */';
  const a=text.indexOf(start),b=text.indexOf(end,a)+end.length;

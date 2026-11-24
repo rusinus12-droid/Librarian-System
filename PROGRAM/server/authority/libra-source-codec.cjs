@@ -143,7 +143,7 @@ const validateMicroCandidate = (candidateValue, receiptValue) => {
         || candidate.sourceDigest !== receipt.sourceDigest) return rejectedResult('receipt_binding_invalid');
       if (typeof candidate.label !== 'undefined'
         && (typeof candidate.label !== 'string' || candidate.label.length > 120)) return rejectedResult('label_invalid');
-      if (!Array.isArray(candidate.claims) || !candidate.claims.length || candidate.claims.length > 16) {
+      if (!Array.isArray(candidate.claims) || !candidate.claims.length || candidate.claims.length > 256) {
         return rejectedResult('claim_count_invalid');
       }
       const claimFields = new Set(['changeKind', 'text', 'actor', 'target', 'temporalRole',
@@ -174,7 +174,9 @@ const validateMicroCandidate = (candidateValue, receiptValue) => {
           || !stateIntentValueValid(intent.value) || JSON.stringify(intent.value).length > 1200
           : Object.prototype.hasOwnProperty.call(intent, 'value')) return 'state_intent_value_invalid';
         if (domain === 'character' || domain === 'world') {
-          if (Object.keys(target).length !== 1 || typeof target.entityName !== 'string'
+          if (Object.keys(target).some(key => !['entityName', ...(domain === 'world' ? ['entityKind'] : [])].includes(key))
+            || (target.entityKind !== undefined && !['location', 'object', 'organization', 'rule', 'environment', 'condition', 'other'].includes(target.entityKind))
+            || typeof target.entityName !== 'string'
             || !target.entityName.trim() || target.entityName.length > 120
             || !canonicalEntityNameBoundToEvidence(target.entityName, quote)) return 'state_intent_target_unbound';
         } else if (domain === 'relationship') {

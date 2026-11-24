@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { createDataCheckpoint, verifyDataCheckpoint, hashManifest } = require('./checkpoint.cjs');
 const { readJournal, writeJournal, isTerminal, syncDirectory } = require('./journal.cjs');
 const identity = require('./data-identity.cjs');
+const { refreshRootFilesFromCandidate } = require('./updater-bootstrap.cjs');
 
 const { withUpdateLock } = require('./lock.cjs');
 
@@ -239,7 +240,7 @@ function assertProgramDataAuthorities(root, journal) {
 // These are forward-only finalization paths. They NEVER restore a checkpoint.
 // A server may have accepted user writes after the durable decision, even when
 // startup/health reporting or the final journal write subsequently failed.
-async function finalizeDecision({root, journalPath, journal, start = startServer, logger = () => {}}) {
+async function finalizeDecision({root, journalPath, journal, start = startServer, logger = () => {}, receipt = null}) {
   identity.assertJournal(journal);
   const {program, data} = operationPaths(root, journal);
   const committed = isCommitted(journal);
@@ -259,6 +260,31 @@ async function finalizeDecision({root, journalPath, journal, start = startServer
     journal = await writeJournal(journalPath, journal, committed
       ? {status:'complete',phase:'complete',completedAt:now}
       : {status:'rolled_back',phase:'rolled_back',rolledBackAt:now,rollbackOk:true});
+    if (committed) {
+      try { await refreshRootFilesFromCandidate(root, receipt, { logger }); } catch (_) {}
+      try {
+        const rbDir = path.join(root, '.rollback');
+        if (fs.existsSync(rbDir)) {
+          const dirs = fs.readdirSync(rbDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => ({
+            name: d.name,
+            mtime: fs.statSync(path.join(rbDir, d.name)).mtimeMs
+          })).sort((a, b) => b.mtime - a.mtime);
+          for (const old of dirs.slice(2)) {
+            if (old.name === journal.operationId) continue;
+            fs.rmSync(path.join(rbDir, old.name), { recursive: true, force: true });
+          }
+        }
+      } catch (_) {}
+      try {
+        const updateDir = path.join(root, '.update');
+        const downloadDir = path.join(updateDir, 'download');
+        if (fs.existsSync(downloadDir)
+          && !fs.lstatSync(updateDir).isSymbolicLink()
+          && !fs.lstatSync(downloadDir).isSymbolicLink()) {
+          fs.rmSync(downloadDir, { recursive: true, force: true });
+        }
+      } catch (_) {}
+    }
     logger(committed ? `업데이트 완료: ${journal.fromVersion} → ${journal.toVersion}` : '[ROLLBACK] 이전 버전 복구 완료');
     return journal;
   } catch (error) {
@@ -448,7 +474,7 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
       status:'committed', phase:'committed', decision:'commit',
       committedAt:new Date().toISOString(), flags:journal.flags
     });
-    return await finalizeDecision({root,journalPath,journal,start,logger});
+    return await finalizeDecision({root,journalPath,journal,start,logger,receipt});
   } catch (error) {
     logger(`업데이트 실패: ${String(error?.message || error)}`);
     journal = readJournal(journalPath) || journal;

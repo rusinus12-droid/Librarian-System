@@ -59,7 +59,7 @@ test('상태 rides in 인물 AIDE’s call and 억결 in 플롯 AIDE’s call, w
   await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_character', 'aide_world', 'aide_plot']);
   const character = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
   assert.match(character, /상태 AIDE runs inside this stage as a sub-step\. Body State AIDE: read the verification notes/);
   assert.match(JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character')), /"state_readings"/);
@@ -185,18 +185,18 @@ test('pregnancy is a fixed verdict behind its own toggle, only for NPCs in RP', 
 test('checkers return state_check and the host reads it; readings stay in memory', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', {
-    aide_plot: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
-    aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
+    aide_world: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
+    aide_plot: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
   });
-  // Plot runs before the host (인물 AIDE), so Plot leaves a note for it.
-  await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) });
+  // With 인물 AIDE off and 세계관+플롯 on, 세계관 checks first and 플롯 hosts & reads the note.
+  await configure(f, { enable_world_aide: true }, { body: true, bond: false }, ['aide_character']);
   const keysBefore = new Set(f.values.keys());
   await runTurn(f, '민아에게 다가간다.');
-  const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
-  assert.ok(JSON.stringify(plot).includes('"state_check"'), 'the patch schema asks for state_check');
-  const host = f.prompts.find(item => stageOf(item) === 'aide_character');
+  const world = f.prompts.find(body => stageOf(body) === 'aide_world');
+  assert.ok(JSON.stringify(world).includes('"state_check"'), 'the patch schema asks for state_check');
+  const host = f.prompts.find(item => stageOf(item) === 'aide_plot');
   assert.ok(!JSON.stringify(host).includes('"state_check"'), 'the host settles readings instead of checking');
-  assert.match(systemOf(host), /\[aide_plot\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
+  assert.match(systemOf(host), /\[aide_world\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });
@@ -645,4 +645,162 @@ test('sleeping NPC tracks sleep depth (100 to 200), sleep aids, soothing deepeni
   });
   assert.match(repeated, /repeat bonus \+\d+ \(streak #3\)/);
   assert.match(repeated, /near-wake bonus \+\d+/);
+});
+
+test('multi-female sexual scene excludes unpenetrated bystander from conception exposure', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const scopeKey = 'multi-female-bystander-scope';
+  const settings = {
+    writingMode: 'rp',
+    rpImpersonationScope: 'persona',
+    enableBodyStateAide: true,
+    mode: 'normal',
+    bodyStateReproduction: true,
+    bodyStateCards: {
+      [scopeKey]: [
+        { name: '천하연', gender: 'female', cycleLength: 28, lastPeriodStart: '이야기 46일째' },
+        { name: '천소연', gender: 'female', cycleLength: 28, lastPeriodStart: '이야기 46일째' }
+      ]
+    }
+  };
+  const packet = f.host.plugin.debugBodyStatePacket({
+    personaName: '푸딩',
+    characterName: '천하연',
+    scopeKey,
+    profileGenders: { 천하연: 'female', 천소연: 'female', 푸딩: 'male' },
+    libText: '[STORY CLOCK] 현재: 이야기 60일째 · 밤',
+    recent: {
+      visibleMessages: [
+        { role: 'char', content: '푸딩이 천하연의 질내에 사정하자 천소연이 놀라 숨을 삼키며 천하연의 어깨에 손을 얹었다.' }
+      ],
+      latestUser: '푸딩이 천하연의 허리를 붙잡은 채 숨을 몰아쉬었다.'
+    },
+    settings
+  });
+  const hayeonIdx = packet.indexOf('- 천하연:');
+  const soyeonIdx = packet.indexOf('- 천소연:');
+  assert.ok(hayeonIdx >= 0 && soyeonIdx > hayeonIdx, 'both female reports present in packet');
+  const hayeonSection = packet.slice(hayeonIdx, soyeonIdx);
+  const soyeonSection = packet.slice(soyeonIdx);
+  assert.match(hayeonSection, /sexual contact|PREGNANT/, 'penetrated female 천하연 receives sexual contact evaluation');
+  assert.doesNotMatch(soyeonSection, /sexual contact|PREGNANT/, 'unpenetrated bystander 천소연 must NOT receive sexual exposure or pregnancy roll');
+});
+
+test('sleep card GUI notes display localized Korean text while preserving internal sleep state packet syntax', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const baseSettings = { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal' };
+  const scopeNoStim = 'sleep-ui-ko-nostim';
+
+  const noStimPkt = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '이지원',
+    scopeKey: scopeNoStim,
+    recent: {
+      latestUser: '창밖을 바라보며 조용히 숨을 골랐다.',
+      visibleMessages: [{ role: 'assistant', content: '이지원은 이불 속에서 얕은 잠이 들어 설잠을 자며 뒤척이고 있었다.' }]
+    },
+    settings: baseSettings
+  });
+  assert.match(noStimPkt, /sleep state: asleep/, 'internal LLM packet keeps English sleep state syntax');
+
+  const noStimNotes = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeNoStim });
+  assert.equal(noStimNotes.length, 1);
+  assert.match(noStimNotes[0].title, /이지원 · 수면·각성/);
+  assert.match(noStimNotes[0].body, /^수면 중 · 각성도 \d+% \(.*\) · 수면 깊이 \d+\/200 .*이번 턴 직접 각성 자극 없음 → 수면 유지/);
+  assert.doesNotMatch(noStimNotes[0].body, /sleep state:|wakefulness|no direct waking stimulus|stays asleep|reaction:|brow furrowing|heavy limp limbs|visibly larger/i);
+
+  const scopeSoothing = 'sleep-ui-ko-soothe';
+  f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '이지원',
+    scopeKey: scopeSoothing,
+    recent: {
+      latestUser: '이지원에게 이불을 덮어주고 머리카락을 부드럽게 쓰다듬었다.',
+      visibleMessages: [{ role: 'assistant', content: '이지원은 침대에서 잠들었다.' }]
+    },
+    settings: baseSettings
+  });
+  const soothingNotes = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeSoothing });
+  assert.equal(soothingNotes.length, 1);
+  assert.match(soothingNotes[0].body, /^수면 중 · 진정 상호작용\(.*\)으로 수면 심화/);
+  assert.doesNotMatch(soothingNotes[0].body, /sleep state:|deepens sleep|wake chance|STAYS DEEPLY ASLEEP|fixed verdict/i);
+
+  const scopeStim = 'sleep-ui-ko-stim';
+  f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '이지원',
+    scopeKey: scopeStim,
+    recent: {
+      latestUser: '이지원의 볼을 살짝 만지며 이름을 낮게 부른다.',
+      visibleMessages: [{ role: 'assistant', content: '이지원은 침대에 누워 깊이 잠들어 있었다.' }]
+    },
+    settings: baseSettings
+  });
+  const stimNotes = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeStim });
+  assert.equal(stimNotes.length, 1);
+  assert.match(stimNotes[0].body, /^수면 중 \(깊이 \d+\/200\) \+ 자극 \[.*\] · 각성 확률 [\d.]+%/);
+  assert.doesNotMatch(stimNotes[0].body, /sleep state:|fixed verdict|wake chance|STAYS ASLEEP|WAKES UP THIS TURN/i);
+});
+
+test('sleep band labeling stays unified (no contradictory borderline band) and stimulus wakefulness does not snap back on quiet followup', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const settings = { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal' };
+  const scopeBorder = 'sleep-border-83';
+
+  // Light stimulus ("이마에 입을 맞춘다", -12) from depth 100 -> depth 88 (no wake on roll? Check both wakes or stays asleep across a few names if needed; depth 95/88 -> use gentle whisper -12)
+  // Seed depth ~100, then mild light stimulus or verify depth 75 light-sleep band consistency directly:
+  const lightPkt = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '이지원',
+    scopeKey: scopeBorder,
+    recent: {
+      latestUser: '창밖을 바라본다.',
+      visibleMessages: [{ role: 'assistant', content: '이지원은 침대에서 선잠에 빠져 얕은 잠을 자고 있었다.' }]
+    },
+    settings
+  });
+  // depth = 75 -> 100 - (75/200)*92 = 66% -> unified "각성 임박" on BOTH wakefulness and depth
+  assert.match(lightPkt, /wakefulness 66% \(각성 임박\) · depth 75\/200 \(near waking \(각성 임박\)\)/);
+  const borderNotes = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeBorder });
+  assert.match(borderNotes[0].body, /^수면 중 · 각성도 66% \(각성 임박\) · 수면 깊이 75\/200/);
+  assert.doesNotMatch(borderNotes[0].body, /얕은 수면·선잠/, 'must not mix two different sleep bands in the same line');
+
+  // Stimulus turn that does not wake must store exact 1:1 wakefulnessGauge for effectiveDepth, so quiet followup preserves it
+  const scopeFollow = 'sleep-no-snapback';
+  f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '세라',
+    scopeKey: scopeFollow,
+    recent: {
+      latestUser: '조용히 의자에 앉는다.',
+      visibleMessages: [{ role: 'assistant', content: '세라는 수면제를 먹고 깊이 잠들었다.' }]
+    },
+    settings
+  });
+  const stimPkt = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '세라',
+    scopeKey: scopeFollow,
+    recent: {
+      latestUser: '세라의 귓가에 아주 작게 속삭인다.',
+      visibleMessages: [{ role: 'assistant', content: '세라는 침대에 누워 미동도 없었다.' }]
+    },
+    settings
+  });
+  const stimNotes2 = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeFollow });
+  const stimWake = stimNotes2[0].wakefulnessGauge;
+  const quietAfterPkt = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준',
+    characterName: '세라',
+    scopeKey: scopeFollow,
+    recent: {
+      latestUser: '조용히 창문을 닫는다.',
+      visibleMessages: [{ role: 'assistant', content: '방 안은 고요했다.' }]
+    },
+    settings
+  });
+  const quietNotes2 = f.host.plugin.debugBodyStateSleepNotes({ scopeKey: scopeFollow });
+  assert.match(stimPkt, /stays asleep|STAYS ASLEEP/i);
+  assert.match(quietAfterPkt, /stays asleep/i);
+  assert.equal(quietNotes2[0].wakefulnessGauge, stimWake, 'wakefulnessGauge remains identical on immediately following quiet turn');
 });

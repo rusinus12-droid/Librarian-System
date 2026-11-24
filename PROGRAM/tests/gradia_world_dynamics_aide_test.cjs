@@ -11,6 +11,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
 
+const pickReading = r => ({ movement: r.movement, status: r.status, summary: r.summary });
 const STAGE = 'aide_world_dynamics';
 // User decision 2026-11-17: 세계 동역학 is a sub-AIDE of 세계관 AIDE and settles its readings in
 // that stage's call. HOST is the stage that carries it in these fixtures.
@@ -86,11 +87,11 @@ test('when on, 세계관 AIDE settles it in its own call and every draft stage c
   assert.ok(f.prompts.some(body => !stageOf(body).startsWith('aide_') && textOf(body).includes('STAGE DUTY: SHADOW: when the packet offers a candidate that would plausibly reach this scene by now')), 'SHADOW gets its duty');
 });
 
-test('with all three sub-AIDEs on, only the core AIDEs are called, in the user’s order', async t => {
+test('with all three sub-AIDEs on, only the core AIDEs are called, in the fixed order', async t => {
   const f = await start(t, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_character', 'aide_world', 'aide_plot']);
   assert.match(systemOf(f.prompts.find(body => stageOf(body) === HOST)), /세계 동역학 AIDE runs inside this stage as a sub-step/);
 });
 
@@ -352,7 +353,8 @@ test('checkers return world_check and later stages read the notes; readings stay
   assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /\[aide_character\] 영주의 병사 파견: adjust/, 'Plot AIDE, running last, also sees the note');
 
   const state = f.host.plugin.debugWorldDynamicsState();
-  assert.deepEqual(plain(state.readings?.readings), [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }]);
+  // 읽기 레코드는 스키마 기본값까지 정규화해 보관하므로 서술 필드만 비교한다.
+  assert.deepEqual(plain(state.readings?.readings).map(pickReading), [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }]);
   const added = [...new Set([...f.values.keys(), ...f.local.keys()].map(String))].filter(key => !keysBefore.has(key));
   assert.deepEqual(added.filter(key => /world.?dynamics|world_read|world_check/i.test(key)), [], 'no reading or note is persisted');
   for (const [key, value] of [...f.values, ...f.local]) {
@@ -373,7 +375,7 @@ test('malformed notes and readings are dropped or normalized, never passed along
   const own = systemOf(f.prompts.find(body => stageOf(body) === HOST));
   assert.match(own, /- \[aide_character\] 소문: uncertain — the rumor reached the gate/, 'an unknown verdict becomes uncertain');
   assert.doesNotMatch(own, /no movement named/, 'a note without a movement is dropped');
-  assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
+  assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings).map(pickReading), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
 });
 
 test('with the stage off no other stage is asked for world_check', async t => {
@@ -421,4 +423,82 @@ test('with no run yet the panel says so, and the stage sits under 세계관 AIDE
   assert.ok(f.document.querySelector('[data-subtab="d"]'), 'the results page has a 세계 동역학 tab');
   assert.ok(f.document.querySelector('[data-subpanel="d"]'), 'and its panel');
   assert.ok(f.document.querySelector('#mini-s4w'), 'the home overview keeps a chip for a stand-alone run');
+});
+
+// ---- Probabilistic World Simulator (2026-11-22) ----
+
+test('world simulator builds off-scene cast excluding @-present cast and persona, and rolls deterministically', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const recent = {
+    latestUser: '카페 창가에 앉아 커피를 마신다.',
+    offSceneCast: ['천하연', '민태오', '이지원', '구민지'],
+    visibleMessages: [
+      { role: 'assistant', content: '천하연이 맞은편에 앉았다.\n◈CG\nTIME|2027.04.26(월)|12:10\nLOC|카페|bg_cafe|맑음\n@|천하연\n◈' }
+    ]
+  };
+  const triggeredSim = f.host.plugin.debugWorldDynamicsSimulator({
+    recent,
+    settings: { worldSimulatorChance: 100 }
+  });
+  assert.deepEqual([...triggeredSim.offSceneCast], ['민태오', '이지원', '구민지'], 'present cast 천하연 is excluded');
+  assert.equal(triggeredSim.triggered, true);
+  assert.ok(['민태오', '이지원', '구민지'].includes(triggeredSim.actor));
+  assert.ok(triggeredSim.actionType && triggeredSim.actionType.id);
+
+  const quietSim = f.host.plugin.debugWorldDynamicsSimulator({
+    recent,
+    settings: { worldSimulatorChance: 0 }
+  });
+  assert.equal(quietSim.triggered, false);
+
+  const pktTriggered = f.host.plugin.debugWorldDynamicsPacket({
+    recent,
+    settings: { worldSimulatorChance: 100 }
+  });
+  assert.match(pktTriggered, /\[OFF-SCENE WORLD SIMULATOR\]/);
+  assert.match(pktTriggered, /TRIGGERED · Actor:/);
+
+  const pktQuiet = f.host.plugin.debugWorldDynamicsPacket({
+    recent,
+    settings: { worldSimulatorChance: 0 }
+  });
+  assert.match(pktQuiet, /QUIET TURN/);
+});
+
+test('world simulator respects private-room remote-only channels and defers when due movement or intimate scene is active', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const privateRecent = {
+    latestUser: '내 방 침대에 누워 천장을 본다.',
+    offSceneCast: ['민태오', '이지원'],
+    visibleMessages: [{ role: 'assistant', content: '방 안은 조용했다.' }]
+  };
+  const privSim = f.host.plugin.debugWorldDynamicsSimulator({
+    recent: privateRecent,
+    settings: { worldSimulatorChance: 100 }
+  });
+  assert.equal(privSim.spaceType, 'private');
+  assert.equal(privSim.actionType.channel, 'remote', 'private room never picks local nearby_passing');
+
+  const dueSim = f.host.plugin.debugWorldDynamicsSimulator({
+    recent: privateRecent,
+    settings: { worldSimulatorChance: 100 },
+    hasDueMovement: true
+  });
+  assert.equal(dueSim.triggered, false);
+  assert.equal(dueSim.suppressed, 'due_movement_active');
+
+  const intimateRecent = {
+    latestUser: '도서관 서고 열린 문 앞에서 큰 소리로 신음을 터뜨리며 그녀의 유두를 만진다.',
+    offSceneCast: ['민태오', '이지원'],
+    visibleMessages: [{ role: 'assistant', content: '주변에 사람들이 오가고 있었다.' }]
+  };
+  const intSim = f.host.plugin.debugWorldDynamicsSimulator({
+    recent: intimateRecent,
+    settings: { worldSimulatorChance: 100 }
+  });
+  assert.equal(intSim.triggered, false);
+  assert.equal(intSim.suppressed, 'intimate_scene_delegated');
+
+  const extPkt = f.host.plugin.debugIntimacyPacket({ recent: intimateRecent });
+  assert.ok(['민태오', '이지원'].includes(extPkt.externalReaction?.nearbyActor), 'intimacy external reaction draws nearbyActor from off-scene cast pool');
 });

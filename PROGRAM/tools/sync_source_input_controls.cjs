@@ -5,7 +5,7 @@ function sync({check=false}={}){
  const root=path.resolve(__dirname,'..');
  const source=fs.readFileSync(path.join(root,'sdk/MemorySuiteSourceInputControls.source.js'),'utf8').trimEnd();
  const start='/* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */',end='/* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */';
- for(const name of ['LIBRA.js','HAYAKU_Locator_Continuity.js','Flashback_Memory.js']){
+ for(const name of ['LIBRA.js','HAYAKU_Locator_Continuity.js','Flashback_Memory.js','GRADIA.js']){
   const file=path.join(root,'plugins',name),before=fs.readFileSync(file,'utf8');
   const a=before.indexOf(start),b=before.indexOf(end,a)+end.length;
   if(a<0&&name==='LIBRA.js'&&!check){

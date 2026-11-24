@@ -1266,6 +1266,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const bootstrapAtUrl = async urlValue => {
     const url = normalizeServerUrl(urlValue);
+    const timeoutMs = /^https:/i.test(url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
     const payload = await fetchJson(`${url}/bootstrap`, {
       method: 'GET',
       headers: {
@@ -1273,7 +1274,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         'X-Memory-Suite-Plugin-Version': pluginVersion,
         ...(await accessKeyHeaders())
       }
-    }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
+    }, 'Librarian System connection test', timeoutMs);
     return validateBootstrapPayload(payload, url);
   };
 
@@ -1438,6 +1439,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const sequence = ++bootstrapSequence;
     const previous = state.bootstrap;
     const pending = (async () => {
+      const timeoutMs = /^https:/i.test(config.url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
       const payload = await fetchJson(`${config.url}/bootstrap`, {
         method: 'GET',
         headers: {
@@ -1445,7 +1447,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           'X-Memory-Suite-Plugin-Version': pluginVersion,
           ...(await accessKeyHeaders())
         }
-      }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
+      }, 'Librarian System bootstrap', timeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
       if (intent) await assertBootstrapIntent(intent);
       const currentUrl = await configuredServerUrlNow();
@@ -1483,7 +1485,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity', '/v1/flashback/writer'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -1549,7 +1551,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
-      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
         && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
@@ -1800,6 +1801,74 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       throw error;
     }
   };
+
+  const transferChunkToBase64 = u8 => {
+    if (typeof Buffer !== 'undefined') return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64');
+    let binary = '';
+    for (let off = 0; off < u8.length; off += 0x8000) {
+      binary += String.fromCharCode.apply(null, u8.subarray(off, Math.min(u8.length, off + 0x8000)));
+    }
+    return btoa(binary);
+  };
+  const transferBytesSha256 = async bytes => {
+    if (!globalThis?.crypto?.subtle) throw new Error('memory_suite_digest_unavailable');
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  };
+  const remoteTransferSet = (space, key, value, mutateOptions = {}) => withOwnerOperation(
+    { kind: 'storage_operation', operation: 'remoteTransferSet' },
+    async () => {
+      const writerAlias = typeof flashbackWriterAlias === 'function' ? flashbackWriterAlias(key) : '';
+      if (writerAlias && mutateOptions.writerSession !== true) {
+        return await withFlashbackWriter(key, () => remoteTransferSet(space, key, value, { ...mutateOptions, writerSession: true }), { forceServer: true });
+      }
+      const fence = writerAlias && typeof usableFlashbackFence === 'function' ? await usableFlashbackFence(key) : null;
+      const rawJson = JSON.stringify(value);
+      const bytes = typeof TextEncoder !== 'undefined'
+        ? new TextEncoder().encode(rawJson)
+        : Buffer.from(rawJson, 'utf8');
+      const sha256 = await transferBytesSha256(bytes);
+      const id = operationId('set');
+      const expectedRevision = Number.isInteger(Number(mutateOptions.expectedRevision))
+        ? Math.max(0, Number(mutateOptions.expectedRevision))
+        : null;
+      const reqOpts = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope: mutateOptions.scope, storageMode: mutateOptions.storageMode };
+      const initPayload = await request('POST', '/v1/kv/transfer-set/init', {
+        namespace,
+        space,
+        key,
+        operationId: id,
+        totalBytes: bytes.length,
+        sha256,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const uploadId = String(initPayload?.result?.uploadId || '');
+      const chunkBytes = Math.max(256 * 1024, Math.min(2 * 1024 * 1024, Number(initPayload?.result?.chunkBytes || 2 * 1024 * 1024)));
+      if (!uploadId) throw new Error('memory_suite_transfer_upload_init_failed');
+      let index = 0;
+      for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+        const slice = bytes.subarray(offset, Math.min(bytes.length, offset + chunkBytes));
+        await request('POST', '/v1/kv/transfer-set/chunk', {
+          namespace,
+          uploadId,
+          index,
+          encoding: 'base64',
+          data: transferChunkToBase64(slice)
+        }, reqOpts);
+        index += 1;
+      }
+      const commitPayload = await request('POST', '/v1/kv/transfer-set/commit', {
+        namespace,
+        uploadId,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const receipt = verifyReceipt(commitPayload, id, space, key);
+      setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
+      return { ...receipt, endToEndVerified: true };
+    }
+  );
 
   const serializeMutation = async (space, key, factory) => {
     const lockKey = `${space}\n${key}`;
@@ -5622,8 +5691,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const single = async item => {
       try {
-        const receipt = await fastRetry(() => remoteMutate('set',item.space,item.key,item.value,
-          {allowPluginOnly:true,expectedRevision:item.revision}));
+        const useChunkedTransfer = item.bytes > interactiveSetValueBudgetBytes
+          && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true;
+        const receipt = await fastRetry(() => useChunkedTransfer
+          ? remoteTransferSet(item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision })
+          : remoteMutate('set', item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision }));
         if (receipt.superseded || (item.digest && receipt.digest !== item.digest)) throw fastDestinationConflict(item,'server');
         settle(item,receipt);
       } catch (error) {
@@ -6309,6 +6381,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (pending?.globalPlan && !syncJobTerminal(pending.status) && (pending.targetMode !== target || needsFreshInventory))
       await scopedCancelSyncJobImpl({},true);
     const result = await persistGlobalModeAllChats(target);
+    try {
+      const store = rawPluginStorage();
+      const rawChoice = await store?.getItem?.(resetChoiceKey);
+      if (rawChoice != null && rawChoice !== '') {
+        let parsedChoice = null;
+        try { parsedChoice = typeof rawChoice === 'string' ? JSON.parse(rawChoice) : rawChoice; } catch (_) {}
+        if (!deletedScopesForResetChoice(parsedChoice).length) {
+          await legacyRemoveVerified(store, resetChoiceKey).catch(() => {});
+          cacheQualifiedResetChoice(null);
+        }
+      }
+    } catch (_) {}
     return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:target, findings, result };
   };
   // END FAST MODE TRANSFER v1
@@ -7569,6 +7653,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const value = args[3];
       const bytes = args[0] === 'set' ? storageValueBytes(value) : 0;
       recordScopedSyncMetric(metrics, 'remote_write', { remoteWriteCount: 1, remoteWriteBytes: bytes, remoteBytes: bytes });
+      if (args[0] === 'set' && bytes > interactiveSetValueBudgetBytes && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true) {
+        return await remoteTransferSet(args[1], args[2], value, args[4]);
+      }
       return await remoteMutate(...args);
     };
     const integrityBefore = await remoteIntegrity({ allowPluginOnly: true });
@@ -11192,7 +11279,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // must never bootstrap, accept a reset or expose a retained local copy.
       const connection=state.bootstrap.value;
       let candidate;try{candidate=typeof reset==='string'?JSON.parse(reset):reset;}catch(_){}
-      if(!ownerRead||selected.mode===MODE_PLUGIN_ONLY||!resetPreferenceMatches(candidate,connection)
+      if(!ownerRead||(selected.mode===MODE_PLUGIN_ONLY&&candidate?.choice!=='restored')||!resetPreferenceMatches(candidate,connection)
         ||dataBinding.certified!==true||dataBinding.dataInstanceId!==connection.dataInstanceId
         ||dataBinding.url!==(connection.requestedUrl||connection.url)
         ||normalizeServerUrl(await getArgumentValue(urlArguments,defaultUrl))!==(connection.requestedUrl||connection.url)

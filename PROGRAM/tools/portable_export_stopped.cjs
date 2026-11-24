@@ -36,6 +36,11 @@ function publishArchiveNoReplace(unpublished,output){
  assertOutputAbsent(output);
  try{fs.linkSync(unpublished,output);}catch(e){
   if(e.code==='EEXIST')throw Error('migration_output_exists');
+  if(['EXDEV','EPERM','ENOTSUP'].includes(e.code)){
+   try{fs.copyFileSync(unpublished,output,fs.constants.COPYFILE_EXCL);return;}catch(copyError){
+    if(copyError.code==='EEXIST')throw Error('migration_output_exists');
+   }
+  }
   throw Object.assign(Error('AUTHORITY_QUARANTINED: Atomic no-overwrite archive publication is unavailable or could not be confirmed. The complete archive is retained; check the destination and use a hardlink-capable filesystem before retrying.'),{code:'AUTHORITY_QUARANTINED',statusCode:503,reason:'archive_publication_unavailable'});
  }
 }

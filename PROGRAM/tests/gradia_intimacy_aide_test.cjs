@@ -135,10 +135,55 @@ test('a profile from the host becomes a stored card that later turns follow and 
   wireModel(f, '민아는 숨을 몰아쉬었다.', { [HOST]: { intimacy_readings: [], intimacy_profiles: [profile('민아', '기승위')] } });
   await runTurn(f, '허리를 천천히 움직인다.');
   const system = systemOf(f.prompts.find(body => stageOf(body) === HOST));
-  assert.match(system, /PREFERENCE CARDS \(saved for this chat; treat as established character facts\):\n- 민아: positions liked: 정상위; disliked: 후배위\. foreplay: likes — 길고 느린 키스로 시작하길 원한다\./);
+  assert.match(system, /PREFERENCE CARDS \(saved for this chat; treat as established character facts\):\n- 민아: positions liked: 정상위; disliked: 후배위\. erogenous sensitivity — [^\n]+ foreplay: likes — 길고 느린 키스로 시작하길 원한다\./);
   const after = Object.values(storedCards(f)).flat();
   assert.equal(after.length, 1);
   assert.equal(after[0].likedPositions, '정상위');
+});
+
+test('gender-separated gauges: female shows climax only, male shows ejaculation only, and gauges carry across turns', async t => {
+  const f = await start(t, {}, true);
+  await runTurn(f, '민아의 음핵을 손가락으로 부드럽게 문지른다.');
+  const sys1 = systemOf(f.prompts.find(body => stageOf(body) === HOST));
+  assert.match(sys1, /민아:.*절정 수치\(climax\):/);
+  assert.doesNotMatch(sys1, /민아:.*사정 수치\(ejaculation\)/);
+
+  f.chat.message.push({ role: 'char', chatId: 'a1', data: '민아가 숨을 헐떡이며 허리를 떨었다.' });
+  await runTurn(f, '계속해서 민아의 음핵을 강하게 자극한다.');
+  const sys2 = systemOf(f.prompts.filter(body => stageOf(body) === HOST).at(-1));
+  assert.match(sys2, /민아:.*절정 수치\(climax\):/);
+  assert.doesNotMatch(sys2, /민아:.*사정 수치\(ejaculation\)/);
+
+  // 1-turn quiet dialogue pause (!scene.engaged, no explicit exit) preserves settled gauge with gentle decay
+  const pPause = f.host.plugin.debugIntimacyPacket({
+    characterName: '민아', personaName: '하준',
+    profileGenders: { 민아: 'female' },
+    recent: {
+      latestUser: '잠시 숨을 고르며 민아의 눈을 바라본다.',
+      previousTurnUser: '계속해서 민아의 음핵을 강하게 자극한다.',
+      visibleMessages: [
+        { role: 'assistant', content: '민아가 숨을 헐떡이며 허리를 떨었다.' },
+        { role: 'assistant', content: '잠시 숨소리가 잦아든다.' }
+      ]
+    }
+  });
+  const gPause = pPause.gauges.find(g => g.name === '민아');
+  assert.ok(gPause && gPause.climaxGauge > 0 && gPause.carriedFromSettled, 'brief pause preserves settled gauge');
+
+  // Explicit encounter exit clears persisted gauges
+  const pEnded = f.host.plugin.debugIntimacyPacket({
+    characterName: '민아', personaName: '하준',
+    profileGenders: { 민아: 'female' },
+    recent: {
+      latestUser: '옷을 챙겨 입고 카페 밖으로 걸어 나온다.',
+      visibleMessages: [
+        { role: 'assistant', content: '민아가 숨을 헐떡이며 허리를 떨었다.' },
+        { role: 'assistant', content: '둘은 옷을 정리하고 방을 나섰다.' }
+      ]
+    }
+  });
+  assert.equal(pEnded.scene.engaged, false);
+  assert.equal(pEnded.gauges.length, 0);
 });
 
 test('the enabled flag survives a settings round trip', async t => {
@@ -356,4 +401,179 @@ test('GUI intimacy panel shows external reaction and climax/ejaculation gauges a
   assert.ok(readingsEl, 'intimacy readings box exists');
   assert.match(readingsEl.textContent, /외부반응 · 도서관·서고·열람실/);
   assert.match(readingsEl.textContent, /게이지 ·/);
+});
+
+test('erogenous zoneStats backfill zero cards from lore, match natural prose, develop immediately without reroll double-count, and render gendered anatomy SVGs', async t => {
+  const f = await start(t, {}, true, {
+    [HOST]: {
+      intimacy_readings: [{ participant: '세라', phase: 'intercourse', position: '후배위', summary: '흥분이 오르는 중' }],
+      intimacy_profiles: [{
+        name: '세라',
+        gender: 'female',
+        liked_positions: '정상위',
+        disliked_positions: '',
+        sensitive_zones: '유두',
+        dull_zones: '허벅지',
+        zone_defaults: [
+          { zone: 'breasts_nipples', sensitivity: 40, development: 10 },
+          { zone: 'clitoris_vulva', sensitivity: 20, development: 5 },
+          { zone: 'inner_thighs', sensitivity: -60, development: 0 }
+        ],
+        foreplay_stance: 'likes',
+        foreplay_style: '부드러운 애무',
+        intercourse_stance: 'likes',
+        intercourse_style: '천천히 깊게',
+        afterplay_stance: 'likes',
+        afterplay_style: '포옹',
+        basis: '로어 기반 초기 민감도 및 개발도'
+      }]
+    }
+  });
+
+  const readCards = () => Object.values(storedCards(f)).flat();
+  let rerollSeq = 0;
+  const rerun = async () => {
+    const last = f.chat.message.pop();
+    rerollSeq += 1;
+    f.chat.message.push({ ...last, chatId: `${last.chatId}-r${rerollSeq}` });
+    f.prompts.length = 0;
+    await f.host.hooks.beforeRequest(f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })), 'model');
+  };
+
+  // Turn 1: host estimates profile with lore zone_defaults + gender
+  await runTurn(f, SEX_INPUT.replace(/민아/g, '세라'));
+  let cards = readCards();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].gender, 'female');
+  assert.equal(cards[0].zoneStats.breasts_nipples.sensitivity, 40);
+  assert.equal(cards[0].zoneStats.breasts_nipples.development, 10);
+  assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 20);
+  assert.equal(cards[0].zoneStats.clitoris_vulva.development, 5);
+  assert.equal(cards[0].zoneStats.inner_thighs.sensitivity, -60);
+
+  // Turn 2: natural non-adjacent Korean prose ("가슴 위에 얹었다 ... 주무르며") immediately develops breasts_nipples
+  f.chat.message.push({ role: 'char', chatId: 'a-t1', data: '세라가 작게 숨을 삼켰다.' });
+  await runTurn(f, '양손을 세라의 가슴 위에 얹었다. 살짝씩 주무르며 그녀의 성감을 올리기 시작했다.');
+  cards = readCards();
+  const devAfterTurn2 = cards[0].zoneStats.breasts_nipples.development;
+  const sensAfterTurn2 = cards[0].zoneStats.breasts_nipples.sensitivity;
+  assert.ok(devAfterTurn2 > 10, 'breasts_nipples development increased immediately after turn');
+  assert.ok(sensAfterTurn2 > 40, 'breasts_nipples sensitivity increased immediately after turn');
+
+  // Reroll of Turn 2 must NOT double-count development
+  await rerun();
+  cards = readCards();
+  assert.equal(cards[0].zoneStats.breasts_nipples.development, devAfterTurn2, 'reroll does not double-count development');
+  assert.equal(cards[0].zoneStats.breasts_nipples.sensitivity, sensAfterTurn2, 'reroll does not double-count sensitivity');
+
+  // Test automatic backfill of an existing all-zero male card lacking gender
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  const zeroMaleCard = {
+    id: 'intimacy-male-zero',
+    name: '푸딩',
+    likedPositions: '정상위',
+    dislikedPositions: '',
+    sensitiveZones: '',
+    dullZones: '',
+    foreplayStance: 'likes',
+    foreplayStyle: '적극적',
+    intercourseStance: 'likes',
+    intercourseStyle: '깊게',
+    afterplayStance: 'likes',
+    afterplayStyle: '포옹',
+    basis: '기존 카드'
+  };
+  await f.host.plugin.saveIntimacyCards?.() ; // noop if absent
+  const recBackfill = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings: { enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'], mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp' },
+    parsed: {
+      intimacyReadings: [{ participant: '세라', phase: 'foreplay', position: '', summary: '가슴이 뜨거워짐' }],
+      intimacyProfiles: [{
+        name: '세라',
+        gender: 'male',
+        zone_defaults: [{ zone: 'penis_glans', sensitivity: 55, development: 15 }],
+        basis: '남성 전환 로어'
+      }]
+    }
+  });
+  assert.ok(recBackfill, 'debugIntimacyRecord returned');
+
+  // GUI renders sleek female body + genital SVGs and editable 13-zone inputs
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const bodySvg = f.document.querySelector('[data-intimacy-body-svg="female"]');
+  const genitalSvg = f.document.querySelector('[data-intimacy-genital-svg="female"]');
+  assert.ok(bodySvg, 'female full-body SVG diagram rendered');
+  assert.ok(genitalSvg, 'female schematic genital anatomy SVG rendered');
+  assert.ok(f.document.querySelector('[data-intimacy-zone-field="ears.sensitivity"]'), 'expanded ears zone input exists');
+  assert.ok(f.document.querySelector('[data-intimacy-zone-field="cervix.sensitivity"]'), 'expanded cervix zone input exists');
+
+  const sensInput = f.document.querySelector('[data-intimacy-zone-field="clitoris_vulva.sensitivity"]');
+  assert.ok(sensInput, 'editable sensitivity input exists');
+  sensInput.value = '75';
+  sensInput.dispatchEvent(new f.document.defaultView.Event('change', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 30));
+  cards = readCards();
+  assert.equal(cards[0].zoneStats.clitoris_vulva.sensitivity, 75);
+});
+
+test('cross-sentence pronoun-bridged foreplay ("남성기 ... 그것을 감싸고 비비기 시작했다") engages foreplay and raises male gauge', async t => {
+  const f = await start(t);
+  const input = '푸딩은 허리춤을 풀고 바지를 내렸다. 아직 천에 갇힌 남성기는 존재감을 드러내고 있었다. 하연은 몸을 일으켜 포복해서 그의 하체에 다가가 그것을 감싼 천을 내렸다. "한 번 빼줄게." 그녀의 손가락이 그것을 감싸고 비비기 시작했다.';
+  const pkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '민태오',
+    personaName: '푸딩',
+    profileGenders: { 민태오: 'male' },
+    recent: {
+      latestUser: input,
+      visibleMessages: [
+        { role: 'assistant', content: '민태오와 하연이 방에 남아 있었다.' }
+      ]
+    }
+  });
+  assert.equal(pkt.scene.engaged, true, 'pronoun-bridged foreplay must engage intimacy');
+  assert.equal(pkt.scene.phase, 'foreplay', 'phase should be foreplay');
+  const maleGauge = pkt.gauges.find(g => g.gender === 'male');
+  assert.ok(maleGauge && maleGauge.ejaculationGauge > 0, 'male ejaculation gauge increases from bridged penis_shaft_scrotum stimulation');
+
+  const nonSexual = f.host.plugin.debugIntimacyPacket({
+    characterName: '민태오',
+    personaName: '푸딩',
+    profileGenders: { 민태오: 'male' },
+    recent: {
+      latestUser: '그녀의 손가락이 따뜻한 컵을 감싸고 비비기 시작했다.',
+      visibleMessages: [{ role: 'assistant', content: '카페 창가에 앉아 있었다.' }]
+    }
+  });
+  assert.equal(nonSexual.scene.engaged, false, 'non-sexual prose must not engage intimacy');
+  assert.equal(nonSexual.scene.phase, 'none');
+});
+
+test('신체 반응(body_responses)은 이름·부위가 있는 항목만 남고 알 수 없는 부위는 버린다', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.debugIntimacyLoadCards();
+  f.host.plugin.debugSetActiveScope('s', '하준');
+  const settings = {
+    enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'],
+    mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp'
+  };
+  const rec = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings,
+    parsed: {
+      intimacyReadings: [{ participant: '세라', phase: 'foreplay', position: '', summary: '가슴이 예민해 숨이 가빠짐' }],
+      intimacyBodyResponses: [
+        { name: '세라', zone: 'breasts_nipples', physical: '숨이 끊기고 유두가 단단해진다', reaction: '하준의 손목을 붙잡는다' },
+        { name: '', zone: 'breasts_nipples', physical: '이름 없음', reaction: '' },
+        { name: '세라', zone: 'made_up_zone', physical: '알 수 없는 부위', reaction: '' }
+      ]
+    }
+  });
+  const stored = rec.readings?.bodyResponses || [];
+  assert.equal(stored.length, 1, '이름·부위가 있는 항목만 남는다');
+  assert.equal(stored[0].name, '세라');
+  assert.equal(stored[0].zone, 'breasts_nipples');
+  assert.match(stored[0].physical, /숨이 끊기고/);
+  assert.match(stored[0].reaction, /손목/);
 });

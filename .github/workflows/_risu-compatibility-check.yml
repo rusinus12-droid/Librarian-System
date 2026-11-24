@@ -13,6 +13,8 @@ jobs:
   risu-compatibility-check:
     name: RisuAI Compatibility Check
     runs-on: ubuntu-latest
+    env:
+      NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
     permissions:
       contents: read
     steps:
@@ -23,6 +25,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+          cache-dependency-path: PROGRAM/build-support/package-lock.json
 
       - name: Install pinned build dependencies
         run: npm ci --prefix PROGRAM/build-support
@@ -99,6 +103,9 @@ jobs:
 
       - name: Write job summary
         if: always()
+        env:
+          UPSTREAM_REPO: ${{ steps.lock.outputs.repository }}
+          UPSTREAM_COMMIT: ${{ steps.lock.outputs.commit }}
         run: |
           node -e '
           const fs = require("node:fs");
@@ -132,6 +139,3 @@ jobs:
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
           '
-        env:
-          UPSTREAM_REPO: ${{ steps.lock.outputs.repository }}
-          UPSTREAM_COMMIT: ${{ steps.lock.outputs.commit }}

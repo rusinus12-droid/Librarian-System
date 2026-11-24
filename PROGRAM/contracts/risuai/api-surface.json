@@ -1,7 +1,7 @@
 {
   "schema": "librarian.risu-api-surface.v1",
   "repository": "kwaroran/Risuai",
-  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "commit": "996a5535fdb4629258331955982693a74ea209de",
   "sourceFiles": {
     "declarations": "src/ts/plugins/apiV3/risuai.d.ts",
     "implementation": "src/ts/plugins/apiV3/v3.svelte.ts"
@@ -73,7 +73,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -166,7 +165,6 @@
       "implementedInV3": true,
       "owners": [
         "flashback",
-        "gradia",
         "hayaku",
         "libra"
       ]
@@ -227,7 +225,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -809,27 +806,6 @@
         "retrace"
       ]
     },
-    "readImage": {
-      "name": "readImage",
-      "kind": "method",
-      "requiredArgs": 0,
-      "optionalArgs": 1,
-      "parameters": [
-        {
-          "name": "path",
-          "optional": true,
-          "type": "string"
-        }
-      ],
-      "returnType": "Promise<any>",
-      "returnsPromise": true,
-      "deprecated": false,
-      "declaredInDts": true,
-      "implementedInV3": true,
-      "owners": [
-        "lia"
-      ]
-    },
     "registerBodyIntercepter": {
       "name": "registerBodyIntercepter",
       "kind": "method",
@@ -958,7 +934,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -1020,7 +995,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra"
       ]
     },
@@ -1098,6 +1072,7 @@
       "implementedInV3": true,
       "owners": [
         "hayaku",
+        "lia",
         "libra"
       ]
     },
@@ -1225,27 +1200,6 @@
         "retrace"
       ]
     },
-    "saveAsset": {
-      "name": "saveAsset",
-      "kind": "method",
-      "requiredArgs": 1,
-      "optionalArgs": 0,
-      "parameters": [
-        {
-          "name": "data",
-          "optional": false,
-          "type": "any"
-        }
-      ],
-      "returnType": "Promise<string>",
-      "returnsPromise": true,
-      "deprecated": false,
-      "declaredInDts": true,
-      "implementedInV3": true,
-      "owners": [
-        "lia"
-      ]
-    },
     "setArg": {
       "name": "setArg",
       "kind": "method",
@@ -1272,7 +1226,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -1303,7 +1256,6 @@
         "flashback",
         "gradia",
         "hayaku",
-        "lia",
         "libra",
         "retrace"
       ]
@@ -1383,7 +1335,6 @@
       "declaredInDts": true,
       "implementedInV3": true,
       "owners": [
-        "gradia",
         "lia"
       ]
     },
@@ -2860,6 +2811,29 @@
       "declaredInDts": true,
       "implementedInV3": true
     },
+    "createInlay": {
+      "name": "createInlay",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "data",
+          "optional": false,
+          "type": "Uint8Array | string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "{ name?: string }"
+        }
+      ],
+      "returnType": "Promise<string | null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
     "loadPlugins": {
       "name": "loadPlugins",
       "kind": "method",
@@ -3213,6 +3187,7 @@
     "removePluginChannelListener": {
       "owners": [
         "flashback",
+        "gradia",
         "libra"
       ],
       "guard": "typeof api?.removePluginChannelListener === \"function\"",

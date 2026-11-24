@@ -266,11 +266,21 @@ function httpHost(value) {
 // reach it through a tunnel (tailscale serve, Cloudflare Tunnel), which arrives from loopback too,
 // so every /bootstrap needs the key, whatever its source. The key lives beside the DATA it protects.
 const REMOTE_ACCESS_KEY_FILE = 'remote-access-key.txt';
+const REMOTE_ADMIN_KEY_FILE = 'remote-admin-key.txt';
 function remoteAccessKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ACCESS_KEY_FILE); }
+function remoteAdminKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ADMIN_KEY_FILE); }
 function loadRemoteAccessKey(dataDir) {
   let key = '';
   try { key = fs.readFileSync(remoteAccessKeyPath(dataDir), 'utf8').trim(); } catch (_) {}
   if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_access_key_missing_or_invalid');
+  return key;
+}
+function loadRemoteAdminKey(dataDir) {
+  let key = '';
+  const target = remoteAdminKeyPath(dataDir);
+  if (!fs.existsSync(target)) return '';
+  try { key = fs.readFileSync(target, 'utf8').trim(); } catch (_) {}
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_admin_key_invalid');
   return key;
 }
 // A container's own heartbeat. A tool started in another container (docker compose run) shares
@@ -1074,10 +1084,32 @@ function restoreBackupOffline({ dataDir, backupDir = path.join(dataDir, 'backups
     writeRestoreJournal(dataDir, { ...journal, phase: 'INSTALLED', installedAt: new Date().toISOString() });
     const stores = {};
     for (const item of items) {
+      if (item.namespace === 'flashback') {
+        const fbDb = new DatabaseSync(item.currentPath);
+        try {
+          const hasFence = fbDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flashback_writer_fences'").get();
+          if (hasFence) fbDb.exec("UPDATE flashback_writer_fences SET owner = '', expires_at = 0;");
+        } finally {
+          fbDb.close();
+        }
+      }
       const checked = verifyBackupDatabase(item.currentPath);
       if (!checked.ok) throw new Error(`restored_store_integrity_failed:${item.namespace}:${checked.result}`);
       stores[item.namespace] = checked;
     }
+    try {
+      const resetFile = path.join(dataDir, 'config', 'namespace-reset.json');
+      let resetState = { epochs: {}, pending: null };
+      if (fs.existsSync(resetFile)) {
+        const existing = readJsonFile(resetFile, null);
+        if (existing && typeof existing === 'object' && !Array.isArray(existing)) resetState = existing;
+      }
+      const nextEpochs = { ...(resetState.epochs && typeof resetState.epochs === 'object' ? resetState.epochs : {}) };
+      for (const ns of targetNamespaces) nextEpochs[ns] = Math.max(0, Number(nextEpochs[ns] || 0) || 0) + 1;
+      resetState.epochs = nextEpochs;
+      fs.mkdirSync(path.dirname(resetFile), { recursive: true });
+      atomicWrite(resetFile, JSON.stringify(resetState));
+    } catch (_) {}
     writeRestoreJournal(dataDir, { ...journal, phase: 'VERIFIED', verifiedAt: new Date().toISOString() });
     writeRestoreJournal(dataDir, { ...journal, phase: 'COMMITTED', committedAt: new Date().toISOString() });
     for (const item of items) cleanupRestoreArtifact(item.rollbackPath);
@@ -1501,13 +1533,20 @@ function corsHeaders(request) {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'X-Content-Type-Options': 'nosniff'
   };
+  if (String(request?.headers?.['access-control-request-private-network'] || '').trim().toLowerCase() === 'true' || origin) {
+    headers['Access-Control-Allow-Private-Network'] = 'true';
+  }
   // Native RisuAI requests and local admin tools normally have no Origin. about:srcdoc
-  // plugin containers may send Origin:null. Normal remote web origins receive no CORS grant.
+  // plugin containers may send Origin:null. In remoteAccess mode HTTPS origins are permitted.
   if (origin === 'null') headers['Access-Control-Allow-Origin'] = 'null';
   else if (origin) {
     try {
       const parsed = new URL(origin);
-      if (['127.0.0.1', 'localhost', '::1'].includes(String(parsed.hostname || '').toLowerCase())) {
+      const hostname = String(parsed.hostname || '').toLowerCase();
+      const isLoopbackOrigin = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname)
+        || (request?.__memorySuiteContainer === true && hostname === 'host.docker.internal');
+      const isRemoteHttps = request?.__memorySuiteRemoteAccess === true && parsed.protocol === 'https:';
+      if (isLoopbackOrigin || isRemoteHttps) {
         headers['Access-Control-Allow-Origin'] = origin;
         headers.Vary = 'Origin';
       }
@@ -1770,7 +1809,8 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     prepare:prepareStatement,
     runTransaction:(input,body) => {
       const operationId = 'writer-fence:' + crypto.randomUUID();
-      return runRepositoryTransaction({operationId,fingerprint:sha256Text(JSON.stringify(input)),operationClass:'fence'},body);
+      const maintenance = input?.action === 'release_all' && input?.maintenance === true;
+      return runRepositoryTransaction({operationId,fingerprint:sha256Text(JSON.stringify(input)),operationClass:'fence',maintenance},body);
     }
   });
 
@@ -2244,6 +2284,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const container = options.container === true;
   const remoteAccess = container || options.remoteAccess === true;
   const remoteAccessKey = remoteAccess ? loadRemoteAccessKey(dataDir) : '';
+  const remoteAdminKey = remoteAccess ? loadRemoteAdminKey(dataDir) : '';
   const listenHost = container ? '0.0.0.0' : host;
   if (!authorityRuntime && fs.existsSync(dataDir)) preflightDataCompatibility(dataDir);
   if (!authorityRuntime) fs.mkdirSync(dataDir, { recursive: true });
@@ -2282,6 +2323,21 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   let lastSuccessfulAutoBackupAt = 0;
   let scopeCatalogDegraded = false;
   const managerPlans = new Map();
+  const transferUploadSessions = new Map();
+  const TRANSFER_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+  const TRANSFER_UPLOAD_MAX_SESSIONS = 16;
+  const TRANSFER_UPLOAD_TTL_MS = 5 * 60 * 1000;
+  const pruneTransferUploadSessions = () => {
+    const cutoff = now() - TRANSFER_UPLOAD_TTL_MS;
+    for (const [id, sess] of transferUploadSessions) {
+      if (Number(sess.updatedAt || 0) < cutoff) transferUploadSessions.delete(id);
+    }
+  };
+  const transferUploadBufferedBytes = () => {
+    let sum = 0;
+    for (const sess of transferUploadSessions.values()) sum += Number(sess.receivedBytes || 0);
+    return sum;
+  };
   const scopeCatalogPath = path.join(dataDir, 'config', 'scope-catalog.json');
   scopeCatalogDegraded = readScopeCatalogFromDisk(dataDir).degraded === true;
 
@@ -2289,7 +2345,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   // key rotation, a mode change or a restart revokes every token issued before it.
   const remoteCapabilityKey = remoteAccess
     ? crypto.createHmac('sha256', token).update('memory-suite.remote-capability.v2\0')
-      .update(crypto.randomBytes(32)).update('\0').update(remoteAccessKey).digest('base64url')
+      .update(crypto.randomBytes(32)).update('\0').update(remoteAccessKey).update('\0').update(remoteAdminKey).digest('base64url')
     : '';
   const capabilityKeyFor = () => remoteAccess ? remoteCapabilityKey : token;
   const authenticate = request => {
@@ -2554,7 +2610,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const flashbackServerRepair = require('./core/flashback-server-repair.cjs')({getRepository:()=>repositories.flashback,dataInstanceId,epochs:()=>namespaceReset.epochs(),canWrite:()=>!maintenanceMode&&!namespaceReset.active(),strongProofProvider:flashbackVectorProof});
   const ownerScopeHealth = require('./core/owner-scope-health.cjs')({getRepository:()=>repositories.libra,dataInstanceId,epochs:()=>namespaceReset.epochs(),canRead:()=>!maintenanceMode&&!namespaceReset.active()});
   const legacyOwnerScopeDelete = require('./core/owner-scope-delete.cjs')({repositories,backup:createBackup,canStart:()=>!maintenanceMode,
-    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces)});
+    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces),
+    getProtection:scopeKey=>{readScopeCatalog();if(scopeCatalogDegraded)throw Object.assign(new Error('owner_scope_delete_catalog_unverified'),{statusCode:409});return findCatalogScope('libra',scopeKey);},
+    onDeleted:scopeKey=>removeCatalogScope('libra',scopeKey)});
   const ownerScopeDelete = async (...args) => { assertLegacyAuthorityUnavailable({dataDir}); return legacyOwnerScopeDelete(...args); };
   let libraNativeArchiveRepairBinding = null;
   const getLibraNativeArchiveRepair = () => {
@@ -2712,6 +2770,10 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         }
         for (const item of plan) {
           repositories[item.namespace] = createRepository(dataDir, item.namespace, () => maintenanceMode === true);
+          if (item.namespace === 'flashback') {
+            repositories.flashback.writerFence?.releaseAll?.();
+            repositories.flashback.checkpoint?.();
+          }
           const checked = repositories[item.namespace].integrity();
           if (!checked.ok) throw new Error(`restored_store_integrity_failed:${item.namespace}:${checked.result}`);
           restored[item.namespace] = checked;
@@ -3316,8 +3378,28 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       return {records,tombstones,hasExistingData:records>0||NAMESPACES.some(ns=>catalog?.namespaces?.[ns]?.length>0)};
     }
   });
+  const authFailuresByIp = new Map();
+  const isAuthRateLimited = request => {
+    const ip = String(request?.socket?.remoteAddress || 'unknown');
+    const row = authFailuresByIp.get(ip);
+    if (!row) return false;
+    if (now() - row.windowStart > 60000) { authFailuresByIp.delete(ip); return false; }
+    return row.count >= 12;
+  };
+  const recordAuthFailure = request => {
+    const ip = String(request?.socket?.remoteAddress || 'unknown');
+    const current = now();
+    const row = authFailuresByIp.get(ip);
+    if (!row || current - row.windowStart > 60000) {
+      authFailuresByIp.set(ip, { windowStart: current, count: 1 });
+      while (authFailuresByIp.size > 256) authFailuresByIp.delete(authFailuresByIp.keys().next().value);
+    } else row.count += 1;
+  };
+
   const server = http.createServer(async (request, response) => {
     request.__memorySuiteDataInstanceId=dataInstanceId;
+    request.__memorySuiteRemoteAccess = remoteAccess;
+    request.__memorySuiteContainer = container;
     const requestStartedAt = now();
     let parsedUrl = null;
     try { parsedUrl = new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT)); } catch (_) {}
@@ -3332,6 +3414,16 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     });
     try {
       const url = parsedUrl || new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT));
+      if (!remoteAccess && !container) {
+        const rawHostHeader = String(request.headers.host || '').trim();
+        if (rawHostHeader) {
+          let parsedHost = '';
+          try { parsedHost = new URL(`http://${rawHostHeader}`).hostname.toLowerCase(); } catch (_) {}
+          if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsedHost)) {
+            return sendJson(request, response, 403, { ok: false, error: 'invalid_host_header' });
+          }
+        }
+      }
       if (authorityRuntime) authorityRuntime.assertRoute(request.method,url.pathname);
       if (request.method === 'OPTIONS') return sendJson(request, response, 204, {});
       const boundDataInstance=String(request.headers['x-memory-suite-data-instance']||'');
@@ -3362,14 +3454,34 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           autoBackupPolicy: { intervalMs: autoBackupIntervalMs, minCooldownMs: autoBackupMinCooldownMs, recentKeep: AUTO_BACKUP_RECENT_KEEP, dailyKeep: AUTO_BACKUP_DAILY_KEEP, weeklyKeep: AUTO_BACKUP_WEEKLY_KEEP },
           compute: { retired: true, enabled: false, configured: false, ready: false },
           scopeCatalogDegraded,
-          interruptedRestoreRecovery
+          interruptedRestoreRecovery: remoteAccess ? { recovered: Boolean(interruptedRestoreRecovery?.recovered) } : interruptedRestoreRecovery
         });
       }
       // Remote access mode: every /bootstrap needs this DATA's access key, the same PC included, because a
       // tunnel delivers other devices' requests from loopback as well.
-      if (url.pathname === '/bootstrap' && remoteAccess
-        && !safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
-        return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+      if (url.pathname === '/bootstrap' && remoteAccess) {
+        if (isAuthRateLimited(request)) return sendJson(request, response, 429, { ok: false, error: 'auth_rate_limited' });
+        const providedAccessKey = String(request.headers['x-memory-suite-access-key'] || '').trim();
+        const candidatePlugin = String(request.headers['x-memory-suite-plugin'] || '').trim().toLowerCase();
+        if (remoteAdminKey) {
+          if (candidatePlugin === RETRACE_PLUGIN_ID) {
+            if (!safeEqual(providedAccessKey, remoteAdminKey)) {
+              recordAuthFailure(request);
+              return sendJson(request, response, 403, { ok: false, error: 'remote_admin_key_required' });
+            }
+          } else if (candidatePlugin.startsWith(RETRACE_PEER_PREFIX) || LEGACY_STORAGE_NAMESPACES.includes(namespaceForPluginId(candidatePlugin))) {
+            if (!safeEqual(providedAccessKey, remoteAdminKey) && !safeEqual(providedAccessKey, remoteAccessKey)) {
+              recordAuthFailure(request);
+              return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+            }
+          } else if (!safeEqual(providedAccessKey, remoteAccessKey)) {
+            recordAuthFailure(request);
+            return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+          }
+        } else if (!safeEqual(providedAccessKey, remoteAccessKey)) {
+          recordAuthFailure(request);
+          return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
+        }
       }
       if (request.method === 'GET' && url.pathname === '/bootstrap') {
         let requestedReadOwners;
@@ -3422,6 +3534,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
             'libra-read-session.v1',
             'gradia-memory-read-session.v1',
             'flashback-physical-repair-protocol.v2',
+            'chunked-transfer-upload.v1',
             ...REQUIRED_CAPABILITIES
           ]).map(capability => [capability, true])),
           storageModeContract: authorityRuntime ? null : {schema:'memory-suite.storage-mode-contract.v2', operationalModes:['plugin_only','server_only'], transitionPhase:'mirror', mirrorSelectable:false, legacyMirrorReadable:true}
@@ -3437,6 +3550,8 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
       const principal = authenticate(request);
       if (!principal) {
+        if (isAuthRateLimited(request)) return sendJson(request, response, 429, { ok: false, error: 'auth_rate_limited' });
+        recordAuthFailure(request);
         // A capability token this server start did not sign (restart in remote mode, mode change, key
         // rotation): the plugin bootstraps again once instead of failing.
         const supplied = String(request.headers.authorization || '').replace(/^Bearer\s+/, '').trim();
@@ -3477,13 +3592,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const action=url.pathname.slice('/v1/manager/control/'.length);
         const readOnly=['status','backups','history'].includes(action);
         if(request.method!==(readOnly?'GET':'POST'))return sendJson(request,response,405,{ok:false,error:'method_not_allowed'});
-        const result=await managerControl.handle(action,readOnly?{}:await readBody(request));
+        const result=await managerControl.handle(action,readOnly?{}:await readBody(request,256*1024,'manager_control_body_too_large'));
         return sendJson(request,response,200,{ok:true,result});
       }
       if (url.pathname.startsWith('/v1/manager/reset/')) {
         if (!isManagerRequest(principal) && !isAdminRequest(principal)) return sendJson(request,response,403,{ok:false,error:'manager_capability_required'});
         if(request.method!=='POST')return sendJson(request,response,405,{ok:false,error:'method_not_allowed'});
-        const body=await readBody(request);
+        const body=await readBody(request,64*1024,'manager_reset_body_too_large');
         if(url.pathname.endsWith('/plan'))return sendJson(request,response,200,{ok:true,result:namespaceReset.plan(body.namespaces)});
         if(url.pathname.endsWith('/execute'))return sendJson(request,response,200,{ok:true,result:await namespaceReset.execute(body)});
         return sendJson(request,response,404,{ok:false,error:'reset_route_not_found'});
@@ -3620,7 +3735,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: repositories[namespace].integrity() });
       }
       if (request.method === 'POST' && url.pathname === '/v1/kv/get-many') {
-        const body = await readBody(request);
+        const body = await readBody(request, 512 * 1024, 'get_many_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         assertNamespaceAccess(principal, namespace, 'read');
@@ -3692,7 +3807,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request,response,200,{ok:true,result:await ownerScopeHealth(principal,body)});
       }
       if (request.method === 'POST' && ['/v1/owner/scope-delete/plan','/v1/owner/scope-delete/execute'].includes(url.pathname)) {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'owner_scope_body_too_large');
         assertNamespaceAccess(principal,'libra','write');
         if(!namespaceReset.allows('libra',request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         const result=await ownerScopeDelete(principal,url.pathname.endsWith('/plan')?'plan':'execute',body,
@@ -3705,7 +3820,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         if(!['hayaku','libra'].includes(namespace)||!hasRole(principal,'owner'))throw Object.assign(Error('owner_scope_copy_delete_forbidden'),{statusCode:403});
         assertNamespaceAccess(principal,namespace,'write');
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))throw Object.assign(Error('MEMORY_SUITE_RESET_RECONNECT_REQUIRED'),{statusCode:409});
-        const body=await readBody(request);
+        const body=await readBody(request, 256 * 1024, 'owner_scope_body_too_large');
         if(url.pathname.endsWith('/plan')){
           if(body.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==body.scopeId)throw Object.assign(Error('owner_scope_copy_delete_scope_mismatch'),{statusCode:409});
           const directServerDelete=body.directServerDelete===true;
@@ -3821,6 +3936,116 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         scheduleChangeSettledBackup();
         return sendJson(request,response,200,result);
       }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/init') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, 64 * 1024, 'transfer_upload_init_too_large');
+        const namespace = validateNamespace(body.namespace);
+        if (!namespaceReset.allows(namespace, request.headers['x-memory-suite-reset-epochs'])) return sendJson(request, response, 409, { ok: false, error: 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' });
+        assertNamespaceAccess(principal, namespace, 'write');
+        const space = validateSpace(body.space);
+        const key = validateKey(body.key);
+        assertNonSensitive(namespace, key);
+        const operationId = validateOperationId(body.operationId);
+        const totalBytes = Number(body.totalBytes);
+        if (!Number.isSafeInteger(totalBytes) || totalBytes < 1 || totalBytes > MAX_BODY_BYTES) {
+          throw Object.assign(new Error('invalid_transfer_total_bytes'), { statusCode: 400 });
+        }
+        const sha256 = String(body.sha256 || '').trim().toLowerCase();
+        if (!/^[a-f0-9]{64}$/.test(sha256)) {
+          throw Object.assign(new Error('invalid_transfer_sha256'), { statusCode: 400 });
+        }
+        const expectedRevision = body.expectedRevision == null ? null : Number(body.expectedRevision);
+        if (expectedRevision != null && (!Number.isInteger(expectedRevision) || expectedRevision < 0)) {
+          throw Object.assign(new Error('invalid_expected_revision'), { statusCode: 400 });
+        }
+        if (transferUploadSessions.size >= TRANSFER_UPLOAD_MAX_SESSIONS || transferUploadBufferedBytes() + totalBytes > MAX_BODY_BYTES * 2) {
+          return sendJson(request, response, 429, { ok: false, error: 'transfer_upload_capacity_exceeded' });
+        }
+        const uploadId = crypto.randomBytes(16).toString('hex');
+        transferUploadSessions.set(uploadId, {
+          uploadId,
+          pluginId: principal.pluginId,
+          namespace,
+          space,
+          key,
+          operationId,
+          totalBytes,
+          sha256,
+          expectedRevision,
+          chunks: [],
+          receivedBytes: 0,
+          nextIndex: 0,
+          scopeId: decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']),
+          updatedAt: now()
+        });
+        return sendJson(request, response, 200, { ok: true, result: { uploadId, chunkBytes: TRANSFER_UPLOAD_CHUNK_BYTES } });
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/chunk') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, KV_INTERACTIVE_SET_BODY_BYTES, 'transfer_upload_chunk_too_large');
+        const namespace = validateNamespace(body.namespace);
+        assertNamespaceAccess(principal, namespace, 'write');
+        const uploadId = String(body.uploadId || '').trim();
+        const session = transferUploadSessions.get(uploadId);
+        if (!session || session.pluginId !== principal.pluginId || session.namespace !== namespace) {
+          return sendJson(request, response, 404, { ok: false, error: 'transfer_upload_session_not_found' });
+        }
+        if (!Number.isInteger(body.index) || body.index !== session.nextIndex) {
+          transferUploadSessions.delete(uploadId);
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_chunk_order_invalid' });
+        }
+        const chunkBuf = body.encoding === 'base64'
+          ? Buffer.from(String(body.data || ''), 'base64')
+          : Buffer.from(String(body.data || ''), 'utf8');
+        if (!chunkBuf.length || session.receivedBytes + chunkBuf.length > session.totalBytes) {
+          transferUploadSessions.delete(uploadId);
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_size_mismatch' });
+        }
+        session.chunks.push(chunkBuf);
+        session.receivedBytes += chunkBuf.length;
+        session.nextIndex += 1;
+        session.updatedAt = now();
+        return sendJson(request, response, 200, { ok: true, result: { uploadId, index: session.nextIndex - 1, receivedBytes: session.receivedBytes } });
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/kv/transfer-set/commit') {
+        pruneTransferUploadSessions();
+        const body = await readBody(request, 64 * 1024, 'transfer_upload_commit_too_large');
+        const namespace = validateNamespace(body.namespace);
+        if (!namespaceReset.allows(namespace, request.headers['x-memory-suite-reset-epochs'])) return sendJson(request, response, 409, { ok: false, error: 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' });
+        assertNamespaceAccess(principal, namespace, 'write');
+        const uploadId = String(body.uploadId || '').trim();
+        const session = transferUploadSessions.get(uploadId);
+        if (!session || session.pluginId !== principal.pluginId || session.namespace !== namespace) {
+          return sendJson(request, response, 404, { ok: false, error: 'transfer_upload_session_not_found' });
+        }
+        transferUploadSessions.delete(uploadId);
+        if (session.receivedBytes !== session.totalBytes) {
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_incomplete' });
+        }
+        const assembled = Buffer.concat(session.chunks, session.totalBytes);
+        if (crypto.createHash('sha256').update(assembled).digest('hex') !== session.sha256) {
+          return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_digest_mismatch' });
+        }
+        let parsedValue;
+        try { parsedValue = JSON.parse(assembled.toString('utf8')); }
+        catch (_) { return sendJson(request, response, 400, { ok: false, error: 'transfer_upload_invalid_json' }); }
+        const expectedRevision = body.expectedRevision == null ? session.expectedRevision : Number(body.expectedRevision);
+        if (expectedRevision != null && (!Number.isInteger(expectedRevision) || expectedRevision < 0)) {
+          throw Object.assign(new Error('invalid_expected_revision'), { statusCode: 400 });
+        }
+        const result = repositories[namespace].mutate({
+          kind: 'set',
+          space: session.space,
+          key: session.key,
+          value: parsedValue,
+          operationId: session.operationId,
+          expectedRevision,
+          fence: body.fence,
+          scopeId: decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']) || session.scopeId
+        });
+        scheduleChangeSettledBackup();
+        return sendJson(request, response, 200, result);
+      }
       if (request.method === 'POST' && (url.pathname === '/v1/kv/set' || url.pathname === '/v1/kv/remove')) {
         const kind = url.pathname.endsWith('/set') ? 'set' : 'remove';
         const body = await readBody(
@@ -3854,7 +4079,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 403, { ok: false, error: 'retrace_manager_capability_required' });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scopes/index') {
-        const body = await readBody(request);
+        const body = await readBody(request, 512 * 1024, 'manager_scopes_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         return sendJson(request, response, 200, { ok: true, result: replaceNamespaceScopeIndex(namespace, body.scopes || []) });
@@ -3863,7 +4088,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: { schema: 'memory-suite.scope-catalog.v1', generatedAt: now(), scopes: globalScopeCatalog() } });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-pin') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'manager_scope_pin_body_too_large');
         const namespace = validateNamespace(body.namespace);
         if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
         const scopeId = String(body.scopeId || '').trim().slice(0, 320);
@@ -3871,11 +4096,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: setCatalogScopePinned(namespace, scopeId, body.pinned === true) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-delete/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'manager_scope_delete_body_too_large');
         return sendJson(request, response, 200, createScopeDeletePlan(body));
       }
       if (request.method === 'POST' && url.pathname === '/v1/manager/scope-delete/execute') {
-        const body = await readBody(request);
+        const body = await readBody(request, 256 * 1024, 'manager_scope_delete_body_too_large');
         return sendJson(request, response, 200, executeScopeDeletePlan(body));
       }
 
@@ -3884,7 +4109,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/create') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = await createBackup(body.kind === 'auto' ? 'auto' : 'manual', body.label || '');
         return sendJson(request, response, 200, result);
       }
@@ -3892,15 +4117,15 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: listBackups().map(item => ({ ...item, path: undefined })) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/scrub') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: scrubBackups(body.backupId || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/export') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: exportBackupArchiveById(body.backupId || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/import') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: importBackupArchiveFromPath(body.archivePath || '') });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/libra/native-archive-repair/plan') {
@@ -3912,14 +4137,14 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 200, { ok: true, result: getLibraNativeArchiveRepair().execute(body) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'online' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/integrity') {
         return sendJson(request, response, 200, { ok: true, result: integrityAll() });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = await restoreBackup(body.backupId, body.namespaces || NAMESPACES);
         return sendJson(request, response, 200, result);
       }
@@ -4002,6 +4227,10 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     });
   };
 
+  server.headersTimeout = 15000;
+  server.requestTimeout = 120000;
+  server.keepAliveTimeout = 5000;
+
   server.on('close', () => {
     if (closing) return;
     closing = true;
@@ -4067,6 +4296,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
 
 function createRecoverySafeModeServer(options = {}, startupError = null) {
   const host = options.host || DEFAULT_HOST;
+  const container = options.container === true || process.env.LIBRARIAN_CONTAINER === '1';
+  const remoteMode = container || options.remoteAccess === true;
+  const listenHost = container ? '0.0.0.0' : host;
   const port = Number(options.port ?? DEFAULT_PORT);
   const dataDir = path.resolve(options.dataDir || path.resolve(__dirname, '..', '..', 'DATA'));
   assertLegacyAuthorityUnavailable({dataDir});
@@ -4085,6 +4317,8 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
   };
   const server = http.createServer(async (request, response) => {
     request.__memorySuiteDataInstanceId=dataInstanceId;
+    request.__memorySuiteContainer = container;
+    request.__memorySuiteRemoteAccess = remoteMode;
     try {
       const url = new URL(request.url || '/', loopbackUrl(host, port || DEFAULT_PORT));
       const boundDataInstance=String(request.headers['x-memory-suite-data-instance']||'');
@@ -4099,8 +4333,8 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
           protocol: { major: PROTOCOL_MAJOR, minor: PROTOCOL_MINOR },
           recoveryMode: true,
           status: 'recovery_only',
-          startupError: sanitizeDiagnosticText(startupError?.message || startupError || 'database_startup_failed', 600),
-          interruptedRestoreRecovery,
+          startupError: remoteMode ? 'database_startup_failed' : sanitizeDiagnosticText(startupError?.message || startupError || 'database_startup_failed', 600),
+          interruptedRestoreRecovery: remoteMode ? { recovered: Boolean(interruptedRestoreRecovery?.recovered) } : interruptedRestoreRecovery,
           backups: listBackupsFromDisk(backupDir).length
         });
       }
@@ -4109,18 +4343,18 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
         return sendJson(request, response, 200, { ok: true, result: listBackupsFromDisk(backupDir).map(item => ({ ...item, path: undefined })) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/backups/scrub') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const rows = body.backupId ? [findBackupById(backupDir, body.backupId)].filter(Boolean) : listBackupsFromDisk(backupDir);
         if (body.backupId && !rows.length) throw Object.assign(new Error('backup_not_found'), { statusCode: 404 });
         const results = rows.map(item => scrubBackupFromDisk(item, NAMESPACES));
         return sendJson(request, response, 200, { ok: true, result: { schema: 'memory-suite.backup-scrub-report.v1', checkedAt: new Date().toISOString(), ok: results.every(item => item.ok), results } });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'recovery-safe-mode' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
-        const body = await readBody(request);
+        const body = await readBody(request, 64 * 1024, 'admin_body_too_large');
         const result = restoreBackupOffline({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, reason: 'recovery-safe-mode' });
         return sendJson(request, response, 200, result);
       }
@@ -4133,6 +4367,9 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
       return sendJson(request, response, Number(error?.statusCode || 500), { ok: false, error: String(error?.message || error), ...(error?.checks ? { checks: error.checks } : {}) });
     }
   });
+  server.headersTimeout = 15000;
+  server.requestTimeout = 120000;
+  server.keepAliveTimeout = 5000;
   return {
     server, token, dataDir, backupDir, recoveryMode: true, startupError,
     listBackups: () => listBackupsFromDisk(backupDir),
@@ -4140,7 +4377,7 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
     restoreBackup: (backupId, namespaces) => restoreBackupOffline({ dataDir, backupDir, backupId, namespaces, reason: 'recovery-safe-mode' }),
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, host, () => { server.off('error', reject); resolve(server.address()); });
+      server.listen(port, listenHost, () => { server.off('error', reject); resolve(server.address()); });
     }),
     close: () => new Promise(resolve => {
       if (closing || !server.listening) return resolve();

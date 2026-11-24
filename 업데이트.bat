@@ -13,7 +13,7 @@ echo ========================================
 echo.
 echo  1. 이 폴더의 서버를 최신 버전으로 업데이트
 echo  2. 다른 기존 설치 폴더를 업데이트
-echo     ^(0.3.51에서 처음 업데이트할 때도 이 메뉴 사용^)
+echo     ^(v1.0.0 이상 기존 설치 폴더를 지정해 업데이트할 때 사용^)
 echo  3. 미완료 업데이트 복구
 echo  4. 내려받은 업데이트 ZIP을 직접 선택해서 업데이트 ^(인터넷 불필요^)
 echo  0. 종료
@@ -33,6 +33,13 @@ goto :MENU
 :CURRENT_UPDATE
 call "%~dp0UPDATER\_find_node.bat"
 if errorlevel 1 goto :NODE_ERROR
+if not exist "%~dp0UPDATER\updater.cjs" (
+  echo.
+  echo [오류] UPDATER\updater.cjs 파일이 없습니다.
+  echo 메뉴 4^(직접 선택한 업데이트 ZIP^) 또는 전체 릴리즈 압축 파일로 UPDATER 폴더를 먼저 복구하세요.
+  set "ERR=2"
+  goto :USER_DONE
+)
 "%NODE_EXE%" --no-warnings "%~dp0UPDATER\updater.cjs" --user-update
 set "ERR=%ERRORLEVEL%"
 goto :USER_DONE

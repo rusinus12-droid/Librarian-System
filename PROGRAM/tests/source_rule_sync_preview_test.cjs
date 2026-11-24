@@ -11,12 +11,12 @@ const { JSDOM } = require('jsdom');
 const root = path.join(__dirname, '..');
 const SDK = fs.readFileSync(path.join(root, 'sdk/MemorySuiteSourceInput.libra.source.js'), 'utf8') + '\n'
   + fs.readFileSync(path.join(root, 'sdk/MemorySuiteSourceInputControls.source.js'), 'utf8');
-const IDS = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+const IDS = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory', gradia: 'serial_gradation_agents_for_rp' };
 const RULES = { version: 1, ignoredTags: ['img', 'lb-xnai', 'status-window', 'thoughts'], unwrapTags: ['wrap'], sourceTags: [], controls: ['html-comment', 'lbdata'] };
 
 // One window holds all three owners' policies (their stored rules are keyed by owner) and a
 // host channel bus that, like RisuAI, stamps the sender on every message.
-const world = ({ saved = {}, present = ['libra', 'hayaku', 'flashback'], busy = {} } = {}) => {
+const world = ({ saved = {}, present = ['libra', 'hayaku', 'flashback', 'gradia'], busy = {} } = {}) => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' });
   const w = dom.window;
   w.eval(SDK);
@@ -67,10 +67,10 @@ test('apply copies normalized rules into each peer through its own policy', asyn
   const f = world({ saved: { libra: RULES } });
   await f.start();
   const results = await f.syncs.libra.applyToPeers(RULES);
-  assert.deepEqual(JSON.parse(JSON.stringify(results)), { hayaku: { ok: true }, flashback: { ok: true } });
-  for (const owner of ['hayaku', 'flashback']) assert.deepEqual(f.store[owner].sourceRules.ignoredTags, RULES.ignoredTags, owner);
+  assert.deepEqual(JSON.parse(JSON.stringify(results)), { hayaku: { ok: true }, flashback: { ok: true }, gradia: { ok: true } });
+  for (const owner of ['hayaku', 'flashback', 'gradia']) assert.deepEqual(f.store[owner].sourceRules.ignoredTags, RULES.ignoredTags, owner);
   const states = await f.syncs.hayaku.compare();
-  assert.deepEqual([states.libra.state, states.flashback.state], ['same', 'same']);
+  assert.deepEqual([states.libra.state, states.flashback.state, states.gradia.state], ['same', 'same', 'same']);
   f.dom.window.close();
 });
 
@@ -206,5 +206,25 @@ test('an open editor shows rules applied from another plugin, and an edited draf
   await wait(() => find('[data-source-remote-changed]').hidden === false);
   find('[data-source-remote-load]').click();
   await wait(() => values().includes('from-libra') && !values().includes('another-draft'));
+  f.dom.window.close();
+});
+
+test('gradia participates as a full bidirectional peer and syncs literal delimiter rules like ◆CG…◆', async () => {
+  const cgRules = { ...RULES, ignoredTags: [...RULES.ignoredTags, { open: '◆CG', close: '◆' }] };
+  const f = world({ saved: { libra: cgRules }, present: ['libra', 'hayaku', 'flashback', 'gradia'] });
+  await f.start();
+  const states = await f.syncs.libra.compare();
+  assert.equal(states.gradia.state, 'different');
+  const applied = await f.syncs.libra.applyToPeers(cgRules, ['gradia']);
+  assert.equal(applied.gradia.ok, true);
+  assert.deepEqual(
+    f.store.gradia.sourceRules.ignoredTags.find(entry => typeof entry === 'object'),
+    { open: '◆CG', close: '◆' }
+  );
+  // And gradia can propagate a rule update back to libra
+  const updated = { ...cgRules, ignoredTags: [...cgRules.ignoredTags, 'status'] };
+  const back = await f.syncs.gradia.applyToPeers(updated, ['libra']);
+  assert.equal(back.libra.ok, true);
+  assert.ok(f.store.libra.sourceRules.ignoredTags.includes('status'));
   f.dom.window.close();
 });

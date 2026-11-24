@@ -69,8 +69,8 @@ async function conflictingClaims(onReady){
   let reviewed=await f.api.debugLoadContinuityStateForResponse();assert.equal(reviewed.head.world.find(r=>r.name==='도서관').state.doorStatus,'열렸다');
   catalog=await f.api.listMemoryReviews();assert.equal(catalog.rows.find(r=>r.id===first.id).risk,'high');assert.equal(catalog.rows.find(r=>r.id===first.id).status,'confirmed');
   f.values.set('__memory_suite_internal_scope_routes_v1__:libra',JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',pluginId:'LIBRA',legacyGlobalModeImported:true,entries:{[catalog.scopeKey]:{scopeId:catalog.scopeKey,scopeKey:catalog.scopeKey,mode:'plugin_only',origin:'user_explicit',updatedAt:1}}}));
-  const graph=await f.api.getMemoryGraphProjectionPage({limit:50,nodeLimit:2048});
-  assert.equal(graph.units.filter(r=>r.family==='micro').length,1);assert.ok(graph.units.filter(r=>r.family==='micro').every(r=>!r.text.includes('닫혔다')),'rejection removes only that Micro claim from recall');
+  const recall=await f.api.executeStateMemoryQuery({semantic:false,queryInput:{queryText:'도서관 문이 열렸다 닫혔다'},consumerPolicy:{maxCharacters:8000,maxUnits:24}});
+  assert.equal(recall.bundle.items.filter(r=>r.family==='micro').length,1);assert.ok(recall.bundle.items.filter(r=>r.family==='micro').every(r=>!r.text.includes('닫혔다')),'rejection removes only that Micro claim from recall');
   await decide([first.id],'rejected');reviewed=await f.api.debugLoadContinuityStateForResponse();assert.equal(Object.hasOwn(reviewed.head.world.find(r=>r.name==='도서관').state,'doorStatus'),false);
   await decide([second.id],'automatic');reviewed=await f.api.debugLoadContinuityStateForResponse();assert.equal(reviewed.head.world.find(r=>r.name==='도서관').state.doorStatus,'닫혔다');
   const savedPolicy=[...f.values].find(([k])=>k.includes(':memory-review:v1:')),setter=f.host.pluginStorage.setItem;
@@ -91,6 +91,26 @@ async function conflictingClaims(onReady){
   }finally{await manual.close();}
   if(onReady)await onReady(f);
   assert.equal(calls,modelCalls,'review decisions never call a provider');
+  const rawBeforePacket=chat.message[11].data;
+  chat.message[11].data+='\n<!-- HAYAKU_STATE_PACKET_START {"meta":{"schema":"hayaku_packet_v1"}} HAYAKU_STATE_PACKET_END -->';
+  const packetCatalog=await f.api.listMemoryReviews();
+  assert.equal(packetCatalog.rows.length,2,'text-equivalent packet keeps both rows reviewable');
+  assert.equal(packetCatalog.unavailable.length,0,'text-equivalent packet does not mark turn unavailable');
+  chat.message[11].data=rawBeforePacket;
+  const openReviewBtn=f.doc.querySelector('[data-micro-state-review="6"]')||[...f.doc.querySelectorAll('button')].find(b=>b.textContent.trim()==='자동 반영 검토'||b.getAttribute('aria-label')==='기억·상태 자동 반영 검토');
+  assert.ok(openReviewBtn,'review dialog trigger button exists');
+  openReviewBtn.click();
+  await until(()=>f.doc.querySelector('[data-libra-panel-dialog] [data-memory-review-id]'),'review dialog rows',10000);
+  const topCloseBtn=f.doc.querySelector('[data-libra-panel-dialog] .state-dialog__head .dialog__actions button');
+  assert.ok(topCloseBtn&&topCloseBtn.textContent.trim()==='닫기','close button renders in top-right dialog head');
+  assert.equal(f.doc.querySelector('[data-libra-panel-dialog] .dialog > .dialog__actions'),null,'no bottom dialog footer close row');
+  const firstCheck=f.doc.querySelector('[data-libra-panel-dialog] [data-memory-review-id] input');
+  firstCheck.checked=true;firstCheck.dispatchEvent(new f.dom.window.Event('change',{bubbles:true}));
+  f.doc.querySelector('[data-libra-panel-dialog] [data-review-decision="confirmed"]').click();
+  await until(()=>/영구 승인했습니다/.test(f.doc.querySelector('[data-libra-panel-dialog]')?.textContent||''),'confirm status',10000);
+  await decide([first.id,second.id],'automatic');
+  topCloseBtn.click();
+  assert.equal(f.doc.querySelector('[data-libra-panel-dialog]'),null,'top-right close button closes dialog');
   chat.message[11].data+=' 수정된 원문.';assert.equal((await f.api.listMemoryReviews()).rows.length,0,'edited raw source cannot be auto approved');
   console.log('PASS same-turn conflict matches final projection and real GUI; edited source refused');
  }finally{await f?.close();}

@@ -19,17 +19,17 @@ RisuAI Compatibility Gate
 ## 2. 지원 RisuAI 기준점 (Upstream Source-of-Truth & Pin)
 
 - **Upstream Repository**: `kwaroran/Risuai`
-- **Pinned Commit**: `ea61945f9038e0189807d075f55f4e66ab7e98bf`
+- **Pinned Commit**: `996a5535fdb4629258331955982693a74ea209de`
 - **Lock File**: `PROGRAM/contracts/risuai/upstream-lock.json` (`schema: "librarian.risu-upstream-lock.v1"`)
 
 PR/릴리즈 게이트는 매 실행마다 RisuAI `main` 최신 커밋을 자동 추적하지 않는다. 외부 저장소의 임의 변경으로 인해 Librarian PR 결과가 비결정적으로 흔들리는 것을 방지하기 위해, 반드시 `upstream-lock.json`에 고정된 커밋과 추적 대상 5개 파일의 SHA-256 해시를 기준으로 검증한다.
 
 ### 추적 대상 Upstream 파일 (Tracked Files)
 
-| Upstream 경로 | SHA-256 (`ea61945f...`) | 계약 역할 |
+| Upstream 경로 | SHA-256 (`996a5535...`) | 계약 역할 |
 |---|---|---|
-| `src/ts/plugins/apiV3/risuai.d.ts` | `ddca6852e1e655afe9ed229ad95f0bb3c815b01ee75f089db779401d7cc43a3a` | RisuAI Plugin API v3 표면(시그니처, 인자, 반환 타입, deprecated 여부) |
-| `src/ts/plugins/apiV3/v3.svelte.ts` | `9e4df9238965375dbccebf6eb8fb06117b1d9f866c20e4b40c263b55a4a0a40b` | `makeRisuaiAPIV3` 런타임 구현 및 19개 핵심 semantic fingerprint |
+| `src/ts/plugins/apiV3/risuai.d.ts` | `83c3253d02d273afbfb3e4a82d2fa5cc5d12666f9830393c096d4bc93edfe633` | RisuAI Plugin API v3 표면(시그니처, 인자, 반환 타입, deprecated 여부) |
+| `src/ts/plugins/apiV3/v3.svelte.ts` | `0498c6cca453930850fececbfa7b84a0b149d0a4ab8fc836e34f39762fe6cc31` | `makeRisuaiAPIV3` 런타임 구현 및 19개 핵심 semantic fingerprint |
 | `src/ts/plugins/plugins.svelte.ts` | `c9441c23f84d53e0c4304fa8d96afe11d8883ff29579fedb65ad7956d97b5461` | v3 헤더 파서(`//@name`, `//@api`, `//@version`, `//@arg`, `//@allowed-ipc`), 라이프사이클 |
 | `src/ts/plugins/pluginSafeClass.ts` | `9a8de9a6565aacf5bf60d1fa2ea0ddb6d70b63323f60e71e466ce3823cdcdbf9` | `SafeLocalStorage`(문자열 전용) 및 `SafeLocalPluginStorage`(JSON 직렬화 localforage) |
 | `src/ts/process/pluginStorageStore.ts` | `55d1394f04dfa0c2dc76fd2b0d5981be3fd728ba05cf3912b29ba6aeacb154ca` | `PluginStorageStore` JSON 직렬화, 예약 키(`_coldpluginIndex`, `_coldplugin`) 보호 |
@@ -62,19 +62,19 @@ PROGRAM/contracts/risuai/
 ├── plugin-loader-contract.json  # 6개 플러그인 헤더, //@arg 스키마, //@version 500B 제한
 ├── storage-contract.json        # pluginStorage / safeLocalStorage / getLocalPluginStorage 의미론
 ├── ipc-contract.json            # 양방향 //@allowed-ipc 토폴로지 (20개 허용 쌍)
-└── replay/                      # H06 시나리오 (Product-Path 1개 + Host-Contract 3개 + Contract-Fixture 4개)
+└── replay/                      # H06 시나리오 (Product-Path 4개 + Host-Contract 1개 + Contract-Fixture 3개)
     ├── [Host-Contract] H06-01.json  # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체 (RisuAI host chat listener)
     ├── [Product-Path]  H06-02.json  # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지 (실제 Librarian Native branch capability)
-    ├── [Contract-Fix]  H06-03.json  # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성 fixture 검증
-    ├── [Host-Contract] H06-04.json  # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증 (RisuAI host pluginStorage manifest)
+    ├── [Product-Path]  H06-03.json  # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성 (실제 Librarian storage bridge + IPC)
+    ├── [Product-Path]  H06-04.json  # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증 (실제 Librarian server + SDK bridge)
     ├── [Contract-Fix]  H06-05.json  # 엔티티 분리 후 원문 수정 시 stale basis 교정 중단 fixture 검증
-    ├── [Host-Contract] H06-06.json  # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱 (RisuAI runLLMModel & chat index fence)
+    ├── [Product-Path]  H06-06.json  # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱 (실제 Librarian scopeView + host chat index fence)
     ├── [Contract-Fix]  H06-07.json  # 미완료 작업 재로드 및 GC 중 내구성 핀(pin) 보호 fixture 검증
     └── [Contract-Fix]  H06-08.json  # 통합 읽기 세션(Unified Authority Snapshot) 및 stale 주입 펜싱 fixture 검증
 ```
 
 > [!NOTE]
-> H06는 실제 제품 경로(`librarian_product_path_replay`: H06-02), 호스트 계약 재생(`host_contract_replay`: H06-01, 04, 06), 그리고 인조 픽스처 불변조건 검증(`contract_fixture_validation`: H06-03, 05, 07, 08)의 3단계로 엄격히 구분하여 보고서에 기록하며, 실제 제품 경로가 아닌 항목을 과장하여 표현하지 않는다.
+> H06는 실제 제품 경로(`librarian_product_path_replay`: H06-02, 03, 04, 06), 호스트 계약 재생(`host_contract_replay`: H06-01), 그리고 인조 픽스처 불변조건 검증(`contract_fixture_validation`: H06-05, 07, 08)의 3단계로 엄격히 구분하여 보고서에 기록하며, 실제 제품 경로가 아닌 항목을 과장하여 표현하지 않는다.
 
 ### Semantic Drift 정책
 

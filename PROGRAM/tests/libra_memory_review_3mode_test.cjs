@@ -26,8 +26,8 @@ const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
    p=await f.r.api.listMemoryReviews();assert.equal(p.rows.find(r=>r.id===close.id).status,'rejected');assert.equal(p.rows.find(r=>r.id===close.id).risk,'high');
    assert.equal((await f.r.api.setMemoryReviewDecision({scopeKey:p.scopeKey,previewDigest:p.previewDigest,ids:[close.id],status:'confirmed'})).ok,true);assert.equal(await current(),'닫혔다');
    assert.equal((await f.r.api.rebuildWorldManagerState()).ok,true);assert.equal(await current(),'닫혔다');
-   if(mode!=='mirror'){const graph=await f.r.api.getMemoryGraphProjectionPage({nodeLimit:2048});assert.equal(graph.units.filter(r=>r.family==='micro').length,2);}
-   else await assert.rejects(f.r.api.getMemoryGraphProjectionPage({nodeLimit:2048}),/READ_ROUTE_MODE_UNAVAILABLE/,'the retired mirror graph reader remains unsupported');
+   const recall=await f.r.api.executeStateMemoryQuery({semantic:false,queryInput:{queryText:'도서관 문이 열렸다 닫혔다'},consumerPolicy:{maxCharacters:8000,maxUnits:24}});
+   assert.equal(recall.bundle.items.filter(r=>r.family==='micro').length,2);
    assert.equal(f.control.calls.length,calls,'no review provider calls');console.log('PASS '+mode+' review auto application, CAS stale refusal, rejection/confirmation, rebuild and graph recall');
   }finally{await fx.cleanup();}
  }

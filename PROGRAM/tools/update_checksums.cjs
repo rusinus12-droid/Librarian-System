@@ -10,7 +10,7 @@ const distributionMode = process.argv.includes('--distribution');
 const unknownArgs = process.argv.slice(2).filter(arg => arg !== '--distribution');
 if (unknownArgs.length) throw new Error(`unknown_checksum_argument:${unknownArgs.join(',')}`);
 const files = [];
-const forbiddenDistributionData = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
+const forbiddenDistributionData = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-(?:access|admin)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // `.claude` holds local agent sessions and their git worktrees, never release content.
 const CHECKSUM_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', '.development', '.claude']);
 const CHECKSUM_GENERATED_DIRECTORIES = new Set(['evidence', 'checkpoints', 'backups']);

@@ -4,8 +4,8 @@
   "provenanceScope": "readable plugin byte streams packaged by the Source profile",
   "note": "Historical Source ZIP rows are immutable byte records. Historical owner/version digest conflicts remain declared anomalies. A current release cannot reuse an anomalous owner/version or add a different byte stream under a historical unambiguous version. Unchanged bytes may retain an owner/version only when the historical version resolves to one digest. Minified release-profile plugin hashes belong to build reports and extracted release-artifact evidence, not this Source catalog.",
   "historicalReleaseCoverage": {
-    "archives": 7,
-    "pluginRows": 35
+    "archives": 14,
+    "pluginRows": 77
   },
   "releases": [
     {
@@ -232,6 +232,272 @@
       },
       "note": "Current local developer Source build input for the LIBRA same-batch thread-link repair. This row describes unreleased source bytes; it is not a public release or an update to historical Source ZIP records. Structural identity cannot fully prove model semantic intent when aliases are reused for distinct promises.",
       "archiveSha256": "e5597de55681cdbafd537ba5746e6297e3e95066d1b7aa71ea8c7e5b7537e1ee"
+    },
+    {
+      "packageVersion": "1.0.0",
+      "artifact": "Librarian-System-1.0.0-Source.zip",
+      "gitTag": "v1.0.0",
+      "gitCommit": "1302aba85dabc198e12eef43464d0915ce35ecd4",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.0",
+          "sha256": "670ab689df90546fe7b8de295aa1fd066a25fb213721be76658474096abc4849",
+          "bytes": 3796136
+        },
+        "hayaku": {
+          "version": "4.0.0",
+          "sha256": "88ff2279b546e1a48651ca70602d82637b7987ad550645a28289d9922debd168",
+          "bytes": 4253189
+        },
+        "libra": {
+          "version": "3.0.0",
+          "sha256": "1840ddae396654d1c01c88a780eb08d4f5f068cd407ad10f805a44ecd659c1eb",
+          "bytes": 6512631
+        },
+        "lia": {
+          "version": "0.30.0",
+          "sha256": "2c8555f1853d817395434a0c6b744a7848789401b96ccc88694537a195bd0710",
+          "bytes": 800005
+        },
+        "retrace": {
+          "version": "2.0.0",
+          "sha256": "741d361f347f49aeaf839dce7aba6eb8378e0ab3300fa013c0a5ca4a098cb3ba",
+          "bytes": 1235533
+        },
+        "gradia": {
+          "version": "1.0.0",
+          "sha256": "9ad8179ada89cfa78264c347070113a420fe750bde47602c57d3a5401c2dbcfd",
+          "bytes": 3089950
+        }
+      }
+    },
+    {
+      "packageVersion": "1.1.0",
+      "artifact": "Librarian-System-1.1.0-Source.zip",
+      "gitTag": "v1.1.0",
+      "gitCommit": "1fab9d53b54adcd1db66dd3d882b3a5cc2978731",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.1",
+          "sha256": "cc76fabb103a84083fb98fd5c4f13fe71c20818b7d4f4e102923d71cf5d5da43",
+          "bytes": 3808137
+        },
+        "hayaku": {
+          "version": "4.0.2",
+          "sha256": "90369dc1bd259aaf2a633d8945a4b8d6f5cf4c9f1ad607504cb7798f7db61ebb",
+          "bytes": 4271274
+        },
+        "libra": {
+          "version": "3.0.1",
+          "sha256": "9098ea56587d1d2ed1cef089e9a8895ccca63661fe56290b2fb6c936b5bd9fea",
+          "bytes": 6524632
+        },
+        "lia": {
+          "version": "0.30.0",
+          "sha256": "2c8555f1853d817395434a0c6b744a7848789401b96ccc88694537a195bd0710",
+          "bytes": 800005
+        },
+        "retrace": {
+          "version": "2.0.1",
+          "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
+          "bytes": 1247248
+        },
+        "gradia": {
+          "version": "1.0.1",
+          "sha256": "036c0d4fb4378671620ea0620d9ef69b7baa5e03508e501865b6d4254bd3b3f1",
+          "bytes": 3093234
+        }
+      }
+    },
+    {
+      "packageVersion": "1.1.1",
+      "artifact": "Librarian-System-1.1.1-Source.zip",
+      "gitTag": "v1.1.1",
+      "gitCommit": "795050cc6ab20410db323847501900be6864e46b",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.1",
+          "sha256": "cc76fabb103a84083fb98fd5c4f13fe71c20818b7d4f4e102923d71cf5d5da43",
+          "bytes": 3808137
+        },
+        "hayaku": {
+          "version": "4.0.2",
+          "sha256": "90369dc1bd259aaf2a633d8945a4b8d6f5cf4c9f1ad607504cb7798f7db61ebb",
+          "bytes": 4271274
+        },
+        "libra": {
+          "version": "3.0.2",
+          "sha256": "f9adb44a0888604183f6f8a95acab26ee93d2a501937966d3ef08e65382d7dae",
+          "bytes": 6540989
+        },
+        "lia": {
+          "version": "0.30.1",
+          "sha256": "ef46e2a0d625b6de150376e52f8d13fea8d06dbab9c54846729fc3c133fbd8a5",
+          "bytes": 799627
+        },
+        "retrace": {
+          "version": "2.0.1",
+          "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
+          "bytes": 1247248
+        },
+        "gradia": {
+          "version": "1.0.2",
+          "sha256": "54b6fc62da7573a7cbed7aadd9b97679b59cb70e16c84248c6085d29c8270880",
+          "bytes": 3093863
+        }
+      }
+    },
+    {
+      "packageVersion": "1.1.2",
+      "artifact": "Librarian-System-1.1.2-Source.zip",
+      "gitTag": "v1.1.2",
+      "gitCommit": "1cc9a923f98cd3b92e83507550cc8e000ea53b17",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.2",
+          "sha256": "a87efece470f40b524b661e94661cd4aac77c7faf367d84211465503bff094a8",
+          "bytes": 3829035
+        },
+        "hayaku": {
+          "version": "4.0.3",
+          "sha256": "3aee0ef602d1ee0514a608b2a1fc27d4678da539c215d9986d90ac1056fabee2",
+          "bytes": 4297727
+        },
+        "libra": {
+          "version": "3.0.3",
+          "sha256": "f4f2938b862e8ac0d1d28d7995cd6f57005ab1a4e9e58b84515f2e54f3e9bbea",
+          "bytes": 6628799
+        },
+        "lia": {
+          "version": "0.30.1",
+          "sha256": "ef46e2a0d625b6de150376e52f8d13fea8d06dbab9c54846729fc3c133fbd8a5",
+          "bytes": 799627
+        },
+        "retrace": {
+          "version": "2.0.1",
+          "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
+          "bytes": 1247248
+        },
+        "gradia": {
+          "version": "1.0.2",
+          "sha256": "54b6fc62da7573a7cbed7aadd9b97679b59cb70e16c84248c6085d29c8270880",
+          "bytes": 3093863
+        }
+      }
+    },
+    {
+      "packageVersion": "1.2.0",
+      "artifact": "Librarian-System-1.2.0-Source.zip",
+      "gitTag": "v1.2.0",
+      "gitCommit": "5effdc49c5b51f2a95bad9eb7d2295bb34a46797",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.4",
+          "sha256": "7a252ecec58753a76677776539c385774b5cb9c38078410f5ae4df2768395fd9",
+          "bytes": 3829915
+        },
+        "hayaku": {
+          "version": "4.0.5",
+          "sha256": "73a1307258934b7020dae022ad120c56185a2eb9410fa6335c38d20057887a25",
+          "bytes": 4297900
+        },
+        "libra": {
+          "version": "3.0.6",
+          "sha256": "0577fed5fb0d442ddebb75ece8e75b92382001cf71cc87e8347c62f763b106d4",
+          "bytes": 6680396
+        },
+        "lia": {
+          "version": "0.30.3",
+          "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
+          "bytes": 801200
+        },
+        "retrace": {
+          "version": "2.0.2",
+          "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
+          "bytes": 1247248
+        },
+        "gradia": {
+          "version": "1.1.2",
+          "sha256": "7dac4e40d6c46b539cdc8d7bcf37aea80596de9bab14b04c997e2607899c6e5d",
+          "bytes": 3232599
+        }
+      }
+    },
+    {
+      "packageVersion": "1.3.0",
+      "artifact": "Librarian-System-1.3.0-Source.zip",
+      "gitTag": "v1.3.0",
+      "gitCommit": "e5086a732f21445682bce758e0a04877410b3b9c",
+      "plugins": {
+        "flashback": {
+          "version": "2.0.5",
+          "sha256": "9b482dd9cd6092cc97af5e3c37a6db1826cf011fe311d195045d6c6b2a6ad84c",
+          "bytes": 3848825
+        },
+        "hayaku": {
+          "version": "4.0.6",
+          "sha256": "b055b5b2b92a1284a94841c6cb27de46f2f4982cae5ade54a7176d0e3cb806cd",
+          "bytes": 4269665
+        },
+        "libra": {
+          "version": "3.0.7",
+          "sha256": "fe234051218569398dbd6a68cb8ee68e6d24706e37634f3fe4482a389d5c8fb1",
+          "bytes": 6705252
+        },
+        "lia": {
+          "version": "0.30.3",
+          "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
+          "bytes": 801200
+        },
+        "retrace": {
+          "version": "2.0.2",
+          "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
+          "bytes": 1247248
+        },
+        "gradia": {
+          "version": "1.1.3",
+          "sha256": "2cad6e00ca6c755a9e31155dacfc3b9d4d0b37d51f442e40b5de9d67ea70bcd3",
+          "bytes": 3330166
+        }
+      }
+    },
+    {
+      "packageVersion": "1.4.0",
+      "artifact": "Librarian-System-1.4.0-Source.zip",
+      "gitTag": "v1.4.0",
+      "gitCommit": "bc5aadebc9d9fda3efd523b43333947698c156dc",
+      "plugins": {
+        "flashback": {
+          "version": "2.1.0",
+          "sha256": "5674bd51c609713fcb9d16e9dc68bb30237eae78999395578c574eb124678efa",
+          "bytes": 3971820
+        },
+        "hayaku": {
+          "version": "4.1.0",
+          "sha256": "3390565c01d8ebc2a686a5cf027dcf0185c7d9c2aa7573d5d114eba2db62c376",
+          "bytes": 4411664
+        },
+        "libra": {
+          "version": "3.1.0",
+          "sha256": "ebde561f9e26abb13bd337a72f74d5ff4fb8ac1d030a1e6555228a1b2aafee51",
+          "bytes": 6933473
+        },
+        "lia": {
+          "version": "0.31.0",
+          "sha256": "ff0bcb0e5e507da26a98c0cc15a5c03f854be84c02fd7ff38afa52e741d996c0",
+          "bytes": 860798
+        },
+        "retrace": {
+          "version": "2.1.0",
+          "sha256": "0d74abadd4c2ba10918f4ad4e4d70b56cff4769dee8160108ca32ffdc7714fcb",
+          "bytes": 1316778
+        },
+        "gradia": {
+          "version": "1.2.0",
+          "sha256": "cf7f8f3c4b8c6a6570a6dfd3cd8d18b312866347e051c0a904306e3b3734514c",
+          "bytes": 3793583
+        }
+      }
     }
   ],
   "historicalAnomalies": [
@@ -284,34 +550,34 @@
     "artifact": "Librarian-System-1.4.0-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "2.1.1",
-        "sha256": "5599ce80086740ef38bdfb6d73db317abbe953d13ef1bb85497009e95e484358",
-        "bytes": 3980781
+        "version": "2.2.0",
+        "sha256": "d105f6efc724855e47ac375d11b48e2ce8beab5589bf1a79346011be7a492022",
+        "bytes": 4064042
       },
       "hayaku": {
-        "version": "4.1.1",
-        "sha256": "fdce227444e198af808cf6160573a10632be5dcbdb4d5e803f0c75788bec941e",
-        "bytes": 4425388
+        "version": "4.2.0",
+        "sha256": "95f8674019c5307892382e776b721ef6b1ecbd8cd20d39f2756d0a9c0538bd89",
+        "bytes": 4520283
       },
       "libra": {
-        "version": "3.1.1",
-        "sha256": "bcd47c2a7eb79254ffe3fe9c69f577ede503671454efbea64aea4ef09628737d",
-        "bytes": 6980940
+        "version": "3.2.0",
+        "sha256": "363c8ae58bc6a4b7f97cda768ed51d82e7fc4a9db4ee65396f382263fdee83cb",
+        "bytes": 7144180
       },
       "lia": {
-        "version": "0.31.0",
-        "sha256": "ff0bcb0e5e507da26a98c0cc15a5c03f854be84c02fd7ff38afa52e741d996c0",
-        "bytes": 860798
+        "version": "0.32.0",
+        "sha256": "4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088",
+        "bytes": 889115
       },
       "retrace": {
-        "version": "2.1.0",
-        "sha256": "0d74abadd4c2ba10918f4ad4e4d70b56cff4769dee8160108ca32ffdc7714fcb",
-        "bytes": 1316778
+        "version": "2.2.0",
+        "sha256": "61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c",
+        "bytes": 1353774
       },
       "gradia": {
-        "version": "1.2.0",
-        "sha256": "cf7f8f3c4b8c6a6570a6dfd3cd8d18b312866347e051c0a904306e3b3734514c",
-        "bytes": 3793583
+        "version": "1.3.0",
+        "sha256": "664e2fb0fbe9588527c5335d41210930df4bb5ebbe01605af1ba38a5ef264d9a",
+        "bytes": 4782611
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

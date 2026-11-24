@@ -88,9 +88,10 @@ test('an AIDE patch with thinking gets room to think before its patch text', asy
 test('reasoning analysis reserves retry room from the preset ceiling once', async () => {
   const { stageOutputTokenBudget } = await internals();
   const preset = { provider: 'ollama', model: 'deepseek-v4.1-flash:1017-cloud', reasoning_preset: 'ollama', reasoning_effort: 'low', max_tokens: 16384 };
-  const budget = stageOutputTokenBudget({}, 'aide_world', 'analysis phase', preset);
-  assert.equal(budget, 13108);
-  assert.ok(preset.max_tokens > budget);
+  assert.equal(stageOutputTokenBudget({}, 'aide_world', 'analysis phase', preset), 11468);
+  const wideCtxBudget = stageOutputTokenBudget({}, 'aide_world', 'analysis phase', { ...preset, extra_body_json: JSON.stringify({ options: { num_ctx: 65536 } }) });
+  assert.equal(wideCtxBudget, 13108);
+  assert.ok(preset.max_tokens > wideCtxBudget);
 });
 
 test('saved draft budget presets supply the mode-specific cap and low effort to native Ollama', async () => {
@@ -128,5 +129,6 @@ test('saved draft budget presets supply the mode-specific cap and low effort to 
     }
   }
   await plugin.saveProviderPreset('other', { provider: 'ollama', model: 'qwen3:8b', max_tokens: 6000 });
-  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other' }, 'shadow_act').preset.max_tokens, 6000);
+  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other' }, 'shadow_act').preset.max_tokens, 32768);
+  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other', draftBudgetPreset: 'manual' }, 'shadow_act').preset.max_tokens, 6000);
 });

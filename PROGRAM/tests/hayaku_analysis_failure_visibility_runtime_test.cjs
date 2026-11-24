@@ -150,6 +150,82 @@ const coldTurns = async r => (await r.hayaku.recovery.status({ includeDebts: tru
     assert.equal(page.querySelector('[data-status-panel="status"]').hidden, true);
     assert.ok(page.querySelector('[data-status-panel="log"] #hayakuViewerOperationLog'), 'the running log is its second view');
   } finally { await r.dispose(); gui.dom.window.close(); }
+
+  // Missing-turn recovery (누락 복구) resolves stale afterRequest + native_repair_evidence_verification debt failures,
+  // even across empty or stale sourceRevisionIds, removes them from topbar 실패 count, and lets the user clear history.
+  const t38Messages = chat(2);
+  let t38Stores;
+  r = await open({ messages: t38Messages, turns: 2 });
+  try {
+    const scope = await r.hayaku._test.currentChatScope();
+    const logKey = `hayaku.v2.analysis_failure_log.${scope.key}`;
+    const seededEntries = [
+      {
+        scopeKey: scope.key, turn: 2, at: 1000, kind: 'incremental_recovery', flow: 'after_request_current_packet',
+        code: 'HAYAKU_AFTER_REQUEST_RECOVERY_FAILED', reason: 'native_repair_envelope_top_level_invalid',
+        cause: [{ code: 'Incomplete JSON array.', count: 1 }], physicalCalls: 1, count: 1,
+        sourceRevisionId: '', operationId: 'afterreq-t38',
+        diagnosisCode: 'RESPONSE_FORMAT', title: 'AI 응답 형식 오류',
+        detail: 'AI 응답이 올바른 JSON이 아니어서 내용을 읽지 못했습니다.',
+        nextStep: '다시 시도해 주세요. 반복되면 보조 모델을 바꿔 보세요.',
+        failureKey: 't38-afterreq-1'
+      },
+      ...[2000, 2001, 2002].map((at, idx) => ({
+        scopeKey: scope.key, turn: 2, at, kind: 'incremental_recovery', flow: 'native_repair_evidence_verification',
+        code: 'HAYAKU_RECOVERY_EVIDENCE_UNVERIFIED', reason: 'recovery_evidence_live_pair_unavailable',
+        cause: [], physicalCalls: 0, count: 1,
+        sourceRevisionId: 'stale-old-prefix', operationId: `sweep-${idx}`,
+        diagnosisCode: 'EVIDENCE_STALE_PAIR', title: '이전 응답 리비전 불일치',
+        detail: '실패 당시 턴과 현재 대화 원문이 달라 이전 복구 대상을 건너뛰었습니다.',
+        nextStep: '현재 대화를 기준으로 누락 복구를 실행하면 새 원문으로 복구됩니다.',
+        failureKey: `t38-verify-${idx}`
+      }))
+    ];
+    await r.pluginStorage.setItem(logKey, JSON.stringify({
+      schema: 'hayaku.analysis_failure_log.v1',
+      scopeKey: scope.key,
+      entries: seededEntries
+    }));
+    r.setLlmResponder(async call => ({ type: 'success', result: JSON.stringify(envelope(sentence(turnOf(call)))) }));
+    const repaired = await r.hayaku.recovery.repairSelected({ targetTurns: [1, 2], scopeKey: scope.key });
+    assert.equal(repaired.ok, true, JSON.stringify(repaired));
+    // Re-seed pre-resolution failure log (simulating existing chat already recovered before this plugin update).
+    await r.pluginStorage.setItem(logKey, JSON.stringify({
+      schema: 'hayaku.analysis_failure_log.v1',
+      scopeKey: scope.key,
+      entries: seededEntries
+    }));
+    t38Stores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage };
+  } finally { await r.dispose(); }
+
+  r = await createHayakuRuntime({ messages: t38Messages, autoRepair: false, afterRequestAutoRepair: false, ...t38Stores });
+  const t38Gui = createColdStartGuiDocument();
+  Object.assign(r.context, { document: t38Gui.document, window: t38Gui.dom.window, Event: t38Gui.dom.window.Event, HTMLElement: t38Gui.dom.window.HTMLElement, MutationObserver: t38Gui.dom.window.MutationObserver });
+  try {
+    assert.equal(await r.hayaku.showUi(), true);
+    const root = t38Gui.document.getElementById('hayaku-ledger-viewer-root');
+    await waitFor(() => root.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy'), 't38 viewer ready');
+    const report = await r.hayaku.recovery.failedAnalysis.report();
+    assert.equal(report.rows.length, 4);
+    assert.equal(report.rows.every(row => row.resolved === true && row.resolutionDurable === true), true, 'all 4 T38 rows durably resolved via active recovery record');
+    assert.equal(report.rows.filter(row => row.flow === 'native_repair_evidence_verification').every(row => row.flowLabel === 'Recovery Journal 원문 대조 점검'), true);
+    assert.equal(r.llmCalls.length, 0, 'reconstructing resolved failures spends 0 LLM calls');
+
+    await waitFor(() => /정상 작동/.test(root.querySelector('#hayakuViewerHealth').textContent), 'header health shows 정상 작동');
+    assert.doesNotMatch(root.querySelector('#hayakuViewerHealth').textContent, /실패 \d+/);
+
+    root.querySelector('#hayakuViewerHealth').click();
+    await waitFor(() => root.querySelector('#hayakuViewerPanelLogs [data-resolved-failures-fold]'), 'resolved failures fold rendered');
+    const fold = root.querySelector('#hayakuViewerPanelLogs [data-resolved-failures-fold]');
+    assert.equal(fold.querySelectorAll('[data-failure-row="2"]').length, 4);
+    assert.doesNotMatch(root.querySelector('#hayakuViewerPanelLogs [data-status-log-list]').textContent, /미복구/);
+    assert.match(fold.textContent, /이후 복구됨/);
+
+    fold.querySelector('[data-clear-resolved-failures]').click();
+    await waitFor(() => !root.querySelector('#hayakuViewerPanelLogs [data-resolved-failures-fold]'), 'resolved failures fold cleared');
+    assert.equal((await r.hayaku.recovery.failedAnalysis.report()).rows.length, 0);
+  } finally { await r.dispose(); t38Gui.dom.window.close(); }
+
   console.log('PASS a misplaced brace keeps the turn, single-turn Cold Start retries, and failures stay visible');
   process.exit(0);
 })().catch(error => { console.error(error); process.exit(1); });

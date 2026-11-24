@@ -13,8 +13,8 @@ const createRisuChannelHost = require('./fixtures/risu_plugin_channel_host.cjs')
 const root = path.join(__dirname, '..');
 const SDK = fs.readFileSync(path.join(root, 'sdk/MemorySuiteSourceInput.libra.source.js'), 'utf8') + '\n'
   + fs.readFileSync(path.join(root, 'sdk/MemorySuiteSourceInputControls.source.js'), 'utf8');
-const FILES = { libra: 'LIBRA.js', hayaku: 'HAYAKU_Locator_Continuity.js', flashback: 'Flashback_Memory.js' };
-const IDS = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+const FILES = { libra: 'LIBRA.js', hayaku: 'HAYAKU_Locator_Continuity.js', flashback: 'Flashback_Memory.js', gradia: 'GRADIA.js' };
+const IDS = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory', gradia: 'serial_gradation_agents_for_rp' };
 const header = file => fs.readFileSync(path.join(root, 'plugins', file), 'utf8').split('\n').slice(0, 40).filter(l => l.startsWith('//@')).join('\n');
 
 test('every memory plugin reaches the other two through the real RisuAI channel rules', async () => {

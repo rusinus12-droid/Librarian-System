@@ -11,7 +11,15 @@ const {createFlashback}=require('./fixtures/embedding_contract_harness.cjs');
 const {createHayakuRuntime,createStore,createValidPacket,hiddenPacketMessage,waitFor}=require('./fixtures/hayaku_runtime_harness.cjs');
 const root=path.resolve(__dirname,'..'),owners=['libra','hayaku','flashback'],sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const messages=()=>[{role:'user',messageId:'u1',content:'The archivist opens the library.'},{role:'assistant',messageId:'a1',content:'The brass key is on the table.'},{role:'user',messageId:'u2',content:'Continue the scene.'}];
-function instrument(source){const ast=acorn.parse(source,{ecmaVersion:'latest'}),found=[];function walk(n){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression'&&source.slice(n.start,n.end).includes('shadow_act_disabled'))found.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);}walk(ast);const n=found.sort((a,b)=>a.end-a.start-(b.end-b.start))[0];assert(n);return source.slice(0,n.start)+'(globalThis.__testPipeline='+source.slice(n.start,n.end)+')'+source.slice(n.end);}
+const instrumentedCache=new Map();
+function instrument(source){
+ const key=`${source.length}:${source.slice(0,64)}:${source.slice(-64)}`;
+ if(instrumentedCache.has(key))return instrumentedCache.get(key);
+ const ast=acorn.parse(source,{ecmaVersion:'latest'}),found=[];function walk(n){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression'&&source.slice(n.start,n.end).includes('shadow_act_disabled'))found.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);}walk(ast);const n=found.sort((a,b)=>a.end-a.start-(b.end-b.start))[0];assert(n);
+ const out=source.slice(0,n.start)+'(globalThis.__testPipeline='+source.slice(n.start,n.end)+')'+source.slice(n.end);
+ instrumentedCache.set(key,out);
+ return out;
+}
 async function fixture(t,{request=messages,hostMessages=messages,ownersRunning=true,hayakuFinalDelivery=true,hayakuSelectError='',hayakuContent='HAYAKU_MEMORY_SENTINEL recalled by HAYAKU',memoryBudgetChars=240000,delayedOwner=null}={}){
  const fb=await createFlashback(root,{waitForLoaded:true});t.after(()=>fb.cleanup());const cfg=fb.api._test.normalizeSettings({embeddingEnabled:false,embeddingAutoProcess:false,autoEpisodeIndex:false});await fb.api.saveSettings(cfg);const fScope=await fb.api.resolveCurrentScope(false),characterId=fScope.canonicalCharacterId,chatId=fScope.canonicalChatId;
  const sources=[1,2].map(n=>({sourceType:'response',sourceId:'producer-'+n,sourceHash:'producer-hash-'+n,origin:'live_chat',role:'turn_pair',turnIndex:n,pairIndex:n,text:'User:\nWhere is the key '+n+'?\n\n---\n\nAssistant:\nFLASHBACK_MEMORY_SENTINEL_'+n+' The brass key is tied to the blue ribbon.'}));

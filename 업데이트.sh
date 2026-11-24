@@ -12,7 +12,7 @@ printf '%s\n' '========================================'
 printf '%s\n' ''
 printf '%s\n' '  1. 이 폴더의 서버를 최신 버전으로 업데이트'
 printf '%s\n' '  2. 다른 기존 설치 폴더를 업데이트'
-printf '%s\n' '     (0.3.51에서 처음 업데이트할 때도 이 메뉴 사용)'
+printf '%s\n' '     (v1.0.0 이상 기존 설치 폴더를 지정해 업데이트할 때 사용)'
 printf '%s\n' '  3. 미완료 업데이트 복구'
 printf '%s\n' '  4. 내려받은 업데이트 ZIP을 직접 선택해서 업데이트 (인터넷 불필요)'
 printf '%s\n' '  0. 종료'
@@ -22,8 +22,13 @@ IFS= read -r choice || exit 1
 
 case "$choice" in
   1)
-    sh "$ROOT/UPDATER/launch.sh" --user-update
-    status=$?
+    if [ ! -f "$ROOT/UPDATER/updater.cjs" ]; then
+      printf '%s\n' '[오류] UPDATER/updater.cjs 파일이 없습니다. 전체 릴리즈 압축 파일로 UPDATER 폴더를 먼저 복구하세요.' >&2
+      status=2
+    else
+      sh "$ROOT/UPDATER/launch.sh" --user-update
+      status=$?
+    fi
     ;;
   2)
     printf '%s\n' ''

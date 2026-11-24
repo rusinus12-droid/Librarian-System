@@ -21,8 +21,9 @@ for(const writingMode of ['novel','rp'])for(const heavy of [false,true])test(wri
  for(const [mode,enabled] of [['off',true],['soft',true],['explicit',true],['explicit',false]]){
   const f=await pipelineFixture({heavy,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:String(enabled)}});
   const messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'},{role:'assistant',content:'HOST_PREFILL_SENTINEL'}],original=JSON.stringify(messages);
-  const out=await f.run(messages);assert.equal(f.prompts.length,heavy?8:4);assert.equal(JSON.stringify(messages),original);
-  for(const body of f.prompts){
+  const out=await f.run(messages);assert.equal(f.prompts.length,heavy?9:4);assert.equal(JSON.stringify(messages),original);
+  // The standalone PREVIOUS stage runs first in heavyweight and carries no NSFW guidance block.
+  for(const body of (heavy?f.prompts.slice(1):f.prompts)){
    assert.equal((JSON.stringify(body).match(/NSFW GUIDANCE —/g)||[]).length,mode!=='off'&&enabled?1:0);
   }
   assert.ok(out.some(m=>m.content?.includes(draft)),'the real draft reached the final handoff');
@@ -35,7 +36,7 @@ for(const writingMode of ['novel','rp'])for(const heavy of [false,true])test(wri
   const f=await pipelineFixture({heavy,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:'true',nsfw_inject_final_request:'true'}});
   const messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'},{role:'assistant',content:'HOST_PREFILL_SENTINEL'}];
   const out=await f.run(messages);
-  assert.equal(f.prompts.length,heavy?8:4);
+  assert.equal(f.prompts.length,heavy?9:4);
   assert.deepEqual(JSON.parse(JSON.stringify(out.filter(m=>m.role==='assistant'))),messages.filter(m=>m.role==='assistant'));
   const outStr=JSON.stringify(out);
   assert.ok(outStr.includes(`NSFW GUIDANCE — ${mode.toUpperCase()}:`), `final request must include ${mode} guidance`);
@@ -142,9 +143,11 @@ for(const heavy of [false,true])test((heavy?'heavy':'light')+' pipeline sends th
  const ids=['physical-conflict','quiet-interior-beat','consequential-decision','information-exchange'];
  const choices=Object.fromEntries(stages.map((stage,i)=>[stage,[ids[i]]]));
  const f=await pipelineFixture({heavy,runtime:{skill_stage_selections:choices,skill_router_enabled:'false'}});
- const out=await f.run();assert.equal(f.prompts.length,heavy?8:4);
- for(let i=0;i<f.prompts.length;i++){
-  const text=JSON.stringify(f.prompts[i]),stage=stages[Math.floor(i/(heavy?2:1))];
+ const out=await f.run();assert.equal(f.prompts.length,heavy?9:4);
+ // The standalone PREVIOUS call is not a skill stage; the stage index maps over the pipeline calls only.
+ const pipelinePrompts=heavy?f.prompts.slice(1):f.prompts;
+ for(let i=0;i<pipelinePrompts.length;i++){
+  const text=JSON.stringify(pipelinePrompts[i]),stage=stages[Math.floor(i/(heavy?2:1))];
   assert.ok(text.includes('BASE QUALITY FLOOR'));assert.ok(text.includes('[COMPILED SKILL — '+choices[stage][0]+']'),stage);
   assert.equal(text.split('BASE QUALITY FLOOR:').length-1,1);assert.equal(text.split('[COMPILED SKILL — '+choices[stage][0]+']').length-1,1);
   for(const id of ids.filter(id=>id!==choices[stage][0]))assert.ok(!text.includes('[COMPILED SKILL — '+id+']'));

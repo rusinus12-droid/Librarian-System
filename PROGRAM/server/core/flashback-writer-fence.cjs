@@ -52,6 +52,16 @@ function createFlashbackWriterFence(database, namespace, transaction = null) {
       || !row.owner || fence.owner !== row.owner) fail('FLASHBACK_WRITER_FENCED');
     if (row.expires_at <= Date.now()) fail('FLASHBACK_WRITER_EXPIRED');
   };
-  return { command, verify };
+  const releaseAll = () => {
+    const body = () => {
+      database.prepare("UPDATE flashback_writer_fences SET owner = '', expires_at = 0").run();
+      return true;
+    };
+    if (transaction?.runTransaction) return transaction.runTransaction({ action: 'release_all', maintenance: true }, body);
+    database.exec('BEGIN IMMEDIATE');
+    try { const result = body(); database.exec('COMMIT'); return result; }
+    catch (error) { try { database.exec('ROLLBACK'); } catch (_) {} throw error; }
+  };
+  return { command, verify, releaseAll };
 }
 module.exports = { createFlashbackWriterFence, aliasForKey };

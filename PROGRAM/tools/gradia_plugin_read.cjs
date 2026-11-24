@@ -56,11 +56,11 @@ module.exports = function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0)) || (message.recallBudgetChars !== undefined && !(Number.isSafeInteger(message.recallBudgetChars) && message.recallBudgetChars >= 1 && message.recallBudgetChars <= 160000))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0, ...(message.recallBudgetChars ? { recallBudgetChars: message.recallBudgetChars } : {}) });
         result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
@@ -185,9 +185,9 @@ module.exports = function createGradiaPluginRead(options) {
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
+  const select = async (owner, scope, queryText, signal, extraHints = {}) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner), ...(extraHints && typeof extraHints === 'object' ? extraHints : {}) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
         || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');

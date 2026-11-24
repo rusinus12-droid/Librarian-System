@@ -8,7 +8,10 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 const canonical=value=>JSON.stringify(value,function(k,v){return v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((o,k)=>(o[k]=v[k],o),{}):v});
 const messages=()=>[{role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},{role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},{role:'user',messageId:'turn-u-103',content:'Continue the scene.'}];
 function nativeView(recent){return {...Object.fromEntries(['latestUser','latestAssistantRaw','latestAssistant','terminalVisibleScene','previousTurnUser','previousTurnAssistant','previousTurnText','earlierTurnsText','completeTurnsText','sceneAnchor','previousResponseEvidence','text','visibleText'].map(key=>[key,recent[key]||''])),visibleMessages:recent.visibleMessages.map(m=>({role:m.role,content:m.content}))};}
+const instrumentCache=new Map();
 function instrument(source,options={}){
+ const key=`${Boolean(options.server)}:${source.length}:${source.slice(0,64)}:${source.slice(-64)}`;
+ if(instrumentCache.has(key))return instrumentCache.get(key);
  const ast=acorn.parse(source,{ecmaVersion:'latest'}), functions=[],calls=[];
  function walk(n,parent){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression')functions.push({node:n,parent});if(n.type==='CallExpression')calls.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(x=>walk(x,n));else if(v&&typeof v==='object')walk(v,n)}walk(ast);
  const find=marker=>functions.filter(f=>source.slice(f.node.start,f.node.end).includes(marker)).sort((a,b)=>(a.node.end-a.node.start)-(b.node.end-b.node.start))[0];
@@ -18,6 +21,7 @@ function instrument(source,options={}){
  if(options.server){}
  else for(const n of calls)if(n.callee.type==='Identifier'&&n.callee.name==='createLibServerReadConsumer')edits.push({start:n.start,end:n.end,value:'('+require('node:fs').readFileSync(require('node:path').join(__dirname,'fixtures/lib-read-consumer-double.source.js'),'utf8').split('\n').slice(1).join('\n').trim()+')(globalThis.__testDependencies)'});
  for(const e of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,e.start)+e.value+source.slice(e.end);
+ instrumentCache.set(key,source);
  return source;
 }
 async function fixture(opts={}){
@@ -37,7 +41,10 @@ async function fixture(opts={}){
  if(!opts.deferInitialRequest) await host.hooks.beforeRequest(messages(),'model');
  const settings={...host.plugin.getRuntime().settings,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:true,enableWorldAide:true,enablePlotAide:true,multiPipelineMode:opts.mode||'lightweight',mode:'normal',failureMode:'hard',loreActivationMode:'off',debugLog:true,stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic-not-a-credential',model:'offline-fake',context_window:128000,max_tokens:4096,timeout_ms:1000,stream:false}},skillRouterEnabled:false};
  const certifyInput=input=>{
- const stages=['shadow_act',...(settings.aideStageOrder||[])].filter(stage=>stage==='shadow_act'||stage==='aide_character'&&settings.enableCharacterAide&&settings.mode!=='lite'||stage==='aide_world'&&settings.enableWorldAide&&settings.mode!=='lite'||stage==='aide_plot'&&settings.enablePlotAide);
+ // The AIDE roster and its order are fixed (7c5e4dcf: normalizeAideStageOrder() now returns
+ // DEFAULT_AIDE_STAGE_ORDER regardless of the stored setting), so the certified read set uses
+ // that same fixed order instead of the user's aideStageOrder.
+ const stages=['shadow_act','aide_character','aide_world','aide_plot'].filter(stage=>stage==='shadow_act'||stage==='aide_character'&&settings.enableCharacterAide&&settings.mode!=='lite'||stage==='aide_world'&&settings.enableWorldAide&&settings.mode!=='lite'||stage==='aide_plot'&&settings.enablePlotAide);
  const selections=stages.map(stage=>{const recent=host.buildRecent(input,{...settings,turnWindow:settings.stageOptions?.[stage]?.turn_window||settings.turnWindow});return {stage,turns:recent.turnEligibility.selected,viewSHA256:sha(canonical(nativeView(recent)))};});
  const refs=[...new Map(selections.flatMap(s=>s.turns.flatMap(t=>[t.user,...t.assistants,t.boundary])).map(r=>[JSON.stringify(r),r])).values()];
  const current=input.at(-1);let hash=2166136261;for(let i=0;i<current.content.length;i++){hash^=current.content.charCodeAt(i);hash=Math.imul(hash,16777619)}hash^=31;hash=Math.imul(hash,16777619);
@@ -49,17 +56,22 @@ async function fixture(opts={}){
 
  return {host,settings,prompts,content,deps,boundary,certifyInput,get recalls(){return recalls},get checks(){return checks},setBoundary:p=>Object.assign(boundary,p),run:(input=messages())=>host.pipeline(input,'model',settings)};
 }
+module.exports={fixture,messages,instrument};
+if(require.main===module){
 test('actual pipeline opens one evidence read and places bounded evidence into all four prompt payloads with lore off',async()=>{
  const f=await fixture();const r=await f.run();assert.equal(r.ok,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,4);for(const body of f.prompts){const s=JSON.stringify(body);assert.ok(s.includes('EVIDENCE_SENTINEL'));assert.ok(!s.includes('</GRADIA_EXTERNAL_EVIDENCE>'));}assert.match(r.injection,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/);assert.equal(f.host.getCalls(),0);r.closeEvidence();
 });
-module.exports={fixture,messages,instrument};
 
 for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true])test(`anatomical feasibility remains mandatory with evidence (${mode}, Bianca ${bianca})`,async()=>{
  const f=await fixture({mode});Object.assign(f.settings,{biancaInject:bianca,nsfwMode:'off',nsfwGuidanceEnabled:false});
  const r=await f.run();try{
   assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(f.recalls,1);
-  assert.equal(f.prompts.length,mode==='heavyweight'?8:4,'no additional analysis or provider call');
-  for(const [index,body] of f.prompts.entries()){
+  // The standalone PREVIOUS stage runs before SHADOW in heavyweight mode (previous_stage_mode
+  // 'auto'), so it adds one provider call that is not a pipeline stage and carries no
+  // anatomical contract of its own.
+  assert.equal(f.prompts.length,mode==='heavyweight'?9:4,'no additional analysis or provider call');
+  const pipelinePrompts=mode==='heavyweight'?f.prompts.slice(1):f.prompts;
+  for(const [index,body] of pipelinePrompts.entries()){
    const text=JSON.stringify(body);
    assert.equal(text.split('ANATOMICAL AND SPATIAL FEASIBILITY — HARD CONDITION:').length-1,1,'call '+index);
    assert.ok(text.includes('a second hand cannot enter while the first remains there'));
@@ -72,7 +84,7 @@ for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true]
 });
 
 test('heavyweight uses eight actual analysis/draft/patch calls sharing one immutable packet',async()=>{
- const f=await fixture({mode:'heavyweight'});const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,8);assert.equal(f.recalls,1);for(const p of f.prompts)assert.equal(JSON.stringify(p).split('EVIDENCE_SENTINEL').length-1,1);r.closeEvidence();
+ const f=await fixture({mode:'heavyweight'});const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,9,'eight pipeline calls plus the standalone PREVIOUS call');assert.equal(f.recalls,1);for(const p of f.prompts)assert.equal(JSON.stringify(p).split('EVIDENCE_SENTINEL').length-1,1);r.closeEvidence();
 });
 test('post-model currentness loss cannot escape through soft last-safe fallback',async()=>{
  let valid=true;const f=await fixture({current:()=>valid,onModel:n=>{if(n===2)valid=false}});f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,2);const state=JSON.stringify(f.host.plugin.getRuntime());assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));assert.ok(!state.includes('EVIDENCE_SENTINEL'));
@@ -549,26 +561,26 @@ test('plugin mode: a stalled stage request times out and is resent once by the t
  assert.ok(!JSON.stringify(f.prompts).includes('EVIDENCE_SENTINEL'));
 });
 test('a truncated SHADOW analysis recovers once before drafting and retains response diagnostics',async()=>{
- const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n===1?content.slice(0,40):content});
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n===2?content.slice(0,40):content});
  const r=await f.run();
  try {
   assert.equal(r.ok,true);
   assert.equal(f.recalls,1);
-  assert.equal(f.prompts.length,9);
-  assert.ok(compactAnalysisBody(f.prompts[1]));
-  assert.equal(JSON.stringify(f.prompts[1]).split('EVIDENCE_SENTINEL').length-1,1);
+  assert.equal(f.prompts.length,10);
+  assert.ok(compactAnalysisBody(f.prompts[2]));
+  assert.equal(JSON.stringify(f.prompts[2]).split('EVIDENCE_SENTINEL').length-1,1);
  } finally { r.closeEvidence(); }
- const [initial,retry]=f.host.plugin.getRuntime().callTelemetry.attempts;
+ const [initial,retry]=f.host.plugin.getRuntime().callTelemetry.attempts.filter(row=>row.stage==='shadow_act');
  assert.equal(initial.finishReason,'stop');
  assert.equal(initial.outputChars,40);
  assert.ok(initial.incompleteReason);
  assert.equal(retry.retryKind,'analysis_compact');
 });
 test('a failed SHADOW recovery stops before draft and AIDE dispatch',async()=>{
- const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n<=2?content.slice(0,40):content});
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n>=2&&n<=3?content.slice(0,40):content});
  f.settings.failureMode='soft';
  await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_DRAFT_UNAVAILABLE');
- assert.equal(f.prompts.length,2);
+ assert.equal(f.prompts.length,3);
 });
 test('a truncated lightweight SHADOW draft still stops without a resend',async()=>{
  const f=await fixture({mode:'lightweight',finish:()=> 'length',modelContent:()=>''});
@@ -577,9 +589,9 @@ test('a truncated lightweight SHADOW draft still stops without a resend',async()
 });
 test('an unusable evidence AIDE patch keeps the previous draft without a resend',async()=>{
  for(const mode of ['lightweight','heavyweight'])for(const broken of [content=>content.slice(0,40),()=>'{broken patch',()=>'{"unrelated":true}']){
-  const target=mode==='heavyweight'?4:2;
+  const target=mode==='heavyweight'?5:2;
   const f=await fixture({mode,modelContent:(n,body,content)=>n===target?broken(content):content});f.settings.failureMode='soft';
-  const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,mode==='heavyweight'?8:4);
+  const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,mode==='heavyweight'?9:4);
   assert.match(r.injection,/DERIVED_DRAFT_SENTINEL/);assert.equal(f.recalls,1);r.closeEvidence();
  }
 });
@@ -629,11 +641,11 @@ test('an owner that does not answer the availability probe is skipped without a 
 });
 
 test('truncated world and plot mandatory analyses recover independently after SHADOW length expansion',async()=>{
- const f=await fixture({mode:'heavyweight',transform:source=>source.replace('const publicApi = Object.freeze({','const publicApi = Object.freeze({ __testTelemetry:()=>Runtime.callTelemetry,'),finish:n=>n===1?'length':'stop',modelContent:(n,body,content)=>
-  n===1||body.messages.some(m=>typeof m.content==='string'&&/Run aide_(world|plot) analysis now/.test(m.content))?content.slice(0,40):content});
+ const f=await fixture({mode:'heavyweight',transform:source=>source.replace('const publicApi = Object.freeze({','const publicApi = Object.freeze({ __testTelemetry:()=>Runtime.callTelemetry,'),finish:n=>n===2?'length':'stop',modelContent:(n,body,content)=>
+  n===2||body.messages.some(m=>typeof m.content==='string'&&/Run aide_(world|plot) analysis now/.test(m.content))?content.slice(0,40):content});
  f.settings.presets.offline.max_tokens=8192;
  const r=await f.run();try{
-  assert.equal(r.ok,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,11);
+  assert.equal(r.ok,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,12);
   for(const stage of ['aide_world','aide_plot'])assert.equal(r.stages.find(s=>s.stage===stage).fallback,false,stage);
   const compact=f.prompts.filter(compactAnalysisBody);assert.equal(compact.length,2);
   for(const body of compact){const serialized=JSON.stringify(body);assert.equal(serialized.split('EVIDENCE_SENTINEL').length-1,1);assert.match(serialized,/ANATOMICAL AND SPATIAL FEASIBILITY/);}
@@ -650,7 +662,7 @@ test('each reported-length AIDE analysis gets one compact recovery at the preset
  const f=await fixture({mode:'heavyweight',finish:(_n,body)=>primaryAideAnalysis(body)?'length':'stop',
   modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
  const r=await f.run();try{
-  assert.equal(r.ok,true);assert.equal(f.prompts.length,11);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,12);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
   for(const body of f.prompts.filter(compactAnalysisBody))assert.ok((body.max_tokens??body.max_completion_tokens)<=f.settings.presets.offline.max_tokens);
   for(const stage of r.stages)assert.notEqual(stage.fallback,true,stage.stage);
  }finally{r.closeEvidence();}
@@ -659,7 +671,7 @@ test('each reported-length AIDE analysis gets one compact recovery at the preset
 test('a complete but invalid mandatory analysis contract is regenerated before the AIDE patch',async()=>{
  const f=await fixture({mode:'heavyweight',modelContent:(_n,body,content)=>primaryAideAnalysis(body)?'{"unrelated":true}':content});
  const r=await f.run();try{
-  assert.equal(r.ok,true);assert.equal(f.prompts.length,11);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,12);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
   for(const stage of r.stages)assert.notEqual(stage.fallback,true,stage.stage);
  }finally{r.closeEvidence();}
 });
@@ -667,7 +679,7 @@ test('a complete but invalid mandatory analysis contract is regenerated before t
 test('a failed compact analysis falls back once with the provider cause rather than repair-disabled',async()=>{
  const f=await fixture({mode:'heavyweight',modelContent:(_n,body,content)=>primaryAideAnalysis(body)||compactAnalysisBody(body)?content.slice(0,40):content});
  f.settings.failureMode='soft';const r=await f.run();try{
-  assert.equal(r.ok,true);assert.equal(f.prompts.length,8);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,9);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
   for(const stage of r.stages.filter(s=>s.stage!=='shadow_act')){
    assert.equal(stage.fallback,true);assert.equal(stage.reason,'mandatory_analysis_request_failed:evidence_model_incomplete');
    assert.equal(stage.model,'offline-fake');
@@ -676,11 +688,12 @@ test('a failed compact analysis falls back once with the provider cause rather t
  }finally{r.closeEvidence();}
 });
 
-test('owner invalidation during a compact mandatory analysis prevents patch and final handoff',async()=>{
- let valid=true;
- const f=await fixture({mode:'heavyweight',current:()=>valid,onModel:(_n,body)=>{if(compactAnalysisBody(body))valid=false;},
-  modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
- f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
- assert.equal(f.prompts.length,4);assert.equal(f.recalls,1);
- assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
-});
+ test('owner invalidation during a compact mandatory analysis prevents patch and final handoff',async()=>{
+  let valid=true;
+  const f=await fixture({mode:'heavyweight',current:()=>valid,onModel:(_n,body)=>{if(compactAnalysisBody(body))valid=false;},
+   modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
+  f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
+  assert.equal(f.prompts.length,5);assert.equal(f.recalls,1);
+  assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+ });
+}

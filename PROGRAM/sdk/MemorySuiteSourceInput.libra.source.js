@@ -50,10 +50,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -66,12 +68,88 @@ function memorySuiteMissingDefaultSourceTags(rules) {
 // kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
 // its own budget setting. Each plugin still shrinks below its share when the context is short.
 const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
-const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 120000;
+const MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN = 4000, MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX = 200000;
+const MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN = 0, MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX = 40000;
+const MEMORY_SUITE_RECALL_TRIM_MIN = 5, MEMORY_SUITE_RECALL_TRIM_MAX = 80;
+const MEMORY_SUITE_RECALL_PRESERVE_MIN = 2, MEMORY_SUITE_RECALL_PRESERVE_MAX = 50;
+const MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS = Object.freeze(['tiktoken', 'claude', 'gemini', 'deepseek']);
+const MEMORY_SUITE_RECALL_BUDGET_PRESETS = Object.freeze([
+  Object.freeze({ id: 'light', label: '경량', totalChars: 12000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 32000, trimPercent: 35, preserveMessages: 8, desc: '짧은 문맥·핵심 기억 중심 (GRADIA 경량 대응)' }),
+  Object.freeze({ id: 'balanced', label: '균형', totalChars: 24000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 64000, trimPercent: 30, preserveMessages: 16, desc: '일반 대화·GRADIA 균형 권장 표준 예산' }),
+  Object.freeze({ id: 'heavy', label: '중량', totalChars: 48000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 100000, trimPercent: 25, preserveMessages: 24, desc: '풍부한 회상·GRADIA 중량 장기 서사 추적' }),
+  Object.freeze({ id: 'ultra', label: '초중량', totalChars: 72000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 160000, trimPercent: 20, preserveMessages: 32, desc: '초대형 컨텍스트·최대 기억 주입' })
+]);
+const MEMORY_SUITE_RECALL_TOKENIZER_PROFILES = Object.freeze({
+  tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05 }),
+  claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0 }),
+  gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15 }),
+  deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0 })
+});
 function memorySuiteDefaultRecallBudget() {
   return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
 }
+function memorySuiteNormalizeRecallBudgetContextCutter(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const maxContextRaw=src.maxContextTokens==null?40000:Number(src.maxContextTokens);
+  if(!Number.isInteger(maxContextRaw)||maxContextRaw<MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN||maxContextRaw>MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 기준 컨텍스트는 '+MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX.toLocaleString('en-US')+' 토큰 사이의 정수입니다.');
+  const trimRaw=src.trimPercent==null?30:Number(src.trimPercent);
+  if(!Number.isInteger(trimRaw)||trimRaw<MEMORY_SUITE_RECALL_TRIM_MIN||trimRaw>MEMORY_SUITE_RECALL_TRIM_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 초과 시 비울 비율은 '+MEMORY_SUITE_RECALL_TRIM_MIN+'~'+MEMORY_SUITE_RECALL_TRIM_MAX+'% 사이의 정수입니다.');
+  const preserveRaw=src.preserveMessages==null?6:Number(src.preserveMessages);
+  if(!Number.isInteger(preserveRaw)||preserveRaw<MEMORY_SUITE_RECALL_PRESERVE_MIN||preserveRaw>MEMORY_SUITE_RECALL_PRESERVE_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 최신 보호 메시지 수는 '+MEMORY_SUITE_RECALL_PRESERVE_MIN+'~'+MEMORY_SUITE_RECALL_PRESERVE_MAX+' 사이의 정수입니다.');
+  const tokenizerRaw=src.tokenizer==null||src.tokenizer===''?'tiktoken':String(src.tokenizer).trim().toLowerCase();
+  if(!MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS.includes(tokenizerRaw))
+    throw Error('RECALL_BUDGET_INVALID: 토큰 추정 기준이 올바르지 않습니다.');
+  let gradiaReserveChars='auto';
+  if(src.gradiaReserveChars!=null&&src.gradiaReserveChars!==''&&src.gradiaReserveChars!=='auto'){
+    const reserve=Number(src.gradiaReserveChars);
+    if(!Number.isInteger(reserve)||reserve<MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN||reserve>MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX)
+      throw Error('RECALL_BUDGET_INVALID: GRADIA 예약 글자는 0~40,000 사이의 정수 또는 auto여야 합니다.');
+    gradiaReserveChars=reserve;
+  }
+  return {
+    enabled:src.enabled!==false,
+    onlyMemorized:src.onlyMemorized!==false,
+    maxContextTokens:maxContextRaw,
+    trimPercent:trimRaw,
+    preserveMessages:preserveRaw,
+    tokenizer:tokenizerRaw,
+    includeGradiaReserve:src.includeGradiaReserve!==false,
+    gradiaReserveChars,
+    triggerWithReserve:src.triggerWithReserve!==false
+  };
+}
+function memorySuiteNormalizeRecallBudgetGradia(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  return {
+    followSharedBudget:src.followSharedBudget!==false,
+    redistributeDisabledOwners:src.redistributeDisabledOwners!==false
+  };
+}
+function memorySuiteRecallBudgetPresetValues(id, currentBudget=null) {
+  const preset=MEMORY_SUITE_RECALL_BUDGET_PRESETS.find(item=>item.id===id);
+  if(!preset)throw Error('RECALL_BUDGET_INVALID: 프리셋을 찾을 수 없습니다.');
+  const existingCtx=memorySuiteNormalizeRecallBudgetContextCutter(currentBudget?.contextCutter);
+  const existingGradia=memorySuiteNormalizeRecallBudgetGradia(currentBudget?.gradia);
+  return {
+    version:2,
+    enabled:true,
+    totalChars:preset.totalChars,
+    shares:{...preset.shares},
+    contextCutter:{
+      ...existingCtx,
+      maxContextTokens:preset.maxContextTokens,
+      trimPercent:preset.trimPercent,
+      preserveMessages:preset.preserveMessages
+    },
+    gradia:existingGradia
+  };
+}
 function memorySuiteNormalizeRecallBudget(input) {
-  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1&&input.version!==2))throw Error('RECALL_BUDGET_INVALID');
   const total=Number(input.totalChars);
   if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
     throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
@@ -82,7 +160,61 @@ function memorySuiteNormalizeRecallBudget(input) {
     shares[owner]=value;
   }
   if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
-  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  const hasV2Fields=input.version===2||input.contextCutter!==undefined||input.gradia!==undefined;
+  if(!hasV2Fields)return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  if(input.contextCutter!=null&&(typeof input.contextCutter!=='object'||Array.isArray(input.contextCutter)))throw Error('RECALL_BUDGET_INVALID');
+  if(input.gradia!=null&&(typeof input.gradia!=='object'||Array.isArray(input.gradia)))throw Error('RECALL_BUDGET_INVALID');
+  return {
+    version:2,
+    enabled:input.enabled===true,
+    totalChars:total,
+    shares,
+    contextCutter:memorySuiteNormalizeRecallBudgetContextCutter(input.contextCutter),
+    gradia:memorySuiteNormalizeRecallBudgetGradia(input.gradia)
+  };
+}
+function memorySuiteRecallBudgetContextPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetContextCutter(budget?.contextCutter);
+}
+function memorySuiteRecallBudgetGradiaPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetGradia(budget?.gradia);
+}
+function memorySuiteRecallBudgetOwnerShares(budget, activeOwners=MEMORY_SUITE_RECALL_OWNERS) {
+  if(!budget||budget.enabled!==true)return null;
+  const active=(Array.isArray(activeOwners)?activeOwners:MEMORY_SUITE_RECALL_OWNERS).filter(owner=>MEMORY_SUITE_RECALL_OWNERS.includes(owner));
+  if(!active.length)return {};
+  const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(budget);
+  const fullSet=MEMORY_SUITE_RECALL_OWNERS.every(owner=>active.includes(owner));
+  const out={};
+  if(fullSet||gradiaPolicy.redistributeDisabledOwners===false){
+    for(const owner of active)out[owner]=Math.floor(Number(budget.totalChars||0)*Number(budget.shares?.[owner]||0)/100);
+    return out;
+  }
+  const activeShareSum=active.reduce((sum,owner)=>sum+Math.max(0,Number(budget.shares?.[owner]||0)),0);
+  if(activeShareSum<=0){
+    const even=Math.floor(Number(budget.totalChars||0)/active.length);
+    for(const owner of active)out[owner]=even;
+    return out;
+  }
+  let allocated=0;
+  for(const owner of active){
+    const share=Math.floor(Number(budget.totalChars||0)*Math.max(0,Number(budget.shares?.[owner]||0))/activeShareSum);
+    out[owner]=share;
+    allocated+=share;
+  }
+  let remainder=Math.max(0,Math.floor(Number(budget.totalChars||0))-allocated);
+  for(const owner of active){
+    if(remainder<=0)break;
+    if(Number(budget.shares?.[owner]||0)>0){out[owner]+=1;remainder-=1;}
+  }
+  return out;
+}
+function memorySuiteEstimateRecallTokens(chars, tokenizer='tiktoken') {
+  const n=Math.max(0,Number(chars||0)||0);
+  if(!n)return 0;
+  const profile=MEMORY_SUITE_RECALL_TOKENIZER_PROFILES[tokenizer]||MEMORY_SUITE_RECALL_TOKENIZER_PROFILES.tiktoken;
+  const blended=(profile.cjkCharsPerToken*0.7)+(profile.latinCharsPerToken*0.3);
+  return Math.ceil(Math.ceil(n/Math.max(1,blended))*0.8);
 }
 function memorySuiteRecallBudget(owner, next) {
   const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
@@ -102,7 +234,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -254,6 +386,7 @@ function memorySuiteProjectSourceRules(value,rules) {
     if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
     if(control==='suite-blocks')body=body
       .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*?(?:\[\/HAYAKU SIDE-WRITE FINAL REMINDER\]|$)/gi,'')
       .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
   }
   return {text:body,warnings};
@@ -262,7 +395,7 @@ function memorySuiteProjectSourceRules(value,rules) {
 function memorySuiteIsInternalSourceRule(entry) {
   if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
   if(!entry||typeof entry.open!=='string')return false;
-  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE|SIDE-WRITE FINAL REMINDER)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
     || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
 }
 function memorySuiteExternalSourceRules(rules, migrate=false) {
@@ -283,7 +416,7 @@ function memorySuiteCanonicalSource(value,owner) {
 
 function createMemorySuiteSourceInputPolicy(config) {
   const owner=config.owner||'libra';
-  if(!['libra','hayaku','flashback'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
+  if(!['libra','hayaku','flashback','gradia'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
   const clone=value=>JSON.parse(JSON.stringify(value));
   let preferences=null,loading=null,saving=null,disposed=false;
   async function ready() {

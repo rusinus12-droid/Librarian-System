@@ -22,7 +22,7 @@ function readCandidate(root) {
   const version = fs.readFileSync(path.join(program, 'VERSION.txt'), 'utf8').trim();
   const journalApi = require(path.join(updater, 'core', 'journal.cjs'));
   const journal = journalApi.readJournal(journalPath);
-  if (!journal || journal.policy !== 'program_only' || journal.toVersion !== version || !journal.operationId
+  if (!journal || !['program_only', 'migration_required'].includes(journal.policy) || journal.toVersion !== version || !journal.operationId
     || journal.updaterRefreshedAt || terminalFailure.has(journal.status)) return null;
   return { program, payload, updater, journalPath, journalApi, journal, version };
 }

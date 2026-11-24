@@ -15,6 +15,8 @@ jobs:
   risu-upstream-drift:
     name: risu-upstream-drift
     runs-on: ubuntu-latest
+    env:
+      NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
     permissions:
       contents: read
     steps:
@@ -48,9 +50,11 @@ jobs:
         id: drift
         run: |
           mkdir -p "$RUNNER_TEMP/risu-drift"
+          HEAD_COMMIT=$(git -C .risuai-upstream-head rev-parse HEAD)
           node PROGRAM/tools/risu_contract_verifier.cjs \
             --upstream-dir ".risuai-upstream-head" \
             --drift-check \
+            --head-commit "$HEAD_COMMIT" \
             > "$RUNNER_TEMP/risu-drift/drift-report.json"
           cat "$RUNNER_TEMP/risu-drift/drift-report.json"
           node -e '
@@ -61,6 +65,7 @@ jobs:
             "# RisuAI Upstream Drift Monitor",
             "",
             `- **Pinned Commit**: \`${report.pinnedCommit || report.lockedCommit}\``,
+            `- **Head Commit**: \`${report.headCommit || "HEAD"}\``,
             `- **Status**: \`${report.status}\``,
             `- **Changed Tracked Files**: \`${(report.changedFiles || []).length}\``,
             `- **Missing Used APIs**: \`${(report.missingUsedApis || []).length}\``,
@@ -82,7 +87,7 @@ jobs:
           retention-days: 30
 
       - name: Fail closed if upstream drift requires review
-        if: steps.drift.outputs.status == 'upstream_review_required'
+        if: steps.drift.outputs.status != 'compatible_pin_current'
         run: |
           echo "Notice: RisuAI upstream drift detected. Review required before updating compatibility pin."
           exit 1

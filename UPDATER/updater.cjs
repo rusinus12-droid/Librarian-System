@@ -75,16 +75,40 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 async function downloadRelease(url, destination, expectedSha256) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'Librarian-System-Updater' } });
-  if (!response.ok || !response.body) throw new Error(`download_http_${response.status}`);
+  const DOWNLOAD_IDLE_TIMEOUT_MS = 90000;
+  const controller = new AbortController();
+  let idleTimer = null;
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      try { controller.abort(new Error('release_download_timeout')); } catch (_) {}
+    }, DOWNLOAD_IDLE_TIMEOUT_MS);
+    idleTimer.unref?.();
+  };
+  resetIdleTimer();
+  let response;
+  try {
+    response = await fetch(url, { headers: { 'User-Agent': 'Librarian-System-Updater' }, signal: controller.signal });
+  } catch (err) {
+    if (idleTimer) clearTimeout(idleTimer);
+    throw err;
+  }
+  if (!response.ok || !response.body) {
+    if (idleTimer) clearTimeout(idleTimer);
+    throw new Error(`download_http_${response.status}`);
+  }
   const contentLength = Number(response.headers.get('content-length') || 0);
-  if (Number.isFinite(contentLength) && contentLength > MAX_RELEASE_BYTES) throw new Error('release_download_too_large');
+  if (Number.isFinite(contentLength) && contentLength > MAX_RELEASE_BYTES) {
+    if (idleTimer) clearTimeout(idleTimer);
+    throw new Error('release_download_too_large');
+  }
   await fsp.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const temporary = `${destination}.tmp-${crypto.randomUUID()}`;
   const hash = crypto.createHash('sha256');
   let bytes = 0;
   const meter = new Transform({
     transform(chunk, _encoding, callback) {
+      resetIdleTimer();
       bytes += chunk.length;
       if (bytes > MAX_RELEASE_BYTES) return callback(new Error('release_download_too_large'));
       hash.update(chunk);
@@ -101,6 +125,8 @@ async function downloadRelease(url, destination, expectedSha256) {
   } catch (error) {
     await fsp.rm(temporary, { force: true }).catch(() => {});
     throw error;
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
   }
 }
 

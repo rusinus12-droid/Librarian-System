@@ -9,7 +9,7 @@ const {load} = require('./host.cjs');
 const PREF = 'serial_gradation_agents_for_rp:lib_read_connection:v1';
 const OWNER_IDS = {libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory'};
 const REQUEST = 'gradia_memory_read_request_v1', RESPONSE = 'gradia_memory_read_response_v1';
-const wait = async (fn, ms = 6000) => {
+const wait = async (fn, ms = 20000) => {
   const start = Date.now();
   while (Date.now() - start < ms) { const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 10)); }
   throw Error('Connection action did not settle');

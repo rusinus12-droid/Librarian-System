@@ -180,9 +180,12 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_updater_external_target_test.cjs',
   'remote_update_real_server_runtime_test.cjs',
   'updater_refresh_runtime_test.cjs',
-  'memory_injection_presentation_v1_test.cjs'
+  // The graph-based memory injection presentation suite retired with the memory graph
+  // (0faa72b0). Its successor is the retirement contract, which asserts the retired
+  // surfaces are gone and the direct-search reader is the only remaining path.
+  'libra_graph_retirement_contract_test.cjs'
 ]);
-const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
+const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-(?:access|admin)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // Accepted synthetic source fixtures only; never a general SQLite/private-data exception.
 const SOURCE_FIXTURE_PINS = Object.freeze({
   "tests/fixtures/authority-preserved/logical-reader-fixtures/wal-only-authority/source.sqlite": {
@@ -242,6 +245,8 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '서버_외부접속_설정.sh',
   '서버_원격접속_열기.bat',
   '서버_원격접속_열기.sh',
+  '서버_원격접속_닫기.bat',
+  '서버_원격접속_닫기.sh',
   '서버_사용과_접속_관련_상세_안내.txt',
   '안드로이드_Termux_준비.sh',
   '안드로이드_설치.sh',
@@ -258,7 +263,7 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   'VERSION.txt',
   'release-policy.json'
 ]);
-const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|[^/]+\.(?:pem|key|pfx|p12|sqlite(?:-(?:wal|shm))?|db|jsonl|log|zip|7z|tar|tgz|gz))(?:$|\/)/i;
+const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-(?:access|admin)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|[^/]+\.(?:pem|key|pfx|p12|sqlite(?:-(?:wal|shm))?|db|jsonl|log|zip|7z|tar|tgz|gz))(?:$|\/)/i;
 const REQUIRED_ROOT_UPDATE_LAUNCHERS = Object.freeze(['업데이트.bat', '업데이트.command', '업데이트.sh']);
 const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
@@ -350,7 +355,7 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   '_common.cmd','_find_node.bat','_server_foreground.cmd',
   '1_서버_실행.bat','1_서버_실행.sh','2_서버_종료.bat','2_서버_종료.sh',
   '서버_백그라운드_실행.bat','서버_백그라운드_실행.sh','서버_상태_확인.bat','서버_상태_확인.sh',
-  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_원격접속_열기.bat','서버_원격접속_열기.sh',
+  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_원격접속_열기.bat','서버_원격접속_열기.sh','서버_원격접속_닫기.bat','서버_원격접속_닫기.sh',
   '서버_사용과_접속_관련_상세_안내.txt',
   'macOS_서버_실행.command','memory-suite.sh','안드로이드_Termux_준비.sh','안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat','기존_DATA_이관_ZIP_만들기.sh',
@@ -703,10 +708,14 @@ function runReleaseSmokeFromSource() {
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
-  // A hang guard, not a speed target. The suite takes about 13 minutes on a developer machine
-  // (gradia_suite_test alone runs its files one by one for about 10), so the former 15-minute
-  // limit failed on slower CI runners with every test still passing.
-  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:1800000,env:smokeEnv});
+  smokeEnv.GRADIA_SUITE_CONCURRENCY = process.env.GRADIA_SUITE_CONCURRENCY || '2';
+  const smokeConcurrency = Math.max(1, Number(process.env.RELEASE_SMOKE_CONCURRENCY) || 2);
+  // A hang guard, not a speed target. gradia_suite_test alone runs the whole gradia test
+  // directory serially inside one test slot and exceeded a 10-minute per-test ceiling on this
+  // host (measured 2026-11-22, cancelled at 600s), so the guard is scaled to that shape: a
+  // per-test ceiling that still names a genuine hang instead of letting the wall budget swallow
+  // the whole run, and a wall budget above it.
+  const smoke=runNodeProcess(['--test',`--test-concurrency=${smokeConcurrency}`,'--test-timeout=2700000',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:3600000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;

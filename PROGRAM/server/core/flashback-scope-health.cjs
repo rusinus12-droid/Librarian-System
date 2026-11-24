@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 // Shards whose records still carry inline vectors (pending re-embedding) reach
 // ~2.5 MB; a smaller cap made the whole inspection incomplete exactly then.
-const MAX_ITEMS = 1000, MAX_VALUE_BYTES = 8 * 1024 ** 2, MAX_TOTAL_BYTES = 32 * 1024 ** 2;
+const PAGE_LIMIT = 1000, MAX_ITEMS = 20000, MAX_VALUE_BYTES = 8 * 1024 ** 2, MAX_TOTAL_BYTES = 32 * 1024 ** 2;
 const scopeHash = value => {
   let hash = 0x811c9dc5;
   for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
@@ -33,21 +33,33 @@ module.exports = ({ getRepository, dataInstanceId, epochs, canRead }) => async (
   repository.database.exec('BEGIN');
   try {
     for (const [space, ownedPrefix] of [['plugin',prefix],['local',vectorPrefix]]) {
-      const page = repository.list(space, ownedPrefix, { paged:true, limit:MAX_ITEMS, cursorKey:'' });
-      if (!page || !Array.isArray(page.records) || typeof page.page?.hasMore !== 'boolean') fail('HEALTH_INVENTORY_UNVERIFIED', 503);
-      if (page.page.hasMore || page.records.length > MAX_ITEMS) inventoryComplete = false;
-      for (const row of page.records.slice(0,MAX_ITEMS)) {
-        if (typeof row.key !== 'string' || !row.key.startsWith(ownedPrefix)) fail('HEALTH_SCOPE_PREFIX_MISMATCH', 500);
-        inventory.push([space,row.key,row.tombstone,row.revision,row.digest,row.valueBytes]);
-        const name = row.key.slice(ownedPrefix.length);
-        // Repair protocol state is not memory evidence. Bind its inventory so a
-        // concurrent operation invalidates the snapshot, without reading its body.
-        const repairProtocol = space === 'plugin' && /^server_physical_repair:v2(?::[A-Za-z0-9._-]{16,100})?$/.test(name);
-        if (!selected(space,name) && !repairProtocol) { skipped.push({space,reason:'unsupported_scope_record'}); continue; }
-        if (!Number.isSafeInteger(row.revision) || row.revision < 1 || !/^[a-f0-9]{64}$/.test(row.digest)
-            || !Number.isSafeInteger(row.valueBytes) || row.valueBytes < 0 || typeof row.tombstone !== 'boolean') fail('HEALTH_RECORD_METADATA_UNVERIFIED', 503);
-        if (repairProtocol) continue;
-        records.push({space,key:row.key,name,tombstone:row.tombstone,revision:row.revision,digest:row.digest,valueBytes:row.valueBytes});
+      let cursorKey = '', spaceCount = 0;
+      while (true) {
+        const remaining = MAX_ITEMS - spaceCount;
+        if (remaining <= 0) { inventoryComplete = false; break; }
+        const pageLimit = Math.min(PAGE_LIMIT, remaining);
+        const page = repository.list(space, ownedPrefix, { paged:true, limit:pageLimit, cursorKey });
+        if (!page || !Array.isArray(page.records) || typeof page.page?.hasMore !== 'boolean') fail('HEALTH_INVENTORY_UNVERIFIED', 503);
+        if (page.records.length > pageLimit) inventoryComplete = false;
+        const slice = page.records.slice(0, pageLimit);
+        for (const row of slice) {
+          if (typeof row.key !== 'string' || !row.key.startsWith(ownedPrefix)) fail('HEALTH_SCOPE_PREFIX_MISMATCH', 500);
+          inventory.push([space,row.key,row.tombstone,row.revision,row.digest,row.valueBytes]);
+          const name = row.key.slice(ownedPrefix.length);
+          // Repair protocol state is not memory evidence. Bind its inventory so a
+          // concurrent operation invalidates the snapshot, without reading its body.
+          const repairProtocol = space === 'plugin' && /^server_physical_repair:v2(?::[A-Za-z0-9._-]{16,100})?$/.test(name);
+          if (!selected(space,name) && !repairProtocol) { skipped.push({space,reason:'unsupported_scope_record'}); continue; }
+          if (!Number.isSafeInteger(row.revision) || row.revision < 1 || !/^[a-f0-9]{64}$/.test(row.digest)
+              || !Number.isSafeInteger(row.valueBytes) || row.valueBytes < 0 || typeof row.tombstone !== 'boolean') fail('HEALTH_RECORD_METADATA_UNVERIFIED', 503);
+          if (repairProtocol) continue;
+          records.push({space,key:row.key,name,tombstone:row.tombstone,revision:row.revision,digest:row.digest,valueBytes:row.valueBytes});
+        }
+        spaceCount += slice.length;
+        if (!page.page.hasMore) break;
+        const nextKey = slice.length ? slice[slice.length - 1].key : '';
+        if (!nextKey || nextKey <= cursorKey || spaceCount >= MAX_ITEMS) { inventoryComplete = false; break; }
+        cursorKey = nextKey;
       }
     }
     records.sort((a,b) => a.space.localeCompare(b.space) || a.key.localeCompare(b.key));

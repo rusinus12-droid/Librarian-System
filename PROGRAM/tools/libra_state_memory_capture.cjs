@@ -14,7 +14,13 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
       return { key: ref.key, proofs: value.proofs, assertCurrent: value.assertCurrent, rows: value.rows.map((row, n) => ({ ...row,
         id: 'canonical:' + native.fingerprint([ref.key, ref.revision, n]), family: 'canonical', axis: engine.axisFor(row.domain),
         // A canonical memory covers a turn span; its facts are dated by that whole span, not by its last turn.
-        sourceKey: ref.key, turn: Number(ref.turnRange?.end || 0), turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0) })) };
+        sourceKey: ref.key,
+        memoryId: ref.memoryId || '',
+        revision: Number(ref.revision || 0),
+        sessionEpoch: Number(ref.sessionEpoch || 0),
+        sourceDigest: ref.sourceDigest || '',
+        artifactDigest: ref.artifactDigest || '',
+        turn: Number(ref.turnRange?.end || 0), turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0) })) };
     };
     const micro = async turn => {
       const value = await native.micro(context, snapshot, turn); check();

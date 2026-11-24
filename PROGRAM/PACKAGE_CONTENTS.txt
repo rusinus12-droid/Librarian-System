@@ -17,7 +17,7 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 2. 다른 기존 설치 폴더를 업데이트
 3. 미완료 업데이트 복구
 
-0.3.51에서 처음 새 updater로 넘어오는 경우:
+기존 v1.0.0 이상 설치 폴더를 다른 위치에서 업데이트하는 경우:
 - 최신 배포 ZIP을 별도 폴더에 압축 해제합니다.
 - 그 폴더의 업데이트 실행 파일을 엽니다.
 - 2번 '다른 기존 설치 폴더를 업데이트'를 선택합니다.
@@ -46,7 +46,7 @@ PROGRAM/서버_포트_변경.sh(macOS · Linux · Termux)로 포트를 바꿉니
 서버는 이 PC(127.0.0.1)에서만 연결을 받습니다. 다른 기기에서 쓰려면 서버를 끈 뒤
 PROGRAM\서버_외부접속_설정.bat(Windows) 또는 PROGRAM/서버_외부접속_설정.sh로 원격 접속 모드를 켜고,
 Tailscale이나 Cloudflare Tunnel의 https:// 주소로 연결합니다. Tailscale은
-PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh가 열기 · 닫기 · 상태 보기를 해 줍니다. 원격 접속 모드에서는 이 PC를 포함한
+PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh(및 닫기 전용 PROGRAM\서버_원격접속_닫기.bat · PROGRAM/서버_원격접속_닫기.sh)가 열기 · 닫기 · 상태 보기를 해 줍니다. 원격 접속 모드에서는 이 PC를 포함한
 모든 플러그인에 접근 키를 넣습니다. Docker 서버는 항상 원격 접속 모드입니다.
 서버 주소 · 포트 · 접속 모드 · Docker는 PROGRAM/서버_사용과_접속_관련_상세_안내.txt에 모아 두었습니다.
 
@@ -58,12 +58,12 @@ PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh�
 
 [현재 구성]
 - Librarian System Server 1.4.0
-- Flashback Memory 2.1.0
-- HAYAKU Locator Continuity 4.1.0
-- LIBRA 3.1.0
-- LIA Persona Linker 0.31.0
-- RE:TRACE 2.1.0
-- GRADIA 1.2.0
+- Flashback Memory 2.2.0
+- HAYAKU Locator Continuity 4.2.0
+- LIBRA 3.2.0
+- LIA Persona Linker 0.32.0
+- RE:TRACE 2.2.0
+- GRADIA 1.3.0
 
 [호환 정보]
 - Storage SDK 1.8.35

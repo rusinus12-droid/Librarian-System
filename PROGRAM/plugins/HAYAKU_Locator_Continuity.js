@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.1.1
+//@display-name HAYAKU · Locator Continuity v4.2.0
 //@api 3.0
-//@version 4.1.1
+//@version 4.2.0
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -792,6 +792,7 @@ const MemorySuiteExecutionContract = (() => {
   const LEDGER_VIEWER_UI_RUNTIME_KEY = '__HAYAKU_LEDGER_VIEWER_UI_V1__';
   const LEDGER_VIEWER_SETTING_UI_ID = 'hayaku-ledger-viewer-setting';
   const LEDGER_VIEWER_BUTTON_UI_ID = 'hayaku-ledger-viewer-button';
+  const LEDGER_VIEWER_CHAT_BUTTON_UI_ID = 'hayaku-ledger-viewer-chat-button';
   const RECOVERY_CONFIRMATION_OVERLAY_ID = 'hayaku-recovery-confirmation-overlay';
   const COPIED_CHAT_SOURCE_LEDGER_RUNTIME_KEY = '__HAYAKU_COPY_SOURCE_LEDGER_REVISION_V1__';
   const RUNTIME_INSTANCE_TOKEN = Object.freeze({});
@@ -814,7 +815,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.1.1';
+  const PLUGIN_VERSION = '4.2.0';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -996,7 +997,7 @@ const MemorySuiteExecutionContract = (() => {
   const FINALIZED_CAPTURE_POLL_MS = 900;
   const FINALIZED_CAPTURE_IDLE_POLL_MS = 2200;
   const FINALIZED_CAPTURE_STABLE_MS = 4000;
-  const FINALIZED_CAPTURE_MAX_AGE_MS = 4 * 60 * 1000;
+  const FINALIZED_CAPTURE_MAX_AGE_MS = CAPTURE_ORIGIN_TTL_MS;
   const FINALIZED_CAPTURE_MAX_ATTEMPTS = 3;
   const FINALIZED_BINDING_POLL_MS = 900;
   const FINALIZED_BINDING_IDLE_POLL_MS = 2200;
@@ -2387,6 +2388,8 @@ const MODE_PROFILES = Object.freeze({
     globalRoutingCatalogCache: new Map(),
     globalRoutingCatalogStats: { builds: 0, cacheHits: 0, routes: 0, routedPackets: 0, evictions: 0, failures: 0, lastError: '' },
     authoritativeLedgerCache: null,
+    captureRawBodyCache: new Map(),
+    parsedLedgerMemo: null,
     pendingCaptures: [],
     recoveryDebtInBandReservations: new Map(),
     messageRevisionCaches: new Map(),
@@ -2606,6 +2609,7 @@ const MODE_PROFILES = Object.freeze({
       busy: false,
       registeredSetting: null,
       registeredButton: null,
+      registeredChatButton: null,
       scope: null,
       ledger: null,
       activeTab: 'overview',
@@ -4157,6 +4161,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const bootstrapAtUrl = async urlValue => {
     const url = normalizeServerUrl(urlValue);
+    const timeoutMs = /^https:/i.test(url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
     const payload = await fetchJson(`${url}/bootstrap`, {
       method: 'GET',
       headers: {
@@ -4164,7 +4169,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         'X-Memory-Suite-Plugin-Version': pluginVersion,
         ...(await accessKeyHeaders())
       }
-    }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
+    }, 'Librarian System connection test', timeoutMs);
     return validateBootstrapPayload(payload, url);
   };
 
@@ -4329,6 +4334,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const sequence = ++bootstrapSequence;
     const previous = state.bootstrap;
     const pending = (async () => {
+      const timeoutMs = /^https:/i.test(config.url) ? Math.max(bootstrapRequestTimeoutMs, 6000) : bootstrapRequestTimeoutMs;
       const payload = await fetchJson(`${config.url}/bootstrap`, {
         method: 'GET',
         headers: {
@@ -4336,7 +4342,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           'X-Memory-Suite-Plugin-Version': pluginVersion,
           ...(await accessKeyHeaders())
         }
-      }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
+      }, 'Librarian System bootstrap', timeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
       if (intent) await assertBootstrapIntent(intent);
       const currentUrl = await configuredServerUrlNow();
@@ -4374,7 +4380,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity', '/v1/flashback/writer'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (managerOnly && method !== 'GET' && !route.startsWith('/v1/manager/') && !(method === 'POST' && route === '/v1/kv/get-many')) throw managerOnlyError();
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
@@ -4431,7 +4437,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
-      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
         && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
@@ -4679,6 +4684,74 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       throw error;
     }
   };
+
+  const transferChunkToBase64 = u8 => {
+    if (typeof Buffer !== 'undefined') return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64');
+    let binary = '';
+    for (let off = 0; off < u8.length; off += 0x8000) {
+      binary += String.fromCharCode.apply(null, u8.subarray(off, Math.min(u8.length, off + 0x8000)));
+    }
+    return btoa(binary);
+  };
+  const transferBytesSha256 = async bytes => {
+    if (!globalThis?.crypto?.subtle) throw new Error('memory_suite_digest_unavailable');
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  };
+  const remoteTransferSet = (space, key, value, mutateOptions = {}) => withOwnerOperation(
+    { kind: 'storage_operation', operation: 'remoteTransferSet' },
+    async () => {
+      const writerAlias = flashbackWriterAlias(key);
+      if (writerAlias && mutateOptions.writerSession !== true) {
+        return await withFlashbackWriter(key, () => remoteTransferSet(space, key, value, { ...mutateOptions, writerSession: true }), { forceServer: true });
+      }
+      const fence = writerAlias ? await usableFlashbackFence(key) : null;
+      const rawJson = JSON.stringify(value);
+      const bytes = typeof TextEncoder !== 'undefined'
+        ? new TextEncoder().encode(rawJson)
+        : Buffer.from(rawJson, 'utf8');
+      const sha256 = await transferBytesSha256(bytes);
+      const id = operationId('set');
+      const expectedRevision = Number.isInteger(Number(mutateOptions.expectedRevision))
+        ? Math.max(0, Number(mutateOptions.expectedRevision))
+        : null;
+      const reqOpts = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope: mutateOptions.scope, storageMode: mutateOptions.storageMode };
+      const initPayload = await request('POST', '/v1/kv/transfer-set/init', {
+        namespace,
+        space,
+        key,
+        operationId: id,
+        totalBytes: bytes.length,
+        sha256,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const uploadId = String(initPayload?.result?.uploadId || '');
+      const chunkBytes = Math.max(256 * 1024, Math.min(2 * 1024 * 1024, Number(initPayload?.result?.chunkBytes || 2 * 1024 * 1024)));
+      if (!uploadId) throw new Error('memory_suite_transfer_upload_init_failed');
+      let index = 0;
+      for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+        const slice = bytes.subarray(offset, Math.min(bytes.length, offset + chunkBytes));
+        await request('POST', '/v1/kv/transfer-set/chunk', {
+          namespace,
+          uploadId,
+          index,
+          encoding: 'base64',
+          data: transferChunkToBase64(slice)
+        }, reqOpts);
+        index += 1;
+      }
+      const commitPayload = await request('POST', '/v1/kv/transfer-set/commit', {
+        namespace,
+        uploadId,
+        ...(expectedRevision == null ? {} : { expectedRevision }),
+        ...(fence ? { fence } : {})
+      }, reqOpts);
+      const receipt = verifyReceipt(commitPayload, id, space, key);
+      setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
+      return { ...receipt, endToEndVerified: true };
+    }
+  );
 
   const serializeMutation = async (space, key, factory) => {
     const lockKey = `${space}\n${key}`;
@@ -8460,8 +8533,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const single = async item => {
       try {
-        const receipt = await fastRetry(() => remoteMutate('set',item.space,item.key,item.value,
-          {allowPluginOnly:true,expectedRevision:item.revision}));
+        const useChunkedTransfer = item.bytes > interactiveSetValueBudgetBytes
+          && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true;
+        const receipt = await fastRetry(() => useChunkedTransfer
+          ? remoteTransferSet(item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision })
+          : remoteMutate('set', item.space, item.key, item.value, { allowPluginOnly: true, expectedRevision: item.revision }));
         if (receipt.superseded || (item.digest && receipt.digest !== item.digest)) throw fastDestinationConflict(item,'server');
         settle(item,receipt);
       } catch (error) {
@@ -9107,6 +9183,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (pending?.globalPlan && !syncJobTerminal(pending.status) && (pending.targetMode !== target || needsFreshInventory))
       await scopedCancelSyncJobImpl({},true);
     const result = await persistGlobalModeAllChats(target);
+    try {
+      const store = rawPluginStorage();
+      const rawChoice = await store?.getItem?.(resetChoiceKey);
+      if (rawChoice != null && rawChoice !== '') {
+        let parsedChoice = null;
+        try { parsedChoice = typeof rawChoice === 'string' ? JSON.parse(rawChoice) : rawChoice; } catch (_) {}
+        if (!deletedScopesForResetChoice(parsedChoice).length) {
+          await legacyRemoveVerified(store, resetChoiceKey).catch(() => {});
+          cacheQualifiedResetChoice(null);
+        }
+      }
+    } catch (_) {}
     return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:target, findings, result };
   };
   // END FAST MODE TRANSFER v1
@@ -10413,6 +10501,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const value = args[3];
       const bytes = args[0] === 'set' ? storageValueBytes(value) : 0;
       recordScopedSyncMetric(metrics, 'remote_write', { remoteWriteCount: 1, remoteWriteBytes: bytes, remoteBytes: bytes });
+      if (args[0] === 'set' && bytes > interactiveSetValueBudgetBytes && state.bootstrap.value?.capabilities?.['chunked-transfer-upload.v1'] === true) {
+        return await remoteTransferSet(args[1], args[2], value, args[4]);
+      }
       return await remoteMutate(...args);
     };
     const integrityBefore = await remoteIntegrity({ allowPluginOnly: true });
@@ -17572,10 +17663,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   };
   const promptCacheCircuitDecision = (provider, fingerprint, profile = '') => {
-    const adapterKey = `${provider.providerFamily}:${provider.apiShape}:${provider.model}`;
+    const scopePart = text(Memory.currentScopeKey || Memory.projectionCacheScopeKey || 'global');
+    const adapterKey = `${scopePart}:${provider.providerFamily}:${provider.apiShape}:${provider.model}`;
     const states = Memory.promptCache.circuitByAdapter || (Memory.promptCache.circuitByAdapter = {});
-    const state = states[adapterKey] || (states[adapterKey] = { open: false, hashes: [], profile: '', transitions: 0 });
-    if (state.open) return { allowed: false, reason: 'native_adapter_circuit_open', adapterKey };
+    const nowAt = now();
+    const existingKeys = Object.keys(states);
+    if (existingKeys.length > 64) {
+      for (const staleKey of existingKeys.slice(0, existingKeys.length - 64)) delete states[staleKey];
+    }
+    const state = states[adapterKey] || (states[adapterKey] = { open: false, openedAt: 0, hashes: [], profile: '', transitions: 0 });
+    if (state.open) {
+      if (nowAt - Number(state.openedAt || 0) >= 600000) {
+        state.open = false;
+        state.openedAt = 0;
+        state.hashes = [];
+        state.transitions = 0;
+      } else {
+        return { allowed: false, reason: 'native_adapter_circuit_open', adapterKey };
+      }
+    }
     if (state.profile && state.profile !== profile) {
       state.hashes = [];
       state.transitions = 0;
@@ -17586,6 +17692,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     state.hashes = [...state.hashes, fingerprint.hash].slice(-5);
     if (state.transitions >= 2) {
       state.open = true;
+      state.openedAt = nowAt;
       return { allowed: false, reason: 'unstable_static_prefix_circuit_opened', adapterKey };
     }
     return { allowed: true, reason: '', adapterKey };
@@ -21163,9 +21270,32 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const operationLogSnapshot = () => clone(ensureArray(Memory.operationLog), []);
   const debugLog = (...args) => {
+    if (!Memory.settings?.debug) {
+      const rawDetail = args.length > 1 ? args[1] : null;
+      const liteDetail = rawDetail == null ? null : typeof rawDetail === 'string' ? compact(rawDetail, 240)
+        : objectish(rawDetail) ? {
+            ...(rawDetail.reason ? { reason: compact(rawDetail.reason, 120) } : {}),
+            ...(rawDetail.action ? { action: compact(rawDetail.action, 80) } : {}),
+            ...(rawDetail.scopeKey ? { scopeKey: compact(rawDetail.scopeKey, 120) } : {}),
+            ...(typeof rawDetail.skipped === 'boolean' ? { skipped: rawDetail.skipped } : {}),
+            ...(typeof rawDetail.messages === 'number' ? { messages: rawDetail.messages } : {})
+          } : null;
+      const entry = {
+        id: ++Memory.operationLogSeq,
+        at: now(),
+        event: compact(args[0] || 'event', 120),
+        level: 'info',
+        detail: liteDetail
+      };
+      Memory.operationLog.push(entry);
+      if (Memory.operationLog.length > OPERATION_LOG_MAX_ENTRIES) {
+        Memory.operationLog.splice(0, Memory.operationLog.length - OPERATION_LOG_MAX_ENTRIES);
+      }
+      return;
+    }
     pushOperationLog(args[0], args.length > 1 ? args[1] : null, 'info');
     try {
-      if (Memory.settings?.debug) console.log('[HAYAKU DEBUG]', ...args);
+      console.log('[HAYAKU DEBUG]', ...args);
     } catch (_) {}
   };
   const debugError = (label, error, extra = {}) => {
@@ -21542,7 +21672,50 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // shortcut. Its exact payload/roles/order, settings and authoritative chat
   // must still match. Partial, edited, old or foreign-instance sets reassemble.
   let lastHayakuRequestInjectionReceipt = null;
-  const hayakuInjectionFingerprint = value => stableHash64(canonicalPromptCacheStringify(value));
+  const HAYAKU_SIMPLE_MSG_KEYS = new Set(['role', 'content', 'data', 'name', 'memo', 'chatId', 'chat_id', 'id', 'messageId', 'message_id', 'swipeId', 'generationId', 'saying', 'time']);
+  const hayakuMessageArrayDigest = list => {
+    if (!Array.isArray(list)) return canonicalPromptCacheStringify(list);
+    const parts = [String(list.length)];
+    for (let i = 0; i < list.length; i += 1) {
+      const msg = list[i];
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+        parts.push(canonicalPromptCacheStringify(msg));
+        continue;
+      }
+      const keys = Object.keys(msg);
+      if (keys.some(k => !HAYAKU_SIMPLE_MSG_KEYS.has(k))) {
+        parts.push(canonicalPromptCacheStringify(msg));
+        continue;
+      }
+      const bodyRaw = Object.prototype.hasOwnProperty.call(msg, 'content') ? msg.content : msg.data;
+      const bodyStr = typeof bodyRaw === 'string' ? bodyRaw : canonicalPromptCacheStringify(bodyRaw);
+      const bodyDigest = typeof bodyRaw === 'string' && bodyStr.length > 64 ? `${bodyStr.length}:${stableHash64(bodyStr)}` : bodyStr;
+      parts.push([
+        text(msg.role || ''),
+        text(msg.name || ''),
+        text(msg.memo || ''),
+        text(msg.chatId || msg.chat_id || msg.id || msg.messageId || msg.message_id || ''),
+        text(msg.swipeId ?? ''),
+        text(msg.generationId ?? ''),
+        text(msg.saying ?? ''),
+        text(msg.time ?? ''),
+        Object.prototype.hasOwnProperty.call(msg, 'content') ? 'c' : Object.prototype.hasOwnProperty.call(msg, 'data') ? 'd' : '',
+        bodyDigest
+      ].join('\u0001'));
+    }
+    return stableHash64(parts.join('\u0002'));
+  };
+  const hayakuInjectionFingerprint = value => {
+    if (Array.isArray(value)) {
+      if (value.length === 4 && Array.isArray(value[2]) && (!value[2].length || (value[2][0] && typeof value[2][0] === 'object' && ('role' in value[2][0] || 'content' in value[2][0] || 'data' in value[2][0])))) {
+        return stableHash64(canonicalPromptCacheStringify([value[0], value[1], hayakuMessageArrayDigest(value[2]), value[3]]));
+      }
+      if (!value.length || (value[0] && typeof value[0] === 'object' && !Array.isArray(value[0]) && ('role' in value[0] || 'content' in value[0] || 'data' in value[0]))) {
+        return hayakuMessageArrayDigest(value);
+      }
+    }
+    return stableHash64(canonicalPromptCacheStringify(value));
+  };
   const hasExistingHayakuRequestInjection = (messages = [], contextFingerprint = '') => Boolean(
     contextFingerprint && lastHayakuRequestInjectionReceipt
     && lastHayakuRequestInjectionReceipt.contextFingerprint === contextFingerprint
@@ -24242,7 +24415,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       representation:'source_record',_packetRecord:record,_localRecall:true,_recallIdentityRefs:[record.id,record.canonicalRef,...record.declaredRefs].filter(Boolean),_recallEntityRefs:ensureArray(record.entityRefs),
       packetHash:identity,visibility:{...record.visibility},links:record.declaredLinks,lifecycle:{status:value.status||value.lifecycle?.status||'',timeScope:value.time_scope||value.timeScope||value.lifecycle?.timeScope||''},
       scene_id:text(packet.meta?.scene_id||''),
-      locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat'},
+      locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat',...(Number.isFinite(Number(packet.distanceFromLatest))?{distanceFromLatest:Number(packet.distanceFromLatest)}:{}),...(text(packet.sessionEpoch||packet.inheritedFromScopeKey||'')?{sessionEpoch:text(packet.sessionEpoch||packet.inheritedFromScopeKey||'')}:{})},
       retrieval:{subject:value.name||value.title||'',entityNames:[]}};
   }).filter(row=>row.publicText);
   const boundPacketRecordRowCache = new WeakMap();
@@ -24288,12 +24461,41 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for(const row of storedRows){
       const record=row._packetRecord,aliases=row._recallSearchAliases;
       const existing=row.representation!=='state_projection'&&record?.recordKey?byKey.get(record.recordKey):null;
-      if(existing){existing._recallIdentityRefs=[...new Set([...existing._recallIdentityRefs,...localRecallRefs(row)])];continue;}
+      if(existing){
+        existing._recallIdentityRefs=[...new Set([...existing._recallIdentityRefs,...localRecallRefs(row)])];
+        if(!existing.sceneRelation&&row.sceneRelation)existing.sceneRelation=row.sceneRelation;
+        if(existing.locator&&existing.locator.distanceFromLatest===undefined&&Number(row.locator?.distanceFromLatest)>0){
+          existing.locator={...existing.locator,distanceFromLatest:Number(row.locator.distanceFromLatest)};
+        }
+        continue;
+      }
       const copy={...row,representation:row.representation||'legacy_record'};
       // Source preparation owns alias freshness, including empty/partial/skipped generations.
       // Never let a stored compatibility row revive an alias when no new rows were produced.
       if(sourceAliasesOnly&&aliases){delete copy._recallSearchAliases;if(!record)delete copy.recordKey;}
       out.push(copy);
+    }
+    const latestHash=text(store?._recallLatestPacket||'');
+    const headOrdinal=Number(store?.worldlineHeadOrdinal||store?.turn||0)||0;
+    const activeSceneId=text(store?.context?.sceneAnchors?.sceneId||'').trim();
+    const hasHeadReference=Boolean(latestHash||headOrdinal>0);
+    for(let index=0;index<out.length;index+=1){
+      const r=out[index];
+      if(!r||r.representation!=='source_record')continue;
+      const rowOrdinal=Number(r.locator?.worldlineOrdinal??r.worldlineOrdinal??r.locator?.sourcePairIndex??r.sourcePairIndex??0)||0;
+      let locator=r.locator;
+      if(hasHeadReference&&locator){
+        const isPrior=(latestHash&&r.packetHash&&r.packetHash!==latestHash)||(headOrdinal>0&&rowOrdinal>0&&rowOrdinal<headOrdinal);
+        if(locator.distanceFromLatest===undefined||(isPrior&&!(Number(locator.distanceFromLatest)>0))){
+          locator={...locator,distanceFromLatest:isPrior?(headOrdinal>0&&rowOrdinal>0&&headOrdinal>=rowOrdinal?headOrdinal-rowOrdinal:1):0};
+        }
+      }
+      let sceneRelation=r.sceneRelation;
+      if(!sceneRelation&&(activeSceneId||Number.isFinite(Number(locator?.distanceFromLatest)))){
+        const rowSceneId=text(r.scene_id||r.sceneId||'').trim();
+        sceneRelation=activeSceneId&&rowSceneId?(activeSceneId===rowSceneId?'same_scene':'prior_scene'):(Number(locator?.distanceFromLatest)>0?'prior_snapshot_unconfirmed':'current_or_unknown');
+      }
+      if(locator!==r.locator||sceneRelation!==r.sceneRelation)out[index]={...r,locator,sceneRelation};
     }
     return bindPacketRecordReferences(out,store);
   };
@@ -24754,10 +24956,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for(const [key,entry]of localRecallPacketCache){if(localRecallPacketCache.size<=512&&chars<=16000000)break;localRecallPacketCache.delete(key);chars-=entry.chars;}
     for(const entry of prepared.values())for(const row of entry.rows){const id=localRecallSourceKey(row);if(!seen.has(id)){seen.add(id);rows.push(row);}}
     const accepted=new Set(addresses.map(identityOf));
+    store._recallLatestPacket=addresses.length?identityOf(addresses.at(-1),addresses.length-1):'';
     const mergedRows=mergeRecallRecordSources(rows,ensureArray(store.index).filter(row=>accepted.has(row.packetHash)),store,true);
     rows.splice(0,rows.length,...mergedRows);
     rows.sort((a,b)=>Number(a.locator?.messageIndex??0)-Number(b.locator?.messageIndex??0)||localRecallSourceKey(a).localeCompare(localRecallSourceKey(b)));
-    store._recallSourceRows=rows;store._recallLatestPacket=addresses.length?identityOf(addresses.at(-1),addresses.length-1):'';
+    store._recallSourceRows=rows;
     store._recallSourceCoverage={version:LOCAL_RECALL_VERSION,addressCount:addresses.length,indexedCount:[...prepared.values()].filter(entry=>entry.complete!==false).length,pendingCount:addresses.length-[...prepared.values()].filter(entry=>entry.complete!==false).length,partialSourceCount:[...prepared.values()].filter(entry=>entry.complete===false).length,failed,processedThisRequest:processed,linkedReads,rows:rows.length,cacheKeyChars,cacheVerificationSources,complete:prepared.size===addresses.length&&[...prepared.values()].every(entry=>entry.complete!==false),
       aliasCertification:{policy:'complete_source_existing_secret_policy',certifiedSources:[...prepared.values()].filter(entry=>entry.aliasCertification?.proof).length,
         pendingSources:[...prepared.values()].filter(entry=>entry.complete===false&&entry.aliasCertification?.summary).length,
@@ -26281,6 +26484,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const authoritativeHistoryPairs = (chatMessages, scope = {}) => {
     const pairs = [];
     let pendingUserHash = '';
+    let pendingUserVisible = '';
     let pendingUserMessageIdHash = '';
     let pendingUserMessageIdentityStable = false;
     let pendingUserMessageIndex = -1;
@@ -26294,6 +26498,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const body = projection.body;
       if (/^(?:user|human)$/i.test(role)) {
         const visible = projection.visible;
+        pendingUserVisible = visible;
         pendingUserHash = messageRevisionVisibleHash(projection, scope?.key || '');
         pendingUserMessageIdHash = stableHash64(projection.sourceMessageId);
         pendingUserMessageIdentityStable = projection.sourceMessageStable === true;
@@ -26325,7 +26530,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           turnOwnerKey: lineageRecord.turnOwnerKey || '',
           generationAttemptId: lineageRecord.generationAttemptId || ''
         } : null;
-      if (!visible && !packetHashes.length) return;
+      if (!visible && !packetHashes.length) {
+        if (text(body).trim().length > 0) {
+          pendingUserHash = '';
+          pendingUserMessageIdHash = '';
+          pendingUserMessageIdentityStable = false;
+          pendingUserMessageIndex = -1;
+          pendingUserMessageTime = 0;
+          pendingUserRawHash = '';
+        }
+        return;
+      }
       // Only a completed U+A exchange consumes a worldline ordinal. Persisted
       // assistant-only/prefill rows remain available through packet descriptors
       // for RAM recall, but must not create a gap before the next real turn.
@@ -26339,11 +26554,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       pairs.push({
         pairIndex: pairs.length + 1,
         userHash: pendingUserHash,
+        userVisibleText: pendingUserVisible,
         userMessageIdHash: pendingUserMessageIdHash,
         userMessageIdentityStable: pendingUserMessageIdentityStable,
         userMessageIndex: pendingUserMessageIndex,
         userMessageTime: pendingUserMessageTime,
         assistantVisibleHash: messageRevisionVisibleHash(projection, scope?.key || ''),
+        assistantVisibleText: visible,
         assistantLegacyVisibleHash: projection.legacyVisibleHash || '',
         // Same digest as hayakuRawSourceDigest over the unfiltered U+A bodies.
         sourceRawDigest: stableHash64([pendingUserRawHash, stableHash64(text(body))].join('\u0001')),
@@ -26574,8 +26791,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       scopeKey || value.scopeKey || '', pairIndex, userHash, assistantHash, assistantMessageIdHash
     ].join('\u0001'));
     const inheritedIdentity = sourceRecordId || stableHash64([pairIndex, userHash, assistantHash].join('\u0001'));
+    const originScopeKey = compact(value.originScopeKey || sourceScopeKey || '', 196);
+    const originRecordId = compact(value.originRecordId || sourceRecordId || inheritedIdentity, 196);
     const recordId = compact(value.recordId || (inheritedSessionHistory
-      ? `history:${sourceScopeKey || 'unknown'}:${inheritedIdentity}`
+      ? `history:${stableHash64(`${originScopeKey || 'unknown'}\u0001${originRecordId}`)}`
       : `debt:${pairIndex}:${branchIdentity}`), 196);
     const createdAt = Math.max(1, Number(value.createdAt || value.updatedAt || now()) || now());
     const updatedAt = Math.max(createdAt, Number(value.updatedAt || createdAt) || createdAt);
@@ -26633,6 +26852,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       reason: compact(value.reason || (inheritedSessionHistory ? 'session_handoff_history' : 'packet_missing'), 96),
       inheritedSessionHistory,
       permanentSessionHistory: inheritedSessionHistory,
+      originScopeKey,
+      originRecordId,
       sourceScopeKey,
       sourceRecordId: sourceRecordId || inheritedIdentity,
       handoffTransferId: compact(value.handoffTransferId || '', 160),
@@ -26781,9 +27002,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (outcome.state !== 'fulfilled') throw recoveryVaultFailure(outcome, 'recovery_vault_write', key);
     let readback = await readRecoveryVaultValue(key);
     if (JSON.stringify(readback) !== serialized) {
-      // Retry once after brief settle in case host storage flush has asynchronous latency
-      await new Promise(resolve => setTimeout(resolve, 50));
-      readback = await readRecoveryVaultValue(key);
+      // Retry briefly in case host storage flush has asynchronous latency
+      for (const delayMs of [50, 150]) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        readback = await readRecoveryVaultValue(key);
+        if (JSON.stringify(readback) === serialized) break;
+      }
       if (JSON.stringify(readback) !== serialized) throw new Error('recovery_vault_readback_mismatch:' + key);
     }
   };
@@ -26819,55 +27043,65 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       throw error;
     }
   };
+  const recoveryVaultWriteLocks = new Map();
+  const withRecoveryVaultWriteLock = (scopeKey, task) => {
+    const prev = recoveryVaultWriteLocks.get(scopeKey) || Promise.resolve();
+    const run = prev.catch(() => {}).then(task);
+    const tail = run.finally(() => { if (recoveryVaultWriteLocks.get(scopeKey) === tail) recoveryVaultWriteLocks.delete(scopeKey); });
+    recoveryVaultWriteLocks.set(scopeKey, tail);
+    return run;
+  };
   const writeRecoveryVaultDirect = async (scopeOrKey, value, reason = 'update', options = {}) => {
     const scopeKey=compact(objectish(scopeOrKey)?scopeOrKey.key:scopeOrKey,196);
     if (!scopeKey) return {durable:false,saved:false,reason:'scope_unavailable',records:0};
-    const normalized=normalizeRecoveryVault(value,scopeKey);normalized.pluginVersion=PLUGIN_VERSION;normalized.updatedAt=now();
-    normalized.records=normalizeRecoveryVault({...normalized,records:pruneRecoveryVaultRecords(normalized.records)},scopeKey).records;
-    const key=recoveryVaultKeyForScope(scopeKey);
-    try {
-      const previous=await readRecoveryVaultValue(key);if(previous)validateRecoveryVaultIndex(previous,scopeKey);
-      if(options.partial===true && previous?.storageFormat!==RECOVERY_VAULT_STORAGE_FORMAT){
-        const rows=new Map(normalizeRecoveryVault(previous,scopeKey).records.map(r=>[r.recordId,r]));
-        for(const id of ensureArray(options.removeDebtIds))rows.delete(String(id));
-        for(const row of normalized.records)rows.set(row.recordId,row);normalized.records=[...rows.values()];
+    return withRecoveryVaultWriteLock(scopeKey, async () => {
+      const normalized=normalizeRecoveryVault(value,scopeKey);normalized.pluginVersion=PLUGIN_VERSION;normalized.updatedAt=now();
+      normalized.records=normalizeRecoveryVault({...normalized,records:pruneRecoveryVaultRecords(normalized.records)},scopeKey).records;
+      const key=recoveryVaultKeyForScope(scopeKey);
+      try {
+        const previous=await readRecoveryVaultValue(key);if(previous)validateRecoveryVaultIndex(previous,scopeKey);
+        if(options.partial===true && previous?.storageFormat!==RECOVERY_VAULT_STORAGE_FORMAT){
+          const rows=new Map(normalizeRecoveryVault(previous,scopeKey).records.map(r=>[r.recordId,r]));
+          for(const id of ensureArray(options.removeDebtIds))rows.delete(String(id));
+          for(const row of normalized.records)rows.set(row.recordId,row);normalized.records=[...rows.values()];
+        }
+        const oldRefs=new Map(ensureArray(previous?.debtRefs).map(r=>[r.recordId,r]));
+        const refs=new Map(options.partial===true && previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT ? oldRefs:[]);
+        for(const id of ensureArray(options.removeDebtIds))refs.delete(String(id));
+        let debtWrites=0;
+        for(const record of normalized.records){
+          const payloadHash=stableHash64(JSON.stringify([record]));
+          const debtKey=key+'::debt:'+stableHash64(record.recordId)+':'+payloadHash;
+          const ref={recordId:record.recordId,pairIndex:record.pairIndex,key:debtKey};
+          if(oldRefs.get(record.recordId)?.key===debtKey)validateRecoveryVaultShard(await readRecoveryVaultValue(debtKey),ref,scopeKey);
+          else {await writeVerifiedRecoveryVaultValue(debtKey,{schema:RECOVERY_VAULT_SCHEMA,version:RECOVERY_VAULT_VERSION,storagePart:'debt',scopeKey,recordId:record.recordId,payloadHash,records:[record]});debtWrites++;}
+          refs.set(record.recordId,ref);
+        }
+        const debtRefs=[...refs.values()].sort((a,b)=>Number(a.pairIndex)-Number(b.pairIndex)||a.recordId.localeCompare(b.recordId));
+        const active=new Set(debtRefs.map(r=>r.key));
+        const retired=new Map(ensureArray(previous?.retiredDebtRefs).map(r=>[r.key,r]));
+        for(const ref of oldRefs.values())if(!active.has(ref.key))retired.set(ref.key,{key:ref.key,retiredAt:now()});
+        const expired=[...retired.values()].filter(r=>!active.has(r.key) && Number(r.retiredAt)>0 && Number(r.retiredAt)<now()-Math.max(30000,RECOVERY_VAULT_CACHE_TTL_MS*2));
+        const index={...normalized,records:[],storageFormat:RECOVERY_VAULT_STORAGE_FORMAT,debtRefs,
+          retiredDebtRefs:[...retired.values()].filter(r=>!active.has(r.key)&&!expired.includes(r)),
+          legacyMigratedAt:previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT?(previous.legacyMigratedAt||0):(previous?now():0)};
+        // Atomic root publication occurs only after all new debt snapshots read back.
+        await writeVerifiedRecoveryVaultValue(key,index);
+        Memory.recoveryVaultCache.delete(scopeKey);
+        if(!options.partial)Memory.recoveryVaultCache.set(scopeKey,{at:now(),vault:normalized});
+        Memory.recoveryVaultStats.writes++;Memory.recoveryVaultStats.lastError='';Memory.recoveryVaultStats.storedRecords=debtRefs.length;
+        Memory.recoveryVaultStats.storedChars=normalized.records.reduce((n,r)=>n+recoveryVaultRecordTextChars(r),0);
+        Memory.lastRecoveryVault={at:now(),scopeKey,reason,durable:true,records:debtRefs.length,debtWrites};
+        // Retired snapshots only. Interrupted new snapshots may remain as harmless
+        // orphans; neither errors nor cleanup delete the old committed graph.
+        for(const ref of expired)if(text(ref.key).startsWith(key+'::debt:'))await RisuCompat.removeStorageItem(ref.key).catch(()=>false);
+        return {...Memory.lastRecoveryVault,saved:true,storageKey:key,storageFormat:RECOVERY_VAULT_STORAGE_FORMAT};
+      } catch(error){
+        Memory.recoveryVaultCache.delete(scopeKey);Memory.recoveryVaultStats.failures++;Memory.recoveryVaultStats.lastError=compact(error?.message||error,240);
+        const failed={durable:false,saved:false,scopeKey,reason:'recovery_vault_write_failed',error:Memory.recoveryVaultStats.lastError,code:error?.code||'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',stage:error?.stage||'recovery_vault_write'};
+        Memory.lastRecoveryVault={at:now(),...failed};pushOperationLog('recovery_vault:write_failed',Memory.lastRecoveryVault,'error');return failed;
       }
-      const oldRefs=new Map(ensureArray(previous?.debtRefs).map(r=>[r.recordId,r]));
-      const refs=new Map(options.partial===true && previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT ? oldRefs:[]);
-      for(const id of ensureArray(options.removeDebtIds))refs.delete(String(id));
-      let debtWrites=0;
-      for(const record of normalized.records){
-        const payloadHash=stableHash64(JSON.stringify([record]));
-        const debtKey=key+'::debt:'+stableHash64(record.recordId)+':'+payloadHash;
-        const ref={recordId:record.recordId,pairIndex:record.pairIndex,key:debtKey};
-        if(oldRefs.get(record.recordId)?.key===debtKey)validateRecoveryVaultShard(await readRecoveryVaultValue(debtKey),ref,scopeKey);
-        else {await writeVerifiedRecoveryVaultValue(debtKey,{schema:RECOVERY_VAULT_SCHEMA,version:RECOVERY_VAULT_VERSION,storagePart:'debt',scopeKey,recordId:record.recordId,payloadHash,records:[record]});debtWrites++;}
-        refs.set(record.recordId,ref);
-      }
-      const debtRefs=[...refs.values()].sort((a,b)=>Number(a.pairIndex)-Number(b.pairIndex)||a.recordId.localeCompare(b.recordId));
-      const active=new Set(debtRefs.map(r=>r.key));
-      const retired=new Map(ensureArray(previous?.retiredDebtRefs).map(r=>[r.key,r]));
-      for(const ref of oldRefs.values())if(!active.has(ref.key))retired.set(ref.key,{key:ref.key,retiredAt:now()});
-      const expired=[...retired.values()].filter(r=>!active.has(r.key) && Number(r.retiredAt)>0 && Number(r.retiredAt)<now()-Math.max(30000,RECOVERY_VAULT_CACHE_TTL_MS*2));
-      const index={...normalized,records:[],storageFormat:RECOVERY_VAULT_STORAGE_FORMAT,debtRefs,
-        retiredDebtRefs:[...retired.values()].filter(r=>!active.has(r.key)&&!expired.includes(r)),
-        legacyMigratedAt:previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT?(previous.legacyMigratedAt||0):(previous?now():0)};
-      // Atomic root publication occurs only after all new debt snapshots read back.
-      await writeVerifiedRecoveryVaultValue(key,index);
-      Memory.recoveryVaultCache.delete(scopeKey);
-      if(!options.partial)Memory.recoveryVaultCache.set(scopeKey,{at:now(),vault:normalized});
-      Memory.recoveryVaultStats.writes++;Memory.recoveryVaultStats.lastError='';Memory.recoveryVaultStats.storedRecords=debtRefs.length;
-      Memory.recoveryVaultStats.storedChars=normalized.records.reduce((n,r)=>n+recoveryVaultRecordTextChars(r),0);
-      Memory.lastRecoveryVault={at:now(),scopeKey,reason,durable:true,records:debtRefs.length,debtWrites};
-      // Retired snapshots only. Interrupted new snapshots may remain as harmless
-      // orphans; neither errors nor cleanup delete the old committed graph.
-      for(const ref of expired)if(text(ref.key).startsWith(key+'::debt:'))await RisuCompat.removeStorageItem(ref.key).catch(()=>false);
-      return {...Memory.lastRecoveryVault,saved:true,storageKey:key,storageFormat:RECOVERY_VAULT_STORAGE_FORMAT};
-    } catch(error){
-      Memory.recoveryVaultCache.delete(scopeKey);Memory.recoveryVaultStats.failures++;Memory.recoveryVaultStats.lastError=compact(error?.message||error,240);
-      const failed={durable:false,saved:false,scopeKey,reason:'recovery_vault_write_failed',error:Memory.recoveryVaultStats.lastError,code:error?.code||'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',stage:error?.stage||'recovery_vault_write'};
-      Memory.lastRecoveryVault={at:now(),...failed};pushOperationLog('recovery_vault:write_failed',Memory.lastRecoveryVault,'error');return failed;
-    }
+    });
   };
   const recoveryEvidenceManifestHash = value => stableHash64(JSON.stringify({
     schema: value?.schema || '',
@@ -27745,6 +27979,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ledger=bindStorageLedgerToSnapshot({...ledger,worldline},snapshot,worldline).ledger;
     const exactCoverage=exactHayakuTurnCoverage(snapshot,ledger,scope.key);
     const lifecycle = await reconcileRecoveryVaultWorldlineLifecycleDirect(scope, snapshot, worldline, { force: true, reason: 'hayaku_native_debt_inspect',coverage:exactCoverage });
+    if (lifecycle?.durable === false) {
+      return {
+        ok: false,
+        durable: false,
+        available: false,
+        reason: lifecycle.reason || 'recovery_vault_write_failed',
+        error: lifecycle.error || '',
+        code: lifecycle.code || 'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',
+        stage: lifecycle.stage || 'recovery_vault_write',
+        scopeKey: scope.key,
+        debts: [],
+        coverage: exactCoverage
+      };
+    }
     lifecycle.activeRecords=lifecycle.activeRecords.filter(r=>exactCoverage.missingTurns.includes(Number(r.pairIndex)));
     const targetDebtId = compact(payload?.debtId || '', 196);
     const targetPairIndex = Math.max(0, Number(payload?.targetPairIndex || ensureArray(payload?.targetTurns)[0] || 0) || 0);
@@ -28114,7 +28362,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         },
         context: {
           debtId: record.recordId,
-          repairTarget: recoveryDebtRepairTarget(record),
+          repairTarget: {
+            ...recoveryDebtRepairTarget(record),
+            ...(liveScope?.confident && liveScope?.key === scopeKey ? { sourcePrefixDigest: hayakuSourcePrefixDigest(liveScope, record.pairIndex) } : {})
+          },
           sourceEvidenceHash: recoveryDebtRepairTarget(record)?.sourceEvidenceHash || '',
           contextOnly: text(failure?.context?.contextOnly || ''),
           afterRequestRepair: clone(record.afterRequestRepair, null)
@@ -28243,14 +28494,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           || 0
       ) || 0);
     }).filter(value => value > 0);
-    if (!structuredTurns.length) {
+    const explicitTargetTurns = ensureArray(options.explicitTargetTurns).map(Number).filter(n => Number.isInteger(n) && n > 0);
+    if (!structuredTurns.length && !explicitTargetTurns.length) {
       return { ok: true, skipped: true, reason: 'manual_cold_start_required', saved: 0, coverageFloor: 0 };
     }
-    const coverageFloor = options.manualFullScan === true ? 1 : Math.min(...structuredTurns);
+    const coverageFloor = (options.manualFullScan === true || explicitTargetTurns.length > 0) ? 1 : Math.min(...structuredTurns);
     const freshCoverage = options.exactCoverage || exactHayakuTurnCoverage(snapshot, options.ledger || {scopeKey:scope.key,worldline,records:[]}, scope.key);
     const debts = ensureArray(recovery?.recoveryDebt?.debts)
       .filter(debt => freshCoverage.missingTurns.includes(Number(debt?.pairIndex)))
       .filter(debt => Math.max(0, Number(debt?.pairIndex || 0) || 0) >= coverageFloor)
+      .filter(debt => structuredTurns.length > 0 || explicitTargetTurns.includes(Number(debt?.pairIndex)))
       .slice(0, RECOVERY_VAULT_MAX_RECORDS);
     if (!debts.length) {
       return { ok: true, skipped: true, reason: 'detected_debts_before_hayaku_coverage', saved: 0, coverageFloor };
@@ -28479,25 +28732,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const targetVault = await loadRecoveryVault(targetKey, { force: true });
       const inheritedAt = now();
       const existing = new Map(ensureArray(targetVault.records).map(record => {
+        const originScope = compact(record.originScopeKey || record.sourceScopeKey || '', 196);
+        const originId = compact(record.originRecordId || record.sourceRecordId || recoveryVaultRecordIdentity(record), 196);
         const key = record.inheritedSessionHistory
-          ? `history:${record.sourceScopeKey}:${record.sourceRecordId}`
+          ? `history:${stableHash64(`${originScope}\u0001${originId}`)}`
           : `debt:${record.recordId || recoveryVaultRecordIdentity(record)}`;
         return [key, record];
       }));
       let copied = 0;
       for (const sourceRecord of ensureArray(sourceVault.records)) {
-        const sourceRecordId = recoveryVaultRecordIdentity(sourceRecord);
-        const key = `history:${sourceKey}:${sourceRecordId}`;
+        const originScopeKey = compact(sourceRecord.originScopeKey || sourceRecord.sourceScopeKey || sourceKey, 196);
+        const originRecordId = compact(sourceRecord.originRecordId || sourceRecord.sourceRecordId || recoveryVaultRecordIdentity(sourceRecord), 196);
+        const historyRecordId = `history:${stableHash64(`${originScopeKey}\u0001${originRecordId}`)}`;
+        const key = historyRecordId;
         if (existing.has(key)) continue;
-        const inherited = normalizeRecoveryVaultRecord({
+        const baseInherited = normalizeRecoveryVaultRecord({
           ...sourceRecord,
-          recordId: `history:${sourceKey}:${sourceRecordId}`,
+          recordId: historyRecordId,
           scopeKey: targetKey,
           sourcePairIndex: sourceRecord.sourcePairIndex || sourceRecord.pairIndex,
           inheritedSessionHistory: true,
           permanentSessionHistory: true,
+          originScopeKey,
+          originRecordId,
           sourceScopeKey: sourceKey,
-          sourceRecordId,
+          sourceRecordId: originRecordId,
           handoffTransferId: transfer,
           inheritedAt,
           sourceFingerprint: sourceBefore.fingerprint,
@@ -28505,8 +28764,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           reason: 'session_handoff_history',
           updatedAt: inheritedAt
         }, targetKey);
-        if (!inherited) continue;
-        existing.set(key, inherited);
+        if (!baseInherited) continue;
+        let finalInherited = baseInherited;
+        if (sourceRecord.evidenceManifest) {
+          const srcExpectedId = compact(sourceRecord.recordId || '', 196);
+          const sidecar = await readRecoveryEvidenceSidecar(sourceRecord.evidenceManifest, {
+            scopeKey: compact(sourceRecord.evidenceManifest.scopeKey || sourceRecord.scopeKey || sourceKey, 196),
+            ...(srcExpectedId ? { recordId: srcExpectedId } : {})
+          }).catch(() => null);
+          if (sidecar?.ok === true) {
+            const attached = await attachRecoveryEvidenceSidecar(baseInherited, {
+              user: sidecar.user,
+              assistant: sidecar.assistant
+            }).catch(() => null);
+            if (attached?.durable === true && attached.record) {
+              finalInherited = attached.record;
+            }
+          }
+        }
+        existing.set(key, finalInherited);
         copied += 1;
       }
       const write = copied > 0
@@ -28564,12 +28840,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!objectish(metadata) || metadata.version !== RECOVERY_VAULT_HANDOFF_VERSION) {
       return { ok: true, reason: 'recovery_vault_handoff_not_required', records: 0 };
     }
+    if (metadata.skipped === true) {
+      return { ok: true, skipped: true, reason: metadata.reason || 'recovery_vault_handoff_skipped_fail_open', records: 0, expected: Number(metadata.sourceRecords || 0) || 0, sourcePreserved: metadata.sourcePreserved !== false };
+    }
     const targetKey = compact(targetScopeKey || metadata.targetScopeKey || '', 196);
     const sourceKey = compact(metadata.sourceScopeKey || '', 196);
     const transfer = compact(metadata.transferId || '', 160);
     const targetVault = await loadRecoveryVault(targetKey, { force: true });
     const records = targetVault.records.filter(record => record.inheritedSessionHistory === true
-      && record.sourceScopeKey === sourceKey
+      && (record.sourceScopeKey === sourceKey || Boolean(record.originScopeKey))
       && (!transfer || record.handoffTransferId === transfer));
     const sourceNow = await recoveryVaultStorageFingerprint(sourceKey);
     const sourcePreserved = !metadata.sourceFingerprintBefore || metadata.sourceFingerprintBefore === sourceNow.fingerprint;
@@ -28943,16 +29222,45 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const lifecycle=snapshot&&worldline?await reconcileRecoveryVaultWorldlineLifecycleDirect(scope,snapshot,worldline,{reason:'raw_recall_worldline_reconcile'}):{vault:await loadRecoveryVault(scope.key)};
     const vault=lifecycle.vault,active=activeRecoveryVaultRecords(vault,snapshot,worldline);
     const passages=[];
-    const liveSnapshot=scope.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(scope.chatMessages,scope)):null;
+    const liveScope=Array.isArray(scope?.chatMessages)?scope:(scope?.chatMessagesAvailable===true&&Array.isArray(messages)?{...scope,chatMessages:messages}:scope);
+    const liveSnapshot=liveScope?.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(liveScope.chatMessages,liveScope)):null;
     const visibleRecentTurns = settings?.visibleRecentTurns instanceof Set ? settings.visibleRecentTurns : null;
     for(const record of active.records){
       const inherited=record?.inheritedSessionHistory===true||record?.permanentSessionHistory===true;
       if(!inherited&&visibleRecentTurns?.size&&visibleRecentTurns.has(Number(record?.pairIndex||record?.worldlineOrdinal||record?.targetPairIndex||0)))continue;
       // Current-session turns are read from the visible chat; a changed turn is skipped.
-      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,scope,liveSnapshot):null;
+      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,liveScope,liveSnapshot):null;
       if(!inherited&&liveSnapshot&&!live)continue;
+      const passageMaxChars=650;
+      let sidecarEvidence = null;
       for(const role of ['user','assistant']){
-        const body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');if(!body)continue;
+        let body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');
+        if (!live && !body && record.evidenceManifest && Number(record[role]?.chars || 0) > 0) {
+          if (sidecarEvidence === null) {
+            sidecarEvidence = await readRecoveryEvidenceSidecar(record.evidenceManifest, {
+              scopeKey: compact(record.evidenceManifest.scopeKey || record.scopeKey || scope.key, 196),
+              ...(record.recordId ? { recordId: compact(record.recordId, 196) } : {})
+            }).catch(() => ({ ok: false }));
+          }
+          if (sidecarEvidence?.ok === true) {
+            body = text(sidecarEvidence[role] || '');
+          }
+        }
+        if(!body)continue;
+        if(body.length>passageMaxChars){
+          const bodyHash=live?(role==='user'?live.userHash:live.assistantHash):record[role]?.hash;
+          const synthetic={recordId:record.recordId,pairIndex:record.pairIndex||record.targetPairIndex||1,updatedAt:record.updatedAt,reason:record.reason,
+            [role]:{text:body,hash:bodyHash||stableHash64(body)}};
+          const windowed=rawRecoveryPassagesForRole(synthetic,role,passageMaxChars);
+          if(windowed.length){
+            for(const passage of windowed){
+              passages.push({id:record.recordId+':'+role+':'+passage.passageId,publicText:passage.text,axis:'narrative',record,role});
+            }
+            continue;
+          }
+          passages.push({id:record.recordId+':'+role,publicText:body.slice(0,passageMaxChars),axis:'narrative',record,role});
+          continue;
+        }
         passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
       }
     }
@@ -28963,9 +29271,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(text(query||'').trim())rankedLists.push(localRecallRank(passages,[query]));
       const topics=ensureArray(context.topics);
       if(topics.length)rankedLists.push(localRecallRank(passages,topics));
-      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT):[];
+      const maxItems=Math.max(1,Math.min(PACKET_CORE_RECALL_CANDIDATE_LIMIT,Number(settings.rawRecallMaxItems||DEFAULT_SETTINGS.rawRecallMaxItems||6)||6));
+      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT).slice(0,maxItems):[];
     }
     const records=chosen.map((row,index)=>({id:row.id,text:row.publicText,role:row.role,pairIndex:row.record.pairIndex||row.record.targetPairIndex||1,
+      worldlineOrdinal:Number(row.record.worldlineOrdinal||row.record.pairIndex||row.record.targetPairIndex||1),
       sourceHash:row.record.sourceHash||'',historyScope:row.record.historyScope||'current_session',score:1/(61+index),
       epistemicCaution:true,epistemicStatus:'original_narration_not_universal_character_knowledge'}));
     const result={version:LOCAL_RECALL_VERSION,active:!!records.length,reason:records.length?'source_context':'no_candidates',records,vaultRecords:vault.records.length,passages:passages.length,candidates:records.length};
@@ -32002,11 +32312,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       lightweightIngest: true,
       sourceScope: 'hidden_packet_structured_light_ingest'
     };
-    upsertHayakuMemoryNote(store, buildHayakuMemoryNote(parsed, {
-      packetHash,
-      turn: store.turn,
-      sourceMeta: lightSourceMeta
-    }));
+    if (!(parsed?.meta?.packet_record_revision === 2 && Memory.settings?.debug !== true)) {
+      upsertHayakuMemoryNote(store, buildHayakuMemoryNote(parsed, {
+        packetHash,
+        turn: store.turn,
+        sourceMeta: lightSourceMeta
+      }));
+    }
     const makeRows = (axis, category, values, limit = 4) => packetItems(values).slice(0, limit).map((raw, index) => {
       const item = objectish(raw) ? raw : { label: compact(raw, 220), summary: compact(raw, 220) };
       const subject = item.name || item.title || item.label || item.summary || item.event || item.rule || item.from || `${category}_${index}`;
@@ -32212,7 +32524,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // Build packet-level natural memory only after restricted POV/secret
     // boundaries have been normalized and removed from the public summary.
     const ledgerMetaPacket = sanitizeLedgerMetaKnowledgeBoundaries(parsed, secrets, povMemories);
-    upsertHayakuMemoryNote(store, buildHayakuMemoryNote(ledgerMetaPacket, { packetHash, turn, sourceMeta }));
+    if (!(parsed?.meta?.packet_record_revision === 2 && Memory.settings?.debug !== true)) {
+      upsertHayakuMemoryNote(store, buildHayakuMemoryNote(ledgerMetaPacket, { packetHash, turn, sourceMeta }));
+    }
     ingestSignal.lastPacketRefReuseError = Boolean(ingestSignal.lastPacketRefReuseError || povRefSplit.hadConflict || secretRefSplit.hadConflict);
     ingestSignal.hasNewCharacter = hadPacketBaseline && hasNewStableItem(characters, previousCharacters);
     ingestSignal.hasRelationshipChange = hadPacketBaseline && hasRelationChange(relations, previousRelations);
@@ -33510,7 +33824,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         row.retrieval.priorityTerms = mergeValues([row.retrieval.priorityTerms, retrievalAliases], 128);
         row.retrieval.crossLingualTokens = mergeValues([row.retrieval.crossLingualTokens, canonicalRecallTokensForText(retrievalAliases.join(' '))], 160);
       }
-      return attachSparseAtomicRecord(row, item);
+      return (item._packetRecord && !options?.includeLegacyAtomic) ? row : attachSparseAtomicRecord(row, item);
     }).filter(row => !isLowSignalContinuityRow(row));
     const stateRows=ensureArray(store.entity?.characters).filter(item=>item._characterStateProjection?.active&&item._packetRecord&&item.recallSuppressed!==true).flatMap(item=>{
       const base=baseRows.find(row=>row.category==='character'&&row.publicRef===publicRefOf(item));if(!base)return [];
@@ -33536,6 +33850,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const rows = [...inheritedRows.map(row => attachPacketMemoryLifecycle(row, store)), ...buildDerivedEventMemoryRows(inheritedRows, store)];
     const remainingBeforeGraph = Number.isFinite(Number(options?.deadlineAt)) ? Math.max(0, Number(options.deadlineAt) - now()) : Number.POSITIVE_INFINITY;
     const policy = derivedIndexBuildPolicy(rows.length, remainingBeforeGraph, settings);
+    if (options?.skipUnusedDerivedStructures === true) {
+      store.index = selectProtectedIndexRows(rows, INDEX_ROW_LIMIT);
+      if (!store.memory || typeof store.memory !== 'object') store.memory = { summaries: [], notes: [], episodes: [], episodeIndex: null };
+      store.memory.episodeIndex = null;
+      store.memory.episodes = [];
+      Memory.lastDerivedIndexBuild = {
+        version: DERIVED_ROUTING_COMPILER_VERSION,
+        policy: { ...policy, typedGraphEnabled: false, episodeEnabled: false, reason: 'source_recall_direct' },
+        baseRows: baseRows.length,
+        indexRows: store.index.length,
+        graphMs: 0,
+        episodeMs: 0,
+        totalMs: now() - buildStartedAt
+      };
+      return;
+    }
     const derivedSettings = { ...settings, typedMemoryGraphEnabled: policy.typedGraphEnabled, hierarchicalEpisodeMemoryEnabled: policy.episodeEnabled };
     const graphStartedAt = now();
     store.index = attachUnifiedMemoryAssociations(selectProtectedIndexRows(rows, INDEX_ROW_LIMIT), store, derivedSettings);
@@ -33560,10 +33890,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const queryMentionsAny = (query = '', values = []) => ensureArray(values).some(value => RecallKeywordFeatures.mentions(query, value));
   const queryMentionedEntities = (store={},query='') => {
+    const dict=buildAliasDictionary(store);
+    const resolved=RecallKeywordFeatures.resolveMentions(query,dict).map(hit=>hit.canonical).filter(Boolean);
     const words=localRecallWords(query),hits=[];
-    for(const entry of buildAliasDictionary(store))for(const name of entry.names){const parts=localRecallWords(name);if(!parts.length)continue;
+    for(const entry of dict)for(const name of entry.names){const parts=localRecallWords(name);if(!parts.length)continue;
       for(let i=0;i<=words.length-parts.length;i++)if(parts.every((part,j)=>words[i+j]===part))hits.push({entry,start:i,end:i+parts.length});}
-    return [...new Set(hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical))];
+    const wordMatched=hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical);
+    return [...new Set([...resolved,...wordMatched])];
   };
   const normalizeSceneVisibility = value => {
     const raw = text(value).trim().toLowerCase();
@@ -35410,8 +35743,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return prepareHayakuRecallRows(rows,query,settings,store,[],[]);
   };
   const searchIndexCompositeRecall = async (store, query, settings = Memory.settings, owner = {}) => {
-    const rows=localRecallCandidates(store,query,settings,null);
-    return prepareHayakuRecallRows(rows,query,settings,store,[],[]);
+    const candidates=localRecallCandidates(store,query,settings,null);
+    const transition=applyHayakuTransitionBundleBoost(candidates,query,settings,store);
+    const rows=collapseCurrentWorldConflicts(transition.rows,query);
+    return prepareHayakuRecallRows(rows,query,settings,store,[],transition.bundles);
   };
   const firstTextOf = (source = {}, keys = []) => {
     for (const key of keys) {
@@ -35869,7 +36204,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parsed = safeJsonParse(materialized?.raw || '', null) || (objectish(packet?.meta) && objectish(packet?.entity) ? packet : null);
     if (!objectish(parsed)) return null;
     const packetType = recoveryPacketTypeOf(parsed);
-    if (isRecoveryPacketType(packetType)) return null;
+    const explicitOrdinal = Number(packet?.worldlineOrdinal || packet?.targetPairIndex || packet?.historicalOrdinal || 0) || 0;
+    const analysisStatus = text(parsed?.meta?.analysis_status || '').trim();
+    if (isRecoveryPacketType(packetType) && (!explicitOrdinal || /^partial_memory/.test(analysisStatus))) return null;
     const meta = objectish(parsed.meta) ? parsed.meta : {};
     const entity = objectish(parsed.entity) ? parsed.entity : {};
     const world = objectish(parsed.world) ? parsed.world : {};
@@ -35878,6 +36215,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return {
       packet,
       parsed,
+      packetType,
       meta,
       entity,
       world,
@@ -35895,13 +36233,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .map(sceneBatonPacketState)
       .filter(Boolean)
       .sort((a, b) => a.ordinal - b.ordinal
+        || (Number(isRecoveryPacketType(b.packetType)) - Number(isRecoveryPacketType(a.packetType)))
         || Number(a.packet?.messageIndex || 0) - Number(b.packet?.messageIndex || 0)
         || Number(a.packet?.capturedAt || 0) - Number(b.packet?.capturedAt || 0));
     const latest = states.at(-1);
     if (!latest) return { text: '', rows: [], sceneEpoch: '', sourcePacketHash: '', sceneId: '' };
     const latestLocationKey = normalizeKey(latest.location);
     const latestSceneKey = normalizeKey(latest.sceneId);
-    let sceneStart = latest;
+    const latestIdx = states.length - 1;
+    let sceneStartIdx = latestIdx;
     for (let index = states.length - 2; index >= 0; index -= 1) {
       const candidate = states[index];
       const candidateLocationKey = normalizeKey(candidate.location);
@@ -35909,7 +36249,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const sameLocation = latestLocationKey && candidateLocationKey === latestLocationKey;
       const sameDeclaredScene = latestSceneKey && candidateSceneKey === latestSceneKey;
       if (!sameLocation && !sameDeclaredScene) break;
-      sceneStart = candidate;
+      sceneStartIdx = index;
+    }
+    const sceneStart = states[sceneStartIdx];
+    const durableSlots = new Map();
+    const recordDurableSlots = rawChar => {
+      const item = itemObject(rawChar);
+      const key = normalizeKey(item.name || item.title || item.label || '');
+      if (!key) return;
+      const cur = durableSlots.get(key) || {};
+      const location = text(item.current_location || item.currentLocation || item.location || item.last_known_location || item.lastKnownLocation || '').trim();
+      const condition = text(item.condition || item.physical_state || item.physicalState || '').trim();
+      const attire = text(item.attire || item.outfit || '').trim();
+      const carrying = ensureArray(item.carrying || item.carried || item.inventory).filter(Boolean).join(', ').trim();
+      durableSlots.set(key, {
+        location: location || cur.location || '',
+        condition: condition || cur.condition || '',
+        attire: attire || cur.attire || '',
+        carrying: carrying || cur.carrying || ''
+      });
+    };
+    ensureArray(options?.store?.entity?.characters)
+      .filter(character => character?._characterStateProjection?.active)
+      .forEach(recordDurableSlots);
+    for (let index = sceneStartIdx; index < latestIdx; index += 1) {
+      packetItems(states[index].entity.characters || states[index].entity.character || states[index].entity.people).forEach(recordDurableSlots);
     }
     const sceneEpoch = stableHash64([
       'hayaku_scene_epoch_v1',
@@ -35946,44 +36310,30 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           boundary: '지식 경계'
         };
     const rows = [];
-    const add = (kind, value) => {
-      const body = compact(value, 240);
+    const add = (kind, value, maxLen = 240) => {
+      const body = compact(value, maxLen);
       if (!body) return;
       rows.push({ kind, text: body });
     };
     add('identity', `${labels.identity}: ${latest.sceneId || `epoch:${sceneEpoch}`}`);
     add('place_time', `${labels.placeTime}: ${[latest.location, latest.time].filter(Boolean).join(' · ')}`);
-    packetItems(latest.entity.characters || latest.entity.character || latest.entity.people)
-      .slice(0, 4)
-      .forEach(character => {
-        const item = itemObject(character);
-        const name = item.name || item.title || item.label || '';
-        const state = [
-          item.status || item.state || item.current_state || item.currentState,
-          item.location,
-          item.current_action || item.currentAction || item.last_action || item.lastAction,
-          item.condition || item.physical_state || item.physicalState,
-          item.attire || item.outfit,
-          ensureArray(item.carrying || item.carried || item.inventory).join(', ')
-        ].filter(Boolean).join(' · ');
-        const ownerLabel = name ? `[${name}]` : '';
-        add('participant', `${labels.participant}: ${[ownerLabel, state].filter(Boolean).join(' — ')}`);
-      });
-    packetItems(latest.entity.relations || latest.entity.relationships)
-      .slice(0, 2)
-      .forEach(relation => {
-        const item = itemObject(relation);
-        const from = item.from || item.subject || item.source || item.ownerEntityId || '';
-        const to = item.to || item.target || item.peer || '';
-        const relState = [item.status || item.state || item.dynamic || item.summary || item.text, item.trust, item.tension].filter(Boolean).join(' · ');
-        if (from && to && relState) {
-          const relHeader = language === 'en' ? 'Relationship (directional)' : '관계 방향';
-          add('relation', `${relHeader}: ${from} → ${to} — ${relState}`);
-        }
-      });
-    packetItems(latest.world.active_events || latest.world.activeEvents || latest.world.events)
-      .slice(0, 2)
-      .forEach(event => add('event', `${labels.event}: ${itemText(event)}`));
+    const participantItems = packetItems(latest.entity.characters || latest.entity.character || latest.entity.people).slice(0, 4);
+    const participantMaxChars = participantItems.length >= 3 ? 120 : 160;
+    participantItems.forEach(character => {
+      const item = itemObject(character);
+      const name = item.name || item.title || item.label || '';
+      const durable = durableSlots.get(normalizeKey(name)) || {};
+      const state = [
+        item.status || item.state || item.current_state || item.currentState,
+        item.current_location || item.currentLocation || item.location || durable.location,
+        item.current_action || item.currentAction || item.last_action || item.lastAction,
+        item.condition || item.physical_state || item.physicalState || durable.condition,
+        item.attire || item.outfit || durable.attire,
+        ensureArray(item.carrying || item.carried || item.inventory).filter(Boolean).join(', ') || durable.carrying
+      ].filter(Boolean).join(' · ');
+      const ownerLabel = name ? `[${name}]` : '';
+      add('participant', `${labels.participant}: ${[ownerLabel, state].filter(Boolean).join(' — ')}`, participantMaxChars);
+    });
     packetItems(latest.narrative.scene_deltas || latest.narrative.sceneDeltas || latest.narrative.deltas)
       .slice(-1)
       .forEach(delta => add('delta', `${labels.delta}: ${itemText(delta)}`));
@@ -36009,6 +36359,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           ? (language === 'en' ? ` (not known by: ${denied})` : ` (미인지: ${denied})`)
           : (language === 'en' ? ' (other characters: unconfirmed)' : ' (타 인물 인지 미확인)');
         add('knowledge_boundary', `${labels.boundary}: ${owner}${deniedSuffix} — ${item.summary || item.text || 'private knowledge'}`);
+      });
+    packetItems(latest.world.active_events || latest.world.activeEvents || latest.world.events)
+      .slice(0, 2)
+      .forEach(event => add('event', `${labels.event}: ${itemText(event)}`));
+    packetItems(latest.entity.relations || latest.entity.relationships)
+      .slice(0, 2)
+      .forEach(relation => {
+        const item = itemObject(relation);
+        const from = item.from || item.subject || item.source || item.ownerEntityId || '';
+        const to = item.to || item.target || item.peer || '';
+        const relState = [item.status || item.state || item.dynamic || item.summary || item.text, item.trust, item.tension].filter(Boolean).join(' · ');
+        if (from && to && relState) {
+          const relHeader = language === 'en' ? 'Relationship (directional)' : '관계 방향';
+          add('relation', `${relHeader}: ${from} → ${to} — ${relState}`);
+        }
       });
     const cap = Math.max(320, Math.min(1000, Number(options?.capChars || 800) || 800));
     const lines = [labels.lead];
@@ -36268,7 +36633,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const key = characterStateProjectionKeyForRow(row);
       if (!key) return;
       const previous = winners.get(key);
-      if (!previous || compareContinuityEvidenceObservation(previous, row) < 0) winners.set(key, row);
+      const cmp = previous ? compareContinuityEvidenceObservation(previous, row) : -1;
+      if (!previous || cmp < 0 || (cmp === 0 && row.representation === 'state_projection' && previous.representation !== 'state_projection')) winners.set(key, row);
     });
     return {
       ...selected,
@@ -36949,7 +37315,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const overrideLane=text(options?.laneOverride||'').trim();
     const semanticLane=continuityEvidenceLaneFor(axis,row,options);
     return {axis,row,memory,language,localSourceEntry:true,
-      continuityLane:CONTINUITY_EVIDENCE_LANE_ORDER.includes(overrideLane)?overrideLane:CONTINUITY_EVIDENCE_LANES.derivedSummaries,
+      continuityLane:CONTINUITY_EVIDENCE_LANE_ORDER.includes(overrideLane)?overrideLane:semanticLane,
       semanticLane,
       prefix:'',clauses:[body],extras:[],bodyKey:normalizeKey(body),lineKey:memory,boundaryKey:packetCoreRecallBoundaryKey(row),
       tokens:localRecallWords(body),entities:[],semanticKeys:[],sourceKeys:sourceKey?[sourceKey]:[],sourceRows:[{axis,row}],mergedDuplicates:0};
@@ -37233,6 +37599,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // An entry whose text another memory plugin already put into this request verbatim is left out.
     const peerKept=peerRecall?entries.filter(entry=>!peerRecall.covered(text(entry?.memory||''))):entries;
     const peerDropped=entries.length-peerKept.length;
+    const libraPeerActive=Boolean(peerRecall?.owners?.includes?.('libra'));
     const assessed=assessHayakuEvidence(peerKept,query);
     let recentChatDropped=0;
     const recentChatDroppedItems=[];
@@ -37245,6 +37612,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const unit={id:'entry:'+stableHash64(origins.map(o=>hayakuEvidenceRowId(o.row)).sort().join('|')+'\n'+entry.memory),entry,origins,
         rowIds:origins.map(o=>hayakuEvidenceRowId(o.row)),priority,weight:candidates.length?Math.max(...candidates.filter(c=>c.priorityRank===priority).map(c=>c.weight)):Number(entry.row?.score||0),
         lane:entry.continuityLane,semanticLane:entry.semanticLane||continuityEvidenceLaneFor(entry.axis,entry.row),body:entry.memory};
+      if(libraPeerActive){
+        const renderLane=effectiveHayakuRenderLane(unit);
+        if([CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(renderLane)){
+          unit.priority=Math.min(unit.priority,1.4);
+          unit.weight=Number(unit.weight||0)*1.22;
+        } else if(renderLane===CONTINUITY_EVIDENCE_LANES.derivedSummaries&&origins.length>0&&origins.every(o=>PACKET_CORE_RECALL_SUMMARY_RE.test(text(o?.row?.category||''))&&Number(o?.row?.locator?.distanceFromLatest||0)>4)){
+          unit.priority=Math.max(unit.priority,2.2);
+          unit.weight=Number(unit.weight||0)*0.72;
+        }
+      }
       if(visibleTurns&&isHayakuUnitCoveredByVisibleTurns(unit,visibleTurns)){
         recentChatDropped+=1;
         const turns=[...new Set(origins.map(o=>Number(o?.row?.locator?.worldlineOrdinal??o?.row?.worldlineOrdinal??o?.row?.locator?.sourcePairIndex??o?.row?.sourcePairIndex??0)).filter(n=>Number.isInteger(n)&&n>0))].sort((a,b)=>a-b);
@@ -37338,7 +37715,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const head=Number(prepared.metadata?.store?.worldlineHeadOrdinal||0);
     for(const unit of units){
       const protectedCore=[CONTINUITY_EVIDENCE_LANES.latestState,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,
-        CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(unit.lane);
+        CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences].includes(effectiveHayakuRenderLane(unit));
       const origins=ensureArray(unit.origins).map(origin=>origin.row);
       if(!origins.length&&(unit.raw||unit.partial))origins.push(unit.raw||unit.partial);
       for(const row of origins){
@@ -37370,7 +37747,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const linkedRows=new Set(requirements.filter(r=>r.linked).flatMap(r=>r.ids));
     const groups=[...requirements.map(r=>({id:r.id,units:r.units,priority:r.priority,linked:r.linked,requirement:r})),
       ...prepared.units.filter(u=>!dependent.has(u.id)).map(u=>({id:u.id,units:[u],priority:u.priority}))];
-    const rawCap=prepared.units.some(u=>!u.raw)?Math.min(Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars),1600,Math.floor(cap*.30)):Math.min(cap,Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars));
+    const rawCap=prepared.units.some(u=>!u.raw)?Math.min(Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars),1800,Math.max(Math.min(cap,1100),Math.floor(cap*.35))):Math.min(cap,Number(settings.rawRecallMaxChars||DEFAULT_SETTINGS.rawRecallMaxChars));
     const render=units=>renderHayakuEvidencePlan({units,language:prepared.language});
     const additions=g=>g.units.filter(u=>!picked.has(u.id));
     // Select marginal evidence rather than repeatedly spending the same finite
@@ -37445,7 +37822,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const groupEntityMismatch=group=>group.units.some(unit=>ensureArray(unit.origins).some(origin=>origin?.row?._recallEntityMismatch===true));
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
-      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane)&&!groupEntityMismatch(group));
+      const candidates=groups.filter(group=>group.units.some(unit=>effectiveHayakuRenderLane(unit)===lane)&&!groupEntityMismatch(group));
       candidates.sort((a,b)=>a.priority-b.priority||tie(a,b));
       if(candidates.length)reservedLanes.add(candidates[0].id);
     }
@@ -37495,7 +37872,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const representations=new Map();
     for(const unit of prepared.units){const key=representationKey(unit);if(key){const list=representations.get(key)||[];list.push(unit);representations.set(key,list);}}
     const protectedLanes=new Set([CONTINUITY_EVIDENCE_LANES.latestState,CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,CONTINUITY_EVIDENCE_LANES.prohibitedInferences]);
-    const replaceable=unit=>!unit.raw&&!unit.partial&&!dependent.has(unit.id)&&!protectedLanes.has(unit.lane);
+    const replaceable=unit=>!unit.raw&&!unit.partial&&!dependent.has(unit.id)&&!protectedLanes.has(effectiveHayakuRenderLane(unit));
     const utility=units=>units.reduce((sum,unit)=>sum+unit.weight/(1+units.reduce((max,other)=>other===unit||unit.raw||other.raw?max:Math.max(max,similarity(unit,other)),0)),0);
     const relocate=group=>{
       const added=additions(group);if(group.requirement||added.length!==1||!replaceable(added[0]))return null;
@@ -37574,7 +37951,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const unit = chosen.find(value => value?.id === fragment?.id);
       const exact = Number.isSafeInteger(fragment?.start) && Number.isSafeInteger(fragment?.end)
         && fragment.start >= 0 && fragment.end > fragment.start && fragment.end <= body.length;
-      return {lane:core.includes(unit?.lane) ? 'core' : 'optional',
+      return {lane:core.includes(effectiveHayakuRenderLane(unit)) ? 'core' : 'optional',
         emittedText:exact ? body.slice(fragment.start,fragment.end) : '[emission unresolved]',
         attributionComplete:false,contributors:[]};
     }) : body === '' ? [] : null;
@@ -37993,12 +38370,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const hardDropped = dropped.filter(item => item.level === 'hard');
     const importantDropped = dropped.filter(item => item.level === 'important');
     const optionalDropped = dropped.filter(item => item.level === 'optional');
+    const rawDroppedCount = ensureArray(result?.rawDroppedIds).length;
     return {
-      needsPrecisionExpansion: hardDropped.length > 0 || importantDropped.length > 0,
+      needsPrecisionExpansion: hardDropped.length > 0 || importantDropped.length > 0 || rawDroppedCount > 0,
       hardDroppedCount: hardDropped.length,
-      importantDroppedCount: importantDropped.length,
+      importantDroppedCount: importantDropped.length + rawDroppedCount,
       optionalDroppedCount: optionalDropped.length,
-      totalDroppedCount: dropped.length,
+      totalDroppedCount: dropped.length + rawDroppedCount,
       hardDroppedReasons: uniq(hardDropped.flatMap(item => item.reasons), 24),
       importantDroppedReasons: uniq(importantDropped.flatMap(item => item.reasons), 24),
       droppedKeys: dropped.map(item => item.key),
@@ -38039,6 +38417,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     const structuralCache = promptCacheModeOf(settings) !== 'off';
     const outputContractSuppressed = packetCoreWriteSuppressed(settings);
+    const otherAxPromptWithheld = settings?.otherAxCanonicalPacket === true && !outputContractSuppressed;
     const staticCandidates = structuralCache
       ? [
           packetCacheStaticContract(settings, CACHE_STATIC_PROFILE_FULL),
@@ -38070,7 +38449,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const criticalTerminalSeal = buildPacketTerminalCompletionSeal(settings, { critical: true });
     const packetCoreRows = prepareHayakuEvidenceUnits(selected,query,settings,signatureOwner).units.flatMap(unit=>unit.origins||[]);
     const selectedRowKeys = uniq(packetCoreRows.map(({ axis, row }) => packetCoreRecallDeliveryRowKey(axis, row)).filter(Boolean), 128);
-    const atomicMinimumChars = outputContractSuppressed
+    const atomicMinimumChars = (outputContractSuppressed || otherAxPromptWithheld)
       ? 0
       : packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, criticalTerminalSeal]);
     const inactive = reason => ({
@@ -38106,17 +38485,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       budgetSafeFallbackApplied: false
     });
     if (outputContractSuppressed) return inactive('structured_output_only');
-    if (cap <= 0) return inactive('insufficient_context_budget');
-    if (!criticalStaticWrite || !runtimeSkeletonInstruction || !criticalTerminalSeal || atomicMinimumChars <= 0 || atomicMinimumChars > cap) {
-      return inactive('insufficient_context_budget');
+    if (!otherAxPromptWithheld) {
+      if (cap <= 0) return inactive('insufficient_context_budget');
+      if (!criticalStaticWrite || !runtimeSkeletonInstruction || !criticalTerminalSeal || atomicMinimumChars <= 0 || atomicMinimumChars > cap) {
+        return inactive('insufficient_context_budget');
+      }
     }
 
-    const terminalSeal = [fullTerminalSeal, compactTerminalSeal, criticalTerminalSeal]
-      .find(candidate => candidate && packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, candidate]) <= cap)
-      || criticalTerminalSeal;
+    const terminalSeal = otherAxPromptWithheld
+      ? ''
+      : ([fullTerminalSeal, compactTerminalSeal, criticalTerminalSeal]
+          .find(candidate => candidate && packetCoreJoinLength([criticalStaticWrite, healthRepairHint, runtimeSkeletonInstruction, candidate]) <= cap)
+          || criticalTerminalSeal);
     let sceneBatonText = '';
-    let selectedStaticContract = criticalStaticContract;
-    if (structuralCache) {
+    let selectedStaticContract = otherAxPromptWithheld ? { profile: '', hash: '', text: '' } : criticalStaticContract;
+    if (otherAxPromptWithheld) {
+      sceneBatonText = cap > 0 ? fitPacketCoreWholeLinesToBudget(sceneBaton?.text || '', cap, 2) : '';
+    } else if (structuralCache) {
       // Cache profile changes invalidate the provider prefix. Exhaust the
       // variable scene/recall allowance before lowering full -> compact -> critical.
       selectedStaticContract = staticCandidates.find(candidate => candidate.text
@@ -38150,18 +38535,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           ) >= desiredMemoryFloor)
         || criticalStaticContract;
     }
-    const staticWrite = selectedStaticContract.text;
-    const packetAuthoringChars = packetCoreJoinLength([
-      staticWrite,
-      healthRepairHint,
-      runtimeSkeletonInstruction,
-      terminalSeal
-    ]);
-    const physicalRecallRoomChars = packetCoreAvailablePartChars(
-      [sceneBatonText],
-      [staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal],
-      cap
-    );
+    const staticWrite = otherAxPromptWithheld ? '' : selectedStaticContract.text;
+    const effectiveHealthHint = otherAxPromptWithheld ? '' : healthRepairHint;
+    const effectiveRuntimeSkeleton = otherAxPromptWithheld ? '' : runtimeSkeletonInstruction;
+    const effectiveLineageInstruction = otherAxPromptWithheld ? '' : lineageInstruction;
+    const packetAuthoringChars = otherAxPromptWithheld
+      ? 0
+      : packetCoreJoinLength([
+          staticWrite,
+          effectiveHealthHint,
+          effectiveRuntimeSkeleton,
+          terminalSeal
+        ]);
+    const physicalRecallRoomChars = cap > 0
+      ? packetCoreAvailablePartChars(
+          [sceneBatonText],
+          otherAxPromptWithheld ? [] : [staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal],
+          cap
+        )
+      : 0;
     const presetKey = hayakuRecallPresetOf(settings);
     const preset = HAYAKU_RECALL_PRESETS[presetKey];
     const targetBudget = Number(preset?.targetBudgetChars) || RECALL_DATA_BUDGETS.standard;
@@ -38256,30 +38648,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallDataBudget.reasons = uniq([...ensureArray(recallDataBudget.reasons), 'context_limited_before_evidence_fit'], 24);
     }
 
-    let block = packetCoreJoinParts(structuralCache
-      ? [sceneBatonText, memoryBlock, healthRepairHint, runtimeSkeletonInstruction]
-      : [sceneBatonText, memoryBlock, staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-    let totalChars = packetCoreJoinLength([sceneBatonText, memoryBlock, staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+    let block = packetCoreJoinParts(otherAxPromptWithheld
+      ? [sceneBatonText, memoryBlock]
+      : (structuralCache
+          ? [sceneBatonText, memoryBlock, effectiveHealthHint, effectiveRuntimeSkeleton]
+          : [sceneBatonText, memoryBlock, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+    let totalChars = packetCoreJoinLength([sceneBatonText, memoryBlock, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     let budgetSafeFallbackApplied = false;
     if (totalChars > cap && memoryBlock) {
       budgetSafeFallbackApplied = true;
       memoryContextResult = emptyPacketCoreMemoryResult(memoryContextResult?.selectedRowKeys || selectedRowKeys);
       memoryBlock = '';
       memoryBudgetChars = 0;
-      block = packetCoreJoinParts(structuralCache
-        ? [sceneBatonText, healthRepairHint, runtimeSkeletonInstruction]
-        : [sceneBatonText, staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-      totalChars = packetCoreJoinLength([sceneBatonText, staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+      block = packetCoreJoinParts(otherAxPromptWithheld
+        ? [sceneBatonText]
+        : (structuralCache
+            ? [sceneBatonText, effectiveHealthHint, effectiveRuntimeSkeleton]
+            : [sceneBatonText, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+      totalChars = packetCoreJoinLength([sceneBatonText, staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     }
     if (totalChars > cap && sceneBatonText) {
       budgetSafeFallbackApplied = true;
       sceneBatonText = '';
-      block = packetCoreJoinParts(structuralCache
-        ? [healthRepairHint, runtimeSkeletonInstruction]
-        : [staticWrite, healthRepairHint, runtimeSkeletonInstruction]);
-      totalChars = packetCoreJoinLength([staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal]);
+      block = packetCoreJoinParts(otherAxPromptWithheld
+        ? []
+        : (structuralCache
+            ? [effectiveHealthHint, effectiveRuntimeSkeleton]
+            : [staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton]));
+      totalChars = packetCoreJoinLength([staticWrite, effectiveHealthHint, effectiveRuntimeSkeleton, terminalSeal]);
     }
-    if (totalChars > cap) {
+    if (!otherAxPromptWithheld && totalChars > cap) {
       budgetSafeFallbackApplied = true;
       block = packetCoreJoinParts(structuralCache
         ? [healthRepairHint, runtimeSkeletonInstruction]
@@ -38321,7 +38719,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return {
       active: true,
-      reason: budgetSafeFallbackApplied ? 'atomic_budget_fallback' : 'atomic_contract_complete',
+      reason: otherAxPromptWithheld
+        ? (budgetSafeFallbackApplied ? 'otherax_canonical_budget_fallback' : 'otherax_canonical_withheld')
+        : (budgetSafeFallbackApplied ? 'atomic_budget_fallback' : 'atomic_contract_complete'),
       capChars: cap,
       atomicMinimumChars,
       packetAuthoringChars,
@@ -38333,14 +38733,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       fullStaticWrite,
       fullLineageInstruction: lineageInstruction,
       fullRuntimeSkeletonInstruction: runtimeSkeletonInstruction,
-      healthRepairHint,
+      healthRepairHint: effectiveHealthHint,
       fullTerminalSeal,
       packetCoreRows,
       staticWrite,
       staticProfile: selectedStaticContract.profile,
       staticContractHash: selectedStaticContract.hash,
-      lineageInstruction,
-      runtimeSkeletonInstruction,
+      lineageInstruction: effectiveLineageInstruction,
+      runtimeSkeletonInstruction: effectiveRuntimeSkeleton,
       terminalSeal,
       sceneBatonText,
       memoryContextResult,
@@ -38348,7 +38748,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       memoryBudgetChars,
       block,
       totalChars,
-      atomicContractPreserved: true,
+      atomicContractPreserved: !otherAxPromptWithheld,
       budgetSafeFallbackApplied
     };
   };
@@ -38801,6 +39201,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (requestClass.auxiliary) {
         return sanitizeAuxiliaryMessages(requestClass);
       }
+      if (promptCacheModeOf(settings) === 'native' && Memory.promptCache.registered !== true && !Memory.promptCache.registerAttempted) {
+        const nativeCacheRegistered = await RisuCompat.addBodyInterceptor(transformPromptCacheBody);
+        if (!nativeCacheRegistered) {
+          Memory.promptCache.nativeReason = Memory.promptCache.registerError || 'body_interceptor_registration_failed';
+        } else {
+          Memory.promptCache.nativeReason = '';
+        }
+      }
       const hostContextStartedAt = now();
       const [resolvedChatScope, resolvedHostContextBudget] = await Promise.all([
         RisuCompat.currentChatScope(),
@@ -39194,7 +39602,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         0,
         ...packets.map(packet => Number(packet?.worldlineHeadOrdinal || packet?.worldlineOrdinal || 0)).filter(Number.isFinite)
       );
-      const sceneBaton = stage('buildSceneBaton', () => buildSceneBaton(packets, {
+      let sceneBaton = stage('buildSceneBaton', () => buildSceneBaton(packets, {
         memoryLanguage: settings.memoryLanguage,
         capChars: 800
       }));
@@ -39387,10 +39795,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
       });
       stage('rebuildIndex', () => {
-        if (!projectionCacheHit) rebuildIndex(store, { settings, deadlineAt: startedAt + requestBudgetMs, mode: settings.effectiveMode });
+        if (!projectionCacheHit) rebuildIndex(store, { settings, deadlineAt: startedAt + requestBudgetMs, mode: settings.effectiveMode, skipUnusedDerivedStructures: !settings.debug });
       });
+      sceneBaton = stage('refreshSceneBatonWithStore', () => buildSceneBaton(packets, {
+        memoryLanguage: settings.memoryLanguage,
+        capChars: 800,
+        store
+      }));
       const derivedBuildPolicy = Memory.lastDerivedIndexBuild?.policy || null;
       const derivedBuildMatchesRequested = !derivedBuildPolicy
+        || derivedBuildPolicy.reason === 'source_recall_direct'
         || ((settings.typedMemoryGraphEnabled === false || derivedBuildPolicy.typedGraphEnabled === true)
           && (settings.hierarchicalEpisodeMemoryEnabled === false || derivedBuildPolicy.episodeEnabled === true)
           && derivedBuildPolicy.reason !== 'prebuild_budget_guard');
@@ -39450,14 +39864,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         )),
         stageAsync('packetHealth', async () => computePacketHealth(packetResults, store)),
         stageAsync('rawRecoveryRecall', () => searchRecoveryVaultRawPassages(
-          chatScope,
+          { ...chatScope, chatMessages: authoritativeChatAvailable ? authoritativeChatMessages : [] },
           retrievalQuery,
           authoritativeChatAvailable ? authoritativeChatMessages : messages,
           visibleRecentTurns.turns.size ? { ...settings, visibleRecentTurns: visibleRecentTurns.turns } : settings,
           authoritativeSnapshot,
           authoritativeLedger.worldline
         )),
-        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
+        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory(
+          { ...chatScope, chatMessages: authoritativeChatAvailable ? authoritativeChatMessages : [] },
+          retrievalQuery,
+          authoritativeChatAvailable && authoritativeSnapshot && authoritativeLedger?.current?.enabled === true
+            ? { snapshot: authoritativeSnapshot, boundLedger: authoritativeLedger.current }
+            : null
+        ).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
       ]));
       if(!hayakuRequestCurrent(recallToken)) return hayakuRecallPassthrough(messages);
       const packetCoverageFallbackRecall = stage('packetCoverageFallbackRecall', () => selectPacketCoverageFallbackRows(store, searched, query, settings));
@@ -39466,7 +39886,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const rawAnchorIntegration = stage('rawAnchorIntegration', () => integrateRawRecoveryAnchors(
         ensureArray(rawRecoveryRecall?.records), selectedWithLiveOverlay, query
       ));
-      const selectedForModel = selectedWithLiveOverlay;
+      const selectedForModel = stage('suppressOlderCharacterSnapshots', () => suppressOlderCharacterSnapshots(selectedWithLiveOverlay, query));
+      if (selectedForModel !== selectedWithLiveOverlay) carryHayakuRecallPreparation(selectedWithLiveOverlay, selectedForModel);
       const selectedForContext = {
         ...selectedForModel,
         partialMemoryEvidence: ensureArray(partialMemoryRecall),
@@ -39513,13 +39934,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ? buildPacketCoreCompactWriteInstruction(promptSettings, { critical: true })
         : packetCacheStaticContract(promptSettings, CACHE_STATIC_PROFILE_CRITICAL).text);
       const criticalTerminalSeal = stage('buildPacketCriticalTerminalSeal', () => buildPacketTerminalCompletionSeal(promptSettings, { critical: true }));
-      const mandatoryFullCoreChars = packetCoreJoinLength([
-        fullStaticWrite,
-        fullHealthRepairHint,
-        fullRuntimeSkeletonInstruction,
-        fullTerminalSeal
-      ]);
-      const mandatoryAtomicMinimumChars = packetCoreWriteSuppressed(promptSettings)
+      const otherAxPromptWithheld = settings?.otherAxCanonicalPacket === true && !packetCoreWriteSuppressed(promptSettings);
+      const mandatoryFullCoreChars = otherAxPromptWithheld
+        ? 0
+        : packetCoreJoinLength([
+            fullStaticWrite,
+            fullHealthRepairHint,
+            fullRuntimeSkeletonInstruction,
+            fullTerminalSeal
+          ]);
+      const mandatoryAtomicMinimumChars = (packetCoreWriteSuppressed(promptSettings) || otherAxPromptWithheld)
         ? 0
         : packetCoreJoinLength([
             criticalStaticWrite,
@@ -39528,13 +39952,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             criticalTerminalSeal
           ]);
       const hardContextExhaustion = !packetCoreWriteSuppressed(promptSettings)
+        && !otherAxPromptWithheld
         && hostBudgetAuthoritative
         && mandatoryAtomicMinimumChars > 0
         && hostSafeCapChars < mandatoryAtomicMinimumChars;
       // Without authoritative host limits we cannot truthfully declare hard
       // exhaustion, so the mandatory full core remains protected and only the
       // optional budget follows the conservative character heuristic.
-      const mandatoryCoreTargetChars = hardContextExhaustion
+      const mandatoryCoreTargetChars = (hardContextExhaustion || otherAxPromptWithheld)
         ? 0
         : (hostBudgetAuthoritative && hostSafeCapChars < mandatoryFullCoreChars
             ? mandatoryAtomicMinimumChars
@@ -39554,7 +39979,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // 기억 주입 공통 예산: while it is on, HAYAKU's share caps the recalled evidence (the packet-writing
       // contract stays outside it, as with HAYAKU's own budget). 중복 제거: peer blocks already in the request.
       const sharedRecallChars = memorySuiteRecallShareChars('hayaku');
-      const recallCapForEvidence = sharedRecallChars == null ? optionalInjectionBudgetChars : Math.min(optionalInjectionBudgetChars, sharedRecallChars);
+      const requestedRecallChars = Number(mode?.recallBudgetChars || 0);
+      const effectiveRecallChars = Number.isSafeInteger(requestedRecallChars) && requestedRecallChars > 0
+        ? requestedRecallChars
+        : sharedRecallChars;
+      const recallCapForEvidence = effectiveRecallChars == null ? null : Math.min(optionalInjectionBudgetChars, effectiveRecallChars);
       const peerRecall = memorySuitePeerRecallIndex(messages, 'hayaku');
       if (peerRecall.chars && selectedForContext && typeof selectedForContext === 'object') hayakuPeerRecallIndexes.set(selectedForContext, peerRecall);
       if (visibleRecentTurns.turns.size && selectedForContext && typeof selectedForContext === 'object') hayakuVisibleRecentTurns.set(selectedForContext, visibleRecentTurns);
@@ -39589,6 +40018,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const atomicPacketReservationApplied = packetWriteActive && mandatoryCoreTargetChars > 0;
       const atomicPacketReservationCapChars = mandatoryCoreTargetChars;
       if (packetWriteActive
+        && !otherAxPromptWithheld
         && hostBudgetAuthoritative
         && mandatoryFullCoreChars > mandatoryCoreTargetChars) {
         pushOperationLog('packet_core:degraded_for_context', {
@@ -39651,6 +40081,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             recoveryRequest: IN_BAND_RECOVERY_WRITE_ENABLED ? packetRecovery : null,
             packetWriteExpected: packetWriteActive,
             recoveryVaultOnly: !packetWriteActive,
+            fromRealBeforeRequest: true,
+            ...(outputContract?.packetPlacement ? { packetPlacement: clone(outputContract.packetPlacement, null) } : {}),
             ...(otherAxCanonicalPacketMode ? { otherAxCanonicalPacket: true } : {})
           }
         ))
@@ -40176,8 +40608,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(!hayakuRequestCurrent(recallToken)||!await verifyHayakuReadset(readsetFrame))return hayakuRecallPassthrough(messages);
       publishHayakuRecallDelivery(memoryContextResult,recallToken,retrievalQuery,settings);
       const injectedBodies = injectionResult.messages.map(messageContent);
-      const completeInjection = packetWriteActive && [staticWrite, packetBudgetPlan.runtimeSkeletonInstruction, tail]
-        .every(part => text(part).trim() && injectedBodies.some(body => body.includes(text(part).trim())));
+      const modeBParts = [sceneBatonText, memoryBlock].map(part => text(part).trim()).filter(Boolean);
+      const completeInjection = otherAxCanonicalPacketMode
+        ? modeBParts.every(part => injectedBodies.some(body => body.includes(part)))
+        : (packetWriteActive && [staticWrite, packetBudgetPlan.runtimeSkeletonInstruction, tail]
+            .every(part => text(part).trim() && injectedBodies.some(body => body.includes(text(part).trim()))));
       if (injectionReceiptContext && completeInjection) {
         lastHayakuRequestInjectionReceipt = {
           contextFingerprint: injectionReceiptContext,
@@ -40526,7 +40961,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return `<!-- ${PACKET_START}\n${JSON.stringify(normalized)}\n${PACKET_END} -->`;
   };
 
-  const replaceHayakuPacketText = (value = '', packet = {}) => {
+  const replaceHayakuPacketText = (value = '', packet = {}, placement = null) => {
     const serialized = serializeHayakuPacket(packet);
     if (!serialized) return { ok: false, reason: 'packet_validation_failed', text: text(value) };
     let visible = text(value)
@@ -40539,6 +40974,35 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       visible = visible.slice(0, commentStart >= 0 ? commentStart : danglingStart);
     }
     visible = visible.replace(/[ \t]+$/gm, '').replace(/\s+$/, '');
+    const closeTag = placement?.mode === 'inside_terminal_wrapper' ? text(placement?.closingTag || '').trim() : '';
+    if (closeTag) {
+      const matches = [...visible.matchAll(new RegExp(escapeRegExp(closeTag), 'gi'))];
+      const last = matches.at(-1);
+      if (last && Number.isInteger(last.index)) {
+        const head = visible.slice(0, last.index).replace(/\s+$/, '');
+        const closePart = visible.slice(last.index);
+        return {
+          ok: true,
+          reason: 'replaced',
+          placement: 'inside_terminal_wrapper',
+          text: `${head ? head + '\n\n' : ''}${serialized}\n${closePart}`,
+          packet: normalizeHayakuPacket(packet)
+        };
+      }
+    }
+    if (placement?.mode === 'before_required_footer') {
+      const footerMatch = /(<!--[\s\S]*?-->)\s*$/.exec(visible);
+      if (footerMatch && Number.isInteger(footerMatch.index)) {
+        const head = visible.slice(0, footerMatch.index).replace(/\s+$/, '');
+        return {
+          ok: true,
+          reason: 'replaced',
+          placement: 'before_required_footer',
+          text: `${head ? head + '\n\n' : ''}${serialized}\n\n${footerMatch[1]}`,
+          packet: normalizeHayakuPacket(packet)
+        };
+      }
+    }
     return { ok: true, reason: 'replaced', text: `${visible}\n\n${serialized}`, packet: normalizeHayakuPacket(packet) };
   };
 
@@ -41442,6 +41906,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceFingerprintBefore: compact(parsed?.sessionHandoff?.sourceFingerprintBefore || '', 96),
         sourceFingerprintAfter: compact(parsed?.sessionHandoff?.sourceFingerprintAfter || '', 96),
         sourcePreserved: parsed?.sessionHandoff?.sourcePreserved === true,
+        ...(objectish(parsed?.sessionHandoff?.recoveryVaultHandoff) ? { recoveryVaultHandoff: parsed.sessionHandoff.recoveryVaultHandoff } : {}),
+        ...(objectish(parsed?.sessionHandoff?.partialMemoryHandoff) ? { partialMemoryHandoff: parsed.sessionHandoff.partialMemoryHandoff } : {}),
         verified: parsed?.sessionHandoff?.verified === true,
         adoptedAt: finiteNonNegativeInteger(parsed?.sessionHandoff?.adoptedAt, 0)
       },
@@ -42236,13 +42702,38 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       error.code = 'SOURCE_MUTATION_DETECTED';
       throw error;
     }
-    const recoveryVaultHandoff = await inheritRecoveryVaultForBridgeSession(
+    let recoveryVaultHandoff = await inheritRecoveryVaultForBridgeSession(
       sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || ''
     );
+    let partialMemoryHandoff = { ok: true, skipped: false, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty' };
+    try {
+      partialMemoryHandoff = await inheritPartialMemoryForBridgeSession(
+        sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || ''
+      );
+    } catch (error) {
+      partialMemoryHandoff = {
+        ok: false,
+        skipped: true,
+        copiedRecords: 0,
+        adoptedRecords: 0,
+        records: 0,
+        reason: 'partial_memory_handoff_failed',
+        error: compact(error?.message || error, 240)
+      };
+    }
     if (recoveryVaultHandoff.ok !== true) {
-      const error = new Error(recoveryVaultHandoff.reason || 'recovery_vault_handoff_failed');
-      error.code = 'RECOVERY_VAULT_HANDOFF_FAILED';
-      throw error;
+      if (archive.recordCount > 0 || (partialMemoryHandoff.ok === true && Number(partialMemoryHandoff.adoptedRecords || 0) > 0)) {
+        recoveryVaultHandoff = {
+          ...recoveryVaultHandoff,
+          ok: false,
+          skipped: true,
+          sourcePreserved: recoveryVaultHandoff.sourcePreserved !== false
+        };
+      } else {
+        const error = new Error(recoveryVaultHandoff.reason || 'recovery_vault_handoff_failed');
+        error.code = 'RECOVERY_VAULT_HANDOFF_FAILED';
+        throw error;
+      }
     }
     return {
       ledger: {
@@ -42257,6 +42748,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           sourceFingerprintAfter: sourceIntegrityAfter.fingerprint,
           sourcePreserved: true,
           recoveryVaultHandoff,
+          partialMemoryHandoff,
           verified: false,
           adoptedAt: 0
         },
@@ -42904,8 +43396,46 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         : 'incremental_recovery_adoption_not_verified'
     };
   };
+  const CAPTURE_RAW_BODY_CACHE_MAX = 128;
+  const cloneNormalizedLedgerMemo = ledger => ({
+    ...ledger,
+    identity: ledger.identity ? { ...ledger.identity } : undefined,
+    migration: ledger.migration ? clone(ledger.migration) : undefined,
+    coldStart: ledger.coldStart ? { ...ledger.coldStart } : undefined,
+    incrementalRecovery: ledger.incrementalRecovery ? { ...ledger.incrementalRecovery, recoveredTurns: [...ensureArray(ledger.incrementalRecovery.recoveredTurns)] } : undefined,
+    worldline: clone(ledger.worldline),
+    archiveRef: ledger.archiveRef ? { ...ledger.archiveRef } : null,
+    sessionHandoff: ledger.sessionHandoff ? clone(ledger.sessionHandoff) : undefined,
+    portableImport: ledger.portableImport ? clone(ledger.portableImport) : null,
+    nativeBranchStorageBinding: ledger.nativeBranchStorageBinding ? { ...ledger.nativeBranchStorageBinding } : null,
+    analysisFailureProofs: ensureArray(ledger.analysisFailureProofs).map(item => ({ ...item })),
+    records: ensureArray(ledger.records).map(item => ({ ...item })),
+    slotHeads: ensureArray(ledger.slotHeads).map(item => ({ ...item })),
+    tombstones: ensureArray(ledger.tombstones).map(item => ({ ...item }))
+  });
   const invalidateExternalLedgerCaches = scopeKey => {
     Memory.authoritativeLedgerCache = null;
+    if (!scopeKey || !Memory.parsedLedgerMemo || Memory.parsedLedgerMemo.scopeKey === scopeKey) {
+      Memory.parsedLedgerMemo = null;
+    }
+    if (Memory.captureRawBodyCache instanceof Map) {
+      if (!scopeKey) Memory.captureRawBodyCache.clear();
+      else {
+        const prefix = `${scopeKey}::`;
+        for (const k of [...Memory.captureRawBodyCache.keys()]) {
+          if (k.startsWith(prefix) || k.includes(`::${prefix}`)) Memory.captureRawBodyCache.delete(k);
+        }
+      }
+    }
+    try { Memory.globalRoutingCatalogCache?.clear?.(); } catch (_) {}
+    try { Memory.copiedChatSourceCache?.clear?.(); } catch (_) {}
+    if (!scopeKey) {
+      try { Memory.recoveryVaultCache?.clear?.(); } catch (_) {}
+    } else if (Memory.recoveryVaultCache instanceof Map) {
+      for (const k of [...Memory.recoveryVaultCache.keys()]) {
+        if (k === scopeKey || String(k).includes(scopeKey)) Memory.recoveryVaultCache.delete(k);
+      }
+    }
     if (!scopeKey || Memory.projectionCacheScopeKey === scopeKey) {
       try { Memory.projectionCache?.clear?.(); } catch (_) {}
       Memory.projectionCacheScopeKey = '';
@@ -42922,7 +43452,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const ref=captureRawRef(record.captureRawRef);
       if(!ref||ref.scopeKey!==scope.key
         ||ref.storageKey!==CAPTURE_RAW_DELTA_PREFIX+ref.scopeKey+'::'+ref.binding+'::'+ref.digest)throw Error('CAPTURE_RAW_REFERENCE_INVALID');
+      const cacheKey = !options.read && !options.offline && binding
+        ? `${scope.key}::${binding}::${ref.storageKey}::${ref.digest}`
+        : '';
       let body=bodies.get(ref.storageKey);
+      if(!body && cacheKey && Memory.captureRawBodyCache instanceof Map && Memory.captureRawBodyCache.has(cacheKey)){
+        body = Memory.captureRawBodyCache.get(cacheKey);
+        Memory.captureRawBodyCache.delete(cacheKey);
+        Memory.captureRawBodyCache.set(cacheKey, body);
+        bodies.set(ref.storageKey, body);
+      }
       if(!body){
         const raw=options.read?await options.read(ref.storageKey):await RisuCompat.getStorageItem(ref.storageKey,null);
         stats.reads+=1;stats.chars+=typeof raw==='string'?raw.length:0;
@@ -42930,6 +43469,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         body=safeJsonParse(raw,null);
         if(body?.schema!==CAPTURE_RAW_DELTA_SCHEMA||body.scopeKey!==scope.key||body.binding!==ref.binding)throw Error('CAPTURE_RAW_REFERENCE_BINDING_INVALID');
         bodies.set(ref.storageKey,body);
+        if(cacheKey){
+          if(!(Memory.captureRawBodyCache instanceof Map)) Memory.captureRawBodyCache = new Map();
+          if(Memory.captureRawBodyCache.has(cacheKey)) Memory.captureRawBodyCache.delete(cacheKey);
+          Memory.captureRawBodyCache.set(cacheKey, body);
+          while(Memory.captureRawBodyCache.size > CAPTURE_RAW_BODY_CACHE_MAX){
+            const oldestKey = Memory.captureRawBodyCache.keys().next().value;
+            if(!oldestKey) break;
+            Memory.captureRawBodyCache.delete(oldestKey);
+          }
+        }
       }
       const raw=body.packets?.[ref.packetIndex]?.raw;
       if(typeof raw!=='string'||stableHash64(raw)!==ref.rawDigest)throw Error('CAPTURE_RAW_REFERENCE_PACKET_MISMATCH');
@@ -43012,7 +43561,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const stored = storedOutcome.value ?? null;
     const hydratedRaw = await hydrateCapturedLedgerRaw(stored,scope);
     if (Memory.unloaded || !ownsRuntime()) return inactive();
-    const ledger = normalizeStorageLedger(hydratedRaw, scope);
+    const rawStringMemoEligible = typeof stored === 'string' && stored.length > 0 && hydratedRaw === stored;
+    const scopeKeyStr = text(scope?.key || scope?.scopeKey || '');
+    let ledger;
+    if (rawStringMemoEligible && Memory.parsedLedgerMemo && Memory.parsedLedgerMemo.storageKey === key && Memory.parsedLedgerMemo.scopeKey === scopeKeyStr && Memory.parsedLedgerMemo.raw === stored) {
+      ledger = cloneNormalizedLedgerMemo(Memory.parsedLedgerMemo.ledger);
+    } else {
+      ledger = normalizeStorageLedger(hydratedRaw, scope);
+      if (rawStringMemoEligible) {
+        Memory.parsedLedgerMemo = {
+          storageKey: key,
+          scopeKey: scopeKeyStr,
+          raw: stored,
+          ledger: cloneNormalizedLedgerMemo(ledger)
+        };
+      }
+    }
     const nativeCopyDetach = detachNativeChatCopySourceStorageArtifacts(ledger, scope);
     const adopted = await inheritStorageLedgerForCopiedChat(nativeCopyDetach.ledger, scope, options);
     if (Memory.unloaded || !ownsRuntime()) return inactive();
@@ -43478,6 +44042,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       existing.recoveryVaultOnly = options?.recoveryVaultOnly === true;
       if (options?.otherAxCanonicalPacket === true) existing.otherAxCanonicalPacket = true;
       else delete existing.otherAxCanonicalPacket;
+      if (options?.packetPlacement) existing.packetPlacement = clone(options.packetPlacement, null);
+      else delete existing.packetPlacement;
+      if (options?.fromRealBeforeRequest === true) existing.fromRealBeforeRequest = true;
       if (userEvidence && !existing.userEvidence) existing.userEvidence = clone(userEvidence);
       existing.recoveryTarget = existing.recoveryRequired
         ? clone(options?.recoveryTarget || recoveryTargetForCapture(snapshot, options?.recoveryRequest), null)
@@ -43518,6 +44085,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       packetWriteExpected: options?.packetWriteExpected !== false,
       recoveryVaultOnly: options?.recoveryVaultOnly === true,
       ...(options?.otherAxCanonicalPacket === true ? { otherAxCanonicalPacket: true } : {}),
+      ...(options?.packetPlacement ? { packetPlacement: clone(options.packetPlacement, null) } : {}),
+      ...(options?.fromRealBeforeRequest === true ? { fromRealBeforeRequest: true } : {}),
       recoveryTarget: options?.recoveryRequired === true
         ? clone(options?.recoveryTarget || recoveryTargetForCapture(snapshot, options?.recoveryRequest), null)
         : null,
@@ -43679,15 +44248,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         || Number(a.requestSequence || 0) - Number(b.requestSequence || 0))
       .forEach(record => byId.set(record.recordId, record));
     const ordered = Array.from(byId.values());
+    const recordById = new Map(ordered.map(record => [record.recordId, record]));
+    const recordByHash = new Map(ordered.map(record => [record.hash, record]));
     const protectedRecordIds = new Set();
     const protectedHashes = new Set();
+    const activeEpochId = compact(ledger?.coldStart?.activeEpochId || '', 128);
     ensureArray(ledger?.slotHeads).map(normalizeStorageSlotHead).filter(Boolean)
-      .filter(head => ['active', 'historical', 'unbound', 'quarantined'].includes(head.state))
+      .filter(head => {
+        if (['active', 'unbound', 'quarantined'].includes(head.state)) return true;
+        if (head.state !== 'historical') return false;
+        const target = recordById.get(head.selectedRecordId) || recordByHash.get(head.selectedVariantHash) || null;
+        if (!activeEpochId || !target || isPermanentHistoricalStorageRecord(target)) return true;
+        return !target.coldStartEpochId || target.coldStartEpochId === activeEpochId;
+      })
       .forEach(head => {
         if (head.selectedRecordId) protectedRecordIds.add(head.selectedRecordId);
         if (head.selectedVariantHash) protectedHashes.add(head.selectedVariantHash);
       });
-    const activeEpochId = compact(ledger?.coldStart?.activeEpochId || '', 128);
     const isProtected = record => (
       protectedRecordIds.has(record.recordId)
       || protectedHashes.has(record.hash)
@@ -44225,6 +44802,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceFingerprintBefore: compact(ledger?.sessionHandoff?.sourceFingerprintBefore || '', 96),
         sourceFingerprintAfter: compact(ledger?.sessionHandoff?.sourceFingerprintAfter || '', 96),
         sourcePreserved: ledger?.sessionHandoff?.sourcePreserved === true,
+        ...(objectish(ledger?.sessionHandoff?.recoveryVaultHandoff) ? { recoveryVaultHandoff: ledger.sessionHandoff.recoveryVaultHandoff } : {}),
+        ...(objectish(ledger?.sessionHandoff?.partialMemoryHandoff) ? { partialMemoryHandoff: ledger.sessionHandoff.partialMemoryHandoff } : {}),
         verified: ledger?.sessionHandoff?.verified === true,
         adoptedAt: finiteNonNegativeInteger(ledger?.sessionHandoff?.adoptedAt, 0)
       },
@@ -44399,6 +44978,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // This manual operation's proof ends here. The generic reconciliation
       // journal may replay without it, so retain uncertainty without enqueueing.
       if(sourcePublication){result.reason='SOURCE_EDIT_PUBLICATION_UNCONFIRMED';return result;}
+      if (writeOutcome.state === 'fulfilled' && readbackOutcome?.state === 'fulfilled' && String(reason || '').startsWith('bridge_session_')) {
+        result.storageState = 'rejected';
+        result.durable = false;
+        result.reason = result.reason || 'storage_readback_mismatch';
+        return result;
+      }
       if (readsetFrame && writeOutcome.state==='indeterminate') readsetFrame.pendingWrite=writeOutcome;
       const eventual = reconcileIndeterminateStorageLedgerWrite(scope, key, serialized, next, reason, writeOutcome,readsetFrame);
       Object.defineProperty(result, '_eventual', { value: eventual, enumerable: false, configurable: false });
@@ -44614,7 +45199,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const sourceAfter = sourceScopeKey ? await hayakuSourceLedgerStorageFingerprint(sourceScopeKey) : sourceBefore;
       const sourcePreserved = !sourceScopeKey || (!!sourceBefore.fingerprint && sourceBefore.fingerprint === sourceAfter.fingerprint);
       const recoveryVaultVerification = await verifyInheritedRecoveryVaultHandoff(ledger?.sessionHandoff?.recoveryVaultHandoff, scope.key);
-      const verifiedEmpty = sourcePreserved && recoveryVaultVerification.ok === true;
+      let partialMemoryHandoff = objectish(ledger?.sessionHandoff?.partialMemoryHandoff)
+        ? ledger.sessionHandoff.partialMemoryHandoff
+        : await inheritPartialMemoryForBridgeSession(sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || '')
+          .catch(error => ({ ok: false, skipped: true, records: 0, adoptedRecords: 0, copiedRecords: 0, reason: 'partial_memory_handoff_failed', error: compact(error?.message || error, 240) }));
+      const appliedSlices = [];
+      const skippedSlices = [];
+      if (recoveryVaultVerification.skipped === true) {
+        skippedSlices.push({ slice: 'recovery_vault', reason: recoveryVaultVerification.reason || 'recovery_vault_handoff_skipped_fail_open' });
+      } else if (Number(recoveryVaultVerification.records || 0) > 0) {
+        appliedSlices.push('recovery_vault');
+      }
+      if (partialMemoryHandoff?.skipped === true || partialMemoryHandoff?.ok === false) {
+        skippedSlices.push({ slice: 'partial_memory', reason: partialMemoryHandoff.reason || 'partial_memory_handoff_failed' });
+      } else if (Number(partialMemoryHandoff?.adoptedRecords || partialMemoryHandoff?.records || 0) > 0) {
+        appliedSlices.push('partial_memory');
+      }
+      const verifiedEmpty = sourcePreserved && (recoveryVaultVerification.ok === true || recoveryVaultVerification.skipped === true);
       const recoveryVaultReceipt = objectish(ledger?.sessionHandoff?.recoveryVaultHandoff)
         ? {
             ...ledger.sessionHandoff.recoveryVaultHandoff,
@@ -44632,6 +45233,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             ...ledger.sessionHandoff,
             sourcePreserved: true,
             recoveryVaultHandoff: recoveryVaultReceipt,
+            partialMemoryHandoff,
             verified: true,
             adoptedAt: ledger.sessionHandoff?.adoptedAt || now()
           }
@@ -44640,17 +45242,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         proofDurable = proofCommit.durable === true;
       }
       const finalVerified = verifiedEmpty && proofDurable;
+      const hasVaultOrPartial = recoveryVaultVerification.records > 0 || Number(partialMemoryHandoff?.adoptedRecords || 0) > 0;
       return {
         ...base,
         ok: finalVerified,
-        adopted: finalVerified && recoveryVaultVerification.records > 0,
+        adopted: finalVerified && hasVaultOrPartial,
         verified: finalVerified,
         durable: finalVerified,
         sourcePreserved,
         recoveryVaultHandoff: recoveryVaultReceipt || recoveryVaultVerification,
+        partialMemoryHandoff,
+        appliedSlices,
+        skippedSlices,
+        partial: skippedSlices.length > 0,
         recoveryVaultCopies: recoveryVaultVerification.records || 0,
         reason: finalVerified
-          ? (recoveryVaultVerification.records > 0 ? 'session_handoff_raw_history_only' : 'session_handoff_empty')
+          ? (hasVaultOrPartial ? 'session_handoff_raw_history_only' : 'session_handoff_empty')
           : (!sourcePreserved
             ? 'SOURCE_MUTATION_DETECTED'
             : (verifiedEmpty ? 'session_handoff_raw_proof_not_durable' : 'recovery_vault_handoff_verification_failed')),
@@ -44669,13 +45276,33 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return { ...base, ok: false, adopted: false, verified: false, durable: false, reason: 'source_scope_mismatch', records: logicalRecords, expectedRecords: expected, scopeKey: scope.key };
     }
     const proofBefore = compact(ledger.bridgeSourceFingerprintBefore || ledger.sessionHandoff?.sourceFingerprintBefore || sourceBefore.fingerprint || '', 96);
-    const newlyAdopted = ledger.bridgeSessionAdoption === true;
+    const targetLedgerStorageKey = storageLedgerStorageKey(scope);
+    const concurrentExistingRaw = ledger.bridgeSessionAdoption === true
+      ? await RisuCompat.getStorageItem(targetLedgerStorageKey, null)
+      : null;
+    const newlyAdopted = ledger.bridgeSessionAdoption === true && concurrentExistingRaw == null;
     const commit = newlyAdopted ? await writeStorageLedgerDirect(scope, ledger, 'bridge_session_handoff') : { durable: true, saved: false, ledger };
     const durableLocal = normalizeStorageLedger(await hydrateCapturedLedgerRaw(await RisuCompat.getStorageItem(storageLedgerStorageKey(scope), null),scope), scope);
     const durableRef = normalizeHayakuArchiveRef(durableLocal.archiveRef);
     const archive = await readHayakuSharedArchiveSummary(durableRef);
     const sourceAfter = await hayakuSourceLedgerStorageFingerprint(sourceScopeKey);
     const recoveryVaultVerification = await verifyInheritedRecoveryVaultHandoff(ledger?.sessionHandoff?.recoveryVaultHandoff, scope.key);
+    let partialMemoryHandoff = objectish(ledger?.sessionHandoff?.partialMemoryHandoff)
+      ? ledger.sessionHandoff.partialMemoryHandoff
+      : await inheritPartialMemoryForBridgeSession(sourceScopeKey, scope.key, scope?.bridgeHandoffTransferId || '')
+        .catch(error => ({ ok: false, skipped: true, records: 0, adoptedRecords: 0, copiedRecords: 0, reason: 'partial_memory_handoff_failed', error: compact(error?.message || error, 240) }));
+    const appliedSlices = ['packets'];
+    const skippedSlices = [];
+    if (recoveryVaultVerification.skipped === true) {
+      skippedSlices.push({ slice: 'recovery_vault', reason: recoveryVaultVerification.reason || 'recovery_vault_handoff_skipped_fail_open' });
+    } else if (Number(recoveryVaultVerification.records || 0) > 0) {
+      appliedSlices.push('recovery_vault');
+    }
+    if (partialMemoryHandoff?.skipped === true || partialMemoryHandoff?.ok === false) {
+      skippedSlices.push({ slice: 'partial_memory', reason: partialMemoryHandoff.reason || 'partial_memory_handoff_failed' });
+    } else if (Number(partialMemoryHandoff?.adoptedRecords || partialMemoryHandoff?.records || 0) > 0) {
+      appliedSlices.push('partial_memory');
+    }
     const recoveryVaultReceipt = objectish(ledger?.sessionHandoff?.recoveryVaultHandoff)
       ? {
           ...ledger.sessionHandoff.recoveryVaultHandoff,
@@ -44699,6 +45326,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           sourceFingerprintAfter: sourceAfter.fingerprint,
           sourcePreserved: true,
           recoveryVaultHandoff: recoveryVaultReceipt,
+          partialMemoryHandoff,
           verified: true,
           adoptedAt: durableLocal.sessionHandoff?.adoptedAt || now()
         }
@@ -44708,7 +45336,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         return { ...base, ok: false, adopted: false, verified: false, durable: false, sourcePreserved: true, reason: 'session_handoff_proof_not_durable', records: archive.records, expectedRecords: expected, scopeKey: scope.key, sourceScopeKey, targetChatId: scope.chatId, transferId: scope.bridgeHandoffTransferId, sourceFingerprintBefore: proofBefore, sourceFingerprintAfter: sourceAfter.fingerprint };
       }
     }
-    const verified = commit.durable === true && archive.verified === true && archive.records === expected && sourcePreserved && recoveryVaultVerification.ok === true;
+    const verified = commit.durable === true && archive.verified === true && archive.records === expected && sourcePreserved
+      && (recoveryVaultVerification.ok === true || recoveryVaultVerification.skipped === true);
     return {
       ...base,
       ok: verified,
@@ -44732,6 +45361,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       sourceFingerprintBefore: proofBefore,
       sourceFingerprintAfter: sourceAfter.fingerprint || '',
       recoveryVaultHandoff: recoveryVaultReceipt || recoveryVaultVerification,
+      partialMemoryHandoff,
+      appliedSlices,
+      skippedSlices,
+      partial: skippedSlices.length > 0,
       recoveryVaultCopies: recoveryVaultVerification.records || 0
     };
   });
@@ -45498,6 +46131,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const normalized = compact(flow || '', 96);
     if (normalized === 'after_request_current_packet') return '1차 afterRequest 자동 복구';
     if (normalized === 'native_repair_debt') return 'Recovery Journal 백그라운드 복구';
+    if (normalized === 'native_repair_evidence_verification') return 'Recovery Journal 원문 대조 점검';
     if (normalized === 'failed_analysis_llm_resolution') return '실패 복구 LLM 재시도';
     if (normalized === 'failed_analysis_manual_resolution') return '실패 복구 사용자 수정';
     if (normalized === 'cold_start' || normalized === 'cold_start_batch') return 'Cold Start 분석';
@@ -45520,6 +46154,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ['SOURCE_AUTO_PENDING', /source_edit.*(?:consent|auto_pending)|consent_required/i, '원문 수정 · 명시적 재분석 대기', '원문이 수정되었습니다. 구간 점검에서 대상을 선택해 직접 재분석하세요.', '직접 선택한 원문 구간과 저장 결과를 확인해 주세요.'],
       ['SOURCE_CHANGED', /scope.*changed|source.*changed|fingerprint|target.*mismatch|source_edit_scope/i, '대화가 바뀜', '분석 당시와 채팅 또는 원문이 달라져 채택하지 않았습니다.', '현재 채팅의 대상 턴을 다시 선택해 주세요.'],
       ['SOURCE_MISSING', /target_missing|source.*missing|evidence.*(?:missing|incomplete)|scope_unavailable/i, '원문 확인 필요', '이 결과에 해당하는 원본 턴을 확인하지 못했습니다.', '목록을 새로고침하고 원문을 확인해 주세요.'],
+      ['EVIDENCE_STALE_PAIR', /recovery_evidence_live_(?:pair_unavailable|hash_mismatch|text_mismatch)/i, '이전 응답 리비전 불일치', '실패 당시 턴과 현재 대화 원문이 달라 이전 복구 대상을 건너뛰었습니다.', '현재 대화를 기준으로 누락 복구를 실행하면 새 원문으로 복구됩니다.'],
       ['STORAGE_WAIT', /timeout|timed.?out|deadline/i, '응답·저장 대기 초과', '응답이나 저장 확인이 늦어 완료로 처리하지 않았습니다.', '현재 상태를 새로고침한 뒤 다시 시도해 주세요.'],
       ['STORAGE_UNCONFIRMED', /storage|write_failed|readback|not_durable|preservation_failed|index_invalid|manifest.*invalid|payload_hash_mismatch/i, '저장 확인 실패', '분석 결과가 안전하게 저장되었는지 확인하지 못했습니다.', '원본은 유지됩니다. 저장 상태를 확인해 주세요.'],
       ['EMPTY_PACKET', /semantic_payload_empty|preview_unavailable/i, '기억 내용 없음', '응답에 저장할 실제 기억 내용이 없습니다.', 'AI 다시 분석 또는 직접 수정을 사용해 주세요.'],
@@ -45827,7 +46462,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const unit=ensureArray(collectNativeColdStartEvidence(scope).units).find(row=>Number(row.turn)===turn);
     if(!unit)return null;
     const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
-    const pair=ensureArray(snapshot.pairs).find(row=>Number(row.pairIndex)===turn);
+    const pair=ensureArray(snapshot.conversationPairs).find(row=>Number(row.pairIndex)===turn);
     const evidence=pair?recoveryEvidenceForAuthoritativePair(scope,pair):null;
     const repairText=evidence?'[Turn '+turn+']\n[User attempt]\n'+evidence.userText.trim()+'\n\n[Assistant outcome]\n'+evidence.assistantText.trim():'';
     const observed=nativeAnalysisSourceText(source?.text||'');
@@ -45882,24 +46517,102 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     Memory.partialMemoryMutationQueue = queued.catch(() => null);
     return queued;
   };
-  const searchAcceptedPartialMemory = async (scope,query) => {
+  const inheritPartialMemoryForBridgeSession = async (sourceScopeKey = '', targetScopeKey = '', transferId = '') => {
+    const sourceKey = compact(sourceScopeKey || '', 196);
+    const targetKey = compact(targetScopeKey || '', 196);
+    const transfer = compact(transferId || '', 160);
+    if (!sourceKey || !targetKey || sourceKey === targetKey) {
+      return { ok: false, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_handoff_identity_invalid' };
+    }
+    const srcRaw = await RisuCompat.getStorageItem(partialMemoryKey(sourceKey), null);
+    if (srcRaw == null) {
+      return { ok: true, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty', sourceScopeKey: sourceKey, targetScopeKey: targetKey, transferId: transfer };
+    }
+    const srcStore = typeof srcRaw === 'string' ? safeJsonParse(srcRaw, null) : srcRaw;
+    if (!objectish(srcStore) || srcStore.schema !== 'hayaku.partial_memory.v1' || srcStore.digest !== stableHash64(JSON.stringify(srcStore.records))) {
+      throw new Error('partial_memory_source_store_invalid');
+    }
+    const srcRecords = ensureArray(srcStore.records);
+    if (!srcRecords.length) {
+      return { ok: true, copiedRecords: 0, adoptedRecords: 0, records: 0, reason: 'partial_memory_empty', sourceScopeKey: sourceKey, targetScopeKey: targetKey, transferId: transfer };
+    }
+    const tgtKey = partialMemoryKey(targetKey);
+    const tgtRaw = await RisuCompat.getStorageItem(tgtKey, null);
+    const tgtExisting = typeof tgtRaw === 'string' ? safeJsonParse(tgtRaw, null) : tgtRaw;
+    if (tgtRaw != null && (!objectish(tgtExisting) || tgtExisting.schema !== 'hayaku.partial_memory.v1' || tgtExisting.digest !== stableHash64(JSON.stringify(tgtExisting.records)))) {
+      throw new Error('partial_memory_target_store_invalid');
+    }
+    const existingList = clone(tgtExisting?.records || [], []);
+    const byId = new Map(existingList.map(row => [compact(row?.id || '', 96), row]).filter(([id]) => id));
+    let copiedRecords = 0;
+    const inheritedAt = now();
+    for (const row of srcRecords) {
+      const originScopeKey = compact(row?.originScopeKey || row?.sourceScopeKey || sourceKey, 196);
+      const originRecordId = compact(row?.originRecordId || row?.sourceRecordId || row?.id || '', 96);
+      const id = stableHash64(`${originScopeKey}\u0001${originRecordId}`);
+      if (byId.has(id)) continue;
+      byId.set(id, {
+        ...clone(row, {}),
+        id,
+        originScopeKey,
+        originRecordId,
+        sourceScopeKey: sourceKey,
+        sourceRecordId: originRecordId,
+        inheritedSessionHistory: true,
+        permanentSessionHistory: true,
+        handoffTransferId: transfer,
+        inheritedAt
+      });
+      copiedRecords += 1;
+    }
+    const nextRecords = [...byId.values()].slice(-256);
+    if (copiedRecords > 0) {
+      const store = {
+        schema: 'hayaku.partial_memory.v1',
+        scopeKey: targetKey,
+        records: nextRecords,
+        digest: stableHash64(JSON.stringify(nextRecords))
+      };
+      const write = await writeFailedAnalysisJsonExact(tgtKey, store, 'partial_memory_handoff_write_failed');
+      if (write.durable !== true) throw new Error(write.reason || 'partial_memory_handoff_readback_failed');
+    }
+    const adoptedRecords = nextRecords.filter(row => row?.inheritedSessionHistory === true).length;
+    return {
+      ok: true,
+      copiedRecords,
+      adoptedRecords,
+      records: nextRecords.length,
+      reason: copiedRecords > 0 ? 'partial_memory_copied_non_destructive' : 'partial_memory_already_adopted',
+      sourceScopeKey: sourceKey,
+      targetScopeKey: targetKey,
+      transferId: transfer
+    };
+  };
+  const searchAcceptedPartialMemory = async (scope, query, preloaded = null) => {
     if(!scope?.confident||!scope.key)return [];
     const raw=await RisuCompat.getStorageItem(partialMemoryKey(scope.key),null),store=typeof raw==='string'?safeJsonParse(raw,null):raw;
     if(!store||store.schema!=='hayaku.partial_memory.v1'||store.scopeKey!==scope.key||store.digest!==stableHash64(JSON.stringify(store.records)))return [];
     // Use the same source/worldline/body checks as recovery coverage. A matching
     // turn number or an old audit copy alone must not retire historical evidence.
-    const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
-    const storedLedger=await loadStorageLedger(scope,{hydrateArchive:false,authoritativeSnapshot:snapshot});
-    if(storedLedger.enabled!==true)return [];
-    const worldline=reconcileTurnWorldline(storedLedger.worldline,snapshot,scope);
-    const boundLedger=bindStorageLedgerToSnapshot({...storedLedger,worldline},snapshot,worldline).ledger;
+    let snapshot = preloaded?.snapshot || null;
+    let boundLedger = preloaded?.boundLedger || null;
+    if (!snapshot || boundLedger?.enabled !== true) {
+      snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
+      const storedLedger=await loadStorageLedger(scope,{hydrateArchive:false,authoritativeSnapshot:snapshot});
+      if(storedLedger.enabled!==true)return [];
+      const worldline=reconcileTurnWorldline(storedLedger.worldline,snapshot,scope);
+      boundLedger=bindStorageLedgerToSnapshot({...storedLedger,worldline},snapshot,worldline).ledger;
+    }
     const coveredTurns=new Set(exactHayakuTurnCoverage(snapshot,boundLedger,scope.key).coveredTurns);
     const units=ensureArray(collectNativeColdStartEvidence(scope).units),candidates=[];
     for(const row of ensureArray(store.records)){
-      if(coveredTurns.has(Number(row.turn)))continue;
-      if(row.sourceProjection!==HAYAKU_ANALYSIS_SOURCE_PROJECTION)continue;
-      const unit=units.find(unit=>Number(unit.turn)===row.turn);
-      if(!unit||unit.chunkHash!==row.unitHash||hayakuSourcePrefixDigest(scope,row.turn)!==row.prefixDigest)continue;
+      const inherited = row?.inheritedSessionHistory === true || row?.permanentSessionHistory === true;
+      if (!inherited) {
+        if(coveredTurns.has(Number(row.turn)))continue;
+        if(row.sourceProjection!==HAYAKU_ANALYSIS_SOURCE_PROJECTION)continue;
+        const unit=units.find(unit=>Number(unit.turn)===row.turn);
+        if(!unit||unit.chunkHash!==row.unitHash||hayakuSourcePrefixDigest(scope,row.turn)!==row.prefixDigest)continue;
+      }
       for(const atom of new Map(ensureArray(row.atoms).map(atom=>[partialMemoryAtomKey(atom),atom])).values()){
         if(['holderEntityIds','knownByEntityIds','deniedToEntityIds'].some(key=>(atom.value?.[key]!=null&&!ensureArray(atom.value?._verifiedEntityBindings).includes(key))||atom.value?._unresolvedEntityBindings?.[key]!=null))continue;
         const body=JSON.stringify({memory:partialMemorySafeValue(atom),sourceQuotes:atom.evidence||[],interpretation:'historical evidence; owner binding unverified; not current State; prefer source quotes if conflicting'});if(!body||body.length>8000)continue;
@@ -45931,6 +46644,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parsed = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
     return parsed?.schema === 'hayaku.analysis_failure_log.v1' && parsed.scopeKey === scopeKey ? ensureArray(parsed.entries) : [];
   };
+  const INCREMENTAL_DEBT_FAILURE_FLOWS = new Set([
+    'after_request_current_packet',
+    'after_request_recovery',
+    'native_repair_evidence_verification',
+    'native_repair_debt',
+    'native_repair_request_budget',
+    'incremental_recovery'
+  ]);
+  const analysisFailureResolutionMatches = (row, res) => Boolean(
+    res?.sourceRevisionId && ensureArray(res?.recordIds).length && (
+      (row?.sourceRevisionId && res.sourceRevisionId === row.sourceRevisionId)
+      || (INCREMENTAL_DEBT_FAILURE_FLOWS.has(row?.flow) && res.supersededDebtTurn === true)
+    )
+  );
   const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
   const analysisFailureResolutionKey = (scopeKey, row) => `${scopeKey}::${analysisFailureIdentity(row)}`;
   const attachAnalysisFailureProofs = async (scope, before, next) => {
@@ -45963,9 +46690,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
     const entries = await readAnalysisFailureLog(summary.scopeKey);
     const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
-      && row.sourceRevisionId === summary.sourceRevisionId && row.operationId === summary.operationId);
-    if (same) summary.failureKey = same.failureKey;
-    if (same) Object.assign(same, summary, { count: Number(same.count || 1) + 1 }); else entries.push({ ...summary, count: 1 });
+      && row.sourceRevisionId === summary.sourceRevisionId
+      && (row.operationId === summary.operationId || (INCREMENTAL_DEBT_FAILURE_FLOWS.has(summary.flow) && row.reason === summary.reason)));
+    if (same) {
+      summary.failureKey = same.failureKey;
+      summary.operationId = same.operationId || summary.operationId;
+      Object.assign(same, summary, { count: Number(same.count || 1) + 1 });
+    } else entries.push({ ...summary, count: 1 });
     entries.sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
     return await writeFailedAnalysisJsonExact(analysisFailureLogKey(summary.scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: summary.scopeKey, entries: entries.slice(-40) }, 'analysis_failure_log_write_failed');
   });
@@ -45976,7 +46707,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!pending.length) return;
     const applied = [];
     for (const [key, item] of pending) {
-      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && entry.sourceRevisionId === item.resolution.sourceRevisionId);
+      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && analysisFailureResolutionMatches(entry, item.resolution));
       if (!row || row.resolution) { Memory.analysisFailurePendingResolutions.delete(key); continue; }
       row.resolution = item.resolution;
       applied.push([key, item]);
@@ -45998,7 +46729,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     try {
       await enqueueFailedAnalysisMutation(async () => {
         const entries = await readAnalysisFailureLog(scope.key);
-        const unresolved = entries.filter(row => !row.resolution && row.sourceRevisionId && Number(capsule.createdAt || 0) >= Number(row.at || 0));
+        const unresolved = entries.filter(row => !row.resolution && (row.sourceRevisionId || INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)) && Number(capsule.createdAt || 0) >= Number(row.at || 0));
         if (!unresolved.length) return;
         const turns = new Set(unresolved.map(row => row.turn));
         const units = capsule.nativeColdStart === true ? new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit])) : null;
@@ -46017,8 +46748,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
               ? record.coldStartEpochId === capsule.epochId && record.recordState === 'historical'
               : record.incrementalRecoveryRunId === capsule.recoveryId && Number(record.targetPairIndex) === turn && record.recordState === 'active'));
           if (!records.length) continue;
-          for (const row of unresolved) if (!row.resolution && row.turn === turn && row.sourceRevisionId === prefix) {
-            const resolution = { sourceRevisionId: prefix, operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
+          for (const row of unresolved) if (!row.resolution && Number(row.turn) === turn) {
+            const exactMatch = Boolean(row.sourceRevisionId && row.sourceRevisionId === prefix);
+            const debtMatch = Boolean(!capsule.nativeColdStart && INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)
+              && (!row.sourceRevisionId || row.sourceRevisionId !== prefix)
+              && Number(capsule.createdAt || 0) > Number(row.at || 0));
+            if (!exactMatch && !debtMatch) continue;
+            const resolution = { sourceRevisionId: prefix, ...(debtMatch ? { supersededDebtTurn: true } : {}),
+              operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
               recordIds: records.map(record => record.recordId), packetHash: packet.packetHash, resolvedAt: now() };
             row.resolution = resolution;
             resolutions.set(analysisFailureIdentity(row), resolution);
@@ -46054,40 +46791,65 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const turns = new Set(unresolved.map(row => Number(row.turn)));
     const prefixes = new Map(), units = new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit]));
     let reconstructed = false;
+    const liveSources = new Set(['afterRequest', 'risu_chat_output', 'finalized_live_chat']);
     for (const record of ensureArray(ledger.records)) {
-      if (!['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource)
-        || record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
+      const isBridge = ['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource);
+      const isLive = liveSources.has(record.captureSource);
+      if (!isBridge && !isLive) continue;
+      if (record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
       if (!record.hash || stableHash64(text(record.raw).trim()) !== record.hash) continue;
       const packet = safeJsonParse(record.raw, null), meta = packet?.meta;
-      if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
-        || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      if (isBridge) {
+        if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
+          || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      } else {
+        if (record.recordState !== 'active' || !activeIds.has(record.recordId) || !(Number(record.boundAt) > 0)
+          || validateHayakuPacket(packet).ok !== true) continue;
+      }
       const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
       if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
       if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
       const prefix = prefixes.get(turn);
-      if (!prefix) continue;
       let operationId = '', adoptedAt = 0;
-      if (record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
+      if (prefix && record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
         && record.sourceRevisionBasis === prefix && meta.repair_target?.sourcePrefixDigest === prefix
         && record.recoveryTargetEvidenceHash === meta.source_evidence_hash) {
         operationId = record.incrementalRecoveryRunId;
         adoptedAt = adoptedAtById.get(record.recordId) || 0;
-      } else if (record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
+      } else if (prefix && record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
         && record.coldStartEpochId === ledger.coldStart?.activeEpochId && record.inheritedFromScopeKey === `cold_start:${scopeKey}`
         && meta.source_evidence_hash === units.get(turn)?.chunkHash) {
         operationId = record.coldStartTransferId;
         adoptedAt = Number(record.inheritedAt || 0);
       }
-      if (!operationId || !adoptedAt) continue;
-      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
-        || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
-          && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
-          && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
-        const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
-        if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
-        const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
-        Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
-        reconstructed = true;
+      if (operationId && adoptedAt && prefix) {
+        for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
+          || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
+            && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
+            && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
+          const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+          if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
+          const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
+          Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+          reconstructed = true;
+        }
+      }
+      const debtAdoptedAt = record.recordState === 'active' && activeIds.has(record.recordId)
+        && (isLive || record.captureSource === 'bridge_incremental_recovery')
+        ? Math.max(0, Number(record.boundAt || 0)) : 0;
+      if (debtAdoptedAt > 0) {
+        const debtOpId = record.incrementalRecoveryRunId || record.recordId;
+        const resolvedBasis = prefix || record.sourceRevisionBasis || '';
+        for (const row of unresolved) if (INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow) && Number(row.turn) === turn && debtAdoptedAt > Number(row.at)) {
+          const basis = resolvedBasis || row.sourceRevisionId || 'active_turn_recovery';
+          const superseded = !row.sourceRevisionId || row.sourceRevisionId !== basis;
+          const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+          if (prior && Number(prior.resolution.resolvedAt) >= debtAdoptedAt) continue;
+          const resolution = { sourceRevisionId: basis, ...(superseded ? { supersededDebtTurn: true } : {}),
+            operationId: debtOpId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: debtAdoptedAt };
+          Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+          reconstructed = true;
+        }
       }
     }
     if (!reconstructed) return false;
@@ -46097,7 +46859,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return true;
   };
   const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
-    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
+    const unresolved = rows.filter(row => !row.resolution && row.failureKey && (row.sourceRevisionId || INCREMENTAL_DEBT_FAILURE_FLOWS.has(row.flow)) && Number(row.turn) > 0
       && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
     if (!unresolved.length) return false;
     const scope = await RisuCompat.currentChatScope();
@@ -46140,13 +46902,32 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) { pushOperationLog('analysis:failure_resolution_recheck_unavailable', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
     const covered = new Set(ensureArray(coveredTurns).map(Number));
     return { logAvailable, rows: rows.map(row => {
-      const resolutionDurable = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
+      const resolutionDurable = analysisFailureResolutionMatches(row, row.resolution);
       const pending = Memory.analysisFailurePendingResolutions.get(analysisFailureResolutionKey(scopeKey, row));
-      const resolutionPending = !resolutionDurable && Boolean(row.sourceRevisionId && pending?.resolution.sourceRevisionId === row.sourceRevisionId && ensureArray(pending?.resolution.recordIds).length);
+      const resolutionPending = !resolutionDurable && analysisFailureResolutionMatches(row, pending?.resolution);
       const resolved = resolutionDurable || resolutionPending;
       return { ...row, ...(resolutionPending ? { resolution: clone(pending.resolution, {}) } : {}), flowLabel: failedAnalysisFlowLabel(row.flow), resolved, resolutionDurable, resolutionPending,
         keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
     }).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
+  };
+  const clearResolvedAnalysisFailures = async scopeKeyInput => {
+    const scopeKey = compact(scopeKeyInput || '', 196);
+    if (!scopeKey) return { ok: false, durable: false, cleared: 0, remaining: 0, reason: 'scope_unavailable' };
+    return await enqueueFailedAnalysisMutation(async () => {
+      const entries = await readAnalysisFailureLog(scopeKey);
+      const kept = entries.filter(entry => !analysisFailureResolutionMatches(entry, entry.resolution));
+      const cleared = entries.length - kept.length;
+      if (cleared > 0) {
+        const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey, entries: kept }, 'analysis_failure_clear_write_failed');
+        if (write.durable !== true) return { ok: false, durable: false, cleared: 0, remaining: entries.length, reason: write.reason || 'analysis_failure_clear_write_failed' };
+      }
+      for (let i = Memory.analysisFailureSummaries.length - 1; i >= 0; i -= 1) {
+        const row = Memory.analysisFailureSummaries[i];
+        if (row?.scopeKey === scopeKey && analysisFailureResolutionMatches(row, row.resolution)) Memory.analysisFailureSummaries.splice(i, 1);
+      }
+      Memory.analysisFailureReconstructionChecks.delete(scopeKey);
+      return { ok: true, durable: true, cleared, remaining: kept.length, scopeKey };
+    });
   };
   const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
   const saveFailedAnalysisArtifact = async input => {
@@ -47775,6 +48556,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!negated) return false;
     return !/(?:not|never|no|아니|않|못|없|ない|ぬ|不是|没有)/iu.test(JSON.stringify(item || {}).toLowerCase());
   };
+  const normalizeNativeGroundingTypography = value => normalizeNativeGroundingText(value)
+    .replace(/[“”„‟＂]/gu, '"')
+    .replace(/[‘’‚‛＇]/gu, "'")
+    .replace(/[—–―]/gu, '-')
+    .replace(/\s+([.,!?;:])/gu, '$1');
+  const nativeTargetIncludesQuote = (haystack, needle) => Boolean(needle && (
+    haystack.includes(needle)
+    || (needle.length >= 6 && normalizeNativeGroundingTypography(haystack).includes(normalizeNativeGroundingTypography(needle)))
+  ));
   const validateNativeRepairGrounding = (envelope, verifiedEvidence = {}) => {
     const shape = validateNativeRepairEnvelopeShape(envelope);
     if (shape.ok !== true) return shape;
@@ -47791,7 +48581,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (source !== 'target') rowErrors.push(`grounding_source_invalid:${index}:${source}`);
       if (!evidence.length) rowErrors.push(`grounding_evidence_missing:${index}:${path}`);
       evidence.forEach((quote, quoteIndex) => {
-        if (quote.length < 2 || !target.includes(quote)) rowErrors.push(`grounding_quote_not_in_target:${index}:${quoteIndex}:${path}`);
+        if (quote.length < 2 || !nativeTargetIncludesQuote(target, quote)) rowErrors.push(`grounding_quote_not_in_target:${index}:${quoteIndex}:${path}`);
       });
       if (path) { const previous=rowsByPath.get(path); rowsByPath.set(path,{path,source,evidence:[...(previous?.evidence||[]),...evidence],index}); }
     });
@@ -47808,8 +48598,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for (const anchor of anchors) {
         const normalized = normalizeNativeGroundingText(anchor.value);
         const rowEvidence = ensureArray(rowsByPath.get(path)?.evidence).join('\n');
-        if (normalized && (!target.includes(normalized) || !rowEvidence.includes(normalized))) {
-          if (/^(?:name|from|to)$/i.test(anchor.key) && !target.includes(normalized)) ambiguous.push({path,field:anchor.path||anchor.key,reason:'entity_identity_not_in_target'});
+        if (normalized && (!nativeTargetIncludesQuote(target, normalized) || !nativeTargetIncludesQuote(rowEvidence, normalized))) {
+          if (/^(?:name|from|to)$/i.test(anchor.key) && !nativeTargetIncludesQuote(target, normalized)) ambiguous.push({path,field:anchor.path||anchor.key,reason:'entity_identity_not_in_target'});
           else if (!/^(?:quote|line|dialogue)$/i.test(anchor.key) && !(/critical_dialogue/i.test(path) && anchor.key === 'text')) derived.push({path,field:anchor.path||anchor.key,evidence:ensureArray(rowsByPath.get(path)?.evidence),reason:'derived_expression_not_exact_quote'});
           else ambiguous.push({ path, field: anchor.path || anchor.key, value: compact(anchor.value, 160), reason: 'direct_fact_anchor_not_in_grounding_quote' });
         } else if (normalized && /^(?:relation|relationship|predicate|status|state|event|action|rule|secret|promise|text|quote|line|dialogue|summary|description|consequence|setup|payoff|emotion|knowledge|type)$/i.test(anchor.key)
@@ -47819,7 +48609,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       if (/critical_dialogue/i.test(path)) {
         const exactDialogue = anchors.filter(anchor => /^(?:text|quote|line|dialogue)$/i.test(anchor.key));
-        if (!exactDialogue.length || exactDialogue.some(anchor => !target.includes(normalizeNativeGroundingText(anchor.value)))) {
+        if (!exactDialogue.length || exactDialogue.some(anchor => !nativeTargetIncludesQuote(target, normalizeNativeGroundingText(anchor.value)))) {
           ambiguous.push({ path, reason: 'critical_dialogue_exact_quote_missing' });
         }
       }
@@ -48739,10 +49529,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     const runState = await readNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, HAYAKU_NATIVE_REGEN_RUN_SCHEMA);
     const previousRun = runState.available === true ? runState.run : null;
-    const sameRunTarget = !options.sourceEditValidate && previousRun
+    const sameRunTarget = Boolean(previousRun
       && ensureArray(previousRun.replacementRecordIds).join('\u0001') === replacementRecordIds.join('\u0001')
       && ensureArray(previousRun.targetTurns).map(Number).join(',') === turns.join(',')
-      && compact(previousRun.contractHash || '', 96) === compact(promptContract.contractHash, 96);
+      && compact(previousRun.contractHash || '', 96) === compact(promptContract.contractHash, 96));
     const previousByTurn = new Map((sameRunTarget ? ensureArray(previousRun?.chunks) : [])
       .map(entry => [Number(entry?.pairIndex || entry?.targetPairIndex || 0), entry]));
     const createdAt = sameRunTarget ? Math.max(1, Number(previousRun.createdAt || now()) || now()) : now();
@@ -48801,7 +49591,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       run.updatedAt = now();
       const write = await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
       if (write.durable !== true) throw new Error(write.reason || 'targeted_regeneration_checkpoint_write_failed');
-      if (Memory.nativeRecovery.job?.kind === 'targeted_regeneration') {
+      if (['targeted_regeneration', 'source_edit'].includes(Memory.nativeRecovery.job?.kind)) {
         updateNativeJobFromChunks(run, {
           state: run.state === 'running' ? 'analyzing' : run.state,
           message: run.state === 'running' ? '현재 턴을 Other Ax로 분석하고 있습니다.' : ''
@@ -49360,6 +50150,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
       }
 
+      const manualSettings = options?.explicitRetry === true ? await loadSettings() : null;
+      const manualExtraCalls = options?.explicitRetry === true && Number(manualSettings?.recoveryExtraCalls) === 1 ? 1 : 0;
       const analyzed = await executeNativeAnalysisAttempt('incremental_recovery', chunk, {
         scopeKey,
         sourceEvidenceHash: repairTarget.sourceEvidenceHash,
@@ -49370,7 +50162,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         failureFlow: 'native_repair_debt',
         debtId,
         runId,
-        maxPhysicalCalls: 1,
+        extraCalls: manualExtraCalls,
+        maxPhysicalCalls: 1 + manualExtraCalls,
         priorFailureReport: null
       });
       if (Memory.unloaded || !ownsRuntime()) {
@@ -49632,7 +50425,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       debts:exactCoverage.rows.filter(r=>r.state==='missing').map(r=>({pairIndex:r.turn,issue:r.reason,source:{hasPacketMarkers:r.packetMarkersPresent}})),
       totalDebtCount:exactCoverage.missingTurns.length}};
     if(!recovery.active)return {ok:true,skipped:true,reason:exactCoverage.sourceEditPendingTurns.length?'source_edit_auto_pending':'no_packet_recovery_debt',saved:0,scopeKey:scope.key,coverage:exactCoverage};
-    const materialized = await materializeDetectedRecoveryVaultEvidence({scope,snapshot,worldline,ledger,packets,recovery,exactCoverage,manualFullScan:options.manualFullScan===true});
+    const materialized = await materializeDetectedRecoveryVaultEvidence({scope,snapshot,worldline,ledger,packets,recovery,exactCoverage,manualFullScan:options.manualFullScan===true,explicitTargetTurns:ensureArray(options.explicitTargetTurns)});
     return {...materialized,scanReason:compact(options?.reason||'native_repair_scan',96),scopeKey:scope.key,
       packetCount:packets.length,conversationPairCount:snapshot.conversationPairCount,detectedDebtCount:exactCoverage.missingTurns.length,coverage:exactCoverage};
   };
@@ -49734,12 +50527,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(options.expectedScopeKey && scope?.key!==options.expectedScopeKey)return {ok:false,skipped:true,reason:'coverage_scope_changed'};
       // Materialize missing-turn debt first so a legacy verified RE:TRACE
       // checkpoint can be adopted without requiring another Other Ax call.
-      const scan = await scanCurrentChatForNativeRecoveryDebts({ reason, scope,manualFullScan:options.force===true });
+      const selectedTurn=Number(options.targetPairIndex || ensureArray(options.targetTurns)[0] || 0);
+      const scan = await scanCurrentChatForNativeRecoveryDebts({ reason, scope,manualFullScan:options.force===true,explicitTargetTurns:selectedTurn>0?[selectedTurn]:[] });
       if (scan.ok === false || scan.durable === false) {
         const result={...scan,ok:false,repaired:false,stage:scan.stage||'recovery_debt_scan'};
         state.lastRepairResult=result;state.lastRepairError=compact(scan.error||scan.reason,320);return result;
       }
-      const selectedTurn=Number(options.targetPairIndex || ensureArray(options.targetTurns)[0] || 0);
       const checkedRow=ensureArray(scan.coverage?.rows).find(r=>r.turn===selectedTurn);
       if(options.expectedRow && (!checkedRow || !hayakuRecoverySourceRowMatches(options.expectedRow,checkedRow))) return {ok:false,skipped:true,reason:'selected_turn_source_changed'};
       const legacyTakeover = !selectedTurn && scope?.confident && scope?.key && scope.chatMessagesAvailable === true
@@ -49889,7 +50682,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(options.scopeKey&&scope.key!==options.scopeKey)return finish({ok:false,reason:'coverage_scope_changed'});
       setNativeManualRepairPhase('coverage_scan');
       for(const turn of targets)await assertHayakuSourceScope(scope.key,turn);
-      const scan=await scanCurrentChatForNativeRecoveryDebts({scope,reason:'manual_selected_scan',manualFullScan:true});
+      const scan=await scanCurrentChatForNativeRecoveryDebts({scope,reason:'manual_selected_scan',manualFullScan:true,explicitTargetTurns:targets});
       if(stopped())return finish({ok:false,cancelled:true,reason:'user_cancelled'});
       diagnostic.scan={ok:scan.ok===true,reason:compact(scan.reason||scan.error||'',240),durable:typeof scan.durable==='boolean'?scan.durable:null};
       if(scan.ok!==true)return finish({...scan,ok:false,reason:scan.reason||scan.error||'coverage_scan_failed'});
@@ -50757,7 +51550,7 @@ const MemorySuiteHealthRecovery = (() => {
     const modeState = await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(descriptor, storageKey);
     const raw = modeState.raw;
     let value = null; try { value = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) {}
-    const valid = value?.version === 'hayaku_storage_ledger_v2' && value.scopeKey === scopeKey && Array.isArray(value.records);
+    const valid = STORAGE_LEDGER_COMPAT_VERSIONS.has(value?.version) && value.scopeKey === scopeKey && Array.isArray(value.records);
     return { scopeKey, mode: modeState.mode, valid, busy: Memory.nativeRecovery.inFlight === true || Memory.nativeRecovery.manualBatchInFlight === true,
       binding: JSON.stringify([descriptor, chat.bindedPersona || '', MemorySuiteHostLineage.inspect(character, chat), modeState.binding, modeState.mode, raw, chat.message || []]) };
   };
@@ -50823,7 +51616,7 @@ const MemorySuiteHealthRecovery = (() => {
     progress('verifying', '완료 턴·패킷 본문·원장·공유 아카이브를 대조합니다.');
     const storageKey = storageLedgerStorageKey(scope), raw = await read(storageKey);
     const value = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
-    if (raw != null && raw !== '' && (!objectish(value) || value.version !== STORAGE_LEDGER_VERSION
+    if (raw != null && raw !== '' && (!objectish(value) || !STORAGE_LEDGER_COMPAT_VERSIONS.has(value.version)
       || value.scopeKey !== scope.key || !Array.isArray(value.records))) throw Error('maintenance_ledger_invalid');
     const hydrated = await hydrateCapturedLedgerRaw(value, scope, {offline: true, read});
     let ledger = normalizeStorageLedger(hydrated, scope);
@@ -51390,11 +52183,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0)) || (message.recallBudgetChars !== undefined && !(Number.isSafeInteger(message.recallBudgetChars) && message.recallBudgetChars >= 1 && message.recallBudgetChars <= 160000))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0, ...(message.recallBudgetChars ? { recallBudgetChars: message.recallBudgetChars } : {}) });
         result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
@@ -51519,9 +52312,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
+  const select = async (owner, scope, queryText, signal, extraHints = {}) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner), ...(extraHints && typeof extraHints === 'object' ? extraHints : {}) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
         || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
@@ -51656,7 +52449,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
       select: async (queryText, check, hints = {}) => {
-        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0 });
+        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0, recallBudgetChars: hints.recallBudgetChars || 0 });
         check?.();
         return { content: text(selected?.recallPrompt || '').trim() };
       },
@@ -51852,6 +52645,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               const logicalRecordCount = includeRecords
                 ? storageRecordsEligibleForHandoff(ledger, { includeSelectedUnbound: false }).length
                 : Math.max(0, Number(ledger.logicalRecordCount || 0) || 0);
+              const inspectVault = await loadRecoveryVault(scope.key, { force: false }).catch(() => ({ records: [] }));
+              const recoveryVaultCount = ensureArray(inspectVault?.records).length;
+              const inspectPartialRaw = await RisuCompat.getStorageItem(partialMemoryKey(scope.key), null).catch(() => null);
+              const inspectPartialParsed = typeof inspectPartialRaw === 'string' ? safeJsonParse(inspectPartialRaw, null) : inspectPartialRaw;
+              const partialMemoryCount = objectish(inspectPartialParsed) && inspectPartialParsed.schema === 'hayaku.partial_memory.v1'
+                ? ensureArray(inspectPartialParsed.records).length
+                : 0;
               result = {
                 available: ledger.enabled === true,
                 version: ledger.version,
@@ -51866,6 +52666,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 worldline: ledger.worldline,
                 records: includeRecords ? ensureArray(ledger.records) : [],
                 recordCount: logicalRecordCount,
+                recoveryVaultCount,
+                partialMemoryCount,
                 recordsIncluded: includeRecords,
                 archiveRef: normalizeHayakuArchiveRef(ledger.archiveRef),
                 archiveVerified: ledger.archiveVerified !== false,
@@ -53009,8 +53811,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         || latestUser?.messageIndex!==userEvidence.messageIndex || latestUser?.sourceMessageId!==userEvidence.sourceMessageId
         || currentPending?.lineage?.requestNonce!==pending.lineage.requestNonce
         || !assistantUnchanged || !afterRequestCaptureSourceCurrent(latest,pending))throw new Error('SOURCE_EDIT_SOURCE_CHANGED');
-      const replacement = replaceHayakuPacketText(source, analyzed.packet);
+      const replacement = replaceHayakuPacketText(source, analyzed.packet, pending?.packetPlacement || packetPlacementOf(Memory.settings));
       if (replacement.ok !== true) throw new Error(replacement.reason || 'after_request_packet_replacement_failed');
+      const normalizedVerifiedPacket = normalizeHayakuPacket(analyzed.packet);
+      pending.afterRequestVerifiedCandidate = {
+        raw: JSON.stringify(normalizedVerifiedPacket),
+        hash: analyzed.packetHash,
+        packetType: 'current_snapshot',
+        requestNonce: text(pending.lineage?.requestNonce || ''),
+        logicalTurnId: text(pending.lineage?.logicalTurnId || ''),
+        parentTurnNodeId: text(pending.lineage?.parentTurnNodeId || ''),
+        identityVersion: finiteNonNegativeInteger(pending.lineage?.identityVersion, 0),
+        lineageSchema: text(pending.lineage?.lineageSchema || ''),
+        turnOwnerKey: text(pending.lineage?.turnOwnerKey || ''),
+        generationAttemptId: text(pending.lineage?.generationAttemptId || ''),
+        assistantVisibleHash: stableHash64(assistantText)
+      };
       pending.afterRequestRepair = {
         attempted: true,
         enabled: true,
@@ -53116,6 +53932,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     entry.promise=enqueueHayakuChatOutputWork(scopeKey,task).finally(()=>{if(canonicalCaptureJobs.get(jobKey)===entry)canonicalCaptureJobs.delete(jobKey);});
     canonicalCaptureJobs.set(jobKey,entry);return entry.promise;
   };
+  const rescuedAfterRequestPacketsForCandidate = (pending, candidate) => {
+    if (candidate?.packets?.length) return [];
+    const verified = pending?.afterRequestVerifiedCandidate;
+    if (!verified?.raw || pending?.afterRequestRepair?.outcome !== 'candidate_returned_pending_commit') return [];
+    const expectedHash = compact(verified.assistantVisibleHash || '', 96);
+    const actualHash = compact(candidate?.pair?.assistantVisibleHash || '', 96);
+    if (!expectedHash || !actualHash || expectedHash !== actualHash) return [];
+    return [verified];
+  };
   const processRisuChatOutputEvent = async (eventValue,observation={}) => {
     if (typeof scheduleHayakuAttentionRefresh === 'function') scheduleHayakuAttentionRefresh('chat_output');
     if (Memory.unloaded || !ownsRuntime()) return { ok: false, skipped: true, reason: 'runtime_inactive' };
@@ -53202,12 +54027,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         Memory.chatOutputTurnRevisions.set(logicalKey, revisionState);
         while (Memory.chatOutputTurnRevisions.size > 256) Memory.chatOutputTurnRevisions.delete(Memory.chatOutputTurnRevisions.keys().next().value);
         stopFinalizedCaptureMonitor(pending);
+        const rescuedPackets = rescuedAfterRequestPacketsForCandidate(pending, candidate);
+        const effectivePackets = candidate.packets.length ? candidate.packets : rescuedPackets;
         let result;
-        if (candidate.packets.length) {
-          result = await persistCapturedPackets(pending, candidate.packets, 'risu_chat_output', { authoritativePair: true, pair: candidate.pair,
+        if (effectivePackets.length) {
+          result = await persistCapturedPackets(pending, effectivePackets, 'risu_chat_output', { authoritativePair: true, pair: candidate.pair,
             observedAt:observation.observedAt||null,chatQueueTiming,
             rawReceipt });
           if (result?.durable === true) {
+            if (rescuedPackets.length) {
+              pushOperationLog('native_recovery:after_request_packet_rescued_after_strip', {
+                scopeKey: liveScope.key,
+                pairIndex: candidate.pair?.pairIndex || 0,
+                requestNonce: pending.lineage?.requestNonce || '',
+                packetHash: effectivePackets[0]?.hash || ''
+              }, 'info');
+              await dischargeRecoveryVaultEvidence(liveScope.key, {
+                pairIndex: candidate.pair?.pairIndex,
+                userMessageIdHash: candidate.pair?.userMessageIdHash,
+                assistantMessageIdHash: candidate.pair?.assistantMessageIdHash,
+                userHash: candidate.pair?.userHash
+              }).catch(() => null);
+            }
             if (pending?.afterRequestRepair?.outcome === 'candidate_returned_pending_commit') {
               pending.afterRequestRepair.outcome = 'committed_chat_output_verified';
               pending.afterRequestRepair.committedAt = now();
@@ -53215,7 +54056,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 scopeKey: liveScope.key,
                 pairIndex: candidate.pair?.pairIndex || 0,
                 requestNonce: pending.lineage?.requestNonce || '',
-                packetHash: candidate.packets[0]?.hash || '',
+                packetHash: effectivePackets[0]?.hash || '',
                 durable: true
               }, 'success');
             }
@@ -53277,17 +54118,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const vaultResult = await upsertRecoveryVaultEvidence(pending, candidate, 'risu_chat_output_packet_missing_revision');
           recoveryOnly += vaultResult?.durable === true ? 1 : 0;
           result = { durable: vaultResult?.durable === true, saved: vaultResult?.saved === true, reason: 'recovery_vault_revision_saved', recoveryVault: true };
-          if (vaultResult?.durable === true && pending?.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
+          if (vaultResult?.durable === true && (pending?.otherAxCanonicalPacket === true || (pending?.fromRealBeforeRequest === true && afterRequestAutoRepairActive())) && !afterRequestAttemptedOrSettled(pending)) {
             result.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
           }
         }
         revisionState.durable=result?.durable===true;
-        Memory.lastChatOutputCapture = { ...revisionState, ...result, captureSource: 'risu_chat_output', deferredBinding: candidate.packets.length > 0 };
+        Memory.lastChatOutputCapture = { ...revisionState, ...result, captureSource: 'risu_chat_output', deferredBinding: effectivePackets.length > 0 };
         Memory.lastStorageCapture = {
           at: now(), source: 'risu_chat_output', scopeKey: liveScope.key, requestSequence: pending.requestSequence,
-          packetCount: candidate.packets.length, normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
+          packetCount: effectivePackets.length, normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
           semanticIncompletePackets: Math.max(0, Number(candidate.semanticIncompletePackets || 0) || 0),
-          revision, logicalKey, deferredBinding: candidate.packets.length > 0, ...result
+          revision, logicalKey, deferredBinding: effectivePackets.length > 0, ...result
         };
         pushOperationLog(result?.durable === true ? 'capture:risu_chat_output_revision_saved' : (result?.storageState === 'indeterminate' ? 'capture:risu_chat_output_storage_indeterminate' : 'capture:risu_chat_output_revision_failed'), Memory.lastStorageCapture, result?.durable === true ? 'success' : 'warn');
       }
@@ -53509,22 +54350,35 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!scopeKey || !turn) return false;
     const state = Memory.nativeRecovery;
     if (!(state.missedAfterRequestRepairs instanceof Set)) state.missedAfterRequestRepairs = new Set();
+    if (!(state.missedAfterRequestRetryCounts instanceof Map)) state.missedAfterRequestRetryCounts = new Map();
     const key = `${scopeKey}|${turn}|${requestNonce}`;
     if (state.missedAfterRequestRepairs.has(key)) return false;
     state.missedAfterRequestRepairs.add(key);
+    const retryIfTransient = () => {
+      if (Memory.unloaded || !ownsRuntime()) return false;
+      const count = Number(state.missedAfterRequestRetryCounts.get(key) || 0);
+      if (count >= 2) return false;
+      state.missedAfterRequestRetryCounts.set(key, count + 1);
+      state.missedAfterRequestRepairs.delete(key);
+      return scheduleMissedAfterRequestCanonicalPacket(pending);
+    };
     pushOperationLog('native_recovery:missed_after_request_repair_scheduled', { scopeKey, pairIndex: turn, requestNonce, delayMs: MISSED_AFTER_REQUEST_REPAIR_DELAY_MS }, 'info');
-    setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const skip = reason => pushOperationLog('native_recovery:missed_after_request_repair_skipped', { scopeKey, pairIndex: turn, requestNonce, reason }, 'info');
       try {
-        if (Memory.unloaded) return;
+        if (Memory.unloaded || !ownsRuntime()) return;
         if (afterRequestAttemptedOrSettled(pending)) return skip('after_request_ran');
-        // The otherAX canonical switch is the opt-in: it already spends one otherAX call per turn.
-        // Background auto repair is a separate sweep over old debt and does not gate this.
-        if (Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
+        // The otherAX canonical switch (or Mode A afterRequest auto-repair when host skipped afterRequest) opts in cleanly once.
+        if (pending?.otherAxCanonicalPacket === true && Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
+        if (pending?.otherAxCanonicalPacket !== true && Memory.settings?.otherAxCanonicalPacket !== true && !afterRequestAutoRepairActive()) return skip('after_request_auto_repair_off');
         const scope = await RisuCompat.currentChatScope().catch(() => null);
-        if (scope?.key !== scopeKey) return skip('chat_changed');
+        if (scope?.key !== scopeKey) {
+          retryIfTransient();
+          return skip('chat_changed');
+        }
         pushOperationLog('native_recovery:missed_after_request_repair_started', { scopeKey, pairIndex: turn, requestNonce }, 'info');
         const result = await runNativeMissingTurnBatch({ scopeKey, targetTurns: [turn], minimized: true });
+        if (result?.ok !== true && result?.reason === 'native_recovery_busy') retryIfTransient();
         pushOperationLog('native_recovery:missed_after_request_repair_finished', {
           scopeKey, pairIndex: turn, requestNonce, ok: result?.ok === true, reason: text(result?.reason || ''), physicalCalls: Number(result?.physicalCalls || 0)
         }, result?.ok === true ? 'success' : 'warn');
@@ -53532,6 +54386,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         pushOperationLog('native_recovery:missed_after_request_repair_finished', { scopeKey, pairIndex: turn, requestNonce, ok: false, reason: text(error?.message || error) }, 'warn');
       }
     }, MISSED_AFTER_REQUEST_REPAIR_DELAY_MS);
+    try { timer?.unref?.(); } catch (_) {}
     return true;
   };
   const finalizedChatPacketCandidate = (pending, liveScope) => {
@@ -53645,7 +54500,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           pushOperationLog('capture:finalized_timeout', Memory.lastStorageCapture, 'warn');
         }
         stopFinalizedCaptureMonitor(key);
-        removePendingCapture(pending);
+        // Stop polling after monitor timeout, but keep pendingCapture alive until
+        // CAPTURE_ORIGIN_TTL_MS expires so late host callbacks can still match it.
+        prunePendingCaptures();
         return;
       }
       try {
@@ -53665,7 +54522,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             Number(state.pollDelayMs || FINALIZED_CAPTURE_POLL_MS) + 300
           );
           if (stableFor >= FINALIZED_CAPTURE_STABLE_MS) {
-            if (!candidate.packets.length) {
+            const rescuedPackets = rescuedAfterRequestPacketsForCandidate(pending, candidate);
+            const effectivePackets = candidate.packets.length ? candidate.packets : rescuedPackets;
+            if (!effectivePackets.length) {
               if (!state.incompleteReported) {
                 state.incompleteReported = true;
                 const packetMarkersPresent = Number(candidate.markerStartCount || 0) > 0
@@ -53710,7 +54569,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                   !packetWriteExpected || vaultResult.durable === true ? 'info' : 'warn'
                 );
                 if (packetWriteExpected && !packetMarkersPresent && vaultResult.durable === true
-                  && pending.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
+                  && (pending.otherAxCanonicalPacket === true || (pending.fromRealBeforeRequest === true && afterRequestAutoRepairActive())) && !afterRequestAttemptedOrSettled(pending)) {
                   Memory.lastStorageCapture.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
                 }
               }
@@ -53719,16 +54578,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               try {
                 const result = await persistCapturedPackets(
                   pending,
-                  candidate.packets,
+                  effectivePackets,
                   'finalized_live_chat',
                   { authoritativePair: true, pair: candidate.pair }
                 );
+                if (result?.durable === true && rescuedPackets.length) {
+                  pushOperationLog('native_recovery:after_request_packet_rescued_after_strip', {
+                    scopeKey: pending.scope.key,
+                    pairIndex: candidate.pair?.pairIndex || 0,
+                    requestNonce: pending.lineage?.requestNonce || '',
+                    packetHash: effectivePackets[0]?.hash || ''
+                  }, 'info');
+                  if (pending?.afterRequestRepair?.outcome === 'candidate_returned_pending_commit') {
+                    pending.afterRequestRepair.outcome = 'committed_chat_output_verified';
+                    pending.afterRequestRepair.committedAt = now();
+                  }
+                }
                 Memory.lastStorageCapture = {
                   at: now(),
                   source: 'finalized_live_chat',
                   scopeKey: pending.scope.key,
                   requestSequence: pending.requestSequence,
-                  packetCount: candidate.packets.length,
+                  packetCount: effectivePackets.length,
                   normalizedFallbackPackets: Math.max(0, Number(candidate.normalizedFallbackPackets || 0) || 0),
                   semanticIncompletePackets: Math.max(0, Number(candidate.semanticIncompletePackets || 0) || 0),
                   captureDiagnostics: ensureArray(candidate.captureDiagnostics).slice(-8),
@@ -55793,9 +56664,26 @@ function hayakuSameTurnSource(stored, pair) {
   if (uId && puId && uId !== puId) return false;
   const raw = s(stored.sourceRawDigest);
   if (raw && raw === s(pair.sourceRawDigest)) return true;
+  if (s(pair.assistantLegacyVisibleHash) && s(stored.assistantVisibleHash) === s(pair.assistantLegacyVisibleHash)
+    && (!s(stored.userHash) || !s(pair.userHash) || s(stored.userHash) === s(pair.userHash))) return true;
   const storedPackets = [...(Array.isArray(stored.packetHashes) ? stored.packetHashes : []), stored.hash].map(s).filter(Boolean);
   const livePackets = new Set((Array.isArray(pair.packetHashes) ? pair.packetHashes : []).map(s).filter(Boolean));
-  return storedPackets.some(hash => livePackets.has(hash));
+  if (storedPackets.some(hash => livePackets.has(hash))) return true;
+  const storedA = s(stored.assistantVisibleText || stored.assistantText || stored.sourceAssistantText || '');
+  const pairA = s(pair.assistantVisibleText || pair.assistantText || '');
+  if (!storedA || !pairA) return false;
+  const normCompare = v => {
+    const projected = typeof memorySuiteCanonicalSource === 'function' ? memorySuiteCanonicalSource(v, 'hayaku') : null;
+    const base = projected !== null
+      ? projected
+      : (typeof memorySuiteProjectSourceTags === 'function' ? memorySuiteProjectSourceTags(v, 'hayaku') : v);
+    return String(base ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').replace(/\s+/g, ' ').trim();
+  };
+  if (normCompare(storedA) !== normCompare(pairA)) return false;
+  const storedU = s(stored.userVisibleText || stored.userText || stored.sourceUserText || '');
+  const pairU = s(pair.userVisibleText || pair.userText || '');
+  if (storedU && pairU && normCompare(storedU) !== normCompare(pairU)) return false;
+  return true;
 }
 /* LIBRARIAN SYSTEM SOURCE REVIEW v1.0.0 START
  * Own-iframe diff and immutable, owner-scoped approved-input evidence.
@@ -55931,10 +56819,12 @@ function memorySuiteProjectSourceTags(value, owner) {
 // Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
+const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
-  // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),...MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS,...MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS,...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
 // Shared presentation tags a saved rule set does not handle in any way (any action counts).
 function memorySuiteMissingDefaultSourceTags(rules) {
@@ -55947,12 +56837,88 @@ function memorySuiteMissingDefaultSourceTags(rules) {
 // kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
 // its own budget setting. Each plugin still shrinks below its share when the context is short.
 const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
-const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 120000;
+const MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN = 4000, MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX = 200000;
+const MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN = 0, MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX = 40000;
+const MEMORY_SUITE_RECALL_TRIM_MIN = 5, MEMORY_SUITE_RECALL_TRIM_MAX = 80;
+const MEMORY_SUITE_RECALL_PRESERVE_MIN = 2, MEMORY_SUITE_RECALL_PRESERVE_MAX = 50;
+const MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS = Object.freeze(['tiktoken', 'claude', 'gemini', 'deepseek']);
+const MEMORY_SUITE_RECALL_BUDGET_PRESETS = Object.freeze([
+  Object.freeze({ id: 'light', label: '경량', totalChars: 12000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 32000, trimPercent: 35, preserveMessages: 8, desc: '짧은 문맥·핵심 기억 중심 (GRADIA 경량 대응)' }),
+  Object.freeze({ id: 'balanced', label: '균형', totalChars: 24000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 64000, trimPercent: 30, preserveMessages: 16, desc: '일반 대화·GRADIA 균형 권장 표준 예산' }),
+  Object.freeze({ id: 'heavy', label: '중량', totalChars: 48000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 100000, trimPercent: 25, preserveMessages: 24, desc: '풍부한 회상·GRADIA 중량 장기 서사 추적' }),
+  Object.freeze({ id: 'ultra', label: '초중량', totalChars: 72000, shares: Object.freeze({ libra: 50, hayaku: 25, flashback: 25 }), maxContextTokens: 160000, trimPercent: 20, preserveMessages: 32, desc: '초대형 컨텍스트·최대 기억 주입' })
+]);
+const MEMORY_SUITE_RECALL_TOKENIZER_PROFILES = Object.freeze({
+  tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05 }),
+  claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0 }),
+  gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15 }),
+  deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0 })
+});
 function memorySuiteDefaultRecallBudget() {
   return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
 }
+function memorySuiteNormalizeRecallBudgetContextCutter(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  const maxContextRaw=src.maxContextTokens==null?40000:Number(src.maxContextTokens);
+  if(!Number.isInteger(maxContextRaw)||maxContextRaw<MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN||maxContextRaw>MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 기준 컨텍스트는 '+MEMORY_SUITE_RECALL_MAX_CONTEXT_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_MAX_CONTEXT_MAX.toLocaleString('en-US')+' 토큰 사이의 정수입니다.');
+  const trimRaw=src.trimPercent==null?30:Number(src.trimPercent);
+  if(!Number.isInteger(trimRaw)||trimRaw<MEMORY_SUITE_RECALL_TRIM_MIN||trimRaw>MEMORY_SUITE_RECALL_TRIM_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 초과 시 비울 비율은 '+MEMORY_SUITE_RECALL_TRIM_MIN+'~'+MEMORY_SUITE_RECALL_TRIM_MAX+'% 사이의 정수입니다.');
+  const preserveRaw=src.preserveMessages==null?6:Number(src.preserveMessages);
+  if(!Number.isInteger(preserveRaw)||preserveRaw<MEMORY_SUITE_RECALL_PRESERVE_MIN||preserveRaw>MEMORY_SUITE_RECALL_PRESERVE_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 최신 보호 메시지 수는 '+MEMORY_SUITE_RECALL_PRESERVE_MIN+'~'+MEMORY_SUITE_RECALL_PRESERVE_MAX+' 사이의 정수입니다.');
+  const tokenizerRaw=src.tokenizer==null||src.tokenizer===''?'tiktoken':String(src.tokenizer).trim().toLowerCase();
+  if(!MEMORY_SUITE_RECALL_CUTTER_TOKENIZERS.includes(tokenizerRaw))
+    throw Error('RECALL_BUDGET_INVALID: 토큰 추정 기준이 올바르지 않습니다.');
+  let gradiaReserveChars='auto';
+  if(src.gradiaReserveChars!=null&&src.gradiaReserveChars!==''&&src.gradiaReserveChars!=='auto'){
+    const reserve=Number(src.gradiaReserveChars);
+    if(!Number.isInteger(reserve)||reserve<MEMORY_SUITE_RECALL_GRADIA_RESERVE_MIN||reserve>MEMORY_SUITE_RECALL_GRADIA_RESERVE_MAX)
+      throw Error('RECALL_BUDGET_INVALID: GRADIA 예약 글자는 0~40,000 사이의 정수 또는 auto여야 합니다.');
+    gradiaReserveChars=reserve;
+  }
+  return {
+    enabled:src.enabled!==false,
+    onlyMemorized:src.onlyMemorized!==false,
+    maxContextTokens:maxContextRaw,
+    trimPercent:trimRaw,
+    preserveMessages:preserveRaw,
+    tokenizer:tokenizerRaw,
+    includeGradiaReserve:src.includeGradiaReserve!==false,
+    gradiaReserveChars,
+    triggerWithReserve:src.triggerWithReserve!==false
+  };
+}
+function memorySuiteNormalizeRecallBudgetGradia(input) {
+  const src=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+  return {
+    followSharedBudget:src.followSharedBudget!==false,
+    redistributeDisabledOwners:src.redistributeDisabledOwners!==false
+  };
+}
+function memorySuiteRecallBudgetPresetValues(id, currentBudget=null) {
+  const preset=MEMORY_SUITE_RECALL_BUDGET_PRESETS.find(item=>item.id===id);
+  if(!preset)throw Error('RECALL_BUDGET_INVALID: 프리셋을 찾을 수 없습니다.');
+  const existingCtx=memorySuiteNormalizeRecallBudgetContextCutter(currentBudget?.contextCutter);
+  const existingGradia=memorySuiteNormalizeRecallBudgetGradia(currentBudget?.gradia);
+  return {
+    version:2,
+    enabled:true,
+    totalChars:preset.totalChars,
+    shares:{...preset.shares},
+    contextCutter:{
+      ...existingCtx,
+      maxContextTokens:preset.maxContextTokens,
+      trimPercent:preset.trimPercent,
+      preserveMessages:preset.preserveMessages
+    },
+    gradia:existingGradia
+  };
+}
 function memorySuiteNormalizeRecallBudget(input) {
-  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1&&input.version!==2))throw Error('RECALL_BUDGET_INVALID');
   const total=Number(input.totalChars);
   if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
     throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
@@ -55963,7 +56929,61 @@ function memorySuiteNormalizeRecallBudget(input) {
     shares[owner]=value;
   }
   if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
-  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  const hasV2Fields=input.version===2||input.contextCutter!==undefined||input.gradia!==undefined;
+  if(!hasV2Fields)return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+  if(input.contextCutter!=null&&(typeof input.contextCutter!=='object'||Array.isArray(input.contextCutter)))throw Error('RECALL_BUDGET_INVALID');
+  if(input.gradia!=null&&(typeof input.gradia!=='object'||Array.isArray(input.gradia)))throw Error('RECALL_BUDGET_INVALID');
+  return {
+    version:2,
+    enabled:input.enabled===true,
+    totalChars:total,
+    shares,
+    contextCutter:memorySuiteNormalizeRecallBudgetContextCutter(input.contextCutter),
+    gradia:memorySuiteNormalizeRecallBudgetGradia(input.gradia)
+  };
+}
+function memorySuiteRecallBudgetContextPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetContextCutter(budget?.contextCutter);
+}
+function memorySuiteRecallBudgetGradiaPolicy(budget) {
+  return memorySuiteNormalizeRecallBudgetGradia(budget?.gradia);
+}
+function memorySuiteRecallBudgetOwnerShares(budget, activeOwners=MEMORY_SUITE_RECALL_OWNERS) {
+  if(!budget||budget.enabled!==true)return null;
+  const active=(Array.isArray(activeOwners)?activeOwners:MEMORY_SUITE_RECALL_OWNERS).filter(owner=>MEMORY_SUITE_RECALL_OWNERS.includes(owner));
+  if(!active.length)return {};
+  const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(budget);
+  const fullSet=MEMORY_SUITE_RECALL_OWNERS.every(owner=>active.includes(owner));
+  const out={};
+  if(fullSet||gradiaPolicy.redistributeDisabledOwners===false){
+    for(const owner of active)out[owner]=Math.floor(Number(budget.totalChars||0)*Number(budget.shares?.[owner]||0)/100);
+    return out;
+  }
+  const activeShareSum=active.reduce((sum,owner)=>sum+Math.max(0,Number(budget.shares?.[owner]||0)),0);
+  if(activeShareSum<=0){
+    const even=Math.floor(Number(budget.totalChars||0)/active.length);
+    for(const owner of active)out[owner]=even;
+    return out;
+  }
+  let allocated=0;
+  for(const owner of active){
+    const share=Math.floor(Number(budget.totalChars||0)*Math.max(0,Number(budget.shares?.[owner]||0))/activeShareSum);
+    out[owner]=share;
+    allocated+=share;
+  }
+  let remainder=Math.max(0,Math.floor(Number(budget.totalChars||0))-allocated);
+  for(const owner of active){
+    if(remainder<=0)break;
+    if(Number(budget.shares?.[owner]||0)>0){out[owner]+=1;remainder-=1;}
+  }
+  return out;
+}
+function memorySuiteEstimateRecallTokens(chars, tokenizer='tiktoken') {
+  const n=Math.max(0,Number(chars||0)||0);
+  if(!n)return 0;
+  const profile=MEMORY_SUITE_RECALL_TOKENIZER_PROFILES[tokenizer]||MEMORY_SUITE_RECALL_TOKENIZER_PROFILES.tiktoken;
+  const blended=(profile.cjkCharsPerToken*0.7)+(profile.latinCharsPerToken*0.3);
+  return Math.ceil(Math.ceil(n/Math.max(1,blended))*0.8);
 }
 function memorySuiteRecallBudget(owner, next) {
   const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
@@ -55983,7 +57003,7 @@ const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
   libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
   // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
   // up to the packet-writing instructions that follow them.
-  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|\[HAYAKU 활성 장면 헤드\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
     /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
     /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
   flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
@@ -56135,6 +57155,7 @@ function memorySuiteProjectSourceRules(value,rules) {
     if(control==='inlay')body=body.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'');
     if(control==='suite-blocks')body=body
       .replace(/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]/gi,'')
+      .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*?(?:\[\/HAYAKU SIDE-WRITE FINAL REMINDER\]|$)/gi,'')
       .replace(/<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi,'');
   }
   return {text:body,warnings};
@@ -56143,7 +57164,7 @@ function memorySuiteProjectSourceRules(value,rules) {
 function memorySuiteIsInternalSourceRule(entry) {
   if(typeof entry==='string')return entry==='hayaku_packet_contract'||entry==='@suite-blocks';
   if(!entry||typeof entry.open!=='string')return false;
-  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
+  return /^\[(?:HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE|SIDE-WRITE FINAL REMINDER)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\]$/i.test(entry.open)
     || /^(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?$/.test(entry.open);
 }
 function memorySuiteExternalSourceRules(rules, migrate=false) {
@@ -56164,7 +57185,7 @@ function memorySuiteCanonicalSource(value,owner) {
 
 function createMemorySuiteSourceInputPolicy(config) {
   const owner=config.owner||'libra';
-  if(!['libra','hayaku','flashback'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
+  if(!['libra','hayaku','flashback','gradia'].includes(owner))throw Error('SOURCE_INPUT_OWNER_INVALID');
   const clone=value=>JSON.parse(JSON.stringify(value));
   let preferences=null,loading=null,saving=null,disposed=false;
   async function ready() {
@@ -56421,7 +57442,7 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
 .ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
 .ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
-.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-preset{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;text-align:left;min-height:auto}.ms-source-settings .ms-budget-preset b{font-size:13px}.ms-source-settings .ms-budget-preset small{font-size:11px;opacity:.8}.ms-source-settings .ms-budget-preset.is-on{border-color:var(--accent,#79522d);background:color-mix(in srgb,var(--accent,#79522d) 12%,var(--surface,transparent))}.ms-source-settings .ms-budget-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;border:1px solid var(--border2,#8886);font-size:11.5px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings .ms-budget-badge.is-warn{background:color-mix(in srgb,var(--warn,#b9802e) 16%,transparent);border-color:color-mix(in srgb,var(--warn,#b9802e) 45%,transparent);color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-badge.is-ok{background:color-mix(in srgb,var(--ok,#2e7d32) 14%,transparent);border-color:color-mix(in srgb,var(--ok,#2e7d32) 40%,transparent);color:var(--ok-ink,#2e7d32)}.ms-source-settings .ms-budget-libra-notice{font-size:12px;color:var(--warn-ink,#b9802e)}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ms-source-settings .ms-budget-context,.ms-source-settings .ms-budget-gradia{display:grid;gap:8px;padding:10px;border:1px dashed var(--border2,#8885);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-budget-context[data-libra-status=absent]{opacity:.68}.ms-source-settings .ms-budget-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end}.ms-source-settings .ms-budget-inline{display:flex;gap:8px;align-items:center}.ms-source-settings .ms-budget-inline input{flex:1 1 auto;min-width:0}.ms-source-settings .ms-budget-breakdown{font-size:12px;opacity:.85}.ms-source-settings .ms-budget-warning{font-size:12px;color:var(--warn-ink,#b9802e)}@media(max-width:600px){.ms-source-settings .ms-budget-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.ms-source-settings .ms-budget-shares,.ms-source-settings .ms-budget-context-grid{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
 /* The recent-messages list already shows the last message; the single output stays for tools. */
 .ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
 .ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
@@ -56573,8 +57594,9 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 // internal-rule checks included). Nothing else is exchanged.
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
-const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory'});
-const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback'});
+const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory',gradia:'serial_gradation_agents_for_rp'});
+const MEMORY_SUITE_RECALL_BUDGET_PEERS=Object.freeze(['libra','hayaku','flashback','gradia']);
+const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback',gradia:'GRADIA'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
   if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
@@ -56640,14 +57662,15 @@ function createMemorySuiteSourceRuleSync(config) {
   // state per peer: same | different (by the rules each one actually runs, saved or shared
   // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
   // what was seen there, passed back as `expected` when applying.
-  const compare=async()=>{
+  const compare=async(only=peers)=>{
     await config.policy.ready();const mine=fingerprint(effective());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+    const targets=Array.isArray(only)?peers.filter(peer=>only.includes(peer)):peers;
+    const answers=await Promise.all(targets.map(async peer=>{const answer=await ask(peer,'describe');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const builtIn=!answer.result?.rules;
       // An older peer does not report what it runs without saved rules; it is not the shared standard.
       const theirs=typeof answer.result?.effective==='string'?answer.result.effective:builtIn?'':fingerprint(answer.result.rules);
-      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{})}];}));
+      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{}),...(answer.result?.rules?{rules:answer.result.rules}:{})}];}));
     return Object.fromEntries(answers);
   };
   // expected: {peer: fingerprint seen by compare}; a peer whose rules moved since then refuses.
@@ -56658,7 +57681,7 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const compareBudget=async()=>{
     await config.policy.ready();const mine=budgetFingerprint(myBudget());
-    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe_budget');
+    const answers=await Promise.all(peers.filter(peer=>MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>{const answer=await ask(peer,'describe_budget');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
       const theirs=String(answer.result?.budget||'');
       return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
@@ -56666,13 +57689,13 @@ function createMemorySuiteSourceRuleSync(config) {
   };
   const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeRecallBudget(budget);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)&&MEMORY_SUITE_RECALL_BUDGET_PEERS.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
   const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
   // Editors listen here so a rule applied from another plugin shows up in an open editor.
   const subscribe=fn=>{if(typeof fn!=='function')return()=>{};subscribers.add(fn);return()=>{subscribers.delete(fn);};};
-  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values()){clearTimeout(record.timer);record.resolve({ok:false,error:'SOURCE_RULE_SYNC_DISPOSED'});}pending.clear();
     if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
   return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,compareBudget,applyBudgetToPeers,subscribeBudget,dispose});
 }
@@ -56720,38 +57743,229 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
 // plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
 function mountMemorySuiteRecallBudgetPanel(host, config) {
   const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
-  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const owners=MEMORY_SUITE_RECALL_OWNERS,budgetPeers=MEMORY_SUITE_RECALL_BUDGET_PEERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const presets=typeof MEMORY_SUITE_RECALL_BUDGET_PRESETS!=='undefined'?MEMORY_SUITE_RECALL_BUDGET_PRESETS:[];
+  const panelOwner=String(config.owner||config.sync?.owner||'').trim();
+  const isLibraOwner=panelOwner==='libra';
+  const area=make('section'),titleRow=make('div'),title=make('strong','기억 예산 · 컨텍스트 통합 설정'),presetBadge=make('span','');
+  titleRow.className='ms-budget-section-head';presetBadge.className='ms-budget-badge';presetBadge.dataset.recallBudgetPresetBadge='';titleRow.append(title,presetBadge);
+  const note=make('small','통합 프리셋·공통 예산·LIBRA 컨텍스트 자동 정리를 한 곳에서 설정하고 IPC로 자매 플러그인에 동시 반영합니다. 켜면 LIBRA·HAYAKU·Flashback이 정한 비율로 기억을 나누어 주입합니다.');
+  const presetRow=make('div'),presetButtons={};presetRow.className='ms-budget-presets';presetRow.dataset.recallBudgetPresets='';
+  for(const p of presets){
+    const btn=make('button'),b=make('b',p.label),sm=make('small',`${p.totalChars.toLocaleString('ko-KR')}자 · ${Math.round(p.maxContextTokens/1000)}K`);
+    btn.type='button';btn.className='ms-budget-preset';btn.dataset.recallBudgetPreset=p.id;btn.title=p.desc;btn.append(b,sm);
+    presetButtons[p.id]=btn;presetRow.append(btn);
+  }
   const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
   const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
   const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
   for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
-  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
-  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  const ctxBox=make('div'),ctxHeadRow=make('div'),ctxHead=make('strong','컨텍스트 자동 정리 (LIBRA 오너)'),libraBadge=make('span',''),libraNotice=make('p');
+  ctxBox.className='ms-budget-context';ctxBox.dataset.recallBudgetContext='';ctxHeadRow.className='ms-budget-section-head';
+  libraBadge.className='ms-budget-badge';libraBadge.dataset.recallBudgetLibraBadge='';ctxHeadRow.append(ctxHead,libraBadge);
+  libraNotice.className='ms-budget-libra-notice';libraNotice.dataset.recallBudgetLibraNotice='';libraNotice.hidden=true;
+  const chkRow=(text,attr)=>{const lbl=make('label'),chk=make('input');chk.type='checkbox';chk.dataset[attr]='';lbl.className='ms-sync-together';lbl.append(chk,make('span',text));return {lbl,chk};};
+  const cutterEnabledToggle=chkRow('컨텍스트 자동 정리 사용','recallBudgetCutterEnabled');
+  const cutterOnlyMemToggle=chkRow('기억(정본·영수증) 저장이 완료된 과거 턴만 제외','recallBudgetCutterOnlyMemorized');
+  const ctxGrid=make('div');ctxGrid.className='ms-budget-context-grid';
+  const maxCtxLabel=make('label'),maxCtxInline=make('div'),maxCtxInput=make('input'),autoCtxBtn=make('button','모델 기준 자동 맞춤');
+  maxCtxInline.className='ms-budget-inline';maxCtxInput.type='number';maxCtxInput.min='4000';maxCtxInput.max='200000';maxCtxInput.step='1000';maxCtxInput.dataset.recallBudgetMaxContext='';
+  autoCtxBtn.type='button';autoCtxBtn.dataset.recallBudgetAutoContext='';
+  maxCtxInline.append(maxCtxInput,autoCtxBtn);maxCtxLabel.append(make('span','자동 정리 기준 컨텍스트(토큰)'),maxCtxInline);
+  const trimPercentLabel=make('label'),trimPercentInput=make('input');
+  trimPercentInput.type='number';trimPercentInput.min='5';trimPercentInput.max='80';trimPercentInput.step='5';trimPercentInput.dataset.recallBudgetTrimPercent='';
+  trimPercentLabel.append(make('span','초과 시 비울 비율(%)'),trimPercentInput);
+  const preserveLabel=make('label'),preserveInput=make('input');
+  preserveInput.type='number';preserveInput.min='2';preserveInput.max='50';preserveInput.step='1';preserveInput.dataset.recallBudgetPreserveMessages='';
+  preserveLabel.append(make('span','최신 보호 메시지 수'),preserveInput);
+  const tokenizerLabel=make('label'),tokenizerSelect=make('select');tokenizerSelect.dataset.recallBudgetTokenizer='';
+  for(const [val,txt] of [['tiktoken','OpenAI 호환 (tiktoken)'],['claude','Claude'],['gemini','Gemini'],['deepseek','DeepSeek']]){
+    const opt=make('option',txt);opt.value=val;tokenizerSelect.append(opt);
+  }
+  tokenizerLabel.append(make('span','토큰 추정 기준'),tokenizerSelect);
+  const gradiaReserveCharsLabel=make('label'),gradiaReserveCharsInput=make('input');
+  gradiaReserveCharsInput.type='number';gradiaReserveCharsInput.min='0';gradiaReserveCharsInput.max='40000';gradiaReserveCharsInput.step='500';gradiaReserveCharsInput.placeholder='자동';gradiaReserveCharsInput.dataset.recallBudgetGradiaReserveChars='';
+  gradiaReserveCharsLabel.append(make('span','GRADIA 초안 예약(자, 비우면 자동)'),gradiaReserveCharsInput);
+  ctxGrid.append(maxCtxLabel,trimPercentLabel,preserveLabel,tokenizerLabel,gradiaReserveCharsLabel);
+  const gradiaReserveToggle=chkRow('자동 정리 예약에 GRADIA 초안 포함','recallBudgetGradiaReserve');
+  const triggerReserveToggle=chkRow('기억+GRADIA 예약을 합산한 기준에서 자동 정리 발동','recallBudgetTriggerReserve');
+  const breakdown=make('p'),cutterFooter=make('div');
+  breakdown.className='ms-budget-breakdown';breakdown.dataset.recallBudgetBreakdown='';
+  cutterFooter.dataset.recallBudgetCutterFooter='';
+  ctxBox.append(ctxHeadRow,libraNotice,cutterEnabledToggle.lbl,cutterOnlyMemToggle.lbl,ctxGrid,gradiaReserveToggle.lbl,triggerReserveToggle.lbl,breakdown,cutterFooter);
+  const gradiaBox=make('div'),gradiaHead=make('strong','GRADIA 연동'),mismatchWarning=make('p');
+  gradiaBox.className='ms-budget-gradia';gradiaBox.dataset.recallBudgetGradia='';
+  const gradiaFollowToggle=chkRow('GRADIA도 공통 예산 따르기','recallBudgetGradiaFollow');
+  const gradiaRedistributeToggle=chkRow('꺼진 기억 플러그인 몫 남은 오너에 재분배','recallBudgetGradiaRedistribute');
+  mismatchWarning.className='ms-budget-warning';mismatchWarning.dataset.recallBudgetWarning='';mismatchWarning.hidden=true;
+  gradiaBox.append(gradiaHead,gradiaFollowToggle.lbl,gradiaRedistributeToggle.lbl,mismatchWarning);
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),recheck=make('button','다시 확인'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';
+  recheck.type='button';recheck.dataset.recallBudgetRecheck='';
+  actions.className='ms-sync-actions';actions.append(apply,recheck);
   status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
-  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  area.className='ms-input-sync';area.dataset.recallBudget='';
+  if(presets.length)area.append(titleRow,note,presetRow);else area.append(titleRow,note);
+  area.append(enabledLabel,totalLabel,shareRow,ctxBox,gradiaBox,summary,actions,status,peerList);host.append(area);
   const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
-  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
-  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={},loadedVersion=1,presetTouched=false;
+  const cutterInputs=[cutterEnabledToggle.chk,cutterOnlyMemToggle.chk,maxCtxInput,trimPercentInput,preserveInput,tokenizerSelect,gradiaReserveCharsInput,gradiaReserveToggle.chk,triggerReserveToggle.chk];
+  const gradiaInputs=[gradiaFollowToggle.chk,gradiaRedistributeToggle.chk];
+  const libraState=()=>{
+    if(isLibraOwner)return {available:true,status:'owner',badge:'LIBRA 실행 중 (오너)'};
+    if(!config.sync)return {available:false,status:'absent',badge:'리브라 미감지'};
+    const st=peerStates.libra?.state;
+    if(st==='same'||st==='different')return {available:true,status:'connected',badge:'LIBRA 연동됨'};
+    if(st==='checking'||st===undefined)return {available:false,status:'checking',badge:'LIBRA 확인 중…'};
+    return {available:false,status:'absent',badge:'리브라 미감지'};
+  };
+  const hasCustomV2=()=>{
+    if(presetTouched)return true;
+    const reserveRaw=gradiaReserveCharsInput.value.trim();
+    return !cutterEnabledToggle.chk.checked||!cutterOnlyMemToggle.chk.checked||Number(maxCtxInput.value)!==40000
+      ||Number(trimPercentInput.value)!==30||Number(preserveInput.value)!==6||String(tokenizerSelect.value||'tiktoken')!=='tiktoken'
+      ||reserveRaw!==''||!gradiaReserveToggle.chk.checked||!triggerReserveToggle.chk.checked
+      ||!gradiaFollowToggle.chk.checked||!gradiaRedistributeToggle.chk.checked;
+  };
+  const draft=()=>{
+    const base={enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))};
+    if(loadedVersion!==2&&!hasCustomV2())return memorySuiteNormalizeRecallBudget({version:1,...base});
+    const lib=libraState();
+    let contextCutter;
+    if(!lib.available){
+      const stored=typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
+      contextCutter=memorySuiteRecallBudgetContextPolicy(stored);
+    }else{
+      const reserveRaw=gradiaReserveCharsInput.value.trim();
+      contextCutter={
+        enabled:cutterEnabledToggle.chk.checked,
+        onlyMemorized:cutterOnlyMemToggle.chk.checked,
+        maxContextTokens:Number(maxCtxInput.value),
+        trimPercent:Number(trimPercentInput.value),
+        preserveMessages:Number(preserveInput.value),
+        tokenizer:String(tokenizerSelect.value||'tiktoken'),
+        includeGradiaReserve:gradiaReserveToggle.chk.checked,
+        gradiaReserveChars:reserveRaw===''?'auto':Number(reserveRaw),
+        triggerWithReserve:triggerReserveToggle.chk.checked
+      };
+    }
+    return memorySuiteNormalizeRecallBudget({
+      version:2,...base,contextCutter,
+      gradia:{followSharedBudget:gradiaFollowToggle.chk.checked,redistributeDisabledOwners:gradiaRedistributeToggle.chk.checked}
+    });
+  };
   const draftOrNull=()=>{try{return draft();}catch{return null;}};
   const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
   const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const detectPreset=value=>{
+    if(!value||value.enabled!==true)return null;
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const lib=libraState();
+    return presets.find(p=>value.totalChars===p.totalChars
+      &&owners.every(o=>value.shares[o]===p.shares[o])
+      &&(!lib.available||(ctxPolicy.maxContextTokens===p.maxContextTokens&&ctxPolicy.trimPercent===p.trimPercent&&ctxPolicy.preserveMessages===p.preserveMessages)))||null;
+  };
   const draw=()=>{
+    const lib=libraState();
+    ctxBox.dataset.libraStatus=lib.status;
+    libraBadge.textContent=lib.badge;
+    libraBadge.className='ms-budget-badge '+(lib.available?'is-ok':(lib.status==='absent'?'is-warn':''));
+    libraNotice.hidden=lib.available;
+    if(!lib.available)libraNotice.textContent=lib.status==='checking'?'LIBRA 연결 상태를 확인하는 중입니다…':'컨텍스트 자동 정리는 LIBRA 전용 기능입니다. LIBRA가 감지되지 않아 비활성화되었습니다.';
     const value=draftOrNull();
-    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
-      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
-    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const matchedPreset=detectPreset(value);
+    presetBadge.textContent=matchedPreset?`프리셋: ${matchedPreset.label}`:(value?.enabled?'직접 설정':'공통 예산 꺼짐');
+    for(const p of presets){
+      const on=matchedPreset?.id===p.id;
+      presetButtons[p.id].classList.toggle('is-on',on);
+      presetButtons[p.id].setAttribute('aria-pressed',String(on));
+      presetButtons[p.id].disabled=!loaded||busy;
+    }
+    if(value){
+      summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+        +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');
+      const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+      const tokName=ctxPolicy.tokenizer||'tiktoken';
+      const recallTok=memorySuiteEstimateRecallTokens(value.totalChars+1200,tokName);
+      const autoGradiaChars=typeof config.getGradiaReserveEstimate==='function'?Number(config.getGradiaReserveEstimate()||6000):6000;
+      const gChars=ctxPolicy.includeGradiaReserve?(typeof ctxPolicy.gradiaReserveChars==='number'?ctxPolicy.gradiaReserveChars:autoGradiaChars):0;
+      const gTok=ctxPolicy.includeGradiaReserve?memorySuiteEstimateRecallTokens(gChars,tokName):0;
+      const totalReserve=Math.min(Math.floor(ctxPolicy.maxContextTokens*0.8),recallTok+gTok);
+      const keepTok=Math.max(Math.floor(ctxPolicy.maxContextTokens*0.2),ctxPolicy.maxContextTokens-totalReserve);
+      breakdown.textContent=!lib.available
+        ?'LIBRA 연결 시 컨텍스트 자동 정리 계산을 여기서 바로 적용합니다.'
+        :(ctxPolicy.enabled===false
+          ?'컨텍스트 자동 정리가 꺼져 있습니다.'
+          :`기준 ${ctxPolicy.maxContextTokens.toLocaleString('ko-KR')} 토큰 (${tokName}) = 대화 유지 상한 ~${keepTok.toLocaleString('ko-KR')} 토큰 + 3사 기억 예약 ~${recallTok.toLocaleString('ko-KR')} 토큰`+(ctxPolicy.includeGradiaReserve?` + GRADIA 예약 ~${gTok.toLocaleString('ko-KR')} 토큰`:''));
+    } else {
+      let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}
+      summary.textContent=message||'값을 확인하세요.';
+      breakdown.textContent='';
+    }
+    if(typeof config.renderContextCutterFooter==='function'){
+      try{config.renderContextCutterFooter(cutterFooter,value,lib);}catch{}
+    }
+    const parsedPreserve=Number(preserveInput.value);
+    const livePreserve=Number.isInteger(parsedPreserve)&&parsedPreserve>=MEMORY_SUITE_RECALL_PRESERVE_MIN&&parsedPreserve<=MEMORY_SUITE_RECALL_PRESERVE_MAX
+      ?parsedPreserve
+      :memorySuiteRecallBudgetContextPolicy(value||config.policy.recallBudget()).preserveMessages;
+    const warningMsg=typeof config.getPreserveMismatchWarning==='function'
+      ?String(config.getPreserveMismatchWarning(value,{preserveMessages:livePreserve,cutterEnabled:cutterEnabledToggle.chk.checked,libraAvailable:lib.available})||'')
+      :'';
+    mismatchWarning.textContent=warningMsg;mismatchWarning.hidden=!warningMsg;
+    const suggestedCtx=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    autoCtxBtn.hidden=typeof config.suggestMaxContextTokens!=='function';
+    autoCtxBtn.disabled=!loaded||busy||!lib.available||!(suggestedCtx>=4000&&suggestedCtx<=200000);
     const dirty=!value||fingerprint(value)!==initial;
     apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
-    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
-    peerList.replaceChildren(...(config.sync?config.sync.peers:[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+    recheck.disabled=busy||!config.sync;
+    for(const node of [enabled,total,...Object.values(shares),...gradiaInputs])node.disabled=!loaded||busy;
+    for(const node of cutterInputs)node.disabled=!loaded||busy||!lib.available;
+    peerList.replaceChildren(...(config.sync?config.sync.peers.filter(peer=>budgetPeers.includes(peer)):[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
       row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
   };
-  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
-    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const fill=()=>{
+    const value=config.policy.recallBudget();
+    loadedVersion=value.version===2?2:1;presetTouched=false;
+    enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    const ctxPolicy=memorySuiteRecallBudgetContextPolicy(value);
+    const gradiaPolicy=memorySuiteRecallBudgetGradiaPolicy(value);
+    cutterEnabledToggle.chk.checked=ctxPolicy.enabled!==false;
+    cutterOnlyMemToggle.chk.checked=ctxPolicy.onlyMemorized!==false;
+    maxCtxInput.value=String(ctxPolicy.maxContextTokens);
+    trimPercentInput.value=String(ctxPolicy.trimPercent);
+    preserveInput.value=String(ctxPolicy.preserveMessages);
+    tokenizerSelect.value=String(ctxPolicy.tokenizer||'tiktoken');
+    gradiaReserveToggle.chk.checked=ctxPolicy.includeGradiaReserve;
+    gradiaReserveCharsInput.value=typeof ctxPolicy.gradiaReserveChars==='number'?String(ctxPolicy.gradiaReserveChars):'';
+    triggerReserveToggle.chk.checked=ctxPolicy.triggerWithReserve;
+    gradiaFollowToggle.chk.checked=gradiaPolicy.followSharedBudget;
+    gradiaRedistributeToggle.chk.checked=gradiaPolicy.redistributeDisabledOwners;
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();
+  };
   const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
   const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
-  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const node of [enabled,total,...Object.values(shares),...cutterInputs,...gradiaInputs])node.addEventListener(node.type==='checkbox'||node.tagName==='SELECT'?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  for(const p of presets){
+    presetButtons[p.id].onclick=()=>{
+      if(!loaded||busy)return;
+      enabled.checked=true;total.value=String(p.totalChars);for(const o of owners)shares[o].value=String(p.shares[o]);
+      presetTouched=true;
+      if(libraState().available){
+        maxCtxInput.value=String(p.maxContextTokens);
+        trimPercentInput.value=String(p.trimPercent);
+        preserveInput.value=String(p.preserveMessages);
+      }
+      status.textContent=`통합 프리셋 '${p.label}'을 적용 대기 중입니다. 예산 적용을 눌러 저장하세요.`;
+      draw();
+    };
+  }
+  autoCtxBtn.onclick=()=>{
+    if(!loaded||busy||!libraState().available)return;
+    const suggested=typeof config.suggestMaxContextTokens==='function'?Number(config.suggestMaxContextTokens()||0):0;
+    if(suggested>=4000&&suggested<=200000){maxCtxInput.value=String(suggested);status.textContent=`모델 컨텍스트 기준으로 ${suggested.toLocaleString('ko-KR')} 토큰에 맞췄습니다. 예산 적용을 눌러 저장하세요.`;draw();}
+  };
+  recheck.onclick=()=>{if(!busy)void check();};
   const applyBudget=async()=>{
     if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
     let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -56762,7 +57976,7 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
       await config.policy.setRecallBudget(value);fill();
       if(config.sync){
         await check();
-        const targets=config.sync.peers.filter(peer=>peerStates[peer]?.state==='different');
+        const targets=config.sync.peers.filter(peer=>budgetPeers.includes(peer)&&peerStates[peer]?.state==='different');
         if(targets.length){
           const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
           const results=await config.sync.applyBudgetToPeers(value,targets,expected);
@@ -56827,7 +58041,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
-    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{owner,policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -56866,11 +58080,20 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
+      const nextDisabled=!loaded||applying;
+      for(const row of rows){
+        for(const node of row.element.querySelectorAll('input,textarea,select,button'))if(node.disabled!==nextDisabled)node.disabled=nextDisabled;
+        const blank=isEmpty(row);const nextRemoveDisabled=nextDisabled||blank;
+        if(row.remove.disabled!==nextRemoveDisabled)row.remove.disabled=nextRemoveDisabled;
+        row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');
+      }
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
-      apply.disabled=!loaded||applying||!dirty;
-      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
-      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+      if(apply.disabled!==(!loaded||applying||!dirty))apply.disabled=!loaded||applying||!dirty;
+      if(add.disabled!==nextDisabled)add.disabled=nextDisabled;
+      if(defaults.disabled!==nextDisabled)defaults.disabled=nextDisabled;
+      if(undo.disabled!==(nextDisabled||!removed.length))undo.disabled=nextDisabled||!removed.length;
+      const nextPreviewDisabled=nextDisabled||readingSample||typeof config.readSample!=='function';
+      if(previewButton.disabled!==nextPreviewDisabled)previewButton.disabled=nextPreviewDisabled;
     }
     async function showPreview() {
       if(!sample)return;
@@ -56955,7 +58178,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill(memorySuiteDefaultSourceRules(owner),false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     const applyDraft=async()=>{
       if(!loaded||applying||disposed())return {ok:false,skipped:true};
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
@@ -56990,7 +58213,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
 
 function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
-.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 168px;transition:border-color .16s,box-shadow .16s,background .16s}
 .ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
 .ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
 .ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
@@ -57003,7 +58226,7 @@ function memorySuiteReanalysisGridCss(){return `
 .ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
 .ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
 .ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
-.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default;content-visibility:visible;contain-intrinsic-size:none}
 .ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
 @media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
 `;}
@@ -57099,7 +58322,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
     return memorySuiteNormalizeSourceRules(draft);
   }
-  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))if(n.disabled!==value)n.disabled=value;const runDisabled=value||!applied;if(run.disabled!==runDisabled)run.disabled=runDisabled;}
   for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
     const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
     const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
@@ -57267,7 +58490,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
   let hayakuSourceRuleSync=null;
   const getHayakuSourceRuleSync=()=>hayakuSourceRuleSync||(hayakuSourceRuleSync=createMemorySuiteSourceRuleSync({owner:'hayaku',policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded,
     api:()=>apiCandidates().find(candidate=>typeof candidate?.addPluginChannelListener==='function'&&typeof candidate?.postPluginChannelMessage==='function')||RisuCompat.api()}));
-  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),ruleSync:getHayakuSourceRuleSync(),isDisposed:()=>Memory.unloaded});
+  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),ruleSync:getHayakuSourceRuleSync(),includeRecallBudget:false,isDisposed:()=>Memory.unloaded});
+  const mountHayakuRecallBudgetPanel=container=>{
+    if(!container?.ownerDocument||container.querySelector('[data-recall-budget]'))return null;
+    const doc=container.ownerDocument,box=doc.createElement('div');
+    box.className='ms-source-settings';
+    const style=doc.createElement('style');
+    style.textContent=`
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+`+memorySuiteSourceFinderCss();
+    box.appendChild(style);
+    container.appendChild(box);
+    const panel=mountMemorySuiteRecallBudgetPanel(box,{
+      owner:'hayaku',
+      policy:getHayakuSourceInput(),
+      sync:getHayakuSourceRuleSync(),
+      isDisposed:()=>Memory.unloaded||!box.isConnected
+    });
+    getHayakuSourceInput().ready().then(()=>{
+      if(!Memory.unloaded&&box.isConnected)panel.load();
+    }).catch(()=>{});
+    return panel;
+  };
   // Selection pins packet revisions and source topology. Text is read again on Apply.
   const HAYAKU_REANALYSIS_MAX_TURNS = 512;
   const hayakuReanalysisRecordBinding = (record, scopeKey) => {
@@ -57430,7 +58677,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       .finally(()=>{if(hayakuRebuildRun===run)hayakuRebuildRun=null;});
     return run.promise;
   };
-  const cancelHayakuRebuild=()=>{if(!hayakuRebuildRun)return false;hayakuRebuildRun.cancelled=true;return true;};
+  const cancelHayakuRebuild=()=>{if(!hayakuRebuildRun)return false;hayakuRebuildRun.cancelled=true;cancelNativeJob();return true;};
   const runHayakuSelectedReanalysis=selection=>{
     if (hayakuMaintenanceOperation) return Promise.resolve({ok: false, reason: 'maintenance_in_progress'});
     if(hayakuReanalysisRunning?.selection===selection)return hayakuReanalysisRunning.promise;
@@ -57498,26 +58745,28 @@ function mountMemorySuiteReanalysisReview(container,config) {
         };
         await assertCurrent();
         hayakuReanalysisStatus={scopeKey,running:true,error:'',lastResult:null};
-        beginNativeJob('source_edit',{scopeKey,targetTurns:units.map(u=>u.start),total:units.length,state:'analyzing',minimized:true,cancellable:false,message:'선택한 턴의 현재 채팅 내용을 재분석합니다.'});
+        beginNativeJob('source_edit',{scopeKey,targetTurns:units.map(u=>u.start),total:units.length,state:'analyzing',minimized:true,cancellable:true,message:'선택한 턴의 현재 채팅 내용을 재분석합니다.'});
         // The native replacement engine already stages a complete packet set
         // and publishes one ledger. Use it for every explicit selection so
         // an earlier turn cannot retire a still-pending selected turn's canon.
         const replacementRecordIds=[...new Set(units.flatMap(unit=>unit.replacementBindings.map(record=>record.recordId)))];
         if(!replacementRecordIds.length)throw Error('SOURCE_EDIT_REPLACEMENT_RECORDS_UNAVAILABLE');
         let result=await runNativeTargetedRegeneration({targetTurns:units.map(u=>u.start),replacementRecordIds,allowMissing:true,sourceEditValidate:assertCurrent,sourceEditScope:scopeKey,extraCalls:selection?.extraCalls});
+        if(result?.cancelled===true)throw Error('cancelled_by_user');
+        const reusedChunks=Math.max(0,Number(result?.reusedChunks||0)||0);
         if(result.ok===true){
           if(result.awaitingChoice!==true)throw Error('SOURCE_EDIT_ATOMIC_STAGE_INCOMPLETE');
           operation.atomicRunId=result.runId;
           await assertCurrent();
           result=await resolveNativeRegenerationChoice('adopt_regenerated',{runId:result.runId,sourceEditValidate:assertCurrent});
-          result={...result,atomicBatch:true,regenerated:result.ok?units.length:0,targetTurns:units.map(u=>u.start)};
+          result={...result,atomicBatch:true,regenerated:result.ok?units.length:0,reusedChunks,targetTurns:units.map(u=>u.start)};
         }
         if(result.ok!==true)throw Error(result.error||result.reason||'SOURCE_EDIT_PACKET_NOT_ADOPTED');
         hayakuReanalysisStatus={scopeKey,running:false,error:'',lastResult:result};finishNativeJob('completed',result,'');
         return {...result,committed:true};
       }catch(error){const reason=text(error?.message||error);hayakuReanalysisStatus={scopeKey,running:false,error:reason,lastResult:null};
-        if(Memory.nativeRecovery.job?.kind==='source_edit')finishNativeJob('failed',null,reason);
-        return {ok:false,reason};
+        if(Memory.nativeRecovery.job?.kind==='source_edit')finishNativeJob(reason==='cancelled_by_user'?'cancelled':'failed',null,reason);
+        return {ok:false,reason,...(reason==='cancelled_by_user'?{cancelled:true}:{})};
       }finally{if(hayakuReanalysisRunning===operation)hayakuReanalysisRunning=null;}
     })();return operation.promise;
   };
@@ -58906,6 +60155,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         subsummary.textContent = '현재 활성 채팅의 패킷 원장과 세계선이 안정적으로 연결되어 있습니다.';
       }
       const openFailures = failureReport.rows.filter(row => !row.resolved || row.keptOld).length;
+      Memory.ledgerViewer.openFailureCount = openFailures;
+      viewerRenderHeaderHealth();
       if (openFailures) subsummary.textContent += ` 아직 해결되지 않은 분석 실패 ${openFailures}건은 아래에 있습니다.`;
     }
 
@@ -58954,18 +60205,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     // Why a turn failed: codes and counts only, never the source or the answer.
     if (!failureReport.logAvailable) entries.push({ owner: '분석 실패', badge: 'badge--warn', badgeText: '확인 불가', title: '저장된 실패 기록을 읽지 못했습니다', detail: '이번 실행에서 생긴 실패만 다음에 표시될 수 있습니다.' });
-    for (const row of failureReport.rows) {
+    const buildFailureEntry = (row, isResolvedHistory = false) => {
       const cause = ensureArray(row.cause).map(item => item.code + (Number(item.count) > 1 ? ' ×' + Number(item.count) : '')).join(', ');
-      entries.push({
+      return {
         owner: '분석 실패', failureTurn: Number(row.turn || 0),
         badge: row.resolutionPending || row.keptOld ? 'badge--warn' : row.resolved ? 'badge--ok' : 'badge--danger',
         badgeText: row.resolutionPending ? '복구됨 · 기록 저장 대기' : row.keptOld ? '기존 기억 유지' : row.resolved ? '이후 복구됨' : '미복구',
         title: `T${Number(row.turn || 0)} · ${row.title || '분석 확인 필요'}`,
-        detail: [`작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`, row.detail || '',
+        detail: [
+          `작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`,
+          isResolvedHistory ? '현재 원장에 복구 패킷이 정상 반영되어 더 이상 조치가 필요하지 않습니다.' : '',
+          row.detail || '',
           row.resolutionPending ? '기억 복구는 완료됐지만 진단 기록을 아직 저장하지 못했습니다. 저장소가 응답하면 다시 저장합니다.' : '',
-          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '', `원인 코드: ${cause || row.reason || row.code || '-'}`].filter(Boolean).join('\n')
-      });
-    }
+          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '',
+          `원인 코드: ${cause || row.reason || row.code || '-'}`
+        ].filter(Boolean).join('\n')
+      };
+    };
+    const activeFailureRows = failureReport.rows.filter(row => !row.resolved || row.keptOld || row.resolutionPending);
+    const resolvedHistoryRows = failureReport.rows.filter(row => row.resolved && !row.keptOld && !row.resolutionPending);
+    for (const row of activeFailureRows) entries.push(buildFailureEntry(row, false));
+    const resolvedHistoryEntries = resolvedHistoryRows.map(row => buildFailureEntry(row, true));
 
     const recentLogs = ensureArray(Memory.activityLog).slice(-10).reverse();
     const errorLogs = recentLogs.filter(log => log?.level === 'error' || log?.level === 'warn');
@@ -58981,23 +60241,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     }
 
+    const renderStatusEntryCard = row => `<div class="card card--tight"${row.failureTurn != null ? ` data-failure-row="${row.failureTurn}"` : ''} style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
+          <strong style="font-size:13px">${viewerEscapeHtml(row.title)}</strong>
+        </div>
+        <small class="muted" style="font-size:11px">${viewerEscapeHtml(row.owner)}</small>
+      </div>
+      ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${viewerEscapeHtml(row.detail)}</div>` : ''}
+    </div>`;
+
     const listNode = overlay.querySelector('[data-status-log-list]');
     if (listNode) {
-      listNode.innerHTML = entries.map(row => {
-        return `<div class="card card--tight"${row.failureTurn != null ? ` data-failure-row="${row.failureTurn}"` : ''} style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
-              <strong style="font-size:13px">${viewerEscapeHtml(row.title)}</strong>
-            </div>
-            <small class="muted" style="font-size:11px">${viewerEscapeHtml(row.owner)}</small>
-          </div>
-          ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${viewerEscapeHtml(row.detail)}</div>` : ''}
-        </div>`;
-      }).join('');
+      const resolvedFoldHtml = resolvedHistoryEntries.length ? `<details class="fold" data-resolved-failures-fold style="margin-top:4px"><summary>해결된 이전 실패 기록 ${resolvedHistoryEntries.length}건 (복구 완료 · 상단 실패 수 제외)</summary><div class="fold__body stack"><div class="cluster" style="justify-content:space-between;align-items:center"><span class="hint">이미 원장에 복구 패킷이 반영되어 더 이상 조치가 필요하지 않은 과거 기록입니다.</span><button class="btn btn--sm" type="button" data-clear-resolved-failures>해결된 기록 지우기</button></div>${resolvedHistoryEntries.map(renderStatusEntryCard).join('')}</div></details>` : '';
+      listNode.innerHTML = entries.map(renderStatusEntryCard).join('') + resolvedFoldHtml;
     }
 
-    overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + entries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
+    const allLogEntries = [...entries, ...resolvedHistoryEntries];
+    overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + allLogEntries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
   };
 
   const viewerRenderHeaderHealth = () => {
@@ -59635,7 +60897,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       <div class="stack" id="hayakuSettingsForm" aria-live="polite">
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
-        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px"><div><div class="setting__name">리콜 성능 프리셋</div><div class="setting__desc" id="hayakuRecallPresetDesc">기억 주입량 프리셋: 적게 (핵심 3개/축) · 적당히 (균형 8개/축, 권장) · 많이 (총망라 16개/축). 원문 태그 필터에서 기억 주입 공통 예산을 켜면 회상 근거는 HAYAKU 몫 안에서 넣습니다.</div><span class="argtag">hayaku_recall_preset</span></div><div class="seg" role="group" aria-label="리콜 성능 프리셋" id="hayakuRecallPresetGroup"><button type="button" data-hayaku-recall-preset-value="light" aria-pressed="false">적게</button><button type="button" data-hayaku-recall-preset-value="balanced" aria-pressed="true">적당히</button><button type="button" data-hayaku-recall-preset-value="heavy" aria-pressed="false">많이</button></div></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
+        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div id="hayakuRecallBudgetHost" data-no-track style="margin-bottom:14px"></div><div class="setting" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px"><div><div class="setting__name">리콜 성능 프리셋</div><div class="setting__desc" id="hayakuRecallPresetDesc">기억 주입량 프리셋: 적게 (핵심 3개/축) · 적당히 (균형 8개/축, 권장) · 많이 (총망라 16개/축). 위 기억 예산 · 컨텍스트 통합 설정에서 공통 예산을 켜면 회상 근거는 HAYAKU 몫 안에서 넣습니다.</div><span class="argtag">hayaku_recall_preset</span></div><div class="seg" role="group" aria-label="리콜 성능 프리셋" id="hayakuRecallPresetGroup"><button type="button" data-hayaku-recall-preset-value="light" aria-pressed="false">적게</button><button type="button" data-hayaku-recall-preset-value="balanced" aria-pressed="true">적당히</button><button type="button" data-hayaku-recall-preset-value="heavy" aria-pressed="false">많이</button></div></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
         <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">이전 턴 누락 점검</div><div class="setting__desc">요청 전에 지난 턴의 빠진 기억 패킷을 찾아 복구 화면에 올립니다. 모델은 호출하지 않습니다. 현재 턴의 자동 복구는 아래 afterRequest 설정이 따로 정합니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">이전 턴 누락 점검</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구 호출입니다. 현재 턴 응답에 패킷이 없으면 Other Ax 1회, 실패하면 수동 복구로 남깁니다. 위 누락 점검과 별개로 동작합니다.</div><span class="badge" data-setting-state="after-request-otherax" hidden>otherAX 정본 작성 중이라 일시 중지 · 끄면 이 값으로 다시 동작</span><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">otherAX로 정본 패킷 작성</div><div class="setting__desc">켜면 본 응답 모델에 패킷 작성 지시를 보내지 않고, 매 턴 Other Ax가 복구와 같은 방식으로 정본 패킷을 작성합니다. 작성자는 otherAX로 기록됩니다. 턴마다 Other Ax 1회 · Provider 비용이 발생할 수 있습니다.</div><span class="argtag">hayaku_otherax_canonical_packet</span></div><label class="switch"><input type="checkbox" id="st-otherax-canonical"><span class="switch__track"></span><span class="sr-only">otherAX로 정본 패킷 작성</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
@@ -60281,6 +61543,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ticket = viewerSettingsLifetime(); const root = ticket.root;
     if (!root) return null;
     mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
+    mountHayakuRecallBudgetPanel(root.querySelector('#hayakuRecallBudgetHost'));
     if (Memory.ledgerViewer.settingsDirty && !force) {
       viewerUpdateSettingsDraftState(); viewerSetSettingsSection(Memory.ledgerViewer.settingsSection);
       return Memory.ledgerViewer.settingsBaseline;
@@ -61211,7 +62474,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card&&card.contains(list)&&root.querySelector('[data-recovery-panel="reanalysis"]')?.hidden!==true;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
     const selectAll=card.querySelector('[data-reanalysis-select-all]'),selectNone=card.querySelector('[data-reanalysis-select-none]'),count=card.querySelector('[data-reanalysis-count]');
-    const sync=()=>{const locked=busy||reviewSaving,n=selected().length,total=list.querySelectorAll('input').length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;selectAll.disabled=locked||!total||n===total;selectNone.disabled=locked||!n;count.textContent='선택 '+n+' / '+total;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length,total=list.querySelectorAll('input').length;if(run.disabled!==(locked||!n))run.disabled=locked||!n;if(review.hidden!==(n!==1))review.hidden=n!==1;if(review.disabled!==(locked||n!==1))review.disabled=locked||n!==1;if(refresh.disabled!==locked)refresh.disabled=locked;if(selectAll.disabled!==(locked||!total||n===total))selectAll.disabled=locked||!total||n===total;if(selectNone.disabled!==(locked||!n))selectNone.disabled=locked||!n;count.textContent='선택 '+n+' / '+total;for(const input of list.querySelectorAll('input'))if(input.disabled!==locked)input.disabled=locked;};
     const setAll=checked=>{
       if(busy||reviewSaving||!inventory||!current())return;reviewVersion++;panel.replaceChildren();
       const inputs=[...list.querySelectorAll('input')];inputs.forEach(node=>{node.checked=checked;});
@@ -61482,7 +62745,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const recentExcludedItems = ensureArray(recentDedup?.items);
     const recentExcludedCount = Number(recentDedup?.droppedUnits || recentExcludedItems.length || 0);
     const recentExcludedHtml = recentExcludedCount > 0
-      ? `<details class="rec-all"><summary>최근 원문으로 제외된 기록 - ${recentExcludedCount.toLocaleString()}건(열람)</summary><div class="rec-all__list">${
+      ? `<details class="rec-all rec-all--dedup"><summary>최근 원문으로 제외된 기록 - ${recentExcludedCount.toLocaleString()}건(열람)</summary><div class="rec-all__list">${
           recentExcludedItems.length
             ? recentExcludedItems.map(item => {
                 const turns = ensureArray(item.turns).map(t => `T${Number(t)}`).join(', ');
@@ -61490,7 +62753,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 return `<div class="rec"><span class="score">${viewerEscapeHtml(turns || '-')}</span><div><b>${viewerEscapeHtml(label)}</b><p>${viewerEscapeHtml(text(item.preview || '(미리보기 없음)'))}</p></div><span class="badge">원문 중복 제외</span></div>`;
               }).join('')
             : '<div class="empty"><span>상세 미리보기 데이터가 없습니다.</span></div>'
-        }</div></details>`
+        }</div><div class="rec-all__end">▲ 원문 중복 제외 목록 끝 (${recentExcludedCount.toLocaleString()}건) · 아래부터 실제 주입·후보 기억</div></details>`
       : '';
     if(recallBody) recallBody.innerHTML = recentExcludedHtml + (recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
@@ -62725,6 +63988,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       });
     }
+    const statusLogsPanel = root.querySelector?.('#hayakuViewerPanelLogs');
+    if (statusLogsPanel && !statusLogsPanel.dataset.clearResolvedBound) {
+      statusLogsPanel.dataset.clearResolvedBound = '1';
+      statusLogsPanel.addEventListener('click', event => {
+        const clearBtn = event.target?.closest?.('[data-clear-resolved-failures]');
+        if (!clearBtn) return;
+        clearBtn.disabled = true;
+        const scopeKey = text(Memory.ledgerViewer.scope?.key || Memory.ledgerViewer.failureLogInput?.scopeKey || '');
+        void clearResolvedAnalysisFailures(scopeKey).then(async () => {
+          const failureInput = Memory.ledgerViewer.failureLogInput;
+          await viewerRefreshFailureCount(root, scopeKey, failureInput?.coverage, failureInput?.coldRun);
+          await viewerRenderStatusPanel();
+        }).catch(() => { clearBtn.disabled = false; });
+      });
+    }
     root.querySelector?.('#closeHayakuViewer')?.addEventListener('click', () => closeLedgerViewer());
     root.querySelector?.('#refreshHayakuViewer')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuWorldline')?.addEventListener('click', () => refreshLedgerViewer());
@@ -63012,6 +64290,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       viewerSetSettingsMessage(`리콜 성능 프리셋 '${preset.label}' (${preset.description})을 초안에 반영했습니다.`);
     }));
     const onSettingsDraftInput = event => {
+      if (event?.target?.closest?.('#hayakuRecallBudgetHost,[data-no-track]')) return;
       const argument = compact(event?.target?.name || '', 96);
       if (argument === 'hayaku_max_items_per_axis') {
         const val = Number(event?.target?.value);
@@ -63090,7 +64369,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   // HAYAKU view source is the finalized mockup DOM/CSS; product state and actions
   // are connected below through explicit HAYAKU Memory adapters. No suite.js behavior
   // or mockup fixtures are included.
-  const HAYAKU_GUI_SUITE_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n/* CI 글꼴 (docs/brand): 라틴 글자만 내장, 외부 요청 없음. Space Grotesk와 IBM Plex Mono는 SIL OFL 1.1 (assets/fonts) */\n@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:\"IBM Plex Sans KR\",Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-brand:\"Space Grotesk\",\"IBM Plex Sans KR\",Pretendard,\"Noto Sans KR\",system-ui,sans-serif;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}.brand__mark .brand__symbol{display:block;width:66%;height:66%}\n.brand__name{font:700 17px/1.15 var(--font-brand);letter-spacing:.08em;text-transform:uppercase;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}.switch input:disabled+.switch__track{opacity:.45;cursor:not-allowed}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice:disabled,.choice[aria-disabled=true]{opacity:.58;cursor:not-allowed;background:var(--surface2)}.choice:disabled:hover,.choice[aria-disabled=true]:hover{border-color:var(--border2)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n.dialog{display:grid;gap:16px}\n.dialog__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}\n.dialog__head h2{margin:4px 0 4px;font-size:var(--fs-title);line-height:1.25}\n.dialog__head p{margin:0;color:var(--text2);font-size:var(--fs-body)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:4px}\n.recapture-list{max-height:min(52vh,460px);overflow:auto}\n.recapture-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);background:var(--surface)}\n.recapture-row:first-child{border-top:0}\n.recapture-row .pk-row{display:grid;grid-template-columns:22px 48px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;text-align:left;min-width:0;transition:background var(--motion),border-color var(--motion)}\n.recapture-row .pk-row:not(:disabled):hover{background:var(--surface2);border-color:var(--border2)}\n.recapture-row .pk-row[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}\n.recapture-row .pk-row:disabled{opacity:.72;cursor:not-allowed}\n.recapture-row .pk-check{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--border2);background:var(--surface);font-size:12px;font-weight:800;line-height:1;color:var(--text3)}\n.recapture-row .pk-row[aria-pressed=true] .pk-check{background:var(--accent);border-color:var(--accent);color:#fff}\n.recapture-row .pk-turn{justify-self:start;padding:2px 8px;border-radius:6px;background:var(--surface3);font:700 12.5px var(--font-mono);color:var(--accent-ink);white-space:nowrap}\n.recapture-row .pk-label{font-size:13px;color:var(--text);overflow-wrap:anywhere}\n.recapture-row .pk-count{font-size:12px;color:var(--text3);white-space:nowrap}\n.detail-view-status{margin:0;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.detail-view-packets{display:grid;gap:12px;max-height:min(55vh,480px);overflow:auto}\n.detail-view .card header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:10px}\n.detail-view .card pre,.detail-view .source-view pre{margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:360px;overflow:auto}\n.detail-view .source-view{margin-top:10px}\n";
+  const HAYAKU_GUI_SUITE_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n/* CI 글꼴 (docs/brand): 라틴 글자만 내장, 외부 요청 없음. Space Grotesk와 IBM Plex Mono는 SIL OFL 1.1 (assets/fonts) */\n@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:\"IBM Plex Sans KR\",Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-brand:\"Space Grotesk\",\"IBM Plex Sans KR\",Pretendard,\"Noto Sans KR\",system-ui,sans-serif;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:clip;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}.brand__mark .brand__symbol{display:block;width:66%;height:66%}\n.brand__name{font:700 17px/1.15 var(--font-brand);letter-spacing:.08em;text-transform:uppercase;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;inset:0;margin:0;opacity:0;width:1px;height:1px;pointer-events:none}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}.switch input:disabled+.switch__track{opacity:.45;cursor:not-allowed}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice:disabled,.choice[aria-disabled=true]{opacity:.58;cursor:not-allowed;background:var(--surface2)}.choice:disabled:hover,.choice[aria-disabled=true]:hover{border-color:var(--border2)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n.dialog{display:grid;gap:16px}\n.dialog__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}\n.dialog__head h2{margin:4px 0 4px;font-size:var(--fs-title);line-height:1.25}\n.dialog__head p{margin:0;color:var(--text2);font-size:var(--fs-body)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:4px}\n.recapture-list{max-height:min(52vh,460px);overflow:auto}\n.recapture-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);background:var(--surface)}\n.recapture-row:first-child{border-top:0}\n.recapture-row .pk-row{display:grid;grid-template-columns:22px 48px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;text-align:left;min-width:0;transition:background var(--motion),border-color var(--motion)}\n.recapture-row .pk-row:not(:disabled):hover{background:var(--surface2);border-color:var(--border2)}\n.recapture-row .pk-row[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}\n.recapture-row .pk-row:disabled{opacity:.72;cursor:not-allowed}\n.recapture-row .pk-check{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--border2);background:var(--surface);font-size:12px;font-weight:800;line-height:1;color:var(--text3)}\n.recapture-row .pk-row[aria-pressed=true] .pk-check{background:var(--accent);border-color:var(--accent);color:#fff}\n.recapture-row .pk-turn{justify-self:start;padding:2px 8px;border-radius:6px;background:var(--surface3);font:700 12.5px var(--font-mono);color:var(--accent-ink);white-space:nowrap}\n.recapture-row .pk-label{font-size:13px;color:var(--text);overflow-wrap:anywhere}\n.recapture-row .pk-count{font-size:12px;color:var(--text3);white-space:nowrap}\n.detail-view-status{margin:0;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.detail-view-packets{display:grid;gap:12px;max-height:min(55vh,480px);overflow:auto}\n.detail-view .card header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:10px}\n.detail-view .card pre,.detail-view .source-view pre{margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:360px;overflow:auto}\n.detail-view .source-view{margin-top:10px}\n";
   const HAYAKU_GUI_THEME_CSS = "/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#2f3f8f; --brand-ink:#fff;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n   --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#126457; --brand-ink:#fff;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#a3530a; --brand-ink:#fff;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#6b3fa0; --brand-ink:#fff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#a3365a; --brand-ink:#fff;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#3e5566; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n";
   const HAYAKU_GUI_COMPONENT_CSS = "\n/* HAYAKU 전용: 관제실 / 노선도 컨셉 */\n.route{overflow-x:auto;padding:6px 4px 12px}\n.route__track{display:flex;min-width:max-content}\n.stop{position:relative;flex:1 0 82px;width:82px;display:grid;justify-items:center;gap:4px;padding:6px 4px;border:0;background:transparent;color:var(--text);border-radius:var(--r-sm)}\n.stop:hover{background:var(--surface3)}\n.stop::before{content:\"\";position:absolute;top:34px;left:-50%;width:100%;height:4px;background:var(--ok)}\n.stop:first-child::before{display:none}\n.stop b{font:700 12px var(--font-mono)}\n.stop i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;border:4px solid var(--ok);background:var(--surface)}\n.stop small{font-size:11.5px;color:var(--text2)}\n.stop--miss::before{background:repeating-linear-gradient(90deg,var(--warn) 0 7px,transparent 7px 13px)}\n.stop--miss i{border:3px dashed var(--warn);background:var(--warn-soft)}\n.stop--wait i{border-color:var(--warn);border-radius:4px;transform:rotate(45deg)}\n.stop--fail i{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}\n.stop--fail::before{background:var(--danger)}\n.stop--skip i{border-color:var(--border2);background:var(--surface3)}.stop--skip::before{background:var(--border2)}\n.stop.is-now b::before{content:\"▼ \";color:var(--accent)}\n.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}\n.legend span{display:inline-flex;align-items:center;gap:6px}\n.legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}\n.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}\n.metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}\n.dash{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}\n.rec{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--border)}\n.rec:first-child{border-top:0}\n.rec .score{font:700 12px var(--font-mono);padding:3px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent-ink)}\n.rec p{margin:0;font-size:12.5px;color:var(--text2)}\n.pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}\n.pk-list{max-height:520px;overflow:auto}\n.pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.pk-row:first-child{border-top:0}.pk-row:hover{background:var(--surface2)}\n.pk-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.pk-row b{font:700 13px var(--font-mono);color:var(--accent-ink)}\n.pk-row strong{display:block;font-size:13px}.pk-row small{color:var(--text3);font-size:12px}\n.axes{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n.axis{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.axis h4{margin:0 0 6px;font-size:12.5px;color:var(--accent-ink)}.axis p{margin:0;font-size:12.5px;color:var(--text2)}\npre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.6;overflow:auto;max-height:220px;white-space:pre-wrap}\n.cost{display:flex;gap:10px;align-items:flex-start}\n.mt-summary{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}\n.mt-chip{display:inline-flex;align-items:baseline;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);font-size:12.5px;color:var(--text2)}\n.mt-chip b{font:700 14px var(--font-mono);color:var(--text)}\n.mt-chip--accent{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:700}\n.mt-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0;margin-bottom:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}\n.mt-list{display:grid;border:1px solid var(--border2);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.mt-row{display:grid;grid-template-columns:20px 52px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);cursor:pointer;min-width:0}\n.mt-row:first-child{border-top:0}.mt-row:hover{background:var(--surface2)}\n.mt-row input{width:17px;height:17px;margin:0;accent-color:var(--accent)}\n.mt-row:has(input:checked){background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.mt-row:has(input:disabled){cursor:default}\n.mt-turn{justify-self:start;padding:2px 8px;border-radius:6px;background:var(--surface3);font:700 13px var(--font-mono);color:var(--accent-ink);white-space:nowrap}\n.mt-text{display:grid;gap:2px;min-width:0}\n.mt-label{font-size:13.5px;font-weight:650;color:var(--text);overflow-wrap:anywhere;word-break:keep-all}\n.mt-why{font-size:12px;color:var(--text3);overflow-wrap:anywhere;word-break:keep-all}\n.mt-tag{padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;border:1px solid var(--border2);color:var(--text2);background:var(--surface2)}\n.mt-row[data-state=ready] .mt-tag{border-color:var(--ok-line,var(--ok));color:var(--ok-ink);background:var(--ok-soft)}\n.mt-row[data-state=held] .mt-tag{border-color:var(--warn-line,var(--warn));color:var(--warn-ink);background:var(--warn-soft)}\n@container app (max-width:520px){.mt-row{grid-template-columns:20px 44px minmax(0,1fr)}.mt-tag{grid-column:3;justify-self:start}}\n.st-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}\n.st-nav{display:grid;gap:3px;position:sticky;top:0}\n.st-nav button{text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.st-nav b{display:block;font-size:13.5px}.st-nav small{color:var(--text3);font-size:12px}\n.st-nav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.lvl{display:inline-flex;margin-left:6px;padding:0 7px;border-radius:99px;font:650 11px/1.7 var(--font-sans);background:var(--surface3);color:var(--text2)}\nhtml[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=warn] [data-scenario-show]:not([data-scenario-show~=warn]),html[data-scenario=fail] [data-scenario-show]:not([data-scenario-show~=fail]),html:not([data-scenario]) [data-scenario-show]:not([data-scenario-show~=ok]){display:none!important}\n.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}\n.pk-list.is-world .pk-row{position:relative}.pk-list.is-world .pk-row::before{content:\"\";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.fail-box{display:none}\nhtml[data-scenario=fail] .fail-box{display:block}\n.cost-table{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.fd-grid{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,1.6fr);gap:14px}\n.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cmp>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}.cmp b{display:block;font-size:12px;color:var(--text3);margin-bottom:3px}\n.cmp ins{background:var(--ok-soft);color:var(--ok-ink);text-decoration:none;padding:0 3px;border-radius:3px}.cmp del{background:var(--danger-soft);color:var(--danger-ink);padding:0 3px;border-radius:3px}\n.btn[disabled]+.why{display:block}.why{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n.why.on{display:block}\n@container app (max-width:900px){.fd-grid,.cmp{grid-template-columns:1fr}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){\n  .metric-row{grid-template-columns:repeat(2,1fr)}.dash,.pk-layout,.axes{grid-template-columns:1fr}\n  .st-layout{grid-template-columns:1fr}.st-nav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}.st-nav small{display:none}\n  .pk-list{max-height:260px}\n}\n";
   // Settings easy/full view (outside the approved mockup stylesheet).
@@ -63210,18 +64489,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
       <div class="stack" data-status-panel="log" hidden style="margin-top:14px"><details class="fold" id="hayakuLastInjectedPromptFold" open style="margin-bottom:12px"><summary>마지막 최종 주입 프롬프트</summary><div class="fold__body"><pre id="hayakuLastInjectedPromptText" class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">리콜 성공 시 주입된 프롬프트가 여기에 표시됩니다.</pre></div></details><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
         <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="note">기본 기록에는 실패 턴·원인·호출 수만 남깁니다. 상세 분석 보관은 설정의 디버그를 켠 이후 적용됩니다.</div><label class="pk-check"><input id="hayakuIncludeAnalysisDetails" type="checkbox">내보내기에 보관된 상세 분석 포함 (원문·모델 응답)</label><details class="fold"><summary>보관된 상세 분석</summary><div class="fold__body"><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">최근 상세 진단 읽기</button><pre id="hayakuArchivedFailures" class="json"></pre></div></details><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
       </div></section>`;
-    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n${HAYAKU_SERVER_CONNECTION_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:transparent;font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center}#${LEDGER_VIEWER_ROOT_ID} .frame{height:min(830px,100%);min-height:0}#${LEDGER_VIEWER_ROOT_ID} #hayakuOverviewAuxiliaryStatus{display:block;margin-top:4px;color:var(--text2)}#${LEDGER_VIEWER_ROOT_ID} [data-setting-state="packet-recovery"]{margin-top:6px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
+    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n${HAYAKU_SERVER_CONNECTION_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:100%;z-index:2147483000;background:transparent;font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center}#${LEDGER_VIEWER_ROOT_ID} .frame{height:min(830px,100%);min-height:0}#${LEDGER_VIEWER_ROOT_ID} #hayakuOverviewAuxiliaryStatus{display:block;margin-top:4px;color:var(--text2)}#${LEDGER_VIEWER_ROOT_ID} [data-setting-state="packet-recovery"]{margin-top:6px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
+@media (max-width:640px),(max-height:520px){#${LEDGER_VIEWER_ROOT_ID} .stage{padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}#${LEDGER_VIEWER_ROOT_ID} .frame{width:100%;max-width:100%;height:100%;max-height:100%;min-height:0}#${LEDGER_VIEWER_ROOT_ID} .app{border:0;border-radius:0}}
+#${LEDGER_VIEWER_ROOT_ID} .topbar{min-width:0;max-width:100%}
+#${LEDGER_VIEWER_ROOT_ID} .topbar>.menu,#${LEDGER_VIEWER_ROOT_ID} #closeHayakuViewer,#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip{flex:0 0 auto}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuViewerHealth{flex:0 1 auto;min-width:0;overflow:hidden}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuViewerHealth [data-health-text]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#${LEDGER_VIEWER_ROOT_ID} .hayaku-portable-job-chip{flex:0 1 auto;min-width:0;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
 #${LEDGER_VIEWER_ROOT_ID} .pk-layout{min-width:0}
 @container app (max-width:900px){#${LEDGER_VIEWER_ROOT_ID} .pk-layout{grid-template-columns:minmax(0,1fr)}}
+@container app (max-width:680px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-chip__label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
 @container app (max-width:620px){#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}}
 #${LEDGER_VIEWER_ROOT_ID} .rec{min-width:0;grid-template-columns:auto minmax(0,1fr) auto}
 #${LEDGER_VIEWER_ROOT_ID} .pk-list>.rec,#${LEDGER_VIEWER_ROOT_ID} .list>.row{content-visibility:auto;contain-intrinsic-size:auto 64px}
 #${LEDGER_VIEWER_ROOT_ID} .rec>div{min-width:0}
 #${LEDGER_VIEWER_ROOT_ID} .rec time{min-width:0;overflow-wrap:anywhere}
-/* Local HAYAKU header fit: preserve type scale and actions; remove only the long sublabel on narrow panels. */
-@container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 6px;gap:4px}#${LEDGER_VIEWER_ROOT_ID} .brand{flex:0 0 auto;gap:8px}#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:max-content}#${LEDGER_VIEWER_ROOT_ID} .brand__name{white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}}
-@container app (max-width:350px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
+/* Local HAYAKU header fit: collapse auxiliary chips cleanly on narrow screens so menu and close remain inside .topbar and clickable. */
+@container app (max-width:560px){#${LEDGER_VIEWER_ROOT_ID} #hayakuHeaderPacketMode{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .topbar .grow{display:none}#${LEDGER_VIEWER_ROOT_ID} .topbar .brand{margin-right:auto}#${LEDGER_VIEWER_ROOT_ID} #hayakuViewerHealth{max-width:128px;padding:4px 9px;gap:5px;font-size:11.5px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-portable-job-chip{max-width:76px;padding:4px 6px;font-size:11px}#${LEDGER_VIEWER_ROOT_ID} .page-head__copy{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .tabs{max-width:100%;overflow-x:auto;scrollbar-width:none}}
+@container app (max-width:440px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 8px;gap:4px}#${LEDGER_VIEWER_ROOT_ID} .brand{flex:0 1 auto;min-width:0;gap:6px}#${LEDGER_VIEWER_ROOT_ID} .brand__mark{width:32px;height:32px}#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{font-size:15px;letter-spacing:.05em;white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}#${LEDGER_VIEWER_ROOT_ID} #hayakuViewerHealth{padding:4px 8px;gap:5px;font-size:11.5px;max-width:104px}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip{width:36px;min-width:36px;min-height:36px;height:36px;padding:0;justify-content:center}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .topbar .btn--icon{width:36px;min-width:36px;min-height:36px;height:36px;padding:0}#${LEDGER_VIEWER_ROOT_ID} .menu__panel{max-width:calc(100vw - 16px)}}
+@container app (max-width:350px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 6px;gap:3px}#${LEDGER_VIEWER_ROOT_ID} .brand{gap:5px}#${LEDGER_VIEWER_ROOT_ID} .brand__mark{width:28px;height:28px}#${LEDGER_VIEWER_ROOT_ID} .brand__name{font-size:13.5px;letter-spacing:.03em}#${LEDGER_VIEWER_ROOT_ID} #hayakuViewerHealth{padding:3px 7px;gap:4px;font-size:11px;max-width:84px}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip,#${LEDGER_VIEWER_ROOT_ID} .topbar .btn--icon{width:32px;min-width:32px;min-height:34px;height:34px}}
 @container app (max-width:300px){#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin{display:inline-flex;align-items:center;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;line-height:16px;vertical-align:1px;border:1px solid transparent;white-space:nowrap}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="canonical"]{background:#e3f1ea;color:#145a3c;border-color:#bcdccb}
@@ -63259,6 +64546,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
 #${LEDGER_VIEWER_ROOT_ID} .rec-all{margin-top:6px}
 #${LEDGER_VIEWER_ROOT_ID} .rec-all>summary{cursor:pointer;padding:10px 4px;font-weight:650;font-size:13.5px;color:var(--accent,#1f6f78)}
 #${LEDGER_VIEWER_ROOT_ID} .rec-all__list{max-height:62vh;overflow:auto;padding-right:4px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup{margin:6px 0 14px;border:1.5px solid var(--border-strong,rgba(31,111,120,.34));border-radius:10px;background:var(--surface-2,rgba(31,111,120,.04));overflow:hidden}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup>summary{padding:10px 12px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup[open]>summary{border-bottom:1px solid var(--border,rgba(31,111,120,.18))}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all--dedup .rec-all__list{padding:0 10px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all__end{padding:7px 12px;font-size:12px;font-weight:600;color:var(--accent,#1f6f78);background:var(--surface-3,rgba(31,111,120,.09));border-top:1.5px solid var(--border-strong,rgba(31,111,120,.28));text-align:center}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more>summary{cursor:pointer;list-style:none;color:inherit;overflow-wrap:anywhere}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more>summary::-webkit-details-marker{display:none}
 #${LEDGER_VIEWER_ROOT_ID} .rec__more[open]>summary{display:none}
@@ -63299,9 +64591,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 #${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-option__head{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
 #${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-option__title{font-size:14px;font-weight:700}
 #${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-option__desc{font-size:12.5px;line-height:1.5;color:var(--text2,#5d6b73)}
-#${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-option__meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
-@container app (max-width:520px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-chip__label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
-@container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}</style>
+#${LEDGER_VIEWER_ROOT_ID} .hayaku-mode-option__meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}</style>
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
         <header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M24 5c-6.6 0-11 4.6-11 10.6C13 23.4 24 33 24 33s11-9.6 11-17.4C35 9.6 30.6 5 24 5z"/><circle cx="24" cy="15.5" r="3.8"/><path d="M5 41h38M11 38v6M37 38v6"/><circle cx="24" cy="41" r="3" fill="currentColor" stroke="none"/></svg></div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><button id="hayakuHeaderPacketMode" class="btn btn--sm hayaku-mode-chip" type="button" title="정본 패킷 작성 모드 — 누르면 연속성 관제의 모드 프리셋으로 이동합니다"><span class="hayaku-mode-chip__label">정본</span><b data-mode-text>본 응답</b></button><span id="hayakuViewerHealth" class="health health--ok" role="button" tabindex="0" aria-haspopup="dialog" style="cursor:pointer" title="누르면 상태 및 진단 로그 보기"><i></i><span data-health-text>정상 작동</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="card" data-hayaku-job-body="maintenance" hidden style="margin-top:12px"><p id="hayakuMaintenanceJobCoverage" role="status">현재 채팅을 확인합니다.</p><p id="hayakuMaintenanceJobPlan"></p><div class="res-row"><b>실제 모델 호출</b><span id="hayakuMaintenanceJobCalls">0회</span></div><div id="hayakuMaintenanceAnalysisChoices" class="dialog__actions" hidden><p style="flex-basis:100%">Other Ax 분석에는 Provider 비용이 발생할 수 있습니다. 검증된 기억은 유지하고 누락된 대상만 생성합니다.</p><button class="btn" type="button" data-maintenance-analysis="no">분석 없이 종료</button><button class="btn btn--primary" type="button" data-maintenance-analysis="yes">계속 · 기억 분석</button></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
@@ -63423,12 +64713,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
         dispatch: null,
         settingRegistered: false,
         buttonRegistered: false,
+        chatButtonRegistered: false,
         settingHandle: null,
         buttonHandle: null,
+        chatButtonHandle: null,
         settingRegistration: null,
         buttonRegistration: null,
+        chatButtonRegistration: null,
         settingRegistrar: null,
-        buttonRegistrar: null
+        buttonRegistrar: null,
+        chatButtonRegistrar: null
       };
       Object.defineProperty(globalThis, LEDGER_VIEWER_UI_RUNTIME_KEY, {
         value: created,
@@ -63453,7 +64747,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (!registry || registry.ownerToken !== RUNTIME_INSTANCE_TOKEN) return false;
     const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
     if (!uiApi) return retireLedgerViewerUiOwner();
-    const ids = [LEDGER_VIEWER_SETTING_UI_ID, LEDGER_VIEWER_BUTTON_UI_ID];
+    const chatButtonUiId = typeof LEDGER_VIEWER_CHAT_BUTTON_UI_ID === 'string'
+      ? LEDGER_VIEWER_CHAT_BUTTON_UI_ID
+      : `${LEDGER_VIEWER_BUTTON_UI_ID}-chat`;
+    const ids = [LEDGER_VIEWER_SETTING_UI_ID, LEDGER_VIEWER_BUTTON_UI_ID, chatButtonUiId];
     for (const id of ids) {
       try { await uiApi.unregisterUIPart(id); } catch (_) {}
     }
@@ -63461,22 +64758,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
     registry.show = null;
     registry.settingRegistered = false;
     registry.buttonRegistered = false;
+    registry.chatButtonRegistered = false;
     registry.settingHandle = null;
     registry.buttonHandle = null;
+    registry.chatButtonHandle = null;
     registry.settingRegistration = null;
     registry.buttonRegistration = null;
+    registry.chatButtonRegistration = null;
     registry.settingRegistrar = null;
     registry.buttonRegistrar = null;
+    registry.chatButtonRegistrar = null;
     Memory.ledgerViewer.registeredSetting = null;
     Memory.ledgerViewer.registeredButton = null;
+    Memory.ledgerViewer.registeredChatButton = null;
     return true;
   };
   const registerLedgerViewerUi = async () => {
-    if (Memory.unloaded || !ownsRuntime()) return { setting: false, button: false };
+    if (Memory.unloaded || !ownsRuntime()) return { setting: false, button: false, chatButton: false };
     const settingApi = apiCandidates().find(candidate => typeof candidate?.registerSetting === 'function') || null;
     const buttonApi = apiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || null;
     const registry = ledgerViewerUiRuntime();
-    if (!registry) return { setting: false, button: false };
+    if (!registry) return { setting: false, button: false, chatButton: false };
+    const chatButtonUiId = typeof LEDGER_VIEWER_CHAT_BUTTON_UI_ID === 'string'
+      ? LEDGER_VIEWER_CHAT_BUTTON_UI_ID
+      : `${LEDGER_VIEWER_BUTTON_UI_ID}-chat`;
     registry.ownerToken = RUNTIME_INSTANCE_TOKEN;
     registry.show = async (...args) => {
       if (Memory.unloaded || !ownsRuntime()) return false;
@@ -63507,10 +64812,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         location: 'hamburger',
         id: LEDGER_VIEWER_BUTTON_UI_ID
       }, registry.dispatch);
+      registry.chatButtonRegistrar = () => buttonApi.registerButton({
+        name: `${PLUGIN_NAME} 원장 뷰어`,
+        icon: ledgerViewerIconSvg,
+        iconType: 'html',
+        location: 'chat',
+        id: chatButtonUiId
+      }, registry.dispatch);
     }
     const duplicateRegistrationError = error => /already|duplicate|exist/i.test(text(error?.message || error));
     const registerSharedPart = async ({
       kind,
+      fallbackId,
       registrarKey,
       registeredKey,
       handleKey,
@@ -63526,12 +64839,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             try {
               const handle = await registrar();
               if (handle === false) throw new Error('ui_registration_rejected');
-              registry[handleKey] = handle || { uncertain: true, id: kind === 'setting' ? LEDGER_VIEWER_SETTING_UI_ID : LEDGER_VIEWER_BUTTON_UI_ID };
+              registry[handleKey] = handle || { uncertain: true, id: fallbackId };
               registry[registeredKey] = true;
               return true;
             } catch (error) {
               if (duplicateRegistrationError(error)) {
-                registry[handleKey] = { shared: true, id: kind === 'setting' ? LEDGER_VIEWER_SETTING_UI_ID : LEDGER_VIEWER_BUTTON_UI_ID };
+                registry[handleKey] = { shared: true, id: fallbackId };
                 registry[registeredKey] = true;
                 return true;
               }
@@ -63570,9 +64883,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
     Memory.ledgerViewer.registeredButton = registry.buttonRegistered && !registry.buttonRegistration
       ? (registry.buttonHandle || { shared: true })
       : null;
+    Memory.ledgerViewer.registeredChatButton = registry.chatButtonRegistered && !registry.chatButtonRegistration
+      ? (registry.chatButtonHandle || { shared: true })
+      : null;
     if (!Memory.ledgerViewer.registeredSetting && settingApi) {
       await registerSharedPart({
         kind: 'setting',
+        fallbackId: LEDGER_VIEWER_SETTING_UI_ID,
         registrarKey: 'settingRegistrar',
         registeredKey: 'settingRegistered',
         handleKey: 'settingHandle',
@@ -63585,6 +64902,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (!Memory.ledgerViewer.registeredButton && buttonApi) {
       await registerSharedPart({
         kind: 'button',
+        fallbackId: LEDGER_VIEWER_BUTTON_UI_ID,
         registrarKey: 'buttonRegistrar',
         registeredKey: 'buttonRegistered',
         handleKey: 'buttonHandle',
@@ -63594,9 +64912,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ? (registry.buttonHandle || { shared: true })
         : null;
     }
+    if (!Memory.ledgerViewer.registeredChatButton && buttonApi) {
+      await registerSharedPart({
+        kind: 'chatButton',
+        fallbackId: chatButtonUiId,
+        registrarKey: 'chatButtonRegistrar',
+        registeredKey: 'chatButtonRegistered',
+        handleKey: 'chatButtonHandle',
+        registrationKey: 'chatButtonRegistration'
+      });
+      Memory.ledgerViewer.registeredChatButton = registry.chatButtonRegistered
+        ? (registry.chatButtonHandle || { shared: true })
+        : null;
+    }
     return {
       setting: registry.settingRegistered === true,
-      button: registry.buttonRegistered === true
+      button: registry.buttonRegistered === true,
+      chatButton: registry.chatButtonRegistered === true
     };
   };
 
@@ -63834,9 +65166,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     let ready = false;
     try {
       const result = await registerLedgerViewerUi();
-      ready = result.setting && result.button;
+      ready = result.setting && result.button && result.chatButton;
       debugLog('install:ledger_viewer', result);
-      if (ready || result.button) startHayakuAttention();
+      if (ready || result.button || result.chatButton) startHayakuAttention();
     } catch (error) {
       debugError('install:ledger_viewer_failed', error);
     } finally {
@@ -64142,6 +65474,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (!scope?.confident) return { logAvailable: false, reason: scope?.reason || 'scope_unavailable', rows: [] };
             const status = await nativeRecoveryStatus({ includeDebts: true });
             return clone(await analysisFailureReport(scope.key, { coveredTurns: status?.debt?.coverage?.coveredTurns, coldRun: status?.coldStartRun?.run }), { rows: [] });
+          },
+          clearResolved: async scopeKeyInput => {
+            const scope = await RisuCompat.currentChatScope();
+            const targetKey = compact(scopeKeyInput || scope?.key || '', 196);
+            if (!targetKey) return { ok: false, durable: false, cleared: 0, remaining: 0, reason: scope?.reason || 'scope_unavailable' };
+            return clone(await clearResolvedAnalysisFailures(targetKey), { ok: false, cleared: 0 });
           },
           list: async () => {
             const scope = await RisuCompat.currentChatScope();
@@ -64665,6 +66003,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         promptCacheModeOf,
         packetCacheStaticContract,
         canonicalPromptCacheStringify,
+        hayakuInjectionFingerprint,
+        hayakuMessageArrayDigest,
+        invalidateExternalLedgerCaches,
+        loadStorageLedger,
+        hydrateCapturedLedgerRaw,
+        searchAcceptedPartialMemory,
+        debugLog,
         promptCacheTransportInfo,
         detectPromptCacheProvider,
         attestPromptCacheStaticContract,
@@ -67314,7 +68659,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!viewer || !topActions) return null;
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'btn btn--sm';
+      chip.className = 'btn btn--sm hayaku-portable-job-chip';
       chip.textContent = `${title} · 준비`;
       const overlay = document.createElement('div');
       overlay.className = 'overlay is-open';

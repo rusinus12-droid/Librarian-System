@@ -3,7 +3,7 @@
  * RisuAI Contract-Backed Host Adapter
  *
  * Implements the observable host primitives extracted from the pinned RisuAI upstream
- * commit (`ea61945f9038e0189807d075f55f4e66ab7e98bf`) and reviewed in `PROGRAM/contracts/risuai/`:
+ * commit (`996a5535fdb4629258331955982693a74ea209de`) and reviewed in `PROGRAM/contracts/risuai/`:
  * - Enforces `api-surface.json`: any call to an unmapped RisuAI API fails with `UNMAPPED_RISUAI_API_CALL`
  * - Enforces `storage-contract.json`:
  *   - `pluginStorage`: async JSON-serializable storage (`JSON.stringify` / `JSON.parse`), null on missing key,
@@ -25,6 +25,16 @@ const path = require('node:path');
 const { loadCompatibilityPack, parsePluginHeader } = require('./risu_contract_verifier.cjs');
 
 const URL_BLACKLIST = Object.freeze(['risuai.xyz', 'risuai.net', 'sionyw.com']);
+const VALID_PLUGIN_PERMISSIONS = Object.freeze([
+  'fetchLogs',
+  'db',
+  'dbWrite',
+  'mainDom',
+  'replacer',
+  'provider',
+  'sendChat',
+  'inlay'
+]);
 const ALLOWED_DB_KEYS = Object.freeze([
   'characters', 'modules', 'enabledModules', 'moduleIntergration', 'pluginV2', 'personas',
   'plugins', 'pluginCustomStorage', 'temperature', 'askRemoval', 'maxContext', 'maxResponse',
@@ -353,9 +363,10 @@ function createContractBackedHostCluster(options = {}) {
     };
 
     const checkUrlBlacklist = (url) => {
-      const lower = String(url || '').toLowerCase();
+      const parsed = new URL(String(url || ''), 'https://risuai.local');
+      const hostname = parsed.hostname.toLowerCase().replace(/\.+$/, '');
       for (const blocked of URL_BLACKLIST) {
-        if (lower.includes(blocked)) {
+        if (hostname === blocked || hostname.endsWith(`.${blocked}`)) {
           throw new Error(`Requests to ${blocked} are blocked for security reasons.`);
         }
       }
@@ -624,9 +635,11 @@ function createContractBackedHostCluster(options = {}) {
         return char ? cloneSnapshot(char) : null;
       },
       setCharacter: async (char) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         dbState.characters[selectedCharID] = cloneSnapshot(char);
       },
       setChar: async (char) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         dbState.characters[selectedCharID] = cloneSnapshot(char);
       },
       getCharacterFromIndex: async (index) => {
@@ -634,6 +647,7 @@ function createContractBackedHostCluster(options = {}) {
         return char ? cloneSnapshot(char) : null;
       },
       setCharacterToIndex: async (index, char) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         if (dbState.characters[index]) {
           dbState.characters[index] = cloneSnapshot(char);
         }
@@ -649,6 +663,7 @@ function createContractBackedHostCluster(options = {}) {
         return chat ? cloneSnapshot(chat) : null;
       },
       setChatToIndex: async (characterIndex, chatIndex, chat) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         const char = dbState.characters[characterIndex];
         if (char?.chats?.[chatIndex]) {
           char.chats[chatIndex] = cloneSnapshot(chat);
@@ -670,6 +685,7 @@ function createContractBackedHostCluster(options = {}) {
         return liteDB;
       },
       setDatabase: async (newDb) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         if (!newDb || typeof newDb !== 'object') return;
         for (const key of Object.keys(newDb)) {
           if (key === 'plugins') continue;
@@ -679,6 +695,7 @@ function createContractBackedHostCluster(options = {}) {
         }
       },
       setDatabaseLite: async (newDb) => {
+        if (options.denyPermissions?.includes('dbWrite')) return undefined;
         if (!newDb || typeof newDb !== 'object') return;
         for (const key of Object.keys(newDb)) {
           if (key === 'plugins') continue;
@@ -717,12 +734,17 @@ function createContractBackedHostCluster(options = {}) {
         if (idx !== -1) menuStores.bodyIntercepters.splice(idx, 1);
       },
       requestPluginPermission: async (permission) => {
+        if (!VALID_PLUGIN_PERMISSIONS.includes(permission)) return false;
         if (options.denyPermissions?.includes(permission)) return false;
         return true;
       },
       getFetchLogs: async () => [],
       readImage: async () => null,
       readInlay: async () => null,
+      createInlay: async (_data, _opts) => {
+        if (options.denyPermissions?.includes('inlay')) return null;
+        return 'mock-inlay-id';
+      },
       saveAsset: async () => 'assets/synthetic.bin',
       unwarpSafeArray: async (arr) => (Array.isArray(arr) ? arr : []),
       searchTranslationCache: async () => [],

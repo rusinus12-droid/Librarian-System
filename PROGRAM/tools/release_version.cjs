@@ -108,6 +108,30 @@ function applyReleaseVersion(packageRoot, targetVersion) {
   if (fs.existsSync(provenancePath)) {
     const provenance = JSON.parse(fs.readFileSync(provenancePath, 'utf8'));
     if (provenance.currentRelease) {
+      const outgoing = provenance.currentRelease;
+      const isPublishedOutgoing = Boolean(outgoing.archiveSha256) || outgoing.sourceState === 'published';
+      if (isPublishedOutgoing && outgoing.packageVersion && outgoing.packageVersion !== target && Array.isArray(provenance.releases)) {
+        const existing = provenance.releases.find(row => row?.packageVersion === outgoing.packageVersion);
+        if (!existing) {
+          provenance.releases.push({
+            packageVersion: outgoing.packageVersion,
+            artifact: outgoing.artifact || `Librarian-System-${outgoing.packageVersion}-Source.zip`,
+            ...(outgoing.archiveSha256 ? { archiveSha256: outgoing.archiveSha256 } : {}),
+            plugins: structuredClone(outgoing.plugins || {})
+          });
+          if (provenance.historicalReleaseCoverage && typeof provenance.historicalReleaseCoverage === 'object') {
+            provenance.historicalReleaseCoverage.archives = provenance.releases.length;
+            provenance.historicalReleaseCoverage.pluginRows = provenance.releases.reduce(
+              (sum, row) => sum + Object.keys(row?.plugins || {}).length,
+              0
+            );
+          }
+        } else if (outgoing.archiveSha256 && !existing.archiveSha256) {
+          existing.archiveSha256 = outgoing.archiveSha256;
+        }
+        delete outgoing.archiveSha256;
+        outgoing.sourceState = 'unpublished-source-candidate';
+      }
       provenance.currentRelease.packageVersion = target;
       provenance.currentRelease.artifact = `Librarian-System-${target}-Source.zip`;
       write(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);

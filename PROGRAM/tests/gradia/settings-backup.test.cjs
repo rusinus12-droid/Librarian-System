@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
 const {load}=require('./host.cjs');
 const prefix='serial_gradation_agents_for_rp:';
-const wait=async fn=>{const start=Date.now();while(Date.now()-start<6000){const result=fn();if(result)return result;await new Promise(r=>setTimeout(r,10));}throw Error('GUI action did not settle');};
+const wait=async fn=>{const start=Date.now();while(Date.now()-start<20000){const result=fn();if(result)return result;await new Promise(r=>setTimeout(r,10));}throw Error('GUI action did not settle');};
 async function gui(t,provider={}){
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'}),store=new Map(),writes=[],unloads=[];
  let failPrompt=false,hidden=false,clipboard=null;

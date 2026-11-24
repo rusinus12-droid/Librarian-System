@@ -315,17 +315,129 @@ function refreshSourceProvenance(programDir, { write = false, backupFile } = {})
   }
 }
 
+function parseSemver(version) {
+  return String(version || '0.0.0').replace(/^v/i, '').split('.').map(n => Number(n) || 0);
+}
+
+function compareSemver(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function syncPublishedGitTags(programDir, { write = false, check = false } = {}) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const crypto = require('node:crypto');
+  const { execFileSync } = require('node:child_process');
+  const { PLUGINS } = require('./release_metadata.cjs');
+  const repoRoot = path.resolve(programDir, '..');
+  const catalogPath = path.join(programDir, 'docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json');
+  const catalogBytes = fs.readFileSync(catalogPath);
+  const original = JSON.parse(catalogBytes.toString('utf8'));
+  const releases = Array.isArray(original.releases) ? structuredClone(original.releases) : [];
+  const recordedVersions = new Set(releases.map(r => String(r?.packageVersion || '').trim()).filter(Boolean));
+  const tagsRaw = execFileSync('git', ['tag', '-l', 'v*', '--sort=version:refname'], { cwd: repoRoot, encoding: 'utf8' });
+  const tags = tagsRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean).filter(tag => /^v\d+\.\d+\.\d+$/.test(tag));
+  const added = [];
+  for (const tag of tags) {
+    const pkgVer = tag.slice(1);
+    if (recordedVersions.has(pkgVer)) continue;
+    const gitCommit = execFileSync('git', ['rev-list', '-n', '1', tag], { cwd: repoRoot, encoding: 'utf8' }).trim();
+    const plugins = {};
+    for (const [owner, [file]] of Object.entries(PLUGINS)) {
+      let buf;
+      try {
+        buf = execFileSync('git', ['show', `${tag}:PROGRAM/plugins/${file}`], { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 });
+      } catch (_) {
+        continue;
+      }
+      const verMatch = buf.toString('utf8').match(/^\/\/@version[ \t]+(\d+\.\d+\.\d+)(?=[ \t]*\r?$)/m);
+      if (!verMatch) throw new Error(`tag_plugin_version_missing:${tag}:${owner}`);
+      plugins[owner] = {
+        version: verMatch[1],
+        sha256: crypto.createHash('sha256').update(buf).digest('hex'),
+        bytes: buf.length
+      };
+    }
+    releases.push({
+      packageVersion: pkgVer,
+      artifact: `Librarian-System-${pkgVer}-Source.zip`,
+      gitTag: tag,
+      gitCommit,
+      plugins
+    });
+    recordedVersions.add(pkgVer);
+    added.push(pkgVer);
+  }
+  releases.sort((a, b) => compareSemver(a.packageVersion, b.packageVersion));
+
+  // Recompute historicalAnomalies symmetrically with validateProvenance while preserving existing order
+  const historicalMap = new Map();
+  for (const release of releases) {
+    for (const [owner, info] of Object.entries(release.plugins || {})) {
+      const key = `${owner}\0${info.version}`;
+      if (!historicalMap.has(key)) historicalMap.set(key, { owner, version: info.version, hashes: new Set() });
+      historicalMap.get(key).hashes.add(digest(info.sha256));
+    }
+  }
+  const anomalyMap = new Map();
+  for (const row of original.historicalAnomalies || []) {
+    anomalyMap.set(`${row.owner}\0${row.version}`, row);
+  }
+  for (const [key, entry] of historicalMap) {
+    if (entry.hashes.size > 1 && !anomalyMap.has(key)) {
+      anomalyMap.set(key, { owner: entry.owner, version: entry.version, sha256: [...entry.hashes].sort() });
+    }
+  }
+  const nextCatalog = {
+    ...original,
+    historicalReleaseCoverage: {
+      archives: releases.length,
+      pluginRows: releases.reduce((sum, rel) => sum + Object.keys(rel.plugins || {}).length, 0)
+    },
+    releases,
+    historicalAnomalies: [...anomalyMap.values()],
+    currentRelease: original.currentRelease
+  };
+  const { actual } = readSourceActual(programDir);
+  const errors = validateProvenance(nextCatalog, actual);
+  if (errors.length) throw new Error(`sync_tags_provenance_invalid:${JSON.stringify(errors)}`);
+  const changed = added.length > 0
+    || JSON.stringify(original.historicalReleaseCoverage) !== JSON.stringify(nextCatalog.historicalReleaseCoverage);
+  if (write && changed) {
+    const newline = catalogBytes.toString('utf8').includes('\r\n') ? '\r\n' : '\n';
+    const serialized = JSON.stringify(nextCatalog, null, 2).replace(/\n/g, newline) + newline;
+    fs.writeFileSync(catalogPath, serialized, 'utf8');
+  }
+  if (check && changed) throw new Error(`unrecorded_published_git_tags:${added.join(',')}`);
+  return { changed, added, archives: nextCatalog.historicalReleaseCoverage.archives, pluginRows: nextCatalog.historicalReleaseCoverage.pluginRows };
+}
+
 module.exports = { inspectInternalVersion, validateProvenance, buildSourceCandidate, rewritePluginVersion,
-  readSourceActual, prepareSourceRefresh, refreshSourceProvenance };
+  readSourceActual, prepareSourceRefresh, refreshSourceProvenance, syncPublishedGitTags };
 
 if (require.main === module) {
   const path = require('node:path');
   const args = process.argv.slice(2);
   try {
+    if (args.includes('--sync-tags')) {
+      if (args.some(arg => !['--sync-tags', '--check', '--write'].includes(arg))) {
+        throw new Error('usage: plugin_version_provenance.cjs --sync-tags [--check | --write]');
+      }
+      const programDir = path.resolve(__dirname, '..');
+      const res = syncPublishedGitTags(programDir, { write: !args.includes('--check'), check: args.includes('--check') });
+      console.log(JSON.stringify(res, null, 2));
+      return;
+    }
     if (args.some((arg, index) => !['--write', '--check', '--backup'].includes(arg) && args[index - 1] !== '--backup')
       || args.some((arg, index) => arg === '--backup' && (!args[index + 1] || args[index + 1].startsWith('--')))
       || ['--write', '--check', '--backup'].some(flag => args.filter(arg => arg === flag).length > 1)
-      || (args.includes('--write') && args.includes('--check'))) throw new Error('usage: plugin_version_provenance.cjs [--check | --write --backup <file>]');
+      || (args.includes('--write') && args.includes('--check'))) throw new Error('usage: plugin_version_provenance.cjs [--check | --write --backup <file> | --sync-tags [--check]]');
     const programDir = path.resolve(__dirname, '..');
     const backupIndex = args.indexOf('--backup');
     const result = refreshSourceProvenance(programDir, { write: args.includes('--write'), backupFile: backupIndex < 0 ? undefined : args[backupIndex + 1] });

@@ -1,7 +1,7 @@
 {
   "schema": "librarian.risu-ipc-contract.v1",
   "repository": "kwaroran/Risuai",
-  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "commit": "996a5535fdb4629258331955982693a74ea209de",
   "sourceFiles": [
     "src/ts/plugins/apiV3/v3.svelte.ts",
     "src/ts/plugins/plugins.svelte.ts"
@@ -67,7 +67,8 @@
         "libra",
         "flashback_memory",
         "hayaku_locator_continuity",
-        "lia_persona_linker"
+        "lia_persona_linker",
+        "serial_gradation_agents_for_rp"
       ]
     },
     "serial_gradation_agents_for_rp": {
@@ -76,7 +77,8 @@
       "allowedIPC": [
         "libra",
         "hayaku_locator_continuity",
-        "flashback_memory"
+        "flashback_memory",
+        "flashback_hayaku_bridge"
       ]
     }
   }

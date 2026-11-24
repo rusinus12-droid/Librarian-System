@@ -1,7 +1,7 @@
 {
   "schema": "librarian.risu-plugin-loader-contract.v1",
   "repository": "kwaroran/Risuai",
-  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "commit": "996a5535fdb4629258331955982693a74ea209de",
   "sourceFile": "src/ts/plugins/plugins.svelte.ts",
   "implementationFingerprint": "b093bdc2bec1ede98477817bba49d4c68b51e8fbe5a2332e0c8aabbb13c6a82a",
   "headerDirectives": {
@@ -66,7 +66,7 @@
       "owner": "hayaku",
       "file": "HAYAKU_Locator_Continuity.js",
       "pluginName": "hayaku_locator_continuity",
-      "displayName": "HAYAKU · Locator Continuity v3.3.11",
+      "displayName": "HAYAKU · Locator Continuity v4.2.0",
       "apiVersion": "3.0",
       "hasUpdateUrl": true,
       "hasVersionDirective": true,
@@ -81,7 +81,7 @@
       "owner": "flashback",
       "file": "Flashback_Memory.js",
       "pluginName": "flashback_memory",
-      "displayName": "⚡ FLASHBACK Memory v1.3.16",
+      "displayName": "FLASHBACK Memory v2.2.0",
       "apiVersion": "3.0",
       "hasUpdateUrl": true,
       "hasVersionDirective": true,
@@ -96,7 +96,7 @@
       "owner": "libra",
       "file": "LIBRA.js",
       "pluginName": "libra",
-      "displayName": "LIBRA v2.6.15",
+      "displayName": "LIBRA v3.2.0",
       "apiVersion": "3.0",
       "hasUpdateUrl": true,
       "hasVersionDirective": true,
@@ -131,21 +131,23 @@
         "libra",
         "flashback_memory",
         "hayaku_locator_continuity",
-        "lia_persona_linker"
+        "lia_persona_linker",
+        "serial_gradation_agents_for_rp"
       ]
     },
     "gradia": {
       "owner": "gradia",
       "file": "GRADIA.js",
       "pluginName": "serial_gradation_agents_for_rp",
-      "displayName": "GRADIA v0.28.13",
+      "displayName": "GRADIA v1.3.0",
       "apiVersion": "3.0",
       "hasUpdateUrl": true,
       "hasVersionDirective": true,
       "allowedIPC": [
         "libra",
         "hayaku_locator_continuity",
-        "flashback_memory"
+        "flashback_memory",
+        "flashback_hayaku_bridge"
       ]
     }
   }

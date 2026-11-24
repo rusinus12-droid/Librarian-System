@@ -399,6 +399,7 @@ const HIGH_RISK_SEMANTIC_DEFINITIONS = Object.freeze({
   setChatToIndex: {
     sourceFile: 'src/ts/plugins/apiV3/v3.svelte.ts',
     semanticContract: [
+      'requires_dbWrite_permission',
       'resolves_character_by_index_and_chat_by_chatIndex',
       'assigns_chat_when_character_and_chat_exist'
     ]
@@ -488,7 +489,7 @@ const HIGH_RISK_SEMANTIC_DEFINITIONS = Object.freeze({
   nativeFetch: {
     sourceFile: 'src/ts/plugins/apiV3/v3.svelte.ts',
     semanticContract: [
-      'blocks_urlBlacklist_domains',
+      'validates_url_and_blocks_urlBlacklist_hostnames',
       'delegates_to_oldApis_nativeFetch'
     ]
   },
@@ -496,7 +497,7 @@ const HIGH_RISK_SEMANTIC_DEFINITIONS = Object.freeze({
     sourceFile: 'src/ts/plugins/apiV3/v3.svelte.ts',
     semanticContract: [
       'deprecated_in_favor_of_nativeFetch',
-      'blocks_urlBlacklist_domains',
+      'validates_url_and_blocks_urlBlacklist_hostnames',
       'delegates_to_oldApis_risuFetch'
     ]
   },
@@ -679,7 +680,7 @@ function extractUpstreamContracts(upstreamDir, options = {}) {
 
 function buildCompatibilityPack(upstreamDir, options = {}) {
   const repository = options.repository || 'kwaroran/Risuai';
-  const commit = options.commit || 'ea61945f9038e0189807d075f55f4e66ab7e98bf';
+  const commit = options.commit || '996a5535fdb4629258331955982693a74ea209de';
   const extracted = extractUpstreamContracts(upstreamDir, { repository, commit });
   const usage = buildRisuApiUsageInventory({ pluginDir: options.pluginDir });
 
@@ -931,7 +932,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const out = {
     upstreamDir: null,
     writePackDir: null,
-    commit: 'ea61945f9038e0189807d075f55f4e66ab7e98bf',
+    commit: '996a5535fdb4629258331955982693a74ea209de',
     repository: 'kwaroran/Risuai'
   };
   for (let i = 0; i < argv.length; i++) {

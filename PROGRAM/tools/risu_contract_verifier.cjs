@@ -521,6 +521,14 @@ function verifyLoaderAndIpcContracts(loaderContract, ipcContract, options = {}) 
         );
       }
     }
+    const extraPeers = actualUnique.filter(peer => !expectedUnique.includes(peer));
+    if (extraPeers.length) {
+      throw createVerificationError(
+        'IPC_ALLOWED_IPC_MISMATCH',
+        `Plugin '${pluginName}' declares undeclared //@allowed-ipc peers not in contract: ${extraPeers.join(', ')}`,
+        { pluginName, extraPeers }
+      );
+    }
   }
 
   return {

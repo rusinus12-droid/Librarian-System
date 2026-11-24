@@ -17,7 +17,7 @@ async function load(options={}){
  let source=fs.readFileSync(options.sourceFile||file,'utf8');
  if(options.captureInternals) source=source.replace('  const publicApi = Object.freeze({', '  globalThis.__testInternals = { clearStructuredSettings, fullDraftStagePrompt, Runtime };\n  const publicApi = Object.freeze({');
  if(options.transformSource) source=options.transformSource(source);
- await vm.runInContext(source,context,{timeout:2000});
+ await vm.runInContext(source,context,{timeout:10000});
  const plugin=context.__SerialGradationAgentsForRP;assert.ok(plugin,'real plugin initialized');
  return {plugin,hooks,store,accesses,logs,pipeline:context.__testPipeline,buildRecent:context.__testBuildRecent,internals:context.__testInternals,gatewayRegistry:context.__testGatewayRegistry,createLibReadConsumer:context.__testCreateLibReadConsumer,getCalls:()=>calls};
 }

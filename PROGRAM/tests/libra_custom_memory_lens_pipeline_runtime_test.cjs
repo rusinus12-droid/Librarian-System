@@ -81,7 +81,7 @@ const results = [];
     const viewer = f.r.api.getLastMemoryRecallViewer?.() || null;
     if (viewer?.lensRecall) assert.equal(viewer.lensRecall.injected, true);
     assert.equal(viewer?.lensRecall?.budgetChars, 12000, 'shared mode screens lens candidates within the configured budget');
-    assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight, 40);
+    assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight, 30);
     assert.doesNotMatch(system, /^\(\d+\) \[|^\[LIBRA_EVIDENCE /m, 'the final document carries no packet numbering or packet header');
     results.push('the next request delivers the lens note and the response context validates');
 

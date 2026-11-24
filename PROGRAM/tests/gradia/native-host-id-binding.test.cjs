@@ -454,6 +454,22 @@ for (const duplicateAssistant of [false,true]) test('end-to-end formatted Curren
   if (duplicateAssistant) reqMessages.splice(1,0,{...reqMessages[1]});
   const out=await host.hooks.beforeRequest(reqMessages,'model');
   assert.equal(prompts.length,4);
+  if(duplicateAssistant){
+    // A duplicated assistant row cannot be bound to ONE native message id, so the evidence
+    // session fails closed instead of injecting memory that cannot be attributed to a source
+    // row. Pinned here so the fail-closed path cannot silently degrade into "memory appears
+    // anyway" (or into a turn failure).
+    const runtime=host.plugin.getRuntime();
+    assert.equal(runtime.lastNativeBindFailure&&runtime.lastNativeBindFailure.step,'turn_ref_without_id');
+    assert.equal(runtime.lastLibReadDiagnostic&&runtime.lastLibReadDiagnostic.code,'LIB_READ_NATIVE_ID_UNAVAILABLE');
+    for(const prompt of prompts){
+      const serialized=JSON.stringify(prompt);
+      assert.ok(!serialized.includes('LIBRA_MEMORY_EVIDENCE'),'no unattributable owner memory');
+    }
+    assert.ok(!out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
+    assert.ok(out.some(m=>typeof m.content==='string'&&m.content.includes('DERIVED_DRAFT_SENTINEL')));
+    return;
+  }
   for(const prompt of prompts){
     const serialized=JSON.stringify(prompt);
     // Only LIBRA is running in this fixture; peer server rows require owner-selected recall.

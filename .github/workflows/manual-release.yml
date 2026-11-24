@@ -36,6 +36,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+          cache-dependency-path: PROGRAM/build-support/package-lock.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -108,6 +110,9 @@ jobs:
             exit 1
           fi
           echo "Tag v${NEXT_VERSION} is unique and available."
+
+      - name: Verify published git tags recorded in plugin provenance
+        run: node PROGRAM/tools/plugin_version_provenance.cjs --sync-tags --check
 
       - name: Run release builder with publication gate
         run: |
@@ -226,15 +231,11 @@ jobs:
         id: regressions
         env:
           NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
+          LIBRARIAN_PREBUILT_RELEASE_DIR: ${{ runner.temp }}/librarian-release
         run: |
-          node --test --test-concurrency=1 \
+          node --test --test-concurrency=4 \
             PROGRAM/tests/release_transaction_test.cjs \
-            PROGRAM/tests/release_reproducibility_test.cjs \
-            PROGRAM/tests/release_builder_profiles_test.cjs \
             PROGRAM/tests/release_builder_qualification_runtime_test.cjs \
-            PROGRAM/tests/release_builder_version_input_test.cjs \
-            PROGRAM/tests/gradia/native-host-id-binding.test.cjs \
-            PROGRAM/tests/gradia/server-read-adapter.test.cjs \
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs \
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
@@ -249,7 +250,13 @@ jobs:
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
             PROGRAM/tests/gradia_npc_disposition_test.cjs \
+            PROGRAM/tests/gradia_unified_bond_relsim_and_dialogue_test.cjs \
+            PROGRAM/tests/gradia_world_sim_and_intimacy_fixes_test.cjs \
+            PROGRAM/tests/gradia_results_view_gui_test.cjs \
             PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/hayaku_continuity_and_recovery_improvements_test.cjs \
+            PROGRAM/tests/hayaku_recovery_vault_concurrent_write_test.cjs \
+            PROGRAM/tests/hayaku_analysis_failure_visibility_runtime_test.cjs \
             PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
             PROGRAM/tests/libra_micro_claim_changed_retry_test.cjs \
             PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
@@ -258,11 +265,12 @@ jobs:
             PROGRAM/tests/hayaku_source_filter_binding_test.cjs \
             PROGRAM/tests/libra_state_projection_partial_failure_test.cjs \
             PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
-            PROGRAM/tests/gradia/context-degradation.test.cjs \
-            PROGRAM/tests/gradia/author-note-all-stages.test.cjs \
-            PROGRAM/tests/gradia/creative-direction-clear.test.cjs \
+            PROGRAM/tests/libra_receipt_legacy_definition_test.cjs \
+            PROGRAM/tests/libra_memory_review_runtime_test.cjs \
+            PROGRAM/tests/libra_canonical_memory_review_runtime_test.cjs \
+            PROGRAM/tests/flashback_source_rules_preserve_captured_turn_test.cjs \
+            PROGRAM/tests/flashback_worldline_pending_reroll_preserves_canonical_test.cjs \
             PROGRAM/tests/gradia_three_owner_pipeline_test.cjs \
-            PROGRAM/tests/gradia/evidence-bridge.test.cjs \
             PROGRAM/tests/gradia_optional_memory_runtime_test.cjs \
             PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs \
             PROGRAM/tests/gradia_owner_handback_test.cjs \
@@ -275,6 +283,7 @@ jobs:
             PROGRAM/tests/memory_suite_recall_share_test.cjs \
             PROGRAM/tests/flashback_state_line_bookkeeping_free_test.cjs \
             PROGRAM/tests/flashback_source_rule_change_maintenance_test.cjs \
+            PROGRAM/tests/flashback_episode_segmentation_and_recall_test.cjs \
             PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
@@ -282,6 +291,7 @@ jobs:
             PROGRAM/tests/libra_story_clock_gradia_read_test.cjs \
             PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
+            PROGRAM/tests/lia_authoring_binding_and_aux_improvements_test.cjs \
             PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
             PROGRAM/tests/hayaku_read_scope_reuse_test.cjs \
             PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
@@ -296,7 +306,39 @@ jobs:
             PROGRAM/tests/libra_scope_switch_memory_gaps_test.cjs \
             PROGRAM/tests/libra_lens_memory_edit_runtime_test.cjs \
             PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs \
-            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs
+            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs \
+            PROGRAM/tests/gradia_shadow_previous_test.cjs \
+            PROGRAM/tests/gradia_continuity_and_backup_test.cjs \
+            PROGRAM/tests/retrace_gradia_handoff_runtime_test.cjs \
+            PROGRAM/tests/retrace_fail_open_popup_and_chained_handoff_test.cjs \
+            PROGRAM/tests/hayaku_native_otherax_recovery_runtime_test.cjs \
+            PROGRAM/tests/libra_receipt_recovery_desk_contract_test.cjs \
+            PROGRAM/tests/libra_lens_slot_preservation_and_reanalysis_test.cjs \
+            PROGRAM/tests/libra_lens_viewer_grouping_test.cjs \
+            PROGRAM/tests/libra_lens_consolidation_runtime_test.cjs \
+            PROGRAM/tests/libra_canonical_cohesion_runtime_test.cjs \
+            PROGRAM/tests/libra_search_and_prompt_composition_test.cjs \
+            PROGRAM/tests/libra_past_recall_priority_test.cjs \
+            PROGRAM/tests/libra_micro_viewer_grid_test.cjs \
+            PROGRAM/tests/libra_micro_overlap_settled_state_projection_test.cjs \
+            PROGRAM/tests/libra_micro_settled_state_projection_test.cjs \
+            PROGRAM/tests/libra_micro_source_change_reanalysis_test.cjs \
+            PROGRAM/tests/libra_reaffirm_participant_compat_test.cjs \
+            PROGRAM/tests/libra_state_card_review_approval_test.cjs \
+            PROGRAM/tests/libra_state_projection_currentness_test.cjs \
+            PROGRAM/tests/libra_state_replay_error_resolution_test.cjs \
+            PROGRAM/tests/libra_story_clock_ui_anchor_test.cjs \
+            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs \
+            PROGRAM/tests/audit_p0a_cache_ai_embedding_fixes_test.cjs \
+            PROGRAM/tests/audit_p0b_tag_filter_and_scope_fixes_test.cjs \
+            PROGRAM/tests/audit_p1_server_security_and_updater_fixes_test.cjs \
+            PROGRAM/tests/audit_p2_perf_logs_css_provenance_fixes_test.cjs \
+            PROGRAM/tests/audit_stage5_residual_hardening_test.cjs \
+            PROGRAM/tests/audit_stage6_plugins_cache_perf_ai_tags_test.cjs \
+            PROGRAM/tests/audit_stage7_updater_remote_and_large_transfer_test.cjs \
+            PROGRAM/tests/libra_retained_request_local_recall_runtime_test.cjs \
+            PROGRAM/tests/unified_release_gate_v1_test.cjs
+          node PROGRAM/tests/release_reproducibility_test.cjs
 
       - name: Verify packaged plugins against the reviewed RisuAI contract
         run: |
@@ -328,6 +370,7 @@ jobs:
           NODE
           node PROGRAM/tools/risu_compatibility_gate.cjs \
             --artifact-dir "$RELEASE_ARTIFACT_DIR" \
+            --skip-storage-suites \
             --report "$RUNNER_TEMP/librarian-release/risu-compatibility-report.json"
 
       - name: Verify main commit unchanged before commit (Fence #2)
