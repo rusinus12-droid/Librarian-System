@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rusinus12-droid/Librarian-System"><img src="https://img.shields.io/badge/version-1.4.0-2f3f8f.svg" alt="Version"></a>
+  <a href="https://github.com/rusinus12-droid/Librarian-System"><img src="https://img.shields.io/badge/version-1.5.0-2f3f8f.svg" alt="Version"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D22.13.0-126457.svg?logo=node.js&logoColor=white" alt="Node.js"></a>
   <a href="https://github.com/kwaroran/Risuai"><img src="https://img.shields.io/badge/Host-RisuAI_Plugin_Suite-6b3fa0.svg" alt="RisuAI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-a3365a.svg" alt="License: AGPL v3"></a>
@@ -77,7 +77,7 @@ flowchart TB
         GRADIA -->|검증된 근거 읽기| LIBRA & FB & HAYAKU
     end
 
-    subgraph Server["Librarian System Data Server v1.4.0 · 127.0.0.1:47630"]
+    subgraph Server["Librarian System Data Server v1.5.0 · 127.0.0.1:47630"]
         Router["인증된 HTTP 라우터<br/>스코프 권한 · CAS"]
         Coord["권한 조정 · 쓰기 펜스"]
         SQLite[("DATA/stores/*.sqlite<br/>WAL · 리비전 · 삭제 표식")]
@@ -99,11 +99,11 @@ flowchart TB
 
 ---
 
-## 구성 컴포넌트 (v1.4.0 기준)
+## 구성 컴포넌트 (v1.5.0 기준)
 
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
-| **Librarian System Server** | `1.4.0` | 로컬 서버 | Node.js 내장 SQLite(WAL) 저장소, 스코프 카탈로그, 읽기 세션, 자동 백업과 무결성 검증 |
+| **Librarian System Server** | `1.5.0` | 로컬 서버 | Node.js 내장 SQLite(WAL) 저장소, 스코프 카탈로그, 읽기 세션, 자동 백업과 무결성 검증 |
 | **LIBRA** | `3.2.0` | 기억 소유자 | 5턴 정본과 매 턴 Micro, 상태 투영, 사용자 렌즈, 이야기 시계, 하이브리드 회상 |
 | **Flashback Memory** | `2.2.0` | 기억 소유자 | 턴 단위 에피소드 저장, 벡터·키워드 회상, 인물 사전, 확인 후 실행하는 유지보수 |
 | **HAYAKU Locator Continuity** | `4.2.0` | 기억 소유자 | 응답에 담긴 상태 패킷, 세계선 노드, 위치·인물 배치 연속성, 누락 복구 |
