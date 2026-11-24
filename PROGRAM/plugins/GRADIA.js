@@ -5628,19 +5628,7 @@ ${BIANCA_PERSONA_TEXT}`;
               }
             }
           }
-          // 5) Leave the disposition out of this stage rather than fail the turn.
-          if (!base.fits) {
-            const dropped = compactNpcDispositionDetail(workingBody, { dropBlock: true });
-            if (dropped.changed) {
-              const next = budgetMeter.inspect(input(dropped.body,'',dropped.body));
-              if (next.status === 'available') {
-                workingBody = dropped.body; base = next;
-                degradation.dropped.push('npc_disposition');
-                degradation.npcDispositionRemovedChars = Number(degradation.npcDispositionRemovedChars || 0) + dropped.removedChars;
-              }
-            }
-          }
-          // 6) Compact idle status wrappers, then duplicate stage boilerplate only if still needed.
+          // 5) Compact idle status wrappers, then duplicate stage boilerplate before dropping user NPC stances.
           for (const bpPhase of ['idle', 'contract']) {
             if (base.fits) break;
             const trimmedBoilerplate = compactOverflowDraftBoilerplate(workingBody, bpPhase);
@@ -5650,6 +5638,18 @@ ${BIANCA_PERSONA_TEXT}`;
                 workingBody = trimmedBoilerplate.body; base = next;
                 degradation.dropped.push('duplicate_boilerplate');
                 degradation.boilerplateRemovedChars = Number(degradation.boilerplateRemovedChars || 0) + trimmedBoilerplate.removedChars;
+              }
+            }
+          }
+          // 6) Leave the disposition out of this stage rather than fail the turn.
+          if (!base.fits) {
+            const dropped = compactNpcDispositionDetail(workingBody, { dropBlock: true });
+            if (dropped.changed) {
+              const next = budgetMeter.inspect(input(dropped.body,'',dropped.body));
+              if (next.status === 'available') {
+                workingBody = dropped.body; base = next;
+                degradation.dropped.push('npc_disposition');
+                degradation.npcDispositionRemovedChars = Number(degradation.npcDispositionRemovedChars || 0) + dropped.removedChars;
               }
             }
           }
@@ -34947,7 +34947,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도|으로|로)?(?:(?!없이|없었|없다|없어|안\s*(?:끼|씌|쓰|하)|못\s*(?:끼|씌|쓰)|(?:끼우|끼|씌우|씌|쓰|착용하|사용하)지\s*(?:않|못)|빼고|거부|치우|벗|말고)[^\n.?!,;]){0,32}(?:끼우(?!\s*(?:지\s*(?:않|못)|려(?:다|고|지만)|면|자고|라고|라며))|끼웠|끼운|끼고|낀(?=\s*(?:채|상태|것|$|[^가-힣]))|씌우(?!\s*(?:지\s*(?:않|못)|려(?:다|고|지만)|면|자고|라고|라며))|씌웠|씌운|끼워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠))|씌워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠))|착용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|하려(?:다|고)|해야|할까|해\s*줘|해\s*달라|여부|했는지))|쓰고|썼|쓴(?=\s*(?:채|상태|것))|사용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|하려(?:다|고)|해야|할까|해\s*줘|해\s*달라|여부|했는지))|꺼내\s*(?:끼|씌)|물고\s*(?:끼|씌)|(?:굴러|굴려|말려|말아)\s*내(?:려|렸|린|리)|(?:뿌리|끝)까지\s*(?:덮|감싸|내리|내려|내렸)|감싸(?!\s*(?:지\s*(?:않|못)|려|야|줘|달라))|감쌌|감싼|덮(?:고|으며|어|었|은))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠)))|콘돔\s*착용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|여부|했는지|했냐|했어\?|해\s*줘|해야))|(?:コンドーム|ゴム)を[^\n。！？、]{0,18}(?:つけ|着け|被せ|装着)(?!ない|ず|ずに)|(?<!didn't\s+|did\s+not\s+|not\s+|never\s+)(?:(?:put|slipped|rolled|pulled|fitted)\s+(?:a\s+|the\s+)?(?:condom|rubber|latex)\s+(?:on|over|onto|down)\b|(?:put|slipped|rolled)\s+on\s+a\s+condom)|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?<!without\s+)(?<!not\s+)\b(?:wore|wearing|with|used)\s+(?:a\s+|the\s+)?condom\b/i;
   const INTIMACY_CONDOM_REWEAR_RE = /(?:다시\s*(?:끼웠|끼워|끼고|씌웠|씌워|착용|썼)|새\s*(?:콘돔|고무|것?)(?:을|를)?\s*(?:끼|씌)|고쳐\s*(?:끼웠|씌웠|잡았)|付け直|新しい(?:コンドーム|ゴム)|put\s+(?:it|a\s+new\s+one)\s+back\s+on)/i;
-  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|은|는|이|가|도)?[^\n.?!,;]{0,24}(?:없이(?!\s*(?:는|도)?\s*(?:안\s*(?:돼|되|할|해|했)|절대|못|싫))|없(?:었|다|어)(?!서|는데)|안\s*(?:끼|씌|쓰|하|챙|감싸|덮)|못\s*(?:끼|씌|쓰|하)|(?:끼우|끼|씌우|씌|쓰|착용하|사용하)지\s*(?:않|못)|착용\s*안\s*(?:하|했)|빼고|거부|치우|벗(?:기|겼|긴|겨|었|어|고))|피임\s*(?:안\s*(?:하|했)|없이(?!\s*(?:는|도)?\s*(?:안|못|싫))|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|안싸|避妊(?:なし|せず)|コンドーム(?:なし|無し|をつけ(?:ず|ない))|生で|(?<!\{\{)\b(?:go(?:ing)?|went|do(?:ing)?|did|fuck(?:ing|ed)?|slip(?:ping|ped)?|push(?:ing|ed)?|thrust(?:ing|ed)?|enter(?:ing|ed)?|take|taking|took)\s+raw\b|\braw\s+(?:sex|penetration|insertion)\b|bareback|without\s+(?:wearing\s+)?(?:a\s+)?condom|\b(?:didn't|did\s+not|never)\s+(?:put\s+(?:on\s+)?(?:a\s+)?condom|use\s+(?:a\s+)?condom|wear\s+(?:a\s+)?condom)|\brefused\s+(?:a\s+)?condom\b|\bno\s+(?:condom|protection)\b|creampie/i;
+  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|은|는|이|가|도)?[^\n.?!,;]{0,24}(?:없이(?!\s*(?:는|도)?\s*(?:안\s*(?:돼|되|할|해|했)|절대|못|싫))|없(?:었|다|어)(?!서|는데)|안\s*(?:끼|씌|쓰|하|챙|감싸|덮)|못\s*(?:끼|씌|쓰|하)|(?:끼우|끼|씌우|씌|쓰|착용하|사용하)지\s*(?:않|못)|착용\s*안\s*(?:하|했)|빼고|거부|치우|벗(?:기|겼|긴|었|어|고|겨(?!지|졌|져|진)))|피임\s*(?:안\s*(?:하|했)|없이(?!\s*(?:는|도)?\s*(?:안|못|싫))|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|안싸|避妊(?:なし|せず)|コンドーム(?:なし|無し|をつけ(?:ず|ない))|生で|(?<!\{\{)\b(?:go(?:ing)?|went|do(?:ing)?|did|fuck(?:ing|ed)?|slip(?:ping|ped)?|push(?:ing|ed)?|thrust(?:ing|ed)?|enter(?:ing|ed)?|take|taking|took)\s+raw\b|\braw\s+(?:sex|penetration|insertion)\b|bareback|without\s+(?:wearing\s+)?(?:a\s+)?condom|\b(?:didn't|did\s+not|never)\s+(?:put\s+(?:on\s+)?(?:a\s+)?condom|use\s+(?:a\s+)?condom|wear\s+(?:a\s+)?condom)|\brefused\s+(?:a\s+)?condom\b|\bno\s+(?:condom|protection)\b|creampie/i;
   const INTIMACY_CONDOM_SLIP_RISK_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?[^\n.?!]{0,20}(?:말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^\n.?!]{0,18}(?:몰려|뭉쳐|접혀)|뭉쳐\s*(?:있|버렸)|접혀\s*있)|(?:뭉친\s*(?:자리|테두리)|콘돔|고무)[^\n.?!]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|(?:コンドーム|ゴム)がずれ|(?:condom|rubber)\s+(?:bunched|rolled\s+up)/i;
   const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:(?<!(?:포장|봉지|껍질|비닐|패키지)(?:을|를|이|가)?\s*)찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:コンドーム|ゴム)が(?:破れ|外れ|抜け)|避妊失敗|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
   const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|外に出|抜いて|膣外射精|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;

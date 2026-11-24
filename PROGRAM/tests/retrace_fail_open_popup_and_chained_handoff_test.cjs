@@ -902,7 +902,7 @@ test('Scenario 2b: Adopt-stage [data-handoff-accept-partial] and hard fail-close
   await acceptBtn.emit('click');
   await waitFor(() => retrace.lastTransition()?.handoffJournalState === 'partial_accepted', 'partial_accepted committed via popup button');
 
-  // Hard fail-closed check 1: RETRACE_HANDOFF_STORAGE_GATE_BLOCKED via mixed owner storage modes
+  // Hard fail-closed check 1: RETRACE_HANDOFF_STORAGE_GATE_BLOCKED via incomplete owner storage transition
   host2.activateChat('failopen-2a');
   host2.faults.interceptChannel = async (channel, msg) => {
     if (channel === REQUEST_CHANNELS.libra && msg?.action === 'memory_suite_storage_status') {
@@ -921,10 +921,11 @@ test('Scenario 2b: Adopt-stage [data-handoff-accept-partial] and hard fail-close
             installed: true,
             connected: true,
             supported: true,
-            ready: true,
-            mode: 'server_only',
-            storageMode: 'server_only',
-            effectiveMode: 'server_only'
+            ready: false,
+            mode: 'mirror',
+            storageMode: 'mirror',
+            effectiveMode: 'mirror',
+            transition: { active: true, state: 'migrating' }
           }
         }, { sender: 'libra' });
       }

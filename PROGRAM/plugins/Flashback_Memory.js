@@ -34691,9 +34691,8 @@ const MemorySuiteHealthRecovery = (() => {
         && sameMaintenanceTurnText(direct.assistantText, pair.assistantText)
         && (!pair.userText || !direct.userText || samePairUserText(direct.userText, pair.userText));
       const exact = directExact ? direct : pairCandidates.find(group => (
-        group.complete !== false
+        group.complete !== false && sameMaintenanceTurnText(group.assistantText, pair.assistantText)
         && !hasConflictingNativeSourceIds(group, source)
-        && sameMaintenanceTurnText(group.assistantText, pair.assistantText)
         && (!pair.userText || !group.userText || samePairUserText(group.userText, pair.userText))
       ));
       if (exact && options.rechunkLegacy === true

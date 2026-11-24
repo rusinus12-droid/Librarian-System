@@ -129,5 +129,6 @@ test('saved draft budget presets supply the mode-specific cap and low effort to 
     }
   }
   await plugin.saveProviderPreset('other', { provider: 'ollama', model: 'qwen3:8b', max_tokens: 6000 });
-  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other' }, 'shadow_act').preset.max_tokens, 6000);
+  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other' }, 'shadow_act').preset.max_tokens, 32768);
+  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other', draftBudgetPreset: 'manual' }, 'shadow_act').preset.max_tokens, 6000);
 });

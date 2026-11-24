@@ -212,10 +212,10 @@ jobs:
             PROGRAM/tests/libra_retained_request_local_recall_runtime_test.cjs \
             PROGRAM/tests/unified_release_gate_v1_test.cjs \
             PROGRAM/tests/release_transaction_test.cjs \
-            PROGRAM/tests/release_reproducibility_test.cjs \
             PROGRAM/tests/release_builder_qualification_runtime_test.cjs \
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
+          node PROGRAM/tests/release_reproducibility_test.cjs
 
       - name: Verify clean working tree
         run: |
