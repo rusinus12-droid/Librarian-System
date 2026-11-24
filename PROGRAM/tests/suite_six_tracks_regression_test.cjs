@@ -717,3 +717,245 @@ test('Unified Budget Panel: HAYAKU placement in 설정->기억 선택, 리브라
   await hayakuSync.dispose();
   sharedBusDom.window.close();
 });
+
+test('LIBRA Librarian freeze fix: loreJaccardSoftWeighted parity, passage/material speed + cooperative yields, and basis/candidate yielding', async () => {
+  const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
+  const libraSrc = fs.readFileSync(LIBRA_PATH, 'utf8');
+  const tuningSrc = slice(libraSrc, 'const LORE_JACCARD_TUNING = Object.freeze({', '});') + '});';
+  const stopSrc = slice(libraSrc, 'const LIBRA_CONTINUITY_ENTITY_STOP = new Set([', ']);') + ']);';
+  const yieldSrc = slice(libraSrc, 'const yieldToMainThread = () =>', 'const ragCbsRenderCache =');
+  const jacSrc = slice(libraSrc, 'const loreJaccardUnique =', 'const responseLoreStoryArcQuery =');
+
+  let yieldCount = 0;
+  const ctx = vm.createContext({
+    console, Math, Date, JSON, RegExp, Map, Set, WeakMap, Array, Object, String, Number, Boolean, Error, Promise, Uint8Array,
+    setTimeout: (fn, ms) => { yieldCount += 1; return globalThis.setTimeout(fn, ms); },
+    text: v => (v == null ? '' : String(v)),
+    compact: (v, n) => String(v || '').slice(0, n),
+    compactMiddle: (v, n) => String(v || '').slice(0, n),
+    clampInt: (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.trunc(n))) : d; },
+    clampNumber: (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; },
+    asArray: v => (Array.isArray(v) ? v : []),
+    RESPONSE_LORE_PASSAGE_WHOLE_CHARS: 1600,
+    RESPONSE_LORE_PASSAGE_TARGET_CHARS: 1100,
+    RESPONSE_LORE_PASSAGE_OVERLAP_CHARS: 220,
+    RESPONSE_LORE_MAX_PASSAGES_PER_ITEM: 3,
+    RESPONSE_LORE_PASSAGE_VERSION: 'v1',
+    RESPONSE_LORE_RRF_K: 40,
+    RESPONSE_LORE_RRF_VERSION: 'v1',
+    RESPONSE_LORE_MMR_LAMBDA: 0.72,
+    RESPONSE_LORE_MMR_VERSION: 'v1',
+    RESPONSE_LORE_STAGE_DEFS: { shared: { label: 'Shared', domainQuery: '' } },
+    MIN_RESPONSE_LORE_START_COUNT: 2,
+    MAX_RESPONSE_LORE_ITEMS: 15,
+    DEFAULT_RESPONSE_LORE_START_COUNT: 4,
+    DEFAULT_RESPONSE_LORE_MAX_ITEMS: 12,
+    MIN_RESPONSE_LORE_CHARS: 800,
+    MAX_RESPONSE_LORE_CHARS: 20000,
+    DEFAULT_RESPONSE_LORE_MAX_CHARS: 6000,
+    RESPONSE_LORE_ENGINE_VERSION: 'v1',
+    RESPONSE_LORE_STAGE_SCHEMA: 'v1',
+    stableDraftHash: s => String(String(s || '').length),
+    renderRagCbsText: s => s
+  });
+  vm.runInContext(
+    `${tuningSrc}\n${stopSrc}\n${yieldSrc}\n${jacSrc}\nglobalThis.api = { loreJaccardUnique, loreJaccardNormalizeKey, loreJaccardTokens, loreJaccardTokenWeight, loreJaccardTokenSimilarity, loreJaccardSoftWeighted, loreJaccardScoreText, responseLoreBuildPassageEvidence, createFrameYielder };`,
+    ctx
+  );
+
+  // 1. Exact numerical parity against independent pairwise loreJaccardTokenSimilarity reference
+  const refSoftWeighted = (leftTokens = [], rightTokens = []) => {
+    const left = ctx.api.loreJaccardUnique(leftTokens, 180);
+    const right = ctx.api.loreJaccardUnique(rightTokens, 300);
+    if (!left.length || !right.length) return { jaccard: 0, coverage: 0, overlap: 0, overlapWeight: 0 };
+    let leftWeight = 0, rightWeight = 0, overlapWeight = 0, overlap = 0;
+    const used = new Set();
+    left.forEach(leftToken => {
+      const weight = ctx.api.loreJaccardTokenWeight(leftToken);
+      leftWeight += weight;
+      let bestIndex = -1, bestSimilarity = 0, bestWeight = 0;
+      right.forEach((rightToken, index) => {
+        if (used.has(index)) return;
+        const similarity = ctx.api.loreJaccardTokenSimilarity(leftToken, rightToken);
+        if (similarity > bestSimilarity) {
+          bestIndex = index; bestSimilarity = similarity; bestWeight = ctx.api.loreJaccardTokenWeight(rightToken);
+        }
+      });
+      if (bestIndex >= 0 && bestSimilarity >= 0.56) {
+        used.add(bestIndex); overlap += 1; overlapWeight += Math.min(weight, bestWeight) * bestSimilarity;
+      }
+    });
+    right.forEach(token => { rightWeight += ctx.api.loreJaccardTokenWeight(token); });
+    const unionWeight = leftWeight + rightWeight - overlapWeight;
+    return { jaccard: unionWeight > 0 ? overlapWeight / unionWeight : 0, coverage: leftWeight > 0 ? overlapWeight / leftWeight : 0, overlap, overlapWeight };
+  };
+
+  const pairs = [
+    [
+      ['archive', 'ribbon', 'lanterns', '기록', '천소연', 'cafeteria', 'zzzzq'],
+      ['archive', 'ribbons', 'lantern', '기록이', '소연', 'cafe', 'unrelated']
+    ],
+    [
+      ctx.api.loreJaccardTokens('허리의 움직임은 더욱 격해지고 사정이 가까워졌다 Alice opened the archive door near lantern corridor', 180),
+      ctx.api.loreJaccardTokens('그룹공통교육파트 천소연 천하연 지원 푸딩 여행동아리 모텔 복도 대화 archive ribbons lanterns winter market', 360)
+    ]
+  ];
+  for (const [lTok, rTok] of pairs) {
+    const expected = refSoftWeighted(lTok, rTok);
+    const actual = plain(ctx.api.loreJaccardSoftWeighted(lTok, rTok));
+    assert.equal(actual.overlap, expected.overlap, 'overlap count must match reference exactly');
+    assert.ok(Math.abs(actual.jaccard - expected.jaccard) < 1e-12, `jaccard parity: ${actual.jaccard} vs ${expected.jaccard}`);
+    assert.ok(Math.abs(actual.coverage - expected.coverage) < 1e-12, `coverage parity: ${actual.coverage} vs ${expected.coverage}`);
+    assert.ok(Math.abs(actual.overlapWeight - expected.overlapWeight) < 1e-12, `overlapWeight parity: ${actual.overlapWeight} vs ${expected.overlapWeight}`);
+  }
+
+  // 2. Large 24KB passage scoring completes quickly (<1000ms vs >5000ms prior) and yields cooperatively
+  const bigLore = Array.from({ length: 48 }, (_, i) =>
+    `### Section ${i + 1}\n천소연과 천하연이 그룹공통교육파트 여행동아리 합숙 ${i}일차에 모텔 복도와 객실에서 나눈 대화와 기록. archive ribbon lantern corridor ${i}.`
+  ).join('\n\n');
+  assert.ok(bigLore.length >= 4000);
+  const hugeLore = bigLore.repeat(5); // ~24KB+
+  const bigQuery = '허리의 움직임은 더욱 격해지고 천소연 천하연 지원 푸딩 그룹공통교육파트 archive lantern '.repeat(35);
+  yieldCount = 0;
+  const t0 = Date.now();
+  const passage = await ctx.api.responseLoreBuildPassageEvidence(hugeLore, bigQuery, 2600, true, ctx.api.createFrameYielder(0));
+  const elapsedPassageMs = Date.now() - t0;
+  assert.ok(passage.passages.length > 0, 'passage evidence selected');
+  assert.ok(elapsedPassageMs < 1000, `24KB passage evidence must run < 1000ms (got ${elapsedPassageMs}ms)`);
+  assert.ok(yieldCount > 0, `cooperative frame yielder must yield during passage scoring (yields=${yieldCount})`);
+
+  // End-to-end buildUnifiedResponseLoreMaterial via full LIBRA VM harness on multi-entry large lorebook
+  const harness = await createLibraVmHarness();
+  try {
+    const candidates = Array.from({ length: 12 }, (_, i) => ({
+      label: `Large Lore ${i + 1}`,
+      key: `large_${i + 1}`,
+      keys: ['천소연', `key_${i}`],
+      alwaysActive: i < 4,
+      mode: 'normal',
+      sourceType: 'character',
+      source: 'character',
+      content: hugeLore.slice(0, 12000)
+    }));
+    const tMat0 = Date.now();
+    const material = await harness.api.debugUnifiedLoreMaterial({
+      candidates,
+      currentInput: '천소연과 천하연이 대화하며 약속을 확인한다.',
+      terminalScene: bigQuery.slice(0, 4000),
+      supportText: '천소연 여행동아리 기록',
+      consumers: ['memory_ariadne']
+    });
+    const matElapsedMs = Date.now() - tMat0;
+    assert.ok(material?.available === true, 'multi-entry large lore material succeeds');
+    assert.ok(matElapsedMs < 2500, `multi-entry large lore material must complete < 2500ms (got ${matElapsedMs}ms)`);
+  } finally {
+    await harness.cleanup?.();
+  }
+
+  // 3. captureUnifiedBasis uses cooperative manifest identity and buildContinuityCandidateContext yields every ref
+  const basisSlice = slice(libraSrc, 'const captureUnifiedBasis = async (context, manifest, batch, options) => {', 'const assertUnifiedBasis = async');
+  assert.match(basisSlice, /await unifiedManifestIdentityCooperative\(manifest\)/);
+  assert.ok(!/headDigest:\s*digest\(rawHead\)/.test(basisSlice), 'captureUnifiedBasis yields between large digests');
+
+  const candSlice = slice(libraSrc, 'const buildContinuityCandidateContext = async (basis,batch,signal=null) => {', 'const sameBatchThreadEvidenceForward =');
+  assert.ok(!/\(index\+1\)%4===0/.test(candSlice), 'buildContinuityCandidateContext yields on every ref instead of every 4th');
+  assert.ok(!/exposedRows\.forEach/.test(candSlice), 'exposedRows yields periodically instead of unchunked forEach');
+});
+
+test('All four plugins register location:chat GUI entry buttons and cleanly unregister on unload', async () => {
+  const { create } = require('./fixtures/libra_gui_memory_dom_host.cjs');
+  const { load: loadGradia } = require('./gradia/host.cjs');
+  const { JSDOM } = require('jsdom');
+
+  const specs = [
+    ['LIBRA', 'libra-v1-settings-chat-button', 'LIBRA 설정'],
+    ['HAYAKU', 'hayaku-ledger-viewer-chat-button', 'HAYAKU 원장 뷰어'],
+    ['Flashback', 'vector-rag-memory-chat', 'FLASHBACK Memory']
+  ];
+
+  for (const [owner, expectedId, expectedName] of specs) {
+    const unregistered = [];
+    const f = await create(owner, 'Full', {
+      host: {
+        unregisterUIPart: async id => {
+          unregistered.push(id);
+          return true;
+        }
+      }
+    });
+    let closed = false;
+    try {
+      const chatButtons = f.regs.filter(r => r.kind === 'button' && r.location === 'chat');
+      const entry = chatButtons.find(r => r.id === expectedId);
+      assert.ok(entry, `${owner} must register chat button ${expectedId}`);
+      assert.equal(entry.name, expectedName);
+      assert.equal(entry.iconType, 'html');
+      assert.equal(typeof entry.callback, 'function');
+
+      const beforeShow = f.calls.show;
+      await entry.callback();
+      assert.ok(f.calls.show > beforeShow, `${owner} chat entry button opens its GUI`);
+
+      await f.close();
+      closed = true;
+      assert.ok(unregistered.includes(expectedId), `${owner} unregisters ${expectedId} on unload`);
+    } finally {
+      if (!closed) await f.close();
+    }
+  }
+
+  // Verify GRADIA registers its settings GUI chat entry button alongside the existing input writer chat button
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true, url: 'https://offline.invalid/' });
+  const gradiaButtons = [];
+  const gradiaUnregistered = [];
+  const gradiaUnloads = [];
+  let gradiaShows = 0;
+  try {
+    await loadGradia({
+      api: {
+        getArgument: async k => (k === 'enable_gui' ? 'true' : undefined),
+        showContainer: async () => { gradiaShows += 1; return true; },
+        hideContainer: async () => true,
+        registerSetting: async (name, cb, icon, type, id) => ({ id: id || name }),
+        registerButton: async (opts, callback) => {
+          gradiaButtons.push({ ...opts, callback });
+          return { id: opts.id };
+        },
+        unregisterUIPart: async id => {
+          gradiaUnregistered.push(id);
+          return true;
+        },
+        onUnload: async fn => { gradiaUnloads.push(fn); return true; }
+      },
+      testGlobals: {
+        window: dom.window,
+        document: dom.window.document,
+        Element: dom.window.Element,
+        HTMLElement: dom.window.HTMLElement,
+        Node: dom.window.Node,
+        getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+        MutationObserver: dom.window.MutationObserver,
+        requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
+        cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 60));
+
+    const gradiaChatButtons = gradiaButtons.filter(b => b.location === 'chat');
+    const settingsChatBtn = gradiaChatButtons.find(b => b.id === 'serial-gradation-agents-for-rp-settings-chat-button');
+    const continueChatBtn = gradiaChatButtons.find(b => b.id === 'serial-gradation-agents-for-rp-continue');
+    assert.ok(continueChatBtn, 'GRADIA keeps its existing input writer chat button');
+    assert.ok(settingsChatBtn, 'GRADIA registers settings GUI entry button in location: chat');
+    assert.equal(settingsChatBtn.name, 'GRADIA 설정');
+    assert.equal(settingsChatBtn.iconType, 'html');
+
+    await settingsChatBtn.callback();
+    assert.ok(gradiaShows > 0, 'GRADIA chat entry button opens settings GUI');
+
+    for (const fn of gradiaUnloads.reverse()) await fn();
+    assert.ok(gradiaUnregistered.includes('serial-gradation-agents-for-rp-settings-chat-button'), 'GRADIA unregisters settings chat button on unload');
+    assert.ok(gradiaUnregistered.includes('serial-gradation-agents-for-rp-continue'), 'GRADIA unregisters input writer chat button on unload');
+  } finally {
+    dom.window.close();
+  }
+});

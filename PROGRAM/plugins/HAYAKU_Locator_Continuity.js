@@ -792,6 +792,7 @@ const MemorySuiteExecutionContract = (() => {
   const LEDGER_VIEWER_UI_RUNTIME_KEY = '__HAYAKU_LEDGER_VIEWER_UI_V1__';
   const LEDGER_VIEWER_SETTING_UI_ID = 'hayaku-ledger-viewer-setting';
   const LEDGER_VIEWER_BUTTON_UI_ID = 'hayaku-ledger-viewer-button';
+  const LEDGER_VIEWER_CHAT_BUTTON_UI_ID = 'hayaku-ledger-viewer-chat-button';
   const RECOVERY_CONFIRMATION_OVERLAY_ID = 'hayaku-recovery-confirmation-overlay';
   const COPIED_CHAT_SOURCE_LEDGER_RUNTIME_KEY = '__HAYAKU_COPY_SOURCE_LEDGER_REVISION_V1__';
   const RUNTIME_INSTANCE_TOKEN = Object.freeze({});
@@ -2608,6 +2609,7 @@ const MODE_PROFILES = Object.freeze({
       busy: false,
       registeredSetting: null,
       registeredButton: null,
+      registeredChatButton: null,
       scope: null,
       ledger: null,
       activeTab: 'overview',
@@ -64711,12 +64713,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
         dispatch: null,
         settingRegistered: false,
         buttonRegistered: false,
+        chatButtonRegistered: false,
         settingHandle: null,
         buttonHandle: null,
+        chatButtonHandle: null,
         settingRegistration: null,
         buttonRegistration: null,
+        chatButtonRegistration: null,
         settingRegistrar: null,
-        buttonRegistrar: null
+        buttonRegistrar: null,
+        chatButtonRegistrar: null
       };
       Object.defineProperty(globalThis, LEDGER_VIEWER_UI_RUNTIME_KEY, {
         value: created,
@@ -64741,7 +64747,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (!registry || registry.ownerToken !== RUNTIME_INSTANCE_TOKEN) return false;
     const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
     if (!uiApi) return retireLedgerViewerUiOwner();
-    const ids = [LEDGER_VIEWER_SETTING_UI_ID, LEDGER_VIEWER_BUTTON_UI_ID];
+    const chatButtonUiId = typeof LEDGER_VIEWER_CHAT_BUTTON_UI_ID === 'string'
+      ? LEDGER_VIEWER_CHAT_BUTTON_UI_ID
+      : `${LEDGER_VIEWER_BUTTON_UI_ID}-chat`;
+    const ids = [LEDGER_VIEWER_SETTING_UI_ID, LEDGER_VIEWER_BUTTON_UI_ID, chatButtonUiId];
     for (const id of ids) {
       try { await uiApi.unregisterUIPart(id); } catch (_) {}
     }
@@ -64749,22 +64758,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
     registry.show = null;
     registry.settingRegistered = false;
     registry.buttonRegistered = false;
+    registry.chatButtonRegistered = false;
     registry.settingHandle = null;
     registry.buttonHandle = null;
+    registry.chatButtonHandle = null;
     registry.settingRegistration = null;
     registry.buttonRegistration = null;
+    registry.chatButtonRegistration = null;
     registry.settingRegistrar = null;
     registry.buttonRegistrar = null;
+    registry.chatButtonRegistrar = null;
     Memory.ledgerViewer.registeredSetting = null;
     Memory.ledgerViewer.registeredButton = null;
+    Memory.ledgerViewer.registeredChatButton = null;
     return true;
   };
   const registerLedgerViewerUi = async () => {
-    if (Memory.unloaded || !ownsRuntime()) return { setting: false, button: false };
+    if (Memory.unloaded || !ownsRuntime()) return { setting: false, button: false, chatButton: false };
     const settingApi = apiCandidates().find(candidate => typeof candidate?.registerSetting === 'function') || null;
     const buttonApi = apiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || null;
     const registry = ledgerViewerUiRuntime();
-    if (!registry) return { setting: false, button: false };
+    if (!registry) return { setting: false, button: false, chatButton: false };
+    const chatButtonUiId = typeof LEDGER_VIEWER_CHAT_BUTTON_UI_ID === 'string'
+      ? LEDGER_VIEWER_CHAT_BUTTON_UI_ID
+      : `${LEDGER_VIEWER_BUTTON_UI_ID}-chat`;
     registry.ownerToken = RUNTIME_INSTANCE_TOKEN;
     registry.show = async (...args) => {
       if (Memory.unloaded || !ownsRuntime()) return false;
@@ -64795,10 +64812,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         location: 'hamburger',
         id: LEDGER_VIEWER_BUTTON_UI_ID
       }, registry.dispatch);
+      registry.chatButtonRegistrar = () => buttonApi.registerButton({
+        name: `${PLUGIN_NAME} 원장 뷰어`,
+        icon: ledgerViewerIconSvg,
+        iconType: 'html',
+        location: 'chat',
+        id: chatButtonUiId
+      }, registry.dispatch);
     }
     const duplicateRegistrationError = error => /already|duplicate|exist/i.test(text(error?.message || error));
     const registerSharedPart = async ({
       kind,
+      fallbackId,
       registrarKey,
       registeredKey,
       handleKey,
@@ -64814,12 +64839,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             try {
               const handle = await registrar();
               if (handle === false) throw new Error('ui_registration_rejected');
-              registry[handleKey] = handle || { uncertain: true, id: kind === 'setting' ? LEDGER_VIEWER_SETTING_UI_ID : LEDGER_VIEWER_BUTTON_UI_ID };
+              registry[handleKey] = handle || { uncertain: true, id: fallbackId };
               registry[registeredKey] = true;
               return true;
             } catch (error) {
               if (duplicateRegistrationError(error)) {
-                registry[handleKey] = { shared: true, id: kind === 'setting' ? LEDGER_VIEWER_SETTING_UI_ID : LEDGER_VIEWER_BUTTON_UI_ID };
+                registry[handleKey] = { shared: true, id: fallbackId };
                 registry[registeredKey] = true;
                 return true;
               }
@@ -64858,9 +64883,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
     Memory.ledgerViewer.registeredButton = registry.buttonRegistered && !registry.buttonRegistration
       ? (registry.buttonHandle || { shared: true })
       : null;
+    Memory.ledgerViewer.registeredChatButton = registry.chatButtonRegistered && !registry.chatButtonRegistration
+      ? (registry.chatButtonHandle || { shared: true })
+      : null;
     if (!Memory.ledgerViewer.registeredSetting && settingApi) {
       await registerSharedPart({
         kind: 'setting',
+        fallbackId: LEDGER_VIEWER_SETTING_UI_ID,
         registrarKey: 'settingRegistrar',
         registeredKey: 'settingRegistered',
         handleKey: 'settingHandle',
@@ -64873,6 +64902,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (!Memory.ledgerViewer.registeredButton && buttonApi) {
       await registerSharedPart({
         kind: 'button',
+        fallbackId: LEDGER_VIEWER_BUTTON_UI_ID,
         registrarKey: 'buttonRegistrar',
         registeredKey: 'buttonRegistered',
         handleKey: 'buttonHandle',
@@ -64882,9 +64912,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ? (registry.buttonHandle || { shared: true })
         : null;
     }
+    if (!Memory.ledgerViewer.registeredChatButton && buttonApi) {
+      await registerSharedPart({
+        kind: 'chatButton',
+        fallbackId: chatButtonUiId,
+        registrarKey: 'chatButtonRegistrar',
+        registeredKey: 'chatButtonRegistered',
+        handleKey: 'chatButtonHandle',
+        registrationKey: 'chatButtonRegistration'
+      });
+      Memory.ledgerViewer.registeredChatButton = registry.chatButtonRegistered
+        ? (registry.chatButtonHandle || { shared: true })
+        : null;
+    }
     return {
       setting: registry.settingRegistered === true,
-      button: registry.buttonRegistered === true
+      button: registry.buttonRegistered === true,
+      chatButton: registry.chatButtonRegistered === true
     };
   };
 
@@ -65122,9 +65166,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     let ready = false;
     try {
       const result = await registerLedgerViewerUi();
-      ready = result.setting && result.button;
+      ready = result.setting && result.button && result.chatButton;
       debugLog('install:ledger_viewer', result);
-      if (ready || result.button) startHayakuAttention();
+      if (ready || result.button || result.chatButton) startHayakuAttention();
     } catch (error) {
       debugError('install:ledger_viewer_failed', error);
     } finally {

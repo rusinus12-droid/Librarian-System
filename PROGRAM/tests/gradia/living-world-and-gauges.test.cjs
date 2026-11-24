@@ -1236,3 +1236,246 @@ test('11) scene variance context-awareness, meta-tag cleanup, common-verb fixati
     await g.close();
   }
 });
+
+test('12) contraception barrier detection: intervening object, 이불 밖으로 non-truncation, 16-msg/carryover persistence, {{raw::...}} isolation, negations, and PREVIOUS fallback', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.debugIntimacyLoadCards();
+
+  const makeSettings = scopeKey => ({
+    mode: 'normal', writingMode: 'rp', nsfwMode: 'explicit', nsfwGuidanceEnabled: true,
+    enableBodyStateAide: true, enableIntimacyAide: true,
+    bodyStateCards: {
+      [scopeKey]: [
+        { id: `bs-jiwon-${scopeKey}`, name: '이지원', gender: 'female', constitution: '신중하고 경계가 분명한 편', origin: 'user' },
+        { id: `bs-puding-${scopeKey}`, name: '푸딩', gender: 'male', origin: 'user' }
+      ]
+    },
+    npcDisposition: {
+      [scopeKey]: { default: '', npcs: [{ id: `n-jiwon-${scopeKey}`, name: '이지원', level: 'acquaintance' }] }
+    }
+  });
+
+  // 1. Direct repro: intervening object between 콘돔 and verb ("콘돔을 자지에 씌우고 ... 삽입")
+  const directScope = 'contraception-intervening-obj-scope';
+  f.host.plugin.debugSetActiveScope(directScope, '푸딩');
+  const directPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: directScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(directScope),
+    recent: {
+      latestUser: '콘돔을 자지에 씌우고 그녀의 다리 한 쪽을 잡고 든 다음 질내에 천천히 삽입해 들어갔다.',
+      visibleMessages: [{ role: 'assistant', content: '이지원이 숨을 고르며 침대 시트를 쥐었다.' }]
+    }
+  });
+  assert.equal(directPkt.contraception.length, 1);
+  assert.equal(directPkt.contraception[0].method, 'condom');
+  assert.equal(directPkt.contraception[0].protected, true);
+  assert.equal(directPkt.contraception[0].stanceCode, 'protected_confirmed');
+
+  // 2. "이불 밖으로 나왔다" does NOT truncate encounter window, and "포장을 찢어" does NOT falsely trigger condom_failed
+  const blanketScope = 'contraception-blanket-scope';
+  f.host.plugin.debugSetActiveScope(blanketScope, '푸딩');
+  const blanketPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: blanketScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(blanketScope),
+    recent: {
+      latestUser: '그녀의 다리 한 쪽을 들고 천천히 삽입했다.',
+      visibleMessages: [
+        { role: 'user', content: '콘돔 포장을 찢어 자지에 씌웠다.' },
+        { role: 'assistant', content: '그리고 이지원의 손이 이불 밖으로 나왔다.' }
+      ]
+    }
+  });
+  assert.equal(blanketPkt.contraception.length, 1);
+  assert.equal(blanketPkt.contraception[0].method, 'condom');
+  assert.equal(blanketPkt.contraception[0].protected, true);
+
+  // 3a. Long-scene carryover beyond 16-message window + persistent storage reload
+  const longScope = 'contraception-long-carryover-scope';
+  f.host.plugin.debugSetActiveScope(longScope, '푸딩');
+  const longSettings = makeSettings(longScope);
+  const longMsgs = [];
+  const t1Input = '콘돔을 자지에 씌우고 이지원의 안으로 천천히 삽입했다.';
+  const t1Pkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: longScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: longSettings,
+    recent: { latestUser: t1Input, visibleMessages: [] }
+  });
+  assert.equal(t1Pkt.contraception[0].method, 'condom');
+  longMsgs.push({ role: 'user', content: t1Input });
+  longMsgs.push({ role: 'assistant', content: '이지원이 낮은 신음을 삼키며 몸을 맡겼다.' });
+
+  for (let i = 1; i <= 9; i += 1) {
+    const stepInput = `그대로 자세를 유지하며 ${i}번째 움직임으로 허리를 움직여 삽입감을 이어간다.`;
+    const stepPkt = f.host.plugin.debugIntimacyPacket({
+      characterName: '이지원', personaName: '푸딩', scopeKey: longScope,
+      profileGenders: { 이지원: 'female', 푸딩: 'male' },
+      settings: longSettings,
+      recent: { latestUser: stepInput, visibleMessages: longMsgs.slice() }
+    });
+    assert.equal(stepPkt.contraception[0].method, 'condom', `turn ${i + 1} keeps condom`);
+    assert.equal(stepPkt.contraception[0].protected, true);
+    longMsgs.push({ role: 'user', content: stepInput });
+    longMsgs.push({ role: 'assistant', content: `이지원이 가쁜 숨을 내쉬며 (${i}) 어깨를 붙잡았다.` });
+  }
+  assert.equal(longMsgs.length, 20, 'Turn 1 pushed completely past -16 message window');
+
+  await sleep(20);
+  const reloadedContinuity = await f.host.plugin.debugGaugeContinuityLoad();
+  assert.equal(reloadedContinuity.intimacyGauges?.[longScope]?.barrierSettled?.state, 'condom');
+
+  const postReloadPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: longScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: longSettings,
+    recent: {
+      latestUser: '다시 리듬을 맞추며 허리를 천천히 움직여 삽입을 이어간다.',
+      visibleMessages: longMsgs.slice()
+    }
+  });
+  assert.equal(postReloadPkt.contraception[0].method, 'condom', 'condom survives past 16 msgs + reload via carryover');
+  assert.equal(postReloadPkt.contraception[0].protected, true);
+
+  // 3b. Explicit exit resets barrier state so a subsequent new encounter defaults back to unprotected
+  f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: longScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: longSettings,
+    recent: {
+      latestUser: '행위를 끝낸 뒤 옷을 다 챙겨 입고 방을 나왔다.',
+      visibleMessages: [...longMsgs, { role: 'assistant', content: '둘은 각자 옷을 정돈하고 방 밖으로 나갔다.' }]
+    }
+  });
+  const afterExitPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: longScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: longSettings,
+    recent: {
+      latestUser: '다음 날 밤, 침대 위에서 그녀의 다리 사이로 바로 삽입했다.',
+      visibleMessages: [{ role: 'assistant', content: '옷을 다 챙겨 입고 방을 나왔던 전날 밤과 달리 이지원은 긴장한 채 누워 있었다.' }]
+    }
+  });
+  assert.equal(afterExitPkt.contraception[0].method, 'none_implicit', 'explicit exit clears carried condom state');
+  assert.equal(afterExitPkt.contraception[0].protected, false);
+
+  // 3c. Reroll/edit of Turn 1 must NOT leak discarded Turn 1 condom into edited Turn 1
+  const rerollScope = 'contraception-reroll-scope';
+  f.host.plugin.debugSetActiveScope(rerollScope, '푸딩');
+  const rerollSettings = makeSettings(rerollScope);
+  const firstDraftPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: rerollScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: rerollSettings,
+    recent: { latestUser: '콘돔을 자지에 씌우고 이지원의 다리 사이로 삽입한다.', visibleMessages: [] }
+  });
+  assert.equal(firstDraftPkt.contraception[0].method, 'condom');
+  const rerollPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: rerollScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: rerollSettings,
+    recent: { latestUser: '그냥 바로 이지원의 다리 사이로 삽입한다.', visibleMessages: [] }
+  });
+  assert.equal(rerollPkt.contraception[0].method, 'none_implicit', 'rerolled Turn 1 does not leak discarded condom');
+  assert.equal(rerollPkt.contraception[0].protected, false);
+
+  // 4. RisuAI {{raw::...}} and <img> tags do NOT trigger bare raw none_explicit or false contraception talk
+  const rawTagScope = 'contraception-raw-macro-scope';
+  f.host.plugin.debugSetActiveScope(rawTagScope, '푸딩');
+  const rawProtectedPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: rawTagScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(rawTagScope),
+    recent: {
+      latestUser: '이지원의 허리를 잡고 천천히 삽입해 움직인다. {{raw::insert_scene.png}}',
+      visibleMessages: [
+        { role: 'assistant', content: '<img src="{{raw::condom_wear.png}}"> 푸딩은 콘돔을 자지에 씌웠다. {{raw::heroine_blush.png}}' }
+      ]
+    }
+  });
+  assert.equal(rawProtectedPkt.contraception.length, 1);
+  assert.equal(rawProtectedPkt.contraception[0].method, 'condom', '{{raw::...}} macro must not trigger raw none_explicit');
+  assert.equal(rawProtectedPkt.contraception[0].protected, true);
+
+  const foreplayRawPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: `${rawTagScope}-foreplay`,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(`${rawTagScope}-foreplay`),
+    recent: {
+      latestUser: '이지원의 입술에 가볍게 키스한다. {{raw::kiss_bg.png}}',
+      visibleMessages: [{ role: 'assistant', content: '조용한 방 안에서 손끝이 스쳤다. {{raw::room_night.png}}' }]
+    }
+  });
+  assert.equal(foreplayRawPkt.contraception.length, 0, 'foreplay with {{raw::...}} must not trigger contraception verdict');
+
+  // 5. Negated / failed / inside-with-condom cases
+  const variantCases = [
+    ['neg-an', '콘돔을 자지에 안 씌우고 삽입했다.', 'none_explicit', false],
+    ['neg-ji-anh', '콘돔을 씌우지 않고 삽입했다.', 'none_explicit', false],
+    ['neg-eop', '콘돔은 없었다. 그냥 삽입했다.', 'none_explicit', false],
+    ['fail-torn', '콘돔을 씌웠는데 삽입 도중 찢어졌다.', 'condom_failed', false],
+    ['condom-cum-inside', '콘돔을 낀 채 안에 사정했다.', 'condom', true]
+  ];
+  for (const [tag, utterance, expectedMethod, expectedProtected] of variantCases) {
+    const sKey = `contraception-variant-${tag}`;
+    f.host.plugin.debugSetActiveScope(sKey, '푸딩');
+    const pkt = f.host.plugin.debugIntimacyPacket({
+      characterName: '이지원', personaName: '푸딩', scopeKey: sKey,
+      profileGenders: { 이지원: 'female', 푸딩: 'male' },
+      settings: makeSettings(sKey),
+      recent: {
+        latestUser: utterance,
+        visibleMessages: [{ role: 'assistant', content: '이지원은 침대 위에서 숨을 고르며 서로의 호흡에 집중했다.' }]
+      }
+    });
+    assert.equal(pkt.contraception.length, 1, `${tag} verdict emitted`);
+    assert.equal(pkt.contraception[0].method, expectedMethod, `${tag} expected ${expectedMethod}`);
+    assert.equal(pkt.contraception[0].protected, expectedProtected, `${tag} protected=${expectedProtected}`);
+  }
+
+  // 6. PREVIOUS record fallback: uses ongoing_consequences / what_happened, NEVER do_not_misremember
+  const prevOnlyWarnScope = 'contraception-prev-warn-only-scope';
+  f.host.plugin.debugSetActiveScope(prevOnlyWarnScope, '푸딩');
+  f.host.plugin.debugSetShadowPrevious({
+    scopeKey: prevOnlyWarnScope,
+    record: {
+      what_happened: ['지원이 침대 위에 누워 있다.'],
+      ongoing_consequences: [],
+      do_not_misremember: ['과거 콘돔 심부름 장면을 현재의 콘돔 착용 상태와 혼동하면 안 된다.']
+    }
+  });
+  const warnOnlyPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: prevOnlyWarnScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(prevOnlyWarnScope),
+    recent: {
+      latestUser: '다리 한 쪽을 잡고 천천히 삽입했다.',
+      visibleMessages: [{ role: 'assistant', content: '지원이 숨을 죽이고 시트를 쥐었다.' }]
+    }
+  });
+  assert.equal(warnOnlyPkt.contraception[0].method, 'none_implicit', 'do_not_misremember alone must NOT count as condom');
+  assert.equal(warnOnlyPkt.contraception[0].protected, false);
+
+  const prevConfirmedScope = 'contraception-prev-confirmed-scope';
+  f.host.plugin.debugSetActiveScope(prevConfirmedScope, '푸딩');
+  f.host.plugin.debugSetShadowPrevious({
+    scopeKey: prevConfirmedScope,
+    record: {
+      what_happened: ['현재 푸딩은 콘돔을 착용하고 지원의 한쪽 다리를 잡아 든 뒤 질내에 천천히 삽입하기 시작했다.'],
+      ongoing_consequences: ['푸딩은 지원의 침대 위에서 콘돔을 착용한 채 삽입을 시작한 단계다.'],
+      do_not_misremember: ['편의점 콘돔 심부름 장면과 현재 장면을 혼동하면 안 된다.']
+    }
+  });
+  const prevConfirmedPkt = f.host.plugin.debugIntimacyPacket({
+    characterName: '이지원', personaName: '푸딩', scopeKey: prevConfirmedScope,
+    profileGenders: { 이지원: 'female', 푸딩: 'male' },
+    settings: makeSettings(prevConfirmedScope),
+    recent: {
+      latestUser: '다리 한 쪽을 잡고 천천히 삽입을 이어간다.',
+      visibleMessages: [{ role: 'assistant', content: '지원이 숨을 죽이고 시트를 쥐었다.' }]
+    }
+  });
+  assert.equal(prevConfirmedPkt.contraception[0].method, 'condom', 'PREVIOUS ongoing_consequences/what_happened recovers condom state');
+  assert.equal(prevConfirmedPkt.contraception[0].protected, true);
+});

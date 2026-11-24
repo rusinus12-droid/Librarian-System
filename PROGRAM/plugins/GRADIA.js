@@ -4188,7 +4188,7 @@ ${BIANCA_PERSONA_TEXT}`;
     'deepseek-chat', 'deepseek-reasoner'
   ]);
 
-  const registered = { input: null, before: null, after: null, setting: null, button: null, continueButton: null, retraceIpc: null, retraceIpcApi: null, retraceIpcRegistration: null };
+  const registered = { input: null, before: null, after: null, setting: null, button: null, chatButton: null, continueButton: null, retraceIpc: null, retraceIpcApi: null, retraceIpcRegistration: null };
   // Read-only results for the current/last request. Never exported, persisted, or reused
   // as pipeline input; evidence-derived stage details belong only to the results UI.
   const guiExecutionResults = { traces: [], archived: false };
@@ -4315,7 +4315,7 @@ ${BIANCA_PERSONA_TEXT}`;
     requestReuse: { hits: 0, misses: 0, stores: 0, evictions: 0, hostRetryBypasses: 0, lastFingerprint: '', lastReuseAt: 0 },
     draftCheckpoint: { detections: 0, stores: 0, reuses: 0, discards: 0, corruptions: 0, lastKey: '', lastDecision: '', lastAt: 0, prompted: false, promptUnavailable: false },
     guiPerformance: { stateLoads: 0, lastStateLoadMs: 0, lastStateLoadSource: '', renders: 0, lastRenderMs: 0, maxRenderMs: 0, oocHydrations: 0, lastOocHydrationMs: 0 },
-    hookStatus: { input: false, beforeRequest: false, afterRequest: false, replacerPermission: 'unknown', unload: false, setting: false, button: false, inputAssistSendButton: false, retraceIpc: false }
+    hookStatus: { input: false, beforeRequest: false, afterRequest: false, replacerPermission: 'unknown', unload: false, setting: false, button: false, chatButton: false, inputAssistSendButton: false, retraceIpc: false }
   };
 
   const GRADIA_RUNTIME_SCOPE_BUCKET_KEYS = Object.freeze([
@@ -31964,9 +31964,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const stripNonProseSceneTags = value => String(value || '')
     .replace(/◈CG[\s\S]*?◈/g, ' ')
     .replace(/<status\b[^>]*>[\s\S]*?<\/status>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
     .replace(/\[(?:Status|Scene|Info)\][\s\S]*?\[\/(?:Status|Scene|Info)\]/gi, ' ')
     .replace(/```(?:status|hud|scene)\b[^\n]*\n[\s\S]*?```/gi, ' ')
     .replace(/<img\b[^>]*>/gi, ' ')
+    .replace(/\{\{(?:raw|raw_asset|img|image|asset|bg|video|audio|emotion|inlay|inlayed|inlayeddata)::[^}]*\}\}/gi, ' ')
     .replace(/\bbg_[a-z0-9_]+\b/gi, ' ');
   const INTIMACY_CROWD_HIGH_RE = /사람들|인파|북적|붐비|붐벼|만석|시끌벅적|지나다니|오가는|人通り|混雑|人混み|crowded|busy|full of people|passersby/i;
   const INTIMACY_CROWD_NEARBY_RE = /옆\s*방|벽\s*너머|얇은\s*벽|문\s*밖|밖에서|복도에|누군가|다른\s*사람|동거|룸메이트|가족|부모님|손님|관리인|사서|경비|직원|隣室|壁の向こう|ドアの外|廊下|誰か|他の人|家族|従業員|next room|thin wall|outside the door|someone nearby|roommate|family|staff|guard|librarian/i;
@@ -33288,6 +33290,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...(Object.keys(zoneDeltas).length ? { zoneDeltas } : {})
     };
   };
+  const INTIMACY_BARRIER_STATES = new Set(['condom', 'condom_slip_risk', 'condom_failed', 'none_explicit', 'withdrawal']);
+  const normalizeIntimacyBarrierState = value => {
+    const raw = value && typeof value === 'object' ? value : {};
+    const state = INTIMACY_BARRIER_STATES.has(raw.state) ? raw.state : '';
+    return { state, rewornAfterSlip: state === 'condom' && raw.rewornAfterSlip === true };
+  };
   const normalizeIntimacyGaugeScope = value => {
     const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const settled = {};
@@ -33324,7 +33332,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       lastInputKey: compact(raw.lastInputKey || '', 400),
       lastKnownTailHashes: Array.isArray(raw.lastKnownTailHashes) ? raw.lastKnownTailHashes.map(h => compact(h || '', 40)).filter(Boolean).slice(-4) : [],
       lastAssistantCount: Math.max(0, parseInt(raw.lastAssistantCount, 10) || 0),
-      idleTurns: Math.max(0, Number(raw.idleTurns) || 0)
+      idleTurns: Math.max(0, Number(raw.idleTurns) || 0),
+      barrierSettled: normalizeIntimacyBarrierState(raw.barrierSettled),
+      barrierBaseline: normalizeIntimacyBarrierState(raw.barrierBaseline)
     };
   };
   const normalizeIntimacyGaugeMap = value => {
@@ -33647,11 +33657,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!scopeKey) return est;
     return setRecordedIntimacyMalePace(scopeKey, label, est, { persist: true, syncCard: true }) || est;
   };
+  const INTIMACY_EMPTY_BARRIER = Object.freeze({ state: '', rewornAfterSlip: false });
   const intimacyGaugeScope = (scopeKey = '', create = false) => {
     if (!scopeKey) return null;
     if (!Runtime.intimacyGauges) Runtime.intimacyGauges = {};
     if (!Runtime.intimacyGauges[scopeKey] && create) {
-      Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
+      Runtime.intimacyGauges[scopeKey] = {
+        settled: {}, baseline: {}, pending: [],
+        lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '',
+        lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0,
+        barrierSettled: { ...INTIMACY_EMPTY_BARRIER },
+        barrierBaseline: { ...INTIMACY_EMPTY_BARRIER }
+      };
     }
     return Runtime.intimacyGauges[scopeKey] || null;
   };
@@ -33676,6 +33693,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     let changed = false;
 
     const settledHasData = Object.values(chat.settled || {}).some(v => v && (v.climax > 0 || v.ejaculation > 0 || v.lubrication > 0));
+    const settledHasBarrier = Boolean(chat.barrierSettled?.state);
     const priorTailHashes = tailHashes.slice(0, -1);
     const matchesTranscript = (!assistantMessages.length && !chat.lastInputHash)
       || ((!chat.lastPriorAssistantHash || chat.lastPriorAssistantHash === '00000000')
@@ -33684,44 +33702,50 @@ Begin directly with the in-world response and finish the complete same-turn draf
         && priorTailHashes.includes(chat.lastPriorAssistantHash))
       || (!!chat.lastInputKey && !!previousUser && chat.lastInputKey === previousUser && !isSamePrefix);
 
-    if (!isTurnRetry && settledHasData && matchesTranscript) {
+    if (!isTurnRetry && (settledHasData || settledHasBarrier) && matchesTranscript) {
       const nextBase = {};
-      for (const [k, v] of Object.entries(chat.settled || {})) {
-        nextBase[k] = normalizeIntimacyGaugeEntry({
-          ...v,
-          climax: v.climaxTriggered ? 20 : v.climax,
-          ejaculation: v.ejaculationTriggered ? 10 : v.ejaculation,
-          lubrication: v.climaxTriggered ? Math.max(25, Math.round((v.lubrication || 0) * 0.6)) : (v.lubrication || 0),
-          climaxTriggered: false,
-          ejaculationTriggered: false,
-          interruptedBrink: false
-        });
-        if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
-          const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSameOrGivenName(c.name, k)));
-          if (card && (!chat.lastInputHash || card.lastZoneUpdateHash !== chat.lastInputHash)) {
-            const cardGender = intimacyCardGender(card, card.name);
-            if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
-            for (const [zoneId, delta] of Object.entries(v.zoneDeltas)) {
-              if (!intimacyZoneAllowedForGender(zoneId, cardGender)) continue;
-              const prev = card.zoneStats[zoneId] || { sensitivity: 0, development: 0 };
-              card.zoneStats[zoneId] = {
-                sensitivity: intimacyClampSensitivity(prev.sensitivity + (Number(delta.sens) || 0)),
-                development: intimacyClampDevelopment(prev.development + (Number(delta.dev) || 0))
-              };
+      if (settledHasData) {
+        for (const [k, v] of Object.entries(chat.settled || {})) {
+          nextBase[k] = normalizeIntimacyGaugeEntry({
+            ...v,
+            climax: v.climaxTriggered ? 20 : v.climax,
+            ejaculation: v.ejaculationTriggered ? 10 : v.ejaculation,
+            lubrication: v.climaxTriggered ? Math.max(25, Math.round((v.lubrication || 0) * 0.6)) : (v.lubrication || 0),
+            climaxTriggered: false,
+            ejaculationTriggered: false,
+            interruptedBrink: false
+          });
+          if (v.zoneDeltas && Object.keys(v.zoneDeltas).length && Array.isArray(Runtime.intimacyCards?.[scopeKey])) {
+            const card = Runtime.intimacyCards[scopeKey].find(c => c.name && (normalizeContinuityAlias(c.name) === k || c.name.toLowerCase() === k || extensionSameOrGivenName(c.name, k)));
+            if (card && (!chat.lastInputHash || card.lastZoneUpdateHash !== chat.lastInputHash)) {
+              const cardGender = intimacyCardGender(card, card.name);
+              if (!card.zoneStats) card.zoneStats = normalizeIntimacyZoneStats(null, card.sensitiveZones || '', card.dullZones || '');
+              for (const [zoneId, delta] of Object.entries(v.zoneDeltas)) {
+                if (!intimacyZoneAllowedForGender(zoneId, cardGender)) continue;
+                const prev = card.zoneStats[zoneId] || { sensitivity: 0, development: 0 };
+                card.zoneStats[zoneId] = {
+                  sensitivity: intimacyClampSensitivity(prev.sensitivity + (Number(delta.sens) || 0)),
+                  development: intimacyClampDevelopment(prev.development + (Number(delta.dev) || 0))
+                };
+              }
+              if (chat.lastInputHash) card.lastZoneUpdateHash = chat.lastInputHash;
             }
-            if (chat.lastInputHash) card.lastZoneUpdateHash = chat.lastInputHash;
           }
         }
       }
-      chat.baseline = nextBase;
+      chat.baseline = settledHasData ? nextBase : {};
+      chat.barrierBaseline = settledHasBarrier ? normalizeIntimacyBarrierState(chat.barrierSettled) : { ...INTIMACY_EMPTY_BARRIER };
       changed = true;
-    } else if (!isTurnRetry && (!settledHasData || !matchesTranscript)) {
+    } else if (!isTurnRetry && ((!settledHasData && !settledHasBarrier) || !matchesTranscript)) {
       chat.baseline = {};
+      chat.barrierBaseline = { ...INTIMACY_EMPTY_BARRIER };
+      if (!matchesTranscript) chat.barrierSettled = { ...INTIMACY_EMPTY_BARRIER };
     }
     // Keep pending array clean for backwards callers
     chat.pending = [];
-    const activeSettled = isTurnRetry ? (chat.baseline || {}) : (settledHasData && matchesTranscript ? (chat.baseline || {}) : {});
-    return { chat, changed, isReroll: isTurnRetry, exactReroll: isReroll, isContinuation: !isTurnRetry && settledHasData && matchesTranscript, activeSettled, inputHash, priorAssistantHash, tailHashes, assistantCount: assistantMessages.length, inputKey: intimacyInputKey(input) };
+    const activeSettled = isTurnRetry ? (chat.baseline || {}) : ((settledHasData && matchesTranscript) ? (chat.baseline || {}) : {});
+    const activeBarrier = normalizeIntimacyBarrierState(chat.barrierBaseline);
+    return { chat, changed, isReroll: isTurnRetry, exactReroll: isReroll, isContinuation: !isTurnRetry && (settledHasData || settledHasBarrier) && matchesTranscript, activeSettled, activeBarrier, inputHash, priorAssistantHash, tailHashes, assistantCount: assistantMessages.length, inputKey: intimacyInputKey(input) };
   };
   const intimacyCardLine = card => {
     const zoneSummary = INTIMACY_BODY_PARTS
@@ -33778,7 +33802,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (g >= 15) return '촉촉해짐 (애무로 초기 윤기 형성)';
     return '건조·초기';
   };
-  const INTIMACY_RESOLVED_RE = /(?:옷을?\s*(?:다\s*)?(?:챙겨\s*)?(?:입고|입었|입으며|걸치고|정리하고)|(?:방|모텔|호텔|침실|카페|집)\s*(?:을|를|에서)?\s*(?:나섰|나왔|나갔|떠났|걸어\s*나)|밖으로\s*(?:나섰|나왔|나갔|걸어)|각자\s*(?:돌아갔|헤어졌)|다음\s*날\s*(?:아침|이\s*되|이\s*밝)|날이\s*밝|아침이\s*되|got\s+dressed\s+and\s+left|walked\s+out|next\s+morning)/i;
+  const INTIMACY_RESOLVED_RE = /(?:옷을?\s*(?:다\s*)?(?:챙겨\s*)?(?:입고|입었|입으며|걸치고|정리하고)|(?:(?<!가)방|모텔|호텔|침실|숙소|객실|카페|집|화장실|욕실|현관|건물)\s*(?:을|를|에서|\s*밖으로)?\s*(?:나섰|나왔|나갔|떠났|걸어\s*나)|문\s*밖으로\s*(?:나섰|나왔|나갔|걸어)|(?<!(?:이불|시트|침대|담요|옷|천|소매|치마|바지|속옷|입|입술|목|코|혀|손|손가락|팔|다리|발|어깨|가슴|질|보지|항문|안|속|틈|숨|소리|목소리|신음)\s*)밖으로\s*(?:나섰|나갔|걸어\s*나)|각자\s*(?:돌아갔|헤어졌)|다음\s*날\s*(?:아침|이\s*되|이\s*밝)|날이\s*밝|아침이\s*되|got\s+dressed\s+and\s+left|walked\s+out|next\s+morning)/i;
   const intimacyMatchedBodyParts = value => {
     const body = stripNonProseSceneTags(String(value || ''));
     if (!body) return [];
@@ -34022,8 +34046,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (explicitExit) {
       if (scopeKey && Runtime.intimacyGauges?.[scopeKey]) {
         const cur = Runtime.intimacyGauges[scopeKey];
-        if (Object.keys(cur.settled || {}).length || Object.keys(cur.baseline || {}).length || (cur.pending || []).length || cur.idleTurns) {
-          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
+        if (Object.keys(cur.settled || {}).length || Object.keys(cur.baseline || {}).length || (cur.pending || []).length || cur.idleTurns || cur.barrierSettled?.state || cur.barrierBaseline?.state) {
+          Runtime.intimacyGauges[scopeKey] = {
+            settled: {}, baseline: {}, pending: [],
+            lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '',
+            lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0,
+            barrierSettled: { ...INTIMACY_EMPTY_BARRIER }, barrierBaseline: { ...INTIMACY_EMPTY_BARRIER }
+          };
           void saveIntimacyCards().catch(() => {});
         }
       }
@@ -34040,11 +34069,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const settledMap = settleInfo?.activeSettled || {};
     if (scene && !scene.engaged && !inputHasStim) {
       const hasNonZeroSettled = Object.values(settledMap).some(v => (v?.climax || 0) > 0 || (v?.ejaculation || 0) > 0 || (v?.lubrication || 0) > 0 || (v?.excitement || 0) !== 0 || v?.haltedByNpc);
-      if (!hasNonZeroSettled) return [];
+      if (!hasNonZeroSettled) {
+        if (settleInfo?.chat && (settleInfo.chat.barrierSettled?.state || settleInfo.chat.barrierBaseline?.state)) {
+          settleInfo.chat.barrierSettled = { ...INTIMACY_EMPTY_BARRIER };
+          settleInfo.chat.barrierBaseline = { ...INTIMACY_EMPTY_BARRIER };
+          void saveIntimacyCards().catch(() => {});
+        }
+        return [];
+      }
       if (settleInfo?.chat) {
         settleInfo.chat.idleTurns = (settleInfo.chat.idleTurns || 0) + 1;
         if (settleInfo.chat.idleTurns >= INTIMACY_IDLE_CLEAR_TURNS) {
-          Runtime.intimacyGauges[scopeKey] = { settled: {}, baseline: {}, pending: [], lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '', lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0 };
+          Runtime.intimacyGauges[scopeKey] = {
+            settled: {}, baseline: {}, pending: [],
+            lastInputHash: '', lastPriorAssistantHash: '', lastInputKey: '',
+            lastKnownTailHashes: [], lastAssistantCount: 0, idleTurns: 0,
+            barrierSettled: { ...INTIMACY_EMPTY_BARRIER }, barrierBaseline: { ...INTIMACY_EMPTY_BARRIER }
+          };
           void saveIntimacyCards().catch(() => {});
           return [];
         }
@@ -34904,14 +34945,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return gauges;
   };
-  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도)?\s*(?:끼우|끼웠|끼운|끼고|씌우|씌웠|씌운|착용|쓰고|썼|사용|꺼내\s*끼|물고\s*씌|굴러\s*내려|말려\s*내려|뿌리까지\s*(?:덮|감싸))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워)|콘돔\s*착용|(?:コンドーム|ゴム)を(?:つけ|着け|被せ)|(?:put|slipped|rolled)\s+on\s+a\s+condom|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?:wore|wearing|with|used)\s+a\s+condom/i;
+  const INTIMACY_CONDOM_PUT_ON_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|이|가|도|으로|로)?(?:(?!없이|없었|없다|없어|안\s*(?:끼|씌|쓰|하)|못\s*(?:끼|씌|쓰)|(?:끼우|끼|씌우|씌|쓰|착용하|사용하)지\s*(?:않|못)|빼고|거부|치우|벗|말고)[^\n.?!,;]){0,32}(?:끼우(?!\s*(?:지\s*(?:않|못)|려(?:다|고|지만)|면|자고|라고|라며))|끼웠|끼운|끼고|낀(?=\s*(?:채|상태|것|$|[^가-힣]))|씌우(?!\s*(?:지\s*(?:않|못)|려(?:다|고|지만)|면|자고|라고|라며))|씌웠|씌운|끼워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠))|씌워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠))|착용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|하려(?:다|고)|해야|할까|해\s*줘|해\s*달라|여부|했는지))|쓰고|썼|쓴(?=\s*(?:채|상태|것))|사용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|하려(?:다|고)|해야|할까|해\s*줘|해\s*달라|여부|했는지))|꺼내\s*(?:끼|씌)|물고\s*(?:끼|씌)|(?:굴러|굴려|말려|말아)\s*내(?:려|렸|린|리)|(?:뿌리|끝)까지\s*(?:덮|감싸|내리|내려|내렸)|감싸(?!\s*(?:지\s*(?:않|못)|려|야|줘|달라))|감쌌|감싼|덮(?:고|으며|어|었|은))|(?:콘돔|고무|라텍스)(?:이|가)?\s*(?:팽팽하게\s*)?(?:늘어나며\s*)?(?:밑으로|아래로|기둥을\s*타고)?\s*(?:굴러\s*내려|씌워(?!\s*(?:줘|달라|야|도\s*될|볼까|도\s*되|보겠)))|콘돔\s*착용(?!\s*(?:하\s*지\s*(?:않|못)|하지\s*(?:않|못)|안\s*(?:하|했)|여부|했는지|했냐|했어\?|해\s*줘|해야))|(?:コンドーム|ゴム)を[^\n。！？、]{0,18}(?:つけ|着け|被せ|装着)(?!ない|ず|ずに)|(?<!didn't\s+|did\s+not\s+|not\s+|never\s+)(?:(?:put|slipped|rolled|pulled|fitted)\s+(?:a\s+|the\s+)?(?:condom|rubber|latex)\s+(?:on|over|onto|down)\b|(?:put|slipped|rolled)\s+on\s+a\s+condom)|(?:condom|rubber|latex)\s+(?:rolled\s+down|covered\s+to\s+the\s+base)|(?<!without\s+)(?<!not\s+)\b(?:wore|wearing|with|used)\s+(?:a\s+|the\s+)?condom\b/i;
   const INTIMACY_CONDOM_REWEAR_RE = /(?:다시\s*(?:끼웠|끼워|끼고|씌웠|씌워|착용|썼)|새\s*(?:콘돔|고무|것?)(?:을|를)?\s*(?:끼|씌)|고쳐\s*(?:끼웠|씌웠|잡았)|付け直|新しい(?:コンドーム|ゴム)|put\s+(?:it|a\s+new\s+one)\s+back\s+on)/i;
-  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무)(?:을|를|이|도)?\s*(?:없이|안\s*(?:끼|쓰|하|챙)|못\s*(?:끼|쓰)|빼고|거부|치우)|피임\s*(?:안\s*(?:하|했)|없이|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|(?:안|속|질내|자궁)(?:에|에다|으로)\s*(?:그대로\s*)?(?:싸|사정|쏟|부어)|질내\s*사정|안싸|避妊(?:なし|せず)|コンドーム(?:なし|無し)|生で|中出し|\braw\b|bareback|without\s+(?:a\s+)?condom|no\s+protection|creampie/i;
+  const INTIMACY_CONDOM_NEGATED_RE = /(?:콘돔|피임기구|고무|라텍스)(?:을|를|은|는|이|가|도)?[^\n.?!,;]{0,24}(?:없이(?!\s*(?:는|도)?\s*(?:안\s*(?:돼|되|할|해|했)|절대|못|싫))|없(?:었|다|어)(?!서|는데)|안\s*(?:끼|씌|쓰|하|챙|감싸|덮)|못\s*(?:끼|씌|쓰|하)|(?:끼우|끼|씌우|씌|쓰|착용하|사용하)지\s*(?:않|못)|착용\s*안\s*(?:하|했)|빼고|거부|치우|벗(?:기|겼|긴|겨|었|어|고))|피임\s*(?:안\s*(?:하|했)|없이(?!\s*(?:는|도)?\s*(?:안|못|싫))|하지\s*않|생략)|노콘(?:으로)?|생으로|(?:맨몸|맨살|맨것)으로\s*삽입|안싸|避妊(?:なし|せず)|コンドーム(?:なし|無し|をつけ(?:ず|ない))|生で|(?<!\{\{)\b(?:go(?:ing)?|went|do(?:ing)?|did|fuck(?:ing|ed)?|slip(?:ping|ped)?|push(?:ing|ed)?|thrust(?:ing|ed)?|enter(?:ing|ed)?|take|taking|took)\s+raw\b|\braw\s+(?:sex|penetration|insertion)\b|bareback|without\s+(?:wearing\s+)?(?:a\s+)?condom|\b(?:didn't|did\s+not|never)\s+(?:put\s+(?:on\s+)?(?:a\s+)?condom|use\s+(?:a\s+)?condom|wear\s+(?:a\s+)?condom)|\brefused\s+(?:a\s+)?condom\b|\bno\s+(?:condom|protection)\b|creampie/i;
   const INTIMACY_CONDOM_SLIP_RISK_RE = /(?:콘돔|고무|라텍스)(?:이|은|가)?[^\n.?!]{0,20}(?:말려\s*(?:올라|들어가)|(?:밑동|뿌리)[^\n.?!]{0,18}(?:몰려|뭉쳐|접혀)|뭉쳐\s*(?:있|버렸)|접혀\s*있)|(?:뭉친\s*(?:자리|테두리)|콘돔|고무)[^\n.?!]{0,28}맨살(?:이|을)?\s*(?:조금\s*)?(?:드러|보|노출)|(?:コンドーム|ゴム)がずれ|(?:condom|rubber)\s+(?:bunched|rolled\s+up)/i;
-  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:コンドーム|ゴム)が(?:破れ|外れ|抜け)|避妊失敗|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
+  const INTIMACY_CONDOM_FAILED_RE = /(?:콘돔|고무|라텍스)(?:이|은|가|의)?[^\n.?!]{0,20}(?:(?<!(?:포장|봉지|껍질|비닐|패키지)(?:을|를|이|가)?\s*)찢어|터졌|터져|구멍|빵꾸|완전히?\s*(?:빠졌|빠져|벗겨)|빠져\s*(?:버렸|있|나왔|남았)|벗겨져\s*(?:버렸|있|나왔)|질\s*안(?:에|으로)?\s*남|새어\s*나왔|샜)|(?:귀두|끝부분|머리\s*부분)[^\n.?!]{0,20}(?:찢어|터졌|터져|구멍|벗겨|노출)|피임(?:이)?\s*(?:실패|무력화)|(?:コンドーム|ゴム)が(?:破れ|外れ|抜け)|避妊失敗|(?:condom|rubber)\s+(?:broke|ripped|burst|tore|slipped\s+off|came\s+off)/i;
   const INTIMACY_WITHDRAWAL_RE = /질외(?:\s*사정)?|밖(?:에|에다|으로)\s*(?:만\s*)?(?:싸|사정|해|빼|뿌려|내보내)|빼서\s*(?:싸|사정)|사정(?:은|만)?\s*밖(?:에|으로)|(?:^|[.!?\n"'“‘「『(][.…~\s]*)밖(?:에|에다)(?:\s*(?:만|요|야|해))?\s*(?:[.…!?~]+|["'”’」』]|$)|안(?:에|에는|에다|에다가)\s*(?:말고|싸지\s*마|하지\s*마|절대\s*안|안\s*(?:싸|돼|되))|外に出|抜いて|膣外射精|pull(?:ing|ed)?\s+out|(?:cum|finish)\s+outside|not\s+inside/i;
   const INTIMACY_ONGOING_BIRTH_CONTROL_RE = /경구\s*피임약|피임약(?:을)?\s*(?:복용|먹고|챙겨\s*먹|먹어)|미레나|루프\s*(?:시술|착용)|임플라논|ピル|避妊薬|ミレーナ|(?:on|taking)\s+(?:the\s+)?(?:birth\s+control\s+)?pill|has\s+an?\s+iud/i;
-  const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸|사정|쏟았|부었|가득\s*채웠)|안싸|中出し|膣内射精|came\s+inside|creampie/i;
+  const INTIMACY_CREAMPIE_RE = /질내\s*사정|(?:안|속|질내|자궁)(?:에|에다)\s*(?:그대로\s*)?(?:싸(?!\s*(?:지\s*마|면\s*안|지\s*말|기\s*없))|사정(?!\s*(?:하\s*지\s*마|하지\s*마|하면\s*안))|쏟았|부었|가득\s*채웠)|안싸|中出し|膣内射精|came\s+inside|creampie/i;
 
   const collectSafeCharacterLoreText = (name, scopeKey = '', settings = {}, recent = {}) => {
     if (!name) return '';
@@ -35016,6 +35057,87 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return `${base}으로 표현하되 천편일률적인 "빼!" 반복이나 로어와 맞지 않는 뻔한 반응은 피할 것`;
   };
 
+  const scanIntimacyBarrierState = (steps = [], options = {}) => {
+    const cleanedSteps = (Array.isArray(steps) ? steps : []).map(stripNonProseSceneTags).filter(Boolean);
+    const condomEverMentioned = Boolean(options.seedCondomMentioned)
+      || cleanedSteps.some(step => /(?:콘돔|고무|라텍스|condom|rubber|latex)/i.test(step));
+    let state = '';
+    let rewornAfterSlip = false;
+    const matchEnd = (clause, re) => {
+      const m = re.exec(clause);
+      return m ? (m.index + m[0].length) : -1;
+    };
+    for (const cleanedStep of cleanedSteps) {
+      for (const clause of cleanedStep.split(/(?:\.(?!\d)|[!?;\n])+/)) {
+        if (!clause.trim()) continue;
+        const failEnd = matchEnd(clause, INTIMACY_CONDOM_FAILED_RE);
+        const slipEnd = matchEnd(clause, INTIMACY_CONDOM_SLIP_RISK_RE);
+        const putOnMainEnd = matchEnd(clause, INTIMACY_CONDOM_PUT_ON_RE);
+        const rewearEnd = condomEverMentioned ? matchEnd(clause, INTIMACY_CONDOM_REWEAR_RE) : -1;
+        const putOnEnd = Math.max(putOnMainEnd, rewearEnd);
+        const negatedEnd = matchEnd(clause, INTIMACY_CONDOM_NEGATED_RE);
+        const creampieEnd = matchEnd(clause, INTIMACY_CREAMPIE_RE);
+        const withdrawalEnd = matchEnd(clause, INTIMACY_WITHDRAWAL_RE);
+        const candidates = [
+          failEnd >= 0 ? ['condom_failed', failEnd] : null,
+          slipEnd >= 0 ? ['condom_slip_risk', slipEnd] : null,
+          putOnEnd >= 0 ? ['condom', putOnEnd] : null,
+          negatedEnd >= 0 ? ['none_explicit', negatedEnd] : null,
+          creampieEnd >= 0 ? ['creampie', creampieEnd] : null,
+          withdrawalEnd >= 0 ? ['withdrawal', withdrawalEnd] : null
+        ].filter(Boolean).sort((a, b) => a[1] - b[1]);
+        for (const [kind] of candidates) {
+          if (kind === 'condom') {
+            if (state === 'condom_slip_risk' || state === 'condom_failed') rewornAfterSlip = true;
+            state = 'condom';
+          } else if (kind === 'withdrawal') {
+            if (state !== 'condom') state = 'withdrawal';
+          } else if (kind === 'creampie') {
+            if (state !== 'condom') state = 'none_explicit';
+          } else {
+            state = kind;
+          }
+        }
+      }
+    }
+    return { state, rewornAfterSlip };
+  };
+
+  const extractPreviousBarrierState = (scopeKey = '', recent = {}, seedCondomMentioned = false) => {
+    const prevEntry = scopeKey ? Runtime.shadowPrevious?.[scopeKey] : null;
+    const prevRec = prevEntry?.record || null;
+    if (!prevRec || prevRec.lightweightGuardrailOnly === true) {
+      return { ...INTIMACY_EMPTY_BARRIER };
+    }
+    const currentInputHash = compact(recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent)), 40);
+    if (prevEntry.inputHash && currentInputHash && prevEntry.inputHash !== currentInputHash) {
+      return { ...INTIMACY_EMPTY_BARRIER };
+    }
+    // NEVER scan do_not_misremember (it contains negative warnings like "콘돔 심부름 장면을 혼동하면 안 된다").
+    const ongoingLines = (Array.isArray(prevRec.ongoing_consequences) ? prevRec.ongoing_consequences : [])
+      .map(stripNonProseSceneTags)
+      .filter(s => s && !INTIMACY_RESOLVED_RE.test(s));
+    if (ongoingLines.length) {
+      const ongoingBarrier = scanIntimacyBarrierState(ongoingLines, { seedCondomMentioned });
+      if (ongoingBarrier.state) return ongoingBarrier;
+    }
+    const rawWhat = (Array.isArray(prevRec.libFacts) && Array.isArray(prevRec.recentEvents))
+      ? prevRec.recentEvents
+      : (Array.isArray(prevRec.what_happened) ? prevRec.what_happened : []);
+    const pastEpisodeMarkerRe = /(?:어제|전날|지난\s*(?:주|달|번|밤)|며칠\s*전|과거(?:에|의)|이전\s*(?:만남|날|관계)|예전(?:에|의))/i;
+    const presentAnchorRe = /(?:현재|지금|방금)/i;
+    const activeWhatLines = [];
+    for (let i = rawWhat.length - 1; i >= 0; i -= 1) {
+      const cleanedLine = stripNonProseSceneTags(rawWhat[i]).trim();
+      if (!cleanedLine) continue;
+      if (INTIMACY_RESOLVED_RE.test(cleanedLine)) break;
+      if (pastEpisodeMarkerRe.test(cleanedLine) && !presentAnchorRe.test(cleanedLine)) continue;
+      activeWhatLines.unshift(cleanedLine);
+    }
+    if (!activeWhatLines.length) return { ...INTIMACY_EMPTY_BARRIER };
+    return scanIntimacyBarrierState(activeWhatLines, { seedCondomMentioned });
+  };
+
   const computeIntimacyContraceptionVerdicts = (recent = {}, cards = [], scene = {}, gauges = [], externalReaction = null, settings = null) => {
     if (!scene?.engaged) return [];
     const input = text(recent?.latestUser || '');
@@ -35023,16 +35145,24 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .map(message => text(message?.content || ''))
       .filter(Boolean);
     if (rawMsgs.length && input && rawMsgs[rawMsgs.length - 1].trim() === input.trim()) rawMsgs.pop();
-    const recentCandidates = rawMsgs.slice(-6);
+    const recentCandidates = rawMsgs.slice(-16);
     const recentWindow = [];
+    let hitResolvedBoundary = false;
     for (let i = recentCandidates.length - 1; i >= 0; i -= 1) {
-      if (INTIMACY_RESOLVED_RE.test(recentCandidates[i])) break;
-      recentWindow.unshift(recentCandidates[i]);
+      const cleanedCandidate = stripNonProseSceneTags(recentCandidates[i]);
+      if (INTIMACY_RESOLVED_RE.test(cleanedCandidate)) {
+        hitResolvedBoundary = true;
+        break;
+      }
+      if (cleanedCandidate.trim()) recentWindow.unshift(cleanedCandidate);
     }
-    const encounterSteps = [...recentWindow, input].filter(Boolean);
+    const cleanInput = stripNonProseSceneTags(input);
+    const encounterSteps = [...recentWindow, cleanInput].filter(Boolean);
     const encounterText = encounterSteps.join('\n');
-    const latestStep = input || recentWindow[recentWindow.length - 1] || '';
+    const latestStep = cleanInput || recentWindow[recentWindow.length - 1] || '';
 
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const gaugeChat = scopeKey ? Runtime.intimacyGauges?.[scopeKey] : null;
     const penetrativeActive = scene.phase === 'intercourse'
       || scene.phase === 'climax'
       || (INTIMACY_PENETRATIVE_ACT_RE.test(encounterText) && !/손가락(?:만|으로만)|fingering\s+only/i.test(latestStep));
@@ -35042,10 +35172,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
       || INTIMACY_CONDOM_SLIP_RISK_RE.test(encounterText)
       || INTIMACY_CONDOM_FAILED_RE.test(encounterText)
       || INTIMACY_WITHDRAWAL_RE.test(encounterText);
-    if (!penetrativeActive && !explicitContraceptionTalk) return [];
+    if (!penetrativeActive && !explicitContraceptionTalk) {
+      if (hitResolvedBoundary && gaugeChat && (gaugeChat.barrierSettled?.state || gaugeChat.barrierBaseline?.state)) {
+        gaugeChat.barrierSettled = { ...INTIMACY_EMPTY_BARRIER };
+        gaugeChat.barrierBaseline = { ...INTIMACY_EMPTY_BARRIER };
+        void saveIntimacyCards().catch(() => {});
+      }
+      return [];
+    }
 
     const effectiveSettings = (settings && Object.keys(settings).length) ? settings : (Runtime.settings || Gui?.state?.runtime || {});
-    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const personaName = compact(Runtime.activePersonaName || '', 80);
     const personaGender = personaName ? intimacyResolveGender(personaName, cards.find(c => c.name && extensionSamePerson(c.name, personaName)), recent) : '';
     const hasMaleParticipant = gauges.some(g => g.gender === 'male')
@@ -35176,44 +35312,37 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ? String(libBlock).split(/\n+/).flatMap(full => forcedBondSentences(full).map(line => ({ source: 'LIB', line, full, relative: bodyStateRelativeDays(line) })))
       : [];
 
-    // Chronological clause-by-clause barrier/contraception state across active encounter window.
-    const condomEverMentioned = /(?:콘돔|고무|라텍스|condom|rubber|latex)/i.test(encounterText);
-    let latestBarrierState = '';
-    let rewornAfterSlip = false;
-    for (const step of encounterSteps) {
-      const cleanedStep = stripNonProseSceneTags(step);
-      for (const clause of cleanedStep.split(/(?:\.(?!\d)|[!?;\n])+/)) {
-        if (!clause.trim()) continue;
-        const failIdx = INTIMACY_CONDOM_FAILED_RE.test(clause) ? clause.search(INTIMACY_CONDOM_FAILED_RE) : -1;
-        const slipIdx = INTIMACY_CONDOM_SLIP_RISK_RE.test(clause) ? clause.search(INTIMACY_CONDOM_SLIP_RISK_RE) : -1;
-        const putOnHit = INTIMACY_CONDOM_PUT_ON_RE.test(clause) || (condomEverMentioned && INTIMACY_CONDOM_REWEAR_RE.test(clause));
-        const putOnIdx = INTIMACY_CONDOM_PUT_ON_RE.test(clause)
-          ? clause.search(INTIMACY_CONDOM_PUT_ON_RE)
-          : (condomEverMentioned && INTIMACY_CONDOM_REWEAR_RE.test(clause) ? clause.search(INTIMACY_CONDOM_REWEAR_RE) : -1);
-        const negatedIdx = INTIMACY_CONDOM_NEGATED_RE.test(clause) ? clause.search(INTIMACY_CONDOM_NEGATED_RE) : -1;
-        const withdrawalIdx = INTIMACY_WITHDRAWAL_RE.test(clause) ? clause.search(INTIMACY_WITHDRAWAL_RE) : -1;
-        const candidates = [
-          failIdx >= 0 ? ['condom_failed', failIdx] : null,
-          slipIdx >= 0 ? ['condom_slip_risk', slipIdx] : null,
-          putOnHit && putOnIdx >= 0 ? ['condom', putOnIdx] : null,
-          negatedIdx >= 0 ? ['none_explicit', negatedIdx] : null,
-          withdrawalIdx >= 0 ? ['withdrawal', withdrawalIdx] : null
-        ].filter(Boolean).sort((a, b) => a[1] - b[1]);
-        for (const [kind] of candidates) {
-          if (kind === 'condom') {
-            if (latestBarrierState === 'condom_slip_risk' || latestBarrierState === 'condom_failed') rewornAfterSlip = true;
-            latestBarrierState = 'condom';
-          } else if (kind === 'withdrawal') {
-            if (latestBarrierState !== 'condom') latestBarrierState = 'withdrawal';
-          } else {
-            latestBarrierState = kind;
-          }
-        }
+    // Chronological clause-by-clause barrier/contraception state across active encounter window, PREVIOUS record, and active encounter carryover.
+    const carriedBarrier = (!hitResolvedBoundary && gaugeChat)
+      ? normalizeIntimacyBarrierState(gaugeChat.barrierBaseline)
+      : { ...INTIMACY_EMPTY_BARRIER };
+    const carriedCondom = ['condom', 'condom_slip_risk', 'condom_failed'].includes(carriedBarrier.state);
+    let barrier = scanIntimacyBarrierState(encounterSteps, { seedCondomMentioned: carriedCondom });
+    if (!barrier.state) {
+      const prevBarrier = extractPreviousBarrierState(scopeKey, recent, carriedCondom);
+      if (prevBarrier.state) barrier = prevBarrier;
+    }
+    if (!barrier.state && carriedBarrier.state) {
+      barrier = carriedBarrier;
+    } else if (barrier.state === 'withdrawal' && carriedBarrier.state === 'condom') {
+      barrier = carriedBarrier;
+    }
+    if (barrier.state === 'condom' && (carriedBarrier.state === 'condom_slip_risk' || carriedBarrier.state === 'condom_failed' || carriedBarrier.rewornAfterSlip)) {
+      barrier = { ...barrier, rewornAfterSlip: true };
+    }
+    const latestBarrierState = barrier.state;
+    const rewornAfterSlip = barrier.rewornAfterSlip;
+    const withdrawalRequested = latestBarrierState !== 'condom' && (INTIMACY_WITHDRAWAL_RE.test(encounterText) || latestBarrierState === 'withdrawal');
+    const creampieAttemptOrDone = latestBarrierState !== 'condom' && INTIMACY_CREAMPIE_RE.test(encounterText);
+    const explicitSafeDayConsentInAct = /(?:생리\s*중|안전일)(?:이라|이니까|이니)?[^\n.?!]{0,24}(?:괜찮|그냥\s*해|피임\s*(?:안|필요\s*없)|넣어|해도\s*돼)/i.test(encounterText);
+    if (gaugeChat) {
+      const nextSettledBarrier = normalizeIntimacyBarrierState({ state: latestBarrierState, rewornAfterSlip });
+      const prevSettledBarrier = normalizeIntimacyBarrierState(gaugeChat.barrierSettled);
+      if (nextSettledBarrier.state !== prevSettledBarrier.state || nextSettledBarrier.rewornAfterSlip !== prevSettledBarrier.rewornAfterSlip) {
+        gaugeChat.barrierSettled = nextSettledBarrier;
+        void saveIntimacyCards().catch(() => {});
       }
     }
-    const withdrawalRequested = latestBarrierState !== 'condom' && (INTIMACY_WITHDRAWAL_RE.test(encounterText) || latestBarrierState === 'withdrawal');
-    const creampieAttemptOrDone = INTIMACY_CREAMPIE_RE.test(encounterText);
-    const explicitSafeDayConsentInAct = /(?:생리\s*중|안전일)(?:이라|이니까|이니)?[^\n.?!]{0,24}(?:괜찮|그냥\s*해|피임\s*(?:안|필요\s*없)|넣어|해도\s*돼)/i.test(encounterText);
 
     return targetGauges.map(g => {
       const name = g.name;
@@ -35273,7 +35402,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const loreTags = extractLorePersonalityToneTags(safeLoreText);
       const loreBrief = typeof personLoreReactionBrief === 'function' ? personLoreReactionBrief(name, scopeKey, effectiveSettings, recent) : '';
       const loreStyleCue = buildContraceptionLoreVoiceCue(loreTags, loreBrief, dispLabel);
-      const safeCombined = [safeLoreText, encounterText, rawMsgs.slice(-6).join('\n')].filter(Boolean).join('\n');
+      const safeCombined = [safeLoreText, encounterText, rawMsgs.slice(-6).map(stripNonProseSceneTags).join('\n')].filter(Boolean).join('\n');
       const libMentionsTarget = Boolean(libBlock && extensionTextMentionsName(libBlock, name));
 
       // 3. Relationship tier
@@ -54786,6 +54915,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       Runtime.activeTurnTimelineContext = { scopeKey: prevScopeKey, ...turnTimelineCtx };
     }
+    const prevInputHash = compact(shadowEnv.recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(shadowEnv.recent)), 40);
     if (isPreviousStageEnabled(shadowEnv.settings)) {
       beginStageModelTiming('previous');
       const prevRecord = await runPreviousStage(shadowEnv.recent, shadowEnv.settings, ledger);
@@ -54795,8 +54925,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if (prevScopeKey) {
         Runtime.shadowPrevious[prevScopeKey] = prevRecord
-          ? { at: Date.now(), record: prevRecord }
-          : { at: Date.now(), record: null };
+          ? { at: Date.now(), inputHash: prevInputHash, record: prevRecord }
+          : { at: Date.now(), inputHash: prevInputHash, record: null };
       }
     } else if (normalizePreviousStageMode(shadowEnv.settings?.previousStageMode ?? shadowEnv.settings?.previous_stage_mode ?? 'auto') !== 'off') {
       const lightPrev = buildLightweightPreviousGuardrail(shadowEnv.recent, shadowEnv.settings, {
@@ -54810,11 +54940,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (prevScopeKey) {
         Runtime.shadowPrevious[prevScopeKey] = {
           at: Date.now(),
+          inputHash: prevInputHash,
           record: lightPrev?.hasContent ? lightPrev : null
         };
       }
     } else if (prevScopeKey) {
-      Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), record: null };
+      Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), inputHash: prevInputHash, record: null };
     }
     const multiPipelineMode = normalizeMultiPipelineMode(settings.multiPipelineMode);
     beginStageModelTiming('shadow_act');
@@ -54839,7 +54970,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!ledger.previousRecord && shadowPlanning.hasPreviousRecord) {
       ledger.previousRecord = shadowPlanning.previousRecord;
       if (prevScopeKey) {
-        Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), record: ledger.previousRecord };
+        Runtime.shadowPrevious[prevScopeKey] = { at: Date.now(), inputHash: prevInputHash, record: ledger.previousRecord };
       }
     }
     if (shadowPlanning.hasContent) {
@@ -62643,7 +62774,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!scopeKey) return;
     await loadIntimacyCards();
     if (action === 'reset-gauges') {
-      if (Runtime.intimacyGauges?.[scopeKey]) Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [] };
+      if (Runtime.intimacyGauges?.[scopeKey]) {
+        Runtime.intimacyGauges[scopeKey] = {
+          settled: {}, pending: [],
+          barrierSettled: { ...INTIMACY_EMPTY_BARRIER },
+          barrierBaseline: { ...INTIMACY_EMPTY_BARRIER }
+        };
+      }
       if (Runtime.intimacyTelemetry?.[scopeKey]) Runtime.intimacyTelemetry[scopeKey] = { ...Runtime.intimacyTelemetry[scopeKey], gauges: [], contraception: [] };
       await saveIntimacyCards();
       renderIntimacyPanel(Gui.app);
@@ -65436,9 +65573,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         registered.setting = await API.registerSetting(`${PUBLIC_DISPLAY_NAME} 설정`, open, icon, 'html', `${SETTINGS_UI_ID}-menu`);
         Runtime.hookStatus.setting = !!registered.setting;
       }
-      if (await readGuiEnabledForRegistration() && !registered.button && typeof API.registerButton === 'function') {
+      const guiEnabled = await readGuiEnabledForRegistration();
+      if (guiEnabled && !registered.button && typeof API.registerButton === 'function') {
         registered.button = await API.registerButton({ name: `${PUBLIC_DISPLAY_NAME} 설정`, icon, iconType: 'html', location: 'hamburger', id: `${SETTINGS_UI_ID}-button` }, open);
         Runtime.hookStatus.button = !!registered.button;
+      }
+      const settingsChatButtonApi = typeof chatButtonApi?.registerButton === 'function'
+        ? chatButtonApi
+        : (typeof API.registerButton === 'function' ? API : null);
+      if (guiEnabled && !registered.chatButton && settingsChatButtonApi) {
+        registered.chatButton = await settingsChatButtonApi.registerButton({
+          name: `${PUBLIC_DISPLAY_NAME} 설정`,
+          icon,
+          iconType: 'html',
+          location: 'chat',
+          id: `${SETTINGS_UI_ID}-chat-button`
+        }, open);
+        Runtime.hookStatus.chatButton = !!registered.chatButton;
       }
       return true;
     } catch (error) {
@@ -67703,6 +67854,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const scoped = libEvidence ? { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libEvidence } } : settings;
       return buildShadowPreviousRecord(recent, scoped);
     },
+    debugSetShadowPrevious({ scopeKey = '', record = null, inputHash = '' } = {}) {
+      const targetScope = compact(scopeKey || Runtime.activeScopeKey || '', 512);
+      if (!targetScope) return null;
+      if (!Runtime.shadowPrevious) Runtime.shadowPrevious = {};
+      Runtime.shadowPrevious[targetScope] = record
+        ? { at: Date.now(), record: cloneJson(record), ...(inputHash ? { inputHash: compact(inputHash, 40) } : {}) }
+        : { at: Date.now(), record: null };
+      return cloneJson(Runtime.shadowPrevious[targetScope]);
+    },
     debugIntimacyRecord({ stageName = 'aide_character', parsed = {}, settings = {} } = {}) {
       const ledger = {};
       recordIntimacyOutput(ledger, stageName, parsed, settings);
@@ -68377,13 +68537,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } catch (_) {}
       try {
         if (registered.button && typeof API.unregisterUIPart === 'function') await API.unregisterUIPart(registered.button.id || registered.button);
+        registered.button = null;
         Runtime.hookStatus.button = false;
+      } catch (_) {}
+      try {
+        const uiApi = getLiveApi(['unregisterUIPart']);
+        const settingsChatUnregApi = typeof uiApi?.unregisterUIPart === 'function'
+          ? uiApi
+          : (typeof API.unregisterUIPart === 'function' ? API : null);
+        if (registered.chatButton && settingsChatUnregApi) {
+          await settingsChatUnregApi.unregisterUIPart(registered.chatButton.id || registered.chatButton);
+        }
+        registered.chatButton = null;
+        Runtime.hookStatus.chatButton = false;
       } catch (_) {}
       try {
         const uiApi = getLiveApi(['unregisterUIPart']);
         if (registered.continueButton && typeof uiApi?.unregisterUIPart === 'function') {
           await uiApi.unregisterUIPart(registered.continueButton.id || registered.continueButton);
         }
+        registered.continueButton = null;
         Runtime.hookStatus.inputAssistSendButton = false;
       } catch (_) {}
       if (InputAssistContinuePanelTimer) {

@@ -2583,7 +2583,8 @@ function __libraNarrativeStripPatch(value) {
     retraceIpcApi: null,
     retraceIpcRegistration: null,
     setting: null,
-    button: null
+    button: null,
+    chatButton: null
   };
   const Runtime = {
     bootedAt: Date.now(),
@@ -2674,7 +2675,7 @@ function __libraNarrativeStripPatch(value) {
       firstBeforeRequestAt: 0, firstAfterRequestAt: 0, firstOutputAt: 0,
       beforeRequestRuns: 0, afterRequestRuns: 0, outputRuns: 0, lastRequestType: '', lastOutputMode: ''
     },
-    hookStatus: { input: false, beforeRequest: false, afterRequest: false, output: false, retraceIpc: false, replacerPermission: 'unknown', unload: false, setting: false, button: false },
+    hookStatus: { input: false, beforeRequest: false, afterRequest: false, output: false, retraceIpc: false, replacerPermission: 'unknown', unload: false, setting: false, button: false, chatButton: false },
     hostRuntimeInfo: null,
     hostRuntimeInfoError: ''
   };
@@ -22972,6 +22973,15 @@ function summarizeAgentCbsTag(rawContent) {
   };
 
   const yieldToMainThread = () => new Promise(resolve => setTimeout(resolve, 0));
+  const createFrameYielder = (budgetMs = 12) => {
+    let sliceStartedAt = Date.now();
+    return async () => {
+      if (Date.now() - sliceStartedAt >= budgetMs) {
+        await yieldToMainThread();
+        sliceStartedAt = Date.now();
+      }
+    };
+  };
   const ragCbsRenderCache = new WeakMap();
   const renderRagCbsText = (value, cbsContext, label = 'RAG') => {
     const raw = text(value || '');
@@ -23322,24 +23332,27 @@ function summarizeAgentCbsTag(rawContent) {
     const loreContinuityActiveIds = readLoreContinuityIds(loreContinuityScope);
     const mainLoreActivationMode = normalizeLoreActivationMode(settings?.loreActivationMode);
     const loreActivationMode = mainLoreActivationMode;
-    let independentlyActivatedRaw = [];
-    let independentRendering = { activeLore: [], dropped: [], hostRecovery: { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 } };
-    let hostLoreSelection = { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 };
+    const skipSnapshotLore = settings?.skipSnapshotLoreActivation === true;
+    // UNIFIED ACTIVATION: collect all three independent evidence signals, then combine them.
+    const independentlyActivatedRaw = skipSnapshotLore ? [] : activeRisuLorebooks(ragRecent, candidates, {
+      ...settings,
+      loreBookDepth: clampInt(loreSettings.scanDepth ?? loreSettings.scan_depth ?? settings.turnWindow, 1, 128, settings.turnWindow || DEFAULT_RECENT_TURNS),
+      loreBookToken: clampInt(loreSettings.tokenBudget ?? loreSettings.token_budget ?? Math.ceil((settings.shadowRisuContextMaxChars || DEFAULT_SHARED_LORE_CONTEXT_CHARS) / 3.4), 64, 80000, Math.ceil(DEFAULT_SHARED_LORE_CONTEXT_CHARS / 3.4)),
+      loreFullWordMatching: loreSettings.fullWordMatching === true || loreSettings.full_word_matching === true,
+      loreRecursiveScanning: loreSettings.recursiveScanning !== false && loreSettings.recursive_scanning !== false,
+      loreContinuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
+      loreContinuityActiveIds,
+      loreChatVars: cbsContext?.chatVars || {},
+      loreGreetingIndex: Number.isInteger(Number(chatInfo.chat?.fmIndex)) ? Number(chatInfo.chat.fmIndex) : -1
+    });
+    const independentRendering = skipSnapshotLore
+      ? { activeLore: [], dropped: [], hostRecovery: { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 } }
+      : renderIndependentActiveLorebooks(independentlyActivatedRaw, requestMessages, cbsContext);
+    const hostLoreSelection = skipSnapshotLore
+      ? { activeLore: [], requestMessageCount: 0, matchedCandidateCount: 0, selectedCount: 0 }
+      : reuseRisuSelectedLorebooks(requestMessages, candidates, cbsContext);
     const activeLore = [];
-    if (settings?.skipSnapshotLoreActivation !== true) {
-      independentlyActivatedRaw = activeRisuLorebooks(ragRecent, candidates, {
-        ...settings,
-        loreBookDepth: clampInt(loreSettings.scanDepth ?? loreSettings.scan_depth ?? settings.turnWindow, 1, 128, settings.turnWindow || DEFAULT_RECENT_TURNS),
-        loreBookToken: clampInt(loreSettings.tokenBudget ?? loreSettings.token_budget ?? Math.ceil((settings.shadowRisuContextMaxChars || DEFAULT_SHARED_LORE_CONTEXT_CHARS) / 3.4), 64, 80000, Math.ceil(DEFAULT_SHARED_LORE_CONTEXT_CHARS / 3.4)),
-        loreFullWordMatching: loreSettings.fullWordMatching === true || loreSettings.full_word_matching === true,
-        loreRecursiveScanning: loreSettings.recursiveScanning !== false && loreSettings.recursive_scanning !== false,
-        loreContinuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
-        loreContinuityActiveIds,
-        loreChatVars: cbsContext?.chatVars || {},
-        loreGreetingIndex: Number.isInteger(Number(chatInfo.chat?.fmIndex)) ? Number(chatInfo.chat.fmIndex) : -1
-      });
-      independentRendering = renderIndependentActiveLorebooks(independentlyActivatedRaw, requestMessages, cbsContext);
-      hostLoreSelection = reuseRisuSelectedLorebooks(requestMessages, candidates, cbsContext);
+    if (!skipSnapshotLore) {
       const unifiedLoreIdentity = lore => [
         lore?.sourceType || lore?.source || '',
         lore?.moduleKey || lore?.moduleId || '',
@@ -23702,6 +23715,8 @@ function summarizeAgentCbsTag(rawContent) {
     const leftSet = leftFeature.gramKeySet;
     const rightSet = rightFeature.gramKeySet;
     if (!leftKeys?.length || !rightKeys?.length) return 0;
+    const ngramFloor = LORE_JACCARD_TUNING.ngramMatchFloor;
+    if (leftKeys.length / rightKeys.length < ngramFloor || rightKeys.length / leftKeys.length < ngramFloor) return 0;
     let overlap = 0;
     if (leftKeys.length <= rightKeys.length) {
       for (let i = 0; i < leftKeys.length; i += 1) {
@@ -23723,33 +23738,77 @@ function summarizeAgentCbsTag(rawContent) {
     const left = loreJaccardUnique(leftTokens, 180);
     const right = loreJaccardUnique(rightTokens, 300);
     if (!left.length || !right.length) return { jaccard: 0, coverage: 0, overlap: 0, overlapWeight: 0 };
-    let leftWeight = 0;
+    const rightLength = right.length;
+    const rightFeatures = new Array(rightLength);
+    const rightWeights = new Array(rightLength);
+    const rightExact = new Map();
     let rightWeight = 0;
+    for (let index = 0; index < rightLength; index += 1) {
+      const token = right[index];
+      const feature = loreTokenFeatureOf(token);
+      const weight = loreJaccardTokenWeight(token);
+      rightFeatures[index] = feature;
+      rightWeights[index] = weight;
+      rightWeight += weight;
+      if (feature.normalized) {
+        const existing = rightExact.get(feature.normalized);
+        if (existing === undefined) rightExact.set(feature.normalized, index);
+        else if (Array.isArray(existing)) existing.push(index);
+        else rightExact.set(feature.normalized, [existing, index]);
+      }
+    }
+    let leftWeight = 0;
     let overlapWeight = 0;
     let overlap = 0;
-    const used = new Set();
-    left.forEach(leftToken => {
+    const used = new Uint8Array(rightLength);
+    const fuzzyFloor = LORE_JACCARD_TUNING.fuzzyMatchThreshold;
+    for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+      const leftToken = left[leftIndex];
       const weight = loreJaccardTokenWeight(leftToken);
       leftWeight += weight;
+      const leftFeature = loreTokenFeatureOf(leftToken);
+      if (!leftFeature.normalized) continue;
       let bestIndex = -1;
       let bestSimilarity = 0;
       let bestWeight = 0;
-      right.forEach((rightToken, index) => {
-        if (used.has(index)) return;
-        const similarity = loreJaccardTokenSimilarity(leftToken, rightToken);
-        if (similarity > bestSimilarity) {
-          bestIndex = index;
-          bestSimilarity = similarity;
-          bestWeight = loreJaccardTokenWeight(rightToken);
+      const exactEntry = rightExact.get(leftFeature.normalized);
+      if (exactEntry !== undefined) {
+        if (typeof exactEntry === 'number') {
+          if (!used[exactEntry]) {
+            bestIndex = exactEntry;
+            bestSimilarity = 1;
+            bestWeight = rightWeights[exactEntry];
+          }
+        } else {
+          for (let i = 0; i < exactEntry.length; i += 1) {
+            const candidateIndex = exactEntry[i];
+            if (!used[candidateIndex]) {
+              bestIndex = candidateIndex;
+              bestSimilarity = 1;
+              bestWeight = rightWeights[candidateIndex];
+              break;
+            }
+          }
         }
-      });
-      if (bestIndex >= 0 && bestSimilarity >= LORE_JACCARD_TUNING.fuzzyMatchThreshold) {
-        used.add(bestIndex);
+      }
+      if (bestIndex < 0) {
+        for (let index = 0; index < rightLength; index += 1) {
+          if (used[index]) continue;
+          const similarity = loreTokenFeatureSimilarity(leftFeature, rightFeatures[index]);
+          if (similarity > bestSimilarity) {
+            bestIndex = index;
+            bestSimilarity = similarity;
+            bestWeight = rightWeights[index];
+            if (bestSimilarity >= 1) break;
+          }
+        }
+      }
+      if (bestIndex >= 0 && bestSimilarity >= fuzzyFloor) {
+        used[bestIndex] = 1;
         overlap += 1;
         overlapWeight += Math.min(weight, bestWeight) * bestSimilarity;
       }
-    });
-    right.forEach(token => { rightWeight += loreJaccardTokenWeight(token); });
+    }
     const unionWeight = leftWeight + rightWeight - overlapWeight;
     return {
       jaccard: unionWeight > 0 ? overlapWeight / unionWeight : 0,
@@ -24013,13 +24072,32 @@ function summarizeAgentCbsTag(rawContent) {
     return best;
   };
 
+  const LORE_JACCARD_SCORE_QUERY_CACHE_MAX = 64;
+  const LoreJaccardScoreQueryCache = new Map();
+  const loreJaccardScoreQueryPrep = query => {
+    const key = text(query || '');
+    let prep = LoreJaccardScoreQueryCache.get(key);
+    if (prep !== undefined) return prep;
+    prep = {
+      tokens: loreJaccardTokens(key, 180),
+      charNgrams: loreJaccardCharNgrams(key, 220)
+    };
+    if (LoreJaccardScoreQueryCache.size >= LORE_JACCARD_SCORE_QUERY_CACHE_MAX) {
+      const oldest = LoreJaccardScoreQueryCache.keys().next().value;
+      if (oldest !== undefined) LoreJaccardScoreQueryCache.delete(oldest);
+    }
+    LoreJaccardScoreQueryCache.set(key, prep);
+    return prep;
+  };
+
   const loreJaccardScoreText = (query, body, heading = '') => {
-    const queryTokens = loreJaccardTokens(query, 180);
+    const queryPrep = loreJaccardScoreQueryPrep(query);
+    const queryTokens = queryPrep.tokens;
     if (!queryTokens.length) return { score: 0, lexical: 0, coverage: 0, heading: 0, char: 0, overlap: 0, intentBoost: 0 };
     const bodyTokens = loreJaccardTokens(body, 360);
     const lexical = loreJaccardSoftWeighted(queryTokens, bodyTokens);
     const headingStats = loreJaccardSoftWeighted(queryTokens, loreJaccardTokens(heading, 120));
-    const charStats = loreJaccardWeighted(loreJaccardCharNgrams(query, 220), loreJaccardCharNgrams(`${heading}\n${body}`, 420));
+    const charStats = loreJaccardWeighted(queryPrep.charNgrams, loreJaccardCharNgrams(`${heading}\n${body}`, 420));
     const intentBoost = loreJaccardSectionIntentBoost(query, heading);
     const score = clampNumber(
       Math.max(lexical.jaccard, lexical.coverage * 0.72) * 0.58
@@ -24969,20 +25047,24 @@ function summarizeAgentCbsTag(rawContent) {
     return { ...passage, start: Number(passage.start || 0) + localStart, end: Number(passage.start || 0) + localStart + budget, text: body.slice(localStart, localStart + budget).trim() };
   };
 
-  const responseLoreBuildPassageEvidence = (content, query, maxChars, protectedEvidence = false) => {
+  const responseLoreBuildPassageEvidence = async (content, query, maxChars, protectedEvidence = false, maybeYield = null) => {
     const source = text(content || '').trim();
     const budget = clampInt(maxChars, 420, protectedEvidence ? 5200 : 3400, protectedEvidence ? 4200 : 2600);
     const windows = responseLorePassageWindows(source);
     if (!windows.length) return { text: '', passages: [], rawChars: source.length, excerptChars: 0 };
     const queryAnchors = loreDistinctiveAnchorTokens(query).slice(0, 24);
-    const ranked = windows.map((passage, order) => {
+    const ranked = [];
+    for (let order = 0; order < windows.length; order += 1) {
+      const passage = windows[order];
       const lexical = loreJaccardScoreText(query, compactMiddle(passage.text, 2600), passage.heading || '');
       const tokenSet = new Set(responseLoreTokenStats(`${passage.heading || ''}\n${passage.text}`).counts.keys());
       const coveredAnchors = queryAnchors.filter(anchor => tokenSet.has(loreJaccardNormalizeKey(anchor)));
       const exact = loreExactEntityAnchorScore(query, `${passage.heading || ''}\n${passage.text}`);
       const score = clampNumber(Number(lexical.score || 0) * 0.72 + Math.min(1, coveredAnchors.length / Math.max(1, queryAnchors.length)) * 0.18 + Number(exact || 0) * 0.10, 0, 1.2, 0);
-      return { ...passage, order, score, coveredAnchors, tokenSet };
-    }).sort((left, right) => right.score - left.score || left.order - right.order);
+      ranked.push({ ...passage, order, score, coveredAnchors, tokenSet });
+      if (maybeYield) await maybeYield();
+    }
+    ranked.sort((left, right) => right.score - left.score || left.order - right.order);
     const selected = [];
     const covered = new Set();
     let remaining = budget;
@@ -25008,6 +25090,7 @@ function summarizeAgentCbsTag(rawContent) {
       selected.push({ ...fitted, block, utility: bestUtility, maxSimilarity: bestSimilarity });
       for (const anchor of passage.coveredAnchors) covered.add(loreJaccardNormalizeKey(anchor));
       remaining -= block.length + 2;
+      if (maybeYield) await maybeYield();
     }
     if (!selected.length) {
       const fallback = responseLoreFitPassage(ranked[0] || windows[0], query, Math.max(120, budget - 80));
@@ -25024,7 +25107,7 @@ function summarizeAgentCbsTag(rawContent) {
     };
   };
 
-  const responseLoreBuildStageView = ({ ranked, adaptive, stageId, snapshot, settings, commonIds = new Set(), query = '' } = {}) => {
+  const responseLoreBuildStageView = async ({ ranked, adaptive, stageId, snapshot, settings, commonIds = new Set(), query = '', maybeYield = null } = {}) => {
     const def = responseLoreStageDef(stageId);
     const maxCharsBase = clampInt(settings?.responseLoreMaxChars, MIN_RESPONSE_LORE_CHARS, MAX_RESPONSE_LORE_CHARS, DEFAULT_RESPONSE_LORE_MAX_CHARS);
     const maxChars = ['memory_character_ito','memory_world_ito','memory_plot_ito'].includes(stageId)
@@ -25045,6 +25128,7 @@ function summarizeAgentCbsTag(rawContent) {
     const dropped = [];
     let remaining = maxChars;
     for (const row of candidates) {
+      if (maybeYield) await maybeYield();
       if (selectedItems.length >= targetItems || remaining < 260) break;
       if (!adaptiveIds.has(row.id) && row.protected !== true && Number(row.relevance || 0) < replacementFloor) continue;
       const rawContent = row.record.content;
@@ -25055,7 +25139,7 @@ function summarizeAgentCbsTag(rawContent) {
       }
       const header = `[LORE ${selectedItems.length + 1}: ${row.lore?.label || 'unnamed'} | source=${row.lore?.sourceType || 'unknown'}${row.lore?.moduleName ? `/${row.lore.moduleName}` : ''} | route=${commonIds.has(row.id) ? 'shared_frontier' : 'stage_domain_rescue'} | relevance=${Number(row.relevance || 0).toFixed(4)}]`;
       const fairBudget = Math.max(420, Math.min(row.protected ? 4400 : 3000, Math.floor((remaining - header.length - 2) / Math.max(1, Math.min(adaptive.maxItems - selectedItems.length, 4)))));
-      const passage = responseLoreBuildPassageEvidence(renderedContent, query, fairBudget, row.protected);
+      const passage = await responseLoreBuildPassageEvidence(renderedContent, query, fairBudget, row.protected, maybeYield);
       const block = [header, passage.text].filter(Boolean).join('\n');
       if (!passage.text || block.length > remaining) {
         dropped.push({ id: row.id, label: row.lore?.label || '', reason: 'context_budget' });
@@ -25143,7 +25227,13 @@ function summarizeAgentCbsTag(rawContent) {
     if (!allowedConsumers.length) return null;
     const candidates = (Array.isArray(snapshot.candidates) ? snapshot.candidates : []).filter(candidate => ['character','module'].includes(candidate?.sourceType) && responseLoreCanonicalContent(candidate));
     if (!candidates.length) return null;
-    const records = candidates.map(responseLoreIndexRecord).filter(record => record.content);
+    const maybeYield = createFrameYielder(12);
+    const records = [];
+    for (let index = 0; index < candidates.length; index += 1) {
+      const record = responseLoreIndexRecord(candidates[index]);
+      if (record.content) records.push(record);
+      if ((index + 1) % 8 === 0) await maybeYield();
+    }
     await yieldToMainThread();
     const activeById = new Map((Array.isArray(snapshot.activeLore) ? snapshot.activeLore : []).map(lore => [loreContinuityIdentity(lore), lore]));
     let hostSelected = [];
@@ -25162,6 +25252,7 @@ function summarizeAgentCbsTag(rawContent) {
       supportText
     ].filter(Boolean).join('\n\n'), 9000);
     const commonRank = responseLoreRankRecords({ records, currentQuery, terminalQuery, supportQuery, stageId: 'shared', activeById, hostById });
+    await maybeYield();
     const commonAdaptive = responseLoreAdaptiveSelect(commonRank, settings, 'shared');
     const commonIds = new Set(commonAdaptive.selected.map(row => row.id));
     const stages = {};
@@ -25170,9 +25261,11 @@ function summarizeAgentCbsTag(rawContent) {
       const def = responseLoreStageDef(consumer);
       const stageSupport = compact([supportQuery, def.domainQuery].filter(Boolean).join('\n'), 8000);
       const ranked = responseLoreRankRecords({ records, currentQuery, terminalQuery, supportQuery: stageSupport, coverageQuery: compact([currentQuery, terminalQuery, supportQuery].filter(Boolean).join('\n\n'), 9000), stageId: consumer, activeById, hostById });
+      await maybeYield();
       const adaptive = responseLoreAdaptiveSelect(ranked, settings, consumer);
+      await maybeYield();
       const query = compact([currentQuery, terminalQuery, stageSupport].filter(Boolean).join('\n\n'), 9000);
-      stages[consumer] = responseLoreBuildStageView({ ranked, adaptive, stageId: consumer, snapshot, settings, commonIds, query });
+      stages[consumer] = await responseLoreBuildStageView({ ranked, adaptive, stageId: consumer, snapshot, settings, commonIds, query, maybeYield });
     }
     const materialHash = stableDraftHash(JSON.stringify({
       engine: RESPONSE_LORE_ENGINE_VERSION,
@@ -60089,7 +60182,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const candidateGeneration=options.candidateOnly===true && options.forceRegenerate===true && options.mode==='regenerate' && !!options.jobId;
       const manifestIdentityMode=candidateGeneration || (approvedEdit&&!!options.sourceEditBasis) ? 'canonical_selection_v1' : 'full_v1';
       const manifestIdentityForMode=value=>manifestIdentityMode==='canonical_selection_v1'
-        ? unifiedCanonicalSelectionManifestIdentity(value) : unifiedManifestIdentity(value);
+        ? unifiedCanonicalSelectionManifestIdentityCooperative(value) : unifiedManifestIdentityCooperative(value);
       if(candidateGeneration){
         unifiedAssert(!serverBackend,'UNIFIED_SERVER_CANDIDATE_NOT_SUPPORTED');
         const job=await loadCanonicalJob(context.scope,options.jobId),activeRef=memoryRefForStart(manifest,batch[0].turn);
@@ -60116,9 +60209,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ||!(prefix.head?.unifiedCoverage?.legacyCount>0),'UNIFIED_EDIT_PREFIX_PENDING');
         await options.sourceEditValidate?.();
         const analysisHead=prefix.canonicalCount?prefix.head:null;
+        const headDigest=digest(rawHead);
+        await yieldToMainThread();
+        const registryDigest=digest(rawRegistry);
+        await yieldToMainThread();
+        const manifestDigest=await manifestIdentityForMode(manifest);
+        const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null));
         return {serverReadSet,serverActiveReadSet,serverActiveDescriptor,engineVersion:UNIFIED_ENGINE_VERSION,scopeKey:context.scope.scopeKey,worldlineId:'main',replayRequired:true,
-          headDigest:digest(rawHead),registryDigest:digest(rawRegistry),manifestDigest:manifestIdentityForMode(manifest),manifestIdentityMode,
-          worldlineDigest:digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)),sourceDigest:sourceDigest(batch),previousTurn:Number(batch[0].turn)-1,
+          headDigest,registryDigest,manifestDigest,manifestIdentityMode,
+          worldlineDigest,sourceDigest:sourceDigest(batch),previousTurn:Number(batch[0].turn)-1,
           analysisHeadDigest:digest(analysisHead),analysisRegistryDigest:digest(prefix.registry),head:analysisHead,registry:prefix.registry};
       }
       const rawHead = await storage.getJson(key.continuityState(context.scope),null);
@@ -60127,9 +60226,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(migration && !isReadableUnifiedEngineVersion(rawHead?.unifiedApplied?.engineVersion)){
         unifiedAssert(unifiedLocalFrontier(manifest)===previousTurn,'UNIFIED_MIGRATION_FRONTIER_GAP');
         const prefix=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:previousTurn,signal:options.signal});
+        const headDigest=digest(rawHead);
+        await yieldToMainThread();
+        const registryDigest=digest(rawRegistry);
+        await yieldToMainThread();
+        const manifestDigest=await manifestIdentityForMode(manifest);
+        const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null));
         return {serverReadSet,serverActiveReadSet,serverActiveDescriptor,engineVersion:UNIFIED_ENGINE_VERSION,scopeKey:context.scope.scopeKey,worldlineId:'main',replayRequired:true,
-          headDigest:digest(rawHead),registryDigest:digest(rawRegistry),manifestDigest:manifestIdentityForMode(manifest),manifestIdentityMode,
-          worldlineDigest:digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)),sourceDigest:sourceDigest(batch),previousTurn,
+          headDigest,registryDigest,manifestDigest,manifestIdentityMode,
+          worldlineDigest,sourceDigest:sourceDigest(batch),previousTurn,
           head:prefix.head,registry:prefix.registry,migrationDigest:migration.recordDigest};
       }
       unifiedAssert(!rawHead || rawHead.schema === CONTINUITY_STATE_SCHEMA, 'UNIFIED_HEAD_SCHEMA_UNSUPPORTED');
@@ -60138,15 +60243,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // retrying a skipped batch reads the State as it stood before that batch.
       if(Number(rawHead?.throughTurn||0)>previousTurn){
         const prefix=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:previousTurn,signal:options.signal,allowIncompletePrefix:true});
+        const headDigest=digest(rawHead);
+        await yieldToMainThread();
+        const registryDigest=digest(rawRegistry);
+        await yieldToMainThread();
+        const manifestDigest=await unifiedManifestIdentityCooperative(manifest);
+        const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null));
         return {memoryFirst:true,statePending:true,serverReadSet,serverActiveReadSet,serverActiveDescriptor,engineVersion:UNIFIED_ENGINE_VERSION,scopeKey:context.scope.scopeKey,worldlineId:'main',
-          headDigest:digest(rawHead),registryDigest:digest(rawRegistry),manifestDigest:unifiedManifestIdentity(manifest),
-          worldlineDigest:digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)),sourceDigest:sourceDigest(batch),previousTurn,
+          headDigest,registryDigest,manifestDigest,
+          worldlineDigest,sourceDigest:sourceDigest(batch),previousTurn,
           head:prefix.canonicalCount?prefix.head:null,registry:prefix.registry};
       }
       const statePending=Number(rawHead?.throughTurn||0)!==previousTurn || (previousTurn>0&&!unifiedStateCanContinue(rawHead));
+      const headDigest=digest(rawHead);
+      await yieldToMainThread();
+      const registryDigest=digest(rawRegistry);
+      await yieldToMainThread();
+      const manifestDigest=await unifiedManifestIdentityCooperative(manifest);
+      const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null));
       return {memoryFirst:true,statePending,serverReadSet,serverActiveReadSet,serverActiveDescriptor,engineVersion:UNIFIED_ENGINE_VERSION, scopeKey:context.scope.scopeKey, worldlineId:'main',
-        headDigest:digest(rawHead), registryDigest:digest(rawRegistry), manifestDigest:unifiedManifestIdentity(manifest),
-        worldlineDigest:digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)), sourceDigest:sourceDigest(batch), previousTurn,
+        headDigest, registryDigest, manifestDigest,
+        worldlineDigest, sourceDigest:sourceDigest(batch), previousTurn,
         head:rawHead, registry:rawRegistry};
     };
     const assertUnifiedBasis = async (context,basis,phase,checkManifest=true,options={}) => {
@@ -60159,7 +60276,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const currentContext = await resolveJobContext(context);
       unifiedAssert(currentContext?.scope?.scopeKey === basis.scopeKey, `UNIFIED_SCOPE_CHANGED:${phase}`);
       const head = await storage.getJson(key.continuityState(context.scope),null), registry = await storage.getJson(key.entityRegistry(context.scope),null);
-      unifiedAssert(digest(head)===basis.headDigest && digest(registry)===basis.registryDigest, `UNIFIED_STATE_BASELINE_CHANGED:${phase}`);
+      unifiedAssert(digest(head)===basis.headDigest, `UNIFIED_STATE_BASELINE_CHANGED:${phase}`);
+      if(options.yieldIfNeeded){options.checkAbort?.();await options.yieldIfNeeded();options.checkAbort?.();}
+      unifiedAssert(digest(registry)===basis.registryDigest, `UNIFIED_STATE_BASELINE_CHANGED:${phase}`);
+      if(options.yieldIfNeeded){options.checkAbort?.();await options.yieldIfNeeded();options.checkAbort?.();}
       unifiedAssert(digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null))===basis.worldlineDigest, `UNIFIED_WORLDLINE_CHANGED:${phase}`);
       if(checkManifest){
         const manifestSnapshot=await storage.getJson(key.manifest(context.scope),null);
@@ -60244,6 +60364,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(!unifiedRefIsReadableUnified(ref)){
           await unifiedLegacyMemoryCheck(ref,()=>memory);
           lineage.push(unifiedOriginKey(memory));
+          await yieldCandidatePreparation();
+          abortCandidatePreparation();
           continue;
         }
         const approved=await unifiedEvidenceRead(memory);
@@ -60254,10 +60376,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const targetKey=`${string(ref?.memoryId||'')}\u0000${Number(ref?.revision||0)}\u0000${string(ref?.sourceDigest||'')}\u0000${string(ref?.artifactDigest||'')}\u0000${Number(ref?.turnRange?.start||0)}\u0000${Number(ref?.turnRange?.end||0)}`;
         if(!unifiedInheritedRef(ref)&&!recallTargetKeys.has(targetKey)){
           diagnostics.candidateTargetsFiltered+=1;
-          if((index+1)%4===0||index===refs.length-1){
-            await yieldCandidatePreparation();
-            abortCandidatePreparation();
-          }
+          await yieldCandidatePreparation();
+          abortCandidatePreparation();
           continue;
         }
         const entityNames=new Map(asArray(memory.canonicalArtifact?.entities).map(entity=>[entity.tempId,entity.name]));
@@ -60276,10 +60396,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           lifecycles.set(lifecycleId,{lifecycleId,ref,index,factId:string(fact.tempFactId),value:clone(value),participantIds,participants,
             cursor,canonicalOriginKey:cursor.canonicalOriginKey});
         }
-        if((index+1)%4===0||index===refs.length-1){
-          await yieldCandidatePreparation();
-          abortCandidatePreparation();
-        }
+        await yieldCandidatePreparation();
+        abortCandidatePreparation();
       }
       const rows=[...lifecycles.values()].filter(row=>['open','blocked','uncertain','resolved','closed'].includes(row.value.status));
       const random=(()=>{try{return globalThis?.crypto?.randomUUID?.()||'';}catch(_){return '';}})()
@@ -60288,14 +60406,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Preserve the same request-local aliases and exact prefix proof for the
       // visible tail, but do not hash every hidden lifecycle's growing prefix.
       const exposedRows=rows.slice(-40),firstVisibleOrdinal=rows.length-exposedRows.length;
-      exposedRows.forEach((row,index)=>{
+      for(let index=0;index<exposedRows.length;index+=1){
+        const row=exposedRows[index];
         row.lineageDigest=digest(lineage.slice(0,row.index+1));
         diagnostics.lineageDigestsComputed+=1;
         row.alias=`ca_${nonce}_${firstVisibleOrdinal+index+1}`;
         row.allowedLinks=UNIFIED_THREAD_CLOSED_STATUS.includes(row.value.status)?['reopen','associate']
           :['reaffirm','replace','resolve','associate'];
         candidates.push(row);byAlias.set(row.alias,row);
-      });
+        if((index+1)%8===0){await yieldCandidatePreparation();abortCandidatePreparation();}
+      }
       const visible=candidates;
       diagnostics.visibleCount=visible.length;
       if(diagnostics.candidateTargetsFiltered>0&&diagnostics.branchGuardStatus===BRANCH_GUARD_BOOTSTRAP_PENDING){
@@ -63168,6 +63288,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (work && (work.engineVersion || 'legacy') !== UNIFIED_ENGINE_VERSION) throw new Error('LEGACY_JOB_REVIEW_REQUIRED');
       if (state.disposed) return disposedResult();
       const unifiedBasis=await captureUnifiedBasis(context,manifest,batch,options);
+      await yieldToMainThread();
+      if (state.disposed) return disposedResult();
       unifiedBasis.policyDigest=digest(policySnapshot);
       if (!work || work.schema !== WORK_SCHEMA || work.sourceDigest !== sourceHash || Number(work.revision) !== revision) {
         const run = runRecord({ scope: context.scope, startTurn, batch, sourceHash, revision });
@@ -63183,8 +63305,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         };
         await storage.setJson(key.run(context.scope, run.runId), run);
         if (state.disposed) return disposedResult();
+        await yieldToMainThread();
         await storage.setJson(workKey, work);
         unifiedAssert(digest(await storage.getStoredJson(key.run(context.scope, run.runId), null)) === digest(run), 'FRESH_ANALYSIS_RUN_READBACK_FAILED');
+        await yieldToMainThread();
+        if (state.disposed) return disposedResult();
         unifiedAssert(digest(await storage.getStoredJson(workKey, null)) === digest(work), 'FRESH_ANALYSIS_WORK_READBACK_FAILED');
         if (state.disposed) return disposedResult();
       }
@@ -97211,8 +97336,18 @@ advanced
       }
       Runtime.hookStatus.button = !!registered.button;
     }
+    if (guiEnabled && !registered.chatButton && typeof chatButtonApi?.registerButton === 'function') {
+      try {
+        const part = await chatButtonApi.registerButton({ name: `${PUBLIC_DISPLAY_NAME} 설정`, icon, iconType: 'html', location: 'chat', id: `${SETTINGS_UI_ID}-chat-button` }, openSettings);
+        registered.chatButton = normalizeLibraUiRegistration(part, `${SETTINGS_UI_ID}-chat-button`);
+      } catch (error) {
+        if (isDuplicateLibraUiError(error)) registered.chatButton = { id: `${SETTINGS_UI_ID}-chat-button`, duplicate: true };
+        else { allOk = false; warn('libra_settings_chat_button_register_failed', error); }
+      }
+      Runtime.hookStatus.chatButton = !!registered.chatButton;
+    }
 
-    const needsRetry = !registered.setting && !registered.button;
+    const needsRetry = !registered.setting && !registered.button && !registered.chatButton;
     if (needsRetry && !LibraMemoryCore.state.disposed && libraUiRegistrationRetryCount < 6 && !libraUiRegistrationRetryTimer) {
       libraUiRegistrationRetryCount += 1;
       libraUiRegistrationRetryTimer = setTimeout(() => {
@@ -97221,8 +97356,8 @@ advanced
       }, Math.min(2400, 350 * libraUiRegistrationRetryCount));
     }
 
-    if (registered.setting || registered.button) startLibraAttention();
-    return allOk && !!(registered.setting || registered.button);
+    if (registered.setting || registered.button || registered.chatButton) startLibraAttention();
+    return allOk && !!(registered.setting || registered.button || registered.chatButton);
   };
 
   const redactPublicSecrets = (value, keyHint = '') => {
@@ -98704,15 +98839,19 @@ advanced
 
       const settingRegistration = registered.setting;
       const buttonRegistration = registered.button;
+      const chatButtonRegistration = registered.chatButton;
 
       registered.setting = null;
       registered.button = null;
+      registered.chatButton = null;
 
       Runtime.hookStatus.setting = false;
       Runtime.hookStatus.button = false;
+      Runtime.hookStatus.chatButton = false;
 
       try { await disposeLibraUiRegistration('setting', settingRegistration, `${SETTINGS_UI_ID}-menu`); } catch (_) {}
       try { await disposeLibraUiRegistration('button', buttonRegistration, `${SETTINGS_UI_ID}-button`); } catch (_) {}
+      try { await disposeLibraUiRegistration('button', chatButtonRegistration, `${SETTINGS_UI_ID}-chat-button`); } catch (_) {}
       if (libraUiRegistrationRetryTimer) {
         clearTimeout(libraUiRegistrationRetryTimer);
         libraUiRegistrationRetryTimer = null;

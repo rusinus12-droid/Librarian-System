@@ -56562,26 +56562,44 @@ ${cleanedText}`, 80),
     }
   };
 
+  const registerChatButtonEntry = async (uiApi) => {
+    if (!uiApi || typeof uiApi.registerButton !== 'function' || Runtime.registered.chatButton) return null;
+    try {
+      const part = await uiApi.registerButton({
+        name: PLUGIN_NAME,
+        icon: vectorRagIconSvg,
+        iconType: 'html',
+        location: 'chat',
+        id: 'vector-rag-memory-chat'
+      }, showUi);
+      return normalizeUiRegistrationHandle(part, 'vector-rag-memory-chat');
+    } catch (error) {
+      if (isDuplicateUiError(error)) return { id: 'vector-rag-memory-chat', duplicate: true };
+      warn('registerButton(chat) failed', error);
+      return null;
+    }
+  };
+
   const registerUiOnce = async () => {
     const uiApi = getUiRegistrationApi();
     Runtime.registered.setting = Runtime.registered.setting || await registerSettingEntry(uiApi);
     Runtime.registered.hamburgerButton = Runtime.registered.hamburgerButton || await registerHamburgerButtonEntry(uiApi);
-    return !!(Runtime.registered.setting && Runtime.registered.hamburgerButton);
+    Runtime.registered.chatButton = Runtime.registered.chatButton || await registerChatButtonEntry(uiApi);
+    return !!(Runtime.registered.setting && Runtime.registered.hamburgerButton && Runtime.registered.chatButton);
   };
 
   const registerUi = async (settings = Runtime.settings || DEFAULTS) => {
-    // Keep the GUI reachable from RisuAI settings and the hamburger menu,
-    // without adding action/chat floating icon buttons to the main UI.
+    // Keep the GUI reachable from RisuAI settings, the hamburger menu, and the chat action area.
     if (settings?.enableGui === false) return false;
     if (Runtime.uiRegistering) return;
-    if (Runtime.registered.setting && Runtime.registered.hamburgerButton) return;
+    if (Runtime.registered.setting && Runtime.registered.hamburgerButton && Runtime.registered.chatButton) return;
     Runtime.uiRegistering = true;
     Runtime.uiRegisterAttempts += 1;
     try {
       const ready = await registerUiOnce();
       if (ready) {
         startFlashbackAttention();
-        console.log(`[${PLUGIN_NAME}] GUI hook registered. setting=${!!Runtime.registered.setting} hamburger=${!!Runtime.registered.hamburgerButton}`);
+        console.log(`[${PLUGIN_NAME}] GUI hook registered. setting=${!!Runtime.registered.setting} hamburger=${!!Runtime.registered.hamburgerButton} chat=${!!Runtime.registered.chatButton}`);
         console.log(`[${PLUGIN_NAME}] Manual GUI command: __FlashbackMemory.showUi()`);
       } else {
         warn('GUI hook is not ready yet. Retrying registration.');
@@ -56591,7 +56609,7 @@ ${cleanedText}`, 80),
     } finally {
       Runtime.uiRegistering = false;
     }
-    const hasAllEntries = !!(Runtime.registered.setting && Runtime.registered.hamburgerButton);
+    const hasAllEntries = !!(Runtime.registered.setting && Runtime.registered.hamburgerButton && Runtime.registered.chatButton);
     if (!hasAllEntries && Runtime.uiRegisterAttempts < 60) {
       scheduleTimer(() => { registerUi(Runtime.settings || settings).catch(error => warn('registerUi retry failed', error)); }, 500);
     }
@@ -58351,6 +58369,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         try { if (Runtime.registered.button?.id && typeof live.unregisterUIPart === 'function') await live.unregisterUIPart(Runtime.registered.button.id); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('flashback', 'ui.unregister.button', _e); } catch (__) {} }
         try { if (Runtime.registered.hamburgerButton?.id && typeof live.unregisterUIPart === 'function') await live.unregisterUIPart(Runtime.registered.hamburgerButton.id); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('flashback', 'ui.unregister.hamburger', _e); } catch (__) {} }
         try { if (Runtime.registered.chatButton?.id && typeof live.unregisterUIPart === 'function') await live.unregisterUIPart(Runtime.registered.chatButton.id); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('flashback', 'ui.unregister.chatbutton', _e); } catch (__) {} }
+        Runtime.registered.setting = null;
+        Runtime.registered.button = null;
+        Runtime.registered.hamburgerButton = null;
+        Runtime.registered.chatButton = null;
         if (chatOutputDrainTimedOut) {
           // Keep the client alive during an in-flight release, then cap deferred cleanup if that work hangs.
           let deferredDisposeTimer = null;
