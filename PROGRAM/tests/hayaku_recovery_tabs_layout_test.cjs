@@ -6,27 +6,35 @@ const { test } = require('node:test');
 
 const source = fs.readFileSync(path.resolve(__dirname, '../plugins/HAYAKU_Locator_Continuity.js'), 'utf8');
 
-test('HAYAKU recovery subtabs: 복구·복원 isolates shared cards, 재분석 puts tag filter first and omits full rebuild, Cold Start omits shared cards', () => {
+test('HAYAKU recovery subtabs: 복구·복원, 원문 태그 필터, 재분석, Cold Start stay in order and isolated', () => {
   const recoveryStart = source.indexOf('const recoveryPage = `');
   const scopeStart = source.indexOf('const serverSection = `', recoveryStart);
   assert.ok(recoveryStart >= 0 && scopeStart > recoveryStart, 'recoveryPage slice found');
   const recoveryHtml = source.slice(recoveryStart, scopeStart);
 
   assert.match(recoveryHtml, /data-subtab="miss"[^>]*data-recovery-view="missing"[^>]*>복구·복원<\/button>/, 'first subtab is labeled 복구·복원');
+  assert.match(
+    recoveryHtml,
+    /data-subtab="miss"[^>]*data-recovery-view="missing">복구·복원<\/button><button[^>]*data-subtab="filter"[^>]*data-recovery-view="tag_filter">원문 태그 필터<\/button><button[^>]*data-subtab="reana"[^>]*data-recovery-view="reanalysis">재분석<\/button><button[^>]*data-subtab="cold"[^>]*data-recovery-view="cold">Cold Start<\/button>/,
+    'four recovery subtabs appear in exact order'
+  );
   assert.doesNotMatch(recoveryHtml, /data-subtab="miss"[^>]*>누락 복구<\/button>/, 'old 누락 복구 tab label removed');
 
   const missStart = recoveryHtml.indexOf('<section data-recovery-panel="missing"');
+  const tagStart = recoveryHtml.indexOf('<section data-recovery-panel="tag_filter"');
   const reanaStart = recoveryHtml.indexOf('<section data-recovery-panel="reanalysis"');
   const coldStart = recoveryHtml.indexOf('<section data-recovery-panel="cold"');
   const tailEnd = recoveryHtml.lastIndexOf('</section>');
-  assert.ok(missStart > 0 && reanaStart > missStart && coldStart > reanaStart && tailEnd > coldStart, 'three subpanels appear in order');
+  assert.ok(missStart > 0 && tagStart > missStart && reanaStart > tagStart && coldStart > reanaStart && tailEnd > coldStart, 'four subpanels appear in order');
 
-  const missPanel = recoveryHtml.slice(missStart, reanaStart);
+  const missPanel = recoveryHtml.slice(missStart, tagStart);
+  const tagPanel = recoveryHtml.slice(tagStart, reanaStart);
   const reanaPanel = recoveryHtml.slice(reanaStart, coldStart);
   const afterCold = recoveryHtml.slice(coldStart);
 
   for (const needle of ['id="hayakuRecoverySettingsLink"', 'data-portable-backup-host="hayaku_locator_continuity"', 'id="hayakuMaintenanceRun"']) {
     assert.ok(missPanel.includes(needle), `${needle} lives inside 복구·복원 panel`);
+    assert.ok(!tagPanel.includes(needle), `${needle} is absent from 원문 태그 필터 panel`);
     assert.ok(!reanaPanel.includes(needle), `${needle} is absent from 재분석 panel`);
     assert.ok(!afterCold.includes(needle), `${needle} does not appear inside or after Cold Start panel`);
   }
@@ -34,10 +42,11 @@ test('HAYAKU recovery subtabs: 복구·복원 isolates shared cards, 재분석 p
   assert.ok(!reanaPanel.includes('id="hayakuRebuildCard"'), '전체 턴 재구성 card is removed from 재분석');
   assert.ok(!reanaPanel.includes('id="runHayakuRebuild"'), '전체 턴 재구성 button is removed from 재분석');
 
-  const tagFilterPos = reanaPanel.indexOf('id="hayakuTagFilterFold"');
-  const consentPos = reanaPanel.indexOf('id="hayakuSourceEditConsent"');
-  assert.ok(tagFilterPos > 0 && consentPos > tagFilterPos, '원문 태그 필터 appears strictly before 개별 턴 재분석');
-  assert.match(reanaPanel.slice(tagFilterPos, consentPos), /<summary>원문 태그 필터<\/summary>/);
+  assert.ok(tagPanel.includes('id="hayakuSourceTrackingSettings"'), '원문 태그 필터 panel hosts hayakuSourceTrackingSettings');
+  assert.ok(!reanaPanel.includes('id="hayakuSourceTrackingSettings"'), 'hayakuSourceTrackingSettings is moved out of 재분석 panel');
+  assert.ok(!recoveryHtml.includes('id="hayakuTagFilterFold"'), 'collapsed tag filter fold wrapper is removed');
+  assert.ok(reanaPanel.includes('id="hayakuSourceEditConsent"'), '개별 턴 재분석 remains in 재분석 panel');
+  assert.match(source, /\[data-hayaku-open-tag-filter\][\s\S]*?\[data-recovery-view="tag_filter"\]/, '노선도 원문 태그 필터 button routes to tag_filter subtab');
 
   assert.match(
     source,

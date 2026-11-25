@@ -218,7 +218,7 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     assert.equal(r.context.reconciliationChecks, beforeTransientChecks + 2, 'subsequent call reuses completed negative check without redundant rescan');
   } finally { await r.dispose(); }
 
-  // The recovery subtabs keep 복구·복원 cards scoped, place 원문 태그 필터 above 개별 턴 재분석, and omit 전체 턴 재구성.
+  // The recovery subtabs keep 복구·복원, 원문 태그 필터, 재분석, Cold Start isolated and omit 전체 턴 재구성.
   r = await open();
   const gui = createColdStartGuiDocument();
   Object.assign(r.context, { document: gui.document, window: gui.dom.window, Event: gui.dom.window.Event, HTMLElement: gui.dom.window.HTMLElement, MutationObserver: gui.dom.window.MutationObserver });
@@ -227,26 +227,35 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     const root = gui.document.getElementById('hayaku-ledger-viewer-root');
     await waitFor(() => root.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy'), 'viewer');
     const missTab = root.querySelector('[data-recovery-view="missing"]');
+    const tagFilterTab = root.querySelector('[data-recovery-view="tag_filter"]');
     const missPanel = root.querySelector('[data-recovery-panel="missing"]');
+    const tagFilterPanel = root.querySelector('[data-recovery-panel="tag_filter"]');
     const reanaPanel = root.querySelector('[data-recovery-panel="reanalysis"]');
     const coldPanel = root.querySelector('[data-recovery-panel="cold"]');
     assert.equal(missTab.textContent, '복구·복원');
+    assert.equal(tagFilterTab?.textContent, '원문 태그 필터');
     assert.ok(missPanel.querySelector('#hayakuRecoverySettingsLink'));
     assert.ok(missPanel.querySelector('[data-portable-backup-host="hayaku_locator_continuity"]'));
     assert.ok(missPanel.querySelector('#hayakuMaintenanceRun'));
+    tagFilterTab.click();
+    assert.equal(tagFilterPanel.hidden, false);
+    assert.ok(tagFilterPanel.querySelector('#hayakuSourceTrackingSettings'));
+    assert.equal(tagFilterPanel.querySelector('#hayakuRecoverySettingsLink'), null);
+    assert.equal(tagFilterPanel.querySelector('#hayakuMaintenanceRun'), null);
     root.querySelector('[data-recovery-view="reanalysis"]').click();
     assert.equal(reanaPanel.querySelector('#hayakuRebuildCard'), null);
     assert.equal(reanaPanel.querySelector('#runHayakuRebuild'), null);
     assert.equal(reanaPanel.querySelector('#hayakuRecoverySettingsLink'), null);
     assert.equal(reanaPanel.querySelector('#hayakuMaintenanceRun'), null);
-    const tagFold = reanaPanel.querySelector('#hayakuTagFilterFold');
+    assert.equal(reanaPanel.querySelector('#hayakuTagFilterFold'), null);
+    assert.equal(reanaPanel.querySelector('#hayakuSourceTrackingSettings'), null);
     const consent = reanaPanel.querySelector('#hayakuSourceEditConsent');
-    assert.ok(tagFold && consent && (tagFold.compareDocumentPosition(consent) & gui.dom.window.Node.DOCUMENT_POSITION_FOLLOWING));
+    assert.ok(consent);
     assert.equal(coldPanel.querySelector('#hayakuRecoverySettingsLink'), null);
     assert.equal(coldPanel.querySelector('[data-portable-backup-host="hayaku_locator_continuity"]'), null);
     assert.equal(coldPanel.querySelector('#hayakuMaintenanceRun'), null);
     assert.equal(r.llmCalls.length, 0);
   } finally { await r.dispose(); gui.dom.window.close(); }
-  console.log('PASS HAYAKU recovery subtabs isolate shared cards and place tag filter above per-turn reanalysis');
+  console.log('PASS HAYAKU recovery subtabs isolate shared cards and separate tag filter from per-turn reanalysis');
   process.exit(0);
 })().catch(error => { console.error(error); process.exit(1); });

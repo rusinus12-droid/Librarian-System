@@ -64365,16 +64365,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for (const spec of VIEWER_LIST_FILTERS) {
       root.querySelector?.('#' + spec.input)?.addEventListener('input', () => viewerApplyListFilter(spec));
     }
-    // 원문 태그 필터 lives under 점검 · 복구 → 재분석; this opens it from the 노선도.
+    // 원문 태그 필터 lives under 기억 관리 → 원문 태그 필터; this opens it from the 노선도.
     root.querySelectorAll?.('[data-hayaku-open-tag-filter]')?.forEach(node => node.addEventListener('click', () => {
       viewerSetTab('recovery');
-      root.querySelector?.('[data-recovery-view="reanalysis"]')?.click();
-      const fold = root.querySelector?.('#hayakuTagFilterFold');
-      if (!fold) return;
-      fold.open = true;
+      root.querySelector?.('[data-recovery-view="tag_filter"]')?.click();
+      const panel = root.querySelector?.('[data-recovery-panel="tag_filter"]');
       mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
-      fold.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-      fold.querySelector('summary')?.focus?.();
+      panel?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
     }));
     root.querySelectorAll?.('[data-hayaku-viewer-goto]')?.forEach(node => {
       node.addEventListener('click', () => {
@@ -64502,7 +64499,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const recoveryPage = `<section class="page" id="hayakuViewerPanelRecovery" data-hayaku-viewer-panel="recovery" data-page="recovery" role="tabpanel" aria-labelledby="hayakuViewerTabRecovery" hidden>
       <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Section maintenance</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단은 읽기 전용입니다. AI를 쓰는 작업은 대상·비용을 먼저 보여주고 확인을 받은 뒤에만 시작됩니다.</p></div><div class="page-actions"><button class="btn" id="refreshHayakuRecovery" type="button">${hayakuMockupIcon('refresh')}상태 새로고침</button></div></div>
       <div class="stack">
-        <div class="tabs" role="tablist" aria-label="복구 작업" data-subtabs="rc"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-subtab="miss" data-recovery-view="missing">복구·복원</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="reana" data-recovery-view="reanalysis">재분석</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cold" data-recovery-view="cold">Cold Start</button></div>
+        <div class="tabs" role="tablist" aria-label="복구 작업" data-subtabs="rc"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-subtab="miss" data-recovery-view="missing">복구·복원</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="filter" data-recovery-view="tag_filter">원문 태그 필터</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="reana" data-recovery-view="reanalysis">재분석</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cold" data-recovery-view="cold">Cold Start</button></div>
         <section data-recovery-panel="missing" data-subpanel="miss" data-group="rc" class="is-active"><div class="stack">
           <div class="card" id="hayakuRecoveryStepsCard"><div class="steps"><div class="step is-done"><span class="step__no">1</span><b>1 · 진단</b><span id="hayakuNativeMissingTurns">누락 상태 확인</span></div><div class="step is-active"><span class="step__no">2</span><b>2 · 대상 선택</b><span>복구할 턴을 고릅니다</span></div><div class="step"><span class="step__no">3</span><b>3 · 비용 확인</b><span>Other Ax 호출 승인</span></div><div class="step"><span class="step__no">4</span><b>4 · 복구·결과</b><span>readback 확인</span></div></div></div>
           <div class="card"><div class="card__head"><div><h2 class="card__title">복구할 턴 선택</h2><p class="card__desc">패킷이 없는 완료 턴만 표시합니다. 원문이 수정된 턴은 재분석에서 다룹니다.</p></div></div><div id="hayakuMissingTurnPicker"></div>
@@ -64513,7 +64510,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
           <section class="card" aria-labelledby="hayakuMaintenanceHeading"><h2 id="hayakuMaintenanceHeading" class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">로컬·서버 모드에서 완료된 턴의 패킷과 원장 결속을 검사합니다. 기존 패킷으로 결속을 복구하고, 기록이 없는 채팅은 콜드스타트, 사용 중 빠진 턴은 누락 복구로 연결합니다.</p><div class="cluster"><button id="hayakuMaintenanceRun" class="btn btn--primary" type="button">상태 점검 및 자동 복구</button><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="openHayakuManualRecapture" class="btn" type="button">완료 턴 패킷 검토</button></div><p id="hayakuSafeHealthStatus" role="status">점검과 결속 복구는 모델 호출 없이 진행됩니다. 기억 생성이 필요하면 대상 턴과 호출 한도를 보여준 뒤 Other Ax 분석을 시작합니다. 사용자 제외 턴과 기존 기억은 보존합니다.</p><details class="fold"><summary>고급 도구 · 메시지 캐시</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthPreview" class="btn" type="button">캐시 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuDerivedCacheStatus" role="status">로컬 메시지 리비전 캐시 전용입니다. 원문·패킷·원장은 변경하지 않습니다.</p></div></details></section>
         </div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 복구·복원과 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><details class="fold" id="hayakuTagFilterFold"><summary>원문 태그 필터</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
+        <section data-recovery-panel="tag_filter" data-subpanel="filter" data-group="rc" hidden><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">원문 태그 필터</h2><p class="card__desc">분석 입력에서 제외하거나 본문만 남길 태그와 표식 규칙을 설정합니다.</p></div></div><div id="hayakuSourceTrackingSettings" class="stack"></div></div></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 복구·복원과 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한 · 실패한 턴은 1회 자동 재시도</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
       </div></section>`;
     const serverSection = `<section id="hayakuViewerPanelServer" data-subpanel="server" data-group="st" data-hayaku-settings-section="server" data-no-track><div class="stack"><div class="card"><div class="card__head" style="margin-bottom:0"><div><h2 class="card__title">서버 연결</h2><p class="card__desc">전체 대화의 저장 위치, 서버 주소와 이전 상태를 확인합니다. 저장 자료 정리는 패킷 · 세계선의 스코프 정리에서 진행합니다.</p></div></div></div><div id="hayakuMemorySuiteServerConnectionPanel"></div></div></section>`;
@@ -64699,7 +64697,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     root.querySelectorAll('[data-recovery-view]').forEach(button => button.addEventListener('click', () => {
       const view = button.dataset.recoveryView;
       if(view!=='reanalysis')clearSourceEditPreview();
-      const panelKey = ({ missing: 'miss', reanalysis: 'reana', cold: 'cold' })[view] || 'miss';
+      const panelKey = ({ missing: 'miss', tag_filter: 'filter', reanalysis: 'reana', cold: 'cold' })[view] || 'miss';
       root.querySelectorAll('[data-recovery-view]').forEach(node => {
         const selected = node === button;
         node.classList.toggle('is-active', selected);
@@ -64712,6 +64710,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         panel.classList.toggle('is-active', selected);
       });
       root.querySelectorAll('[data-group="rc"][data-subpanel]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === panelKey));
+      if (view === 'tag_filter') mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
       if (view === 'reanalysis' || view === 'missing' || view === 'cold') void viewerRenderNativeRecovery();
     }));
     showPacketView('list');
