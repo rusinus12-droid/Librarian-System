@@ -802,6 +802,68 @@ test('extractSceneAnchorFromAssistant is idempotent on repeated application', as
   assert.equal(second, third);
 });
 
+test('completed historical user turn trimmed by preset/regex binds cleanly to its host ID', async () => {
+  const f = await fixture((chat, _character, input) => {
+    chat.message = [
+      { role: 'user', chatId: 'h-u0', data: '[Scene Setup]\n철수가 조심스럽게 캐비닛 문을 열고 안을 살폈다.\n[Meta End]' },
+      { role: 'assistant', chatId: 'h-a0', data: '선반 위에 파란 장부가 놓여 있었다.' },
+      { role: 'user', chatId: 'h-u1', data: '장부를 꺼내 봐.' }
+    ];
+    input.length = 0;
+    input.push(
+      { role: 'user', content: '철수가 조심스럽게 캐비닛 문을 열고 안을 살폈다.' },
+      { role: 'assistant', content: '선반 위에 파란 장부가 놓여 있었다.' },
+      { role: 'user', content: '<Current Input>\n장부를 꺼내 봐.\n</Current Input>' }
+    );
+  });
+  const b = await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId, 'h-u1');
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'h-u0'));
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'h-a0'));
+});
+
+test('leading-edge reformatted user turn before a bound assistant binds via adjacent-assistant fallback', async () => {
+  const f = await fixture((chat, _character, input) => {
+    chat.message = [
+      { role: 'user', chatId: 'edge-u0', data: '창고 문을 두드리고 안을 들여다봤다.' },
+      { role: 'assistant', chatId: 'edge-a0', data: '먼지가 낀 책상 위에 열쇠가 있었다.' },
+      { role: 'user', chatId: 'edge-u1', data: '열쇠를 집어 들었다.' }
+    ];
+    input.length = 0;
+    input.push(
+      { role: 'user', content: '완전히 다른 요약 문장으로 치환된 첫 턴' },
+      { role: 'assistant', content: '먼지가 낀 책상 위에 열쇠가 있었다.' },
+      { role: 'user', content: '<Current Input>\n열쇠를 집어 들었다.\n</Current Input>' }
+    );
+  });
+  const b = await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId, 'edge-u1');
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'edge-u0'));
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'edge-a0'));
+});
+
+test('trailing post-input messages after requestIndex do not pollute completed-turn host binding', async () => {
+  const f = await fixture((chat, _character, input) => {
+    chat.message = [
+      { role: 'user', chatId: 'p-u0', data: '복도 끝으로 걸어갔다.' },
+      { role: 'assistant', chatId: 'p-a0', data: '복도 끝에 잠긴 문이 하나 있었다.' },
+      { role: 'user', chatId: 'p-u1', data: '문을 열어 본다.' }
+    ];
+    input.length = 0;
+    input.push(
+      { role: 'user', content: '복도 끝으로 걸어갔다.' },
+      { role: 'assistant', content: '복도 끝에 잠긴 문이 하나 있었다.' },
+      { role: 'user', content: '<Current Input>\n문을 열어 본다.\n</Current Input>' },
+      { role: 'assistant', content: '후미 지시용 가상 어시스턴트 블록' },
+      { role: 'user', content: '후미 시스템 안내' }
+    );
+  });
+  const b = await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId, 'p-u1');
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'p-u0'));
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'p-a0'));
+});
+
 
 
 

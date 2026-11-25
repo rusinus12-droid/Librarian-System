@@ -232,7 +232,7 @@
   "extractJson": "",
   "groupTemplate": "",
   "groupOtherBotRole": "user",
-  "seperateParametersEnabled": false,
+  "seperateParametersEnabled": true,
   "seperateParameters": {
     "memory": {
       "thinking_type": "off"

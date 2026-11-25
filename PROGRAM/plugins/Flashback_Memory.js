@@ -16388,7 +16388,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     }
   };
   const artifact = row => row.artifact === true || row.logicalKey.includes('::chunk:v1:') || str(row.key).includes('::chunk:v1:');
-  const control = key => /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || key === 'vector_rag_memory:settings:v2';
+  const control = key => /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || key === 'vector_rag_memory:settings:v2' || key === 'flashback.settings.source-tracking.v1';
   for (const row of records) {
     if (control(row.logicalKey)) row.classification = 'control';
     else if (artifact(row)) row.classification = 'artifact';

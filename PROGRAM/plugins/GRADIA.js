@@ -4979,6 +4979,14 @@ ${BIANCA_PERSONA_TEXT}`;
       }
       return false;
     };
+    const sameCompletedTurn = (rowValue, promptValue) => {
+      if (sameInput(rowValue, promptValue)) return true;
+      const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
+      if (x && y && (y.length >= 6 || (/[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(y) && y.length >= 3)) && x.includes(y)) return true;
+      const fx = stripFormatting(rowValue), fy = stripFormatting(promptValue);
+      if (fx && fy && (fy.length >= 6 || (/[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fy) && fy.length >= 3)) && fx.includes(fy)) return true;
+      return false;
+    };
     const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
     const completedHostMessages = host.messages.slice(0, pendingFrom);
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
@@ -5013,7 +5021,7 @@ ${BIANCA_PERSONA_TEXT}`;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = mapped[index];
       if (!['user','assistant'].includes(currentTurnRole(message)) || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') continue;
-      if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) continue;
+      if ((initialResolved.requestIndex >= 0 && index >= initialResolved.requestIndex) || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) continue;
       const targetNarrative = narrative(message);
       const existingId = nativeTurnMessageId(message);
       const candidates = pool.filter(row => {
@@ -5030,7 +5038,7 @@ ${BIANCA_PERSONA_TEXT}`;
           content: applyBasicRisuPlaceholdersForRag(rawText, host.characterName, host.userName)
         });
         if (expandedNarrative === targetNarrative) return true;
-        if (sameInput(rowNarrative, targetNarrative) || sameInput(expandedNarrative, targetNarrative)) return true;
+        if (sameCompletedTurn(rowNarrative, targetNarrative) || sameCompletedTurn(expandedNarrative, targetNarrative)) return true;
         return matchesNativeTemplateInput(rowNarrative, targetNarrative, stripFormatting);
       });
       let picked = null;
@@ -5059,7 +5067,7 @@ ${BIANCA_PERSONA_TEXT}`;
       const message = mapped[index];
       if (boundPoolIndex[index] >= 0 || nativeTurnMessageId(message)) continue;
       if (!['user','assistant'].includes(currentTurnRole(message)) || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') continue;
-      if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) continue;
+      if ((initialResolved.requestIndex >= 0 && index >= initialResolved.requestIndex) || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) continue;
       let prevIdx = -1;
       for (let j = index - 1; j >= 0; j -= 1) {
         if (boundPoolIndex[j] >= 0) { prevIdx = boundPoolIndex[j]; break; }
@@ -5080,6 +5088,36 @@ ${BIANCA_PERSONA_TEXT}`;
           }
         }
       }
+    }
+    // Adjacent-assistant fallback for leading-edge or heavily reformatted completed user turns.
+    for (let index = mapped.length - 1; index >= 0; index -= 1) {
+      const message = mapped[index];
+      if (boundPoolIndex[index] >= 0 || nativeTurnMessageId(message)) continue;
+      if (currentTurnRole(message) !== 'user' || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') continue;
+      if ((initialResolved.requestIndex >= 0 && index >= initialResolved.requestIndex) || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) continue;
+      let nextMsgIdx = -1;
+      for (let j = index + 1; j < mapped.length; j += 1) {
+        const nextRole = currentTurnRole(mapped[j]);
+        if ((nextRole === 'user' || nextRole === 'assistant') && !isExternalMemoryInjectionMessage(mapped[j])) {
+          nextMsgIdx = j;
+          break;
+        }
+      }
+      if (nextMsgIdx < 0 || currentTurnRole(mapped[nextMsgIdx]) !== 'assistant' || boundPoolIndex[nextMsgIdx] < 1) continue;
+      const nextIdx = boundPoolIndex[nextMsgIdx];
+      const candIdx = nextIdx - 1;
+      let prevIdx = -1;
+      for (let j = index - 1; j >= 0; j -= 1) {
+        if (boundPoolIndex[j] >= 0) { prevIdx = boundPoolIndex[j]; break; }
+      }
+      if (candIdx <= prevIdx || usedPoolIndices.has(candIdx)) continue;
+      const candRow = pool[candIdx];
+      if (!candRow || !nativeTurnMessageId(candRow) || currentTurnRole(candRow) !== 'user' || uniqueHostIdCount(nativeTurnMessageId(candRow)) !== 1) continue;
+      const rawText = contentToText(candRow.data ?? candRow.content ?? '').replace(/\r\n/g, '\n');
+      if (turnBlockReason({ ...candRow, role: 'user', content: rawText })) continue;
+      usedPoolIndices.add(candIdx);
+      boundPoolIndex[index] = candIdx;
+      mapped[index] = bindMessageToHostRow(message, candRow);
     }
     // Bind the current request input to the unanswered native user region after the
     // last assistant. Keep the request-side prompt text intact while attaching the
