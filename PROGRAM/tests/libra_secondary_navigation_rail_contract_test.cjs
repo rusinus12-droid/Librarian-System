@@ -52,15 +52,17 @@ assert.match(approvedCss, /\.tabs\{display:flex;[^}]*overflow-x:auto/,
 assert.match(approvedCss, /\.tab\{[^}]*white-space:nowrap\}/,
   'contextual tab labels never wrap out of their tab');
 
-const settingsLayout = between('const buildApprovedMockupSettings = () =>', 'const buildApprovedMockupPeople =');
+const settingsLayout = between('const buildApprovedMockupSettings = previousScopePanel =>', 'const buildApprovedMockupPeople =');
 assert.match(settingsLayout, /button\.setAttribute\('aria-selected',String\(activeGroup\.id===group\.id\)\);button\.setAttribute\('role','tab'\)/);
 assert.match(settingsLayout, /guiEl\('nav',\{class:'tabs',role:'tablist','aria-label':`\$\{activeGroup\.label\} 상세 설정`\}/);
 assert.match(settingsLayout, /'aria-selected':String\(active===id\)/);
 const settingsSections = new Set(Array.from(settingsLayout.matchAll(/sections:\[([^\]]*)\]/g))
   .flatMap(match => Array.from(match[1].matchAll(/'([a-z_]+)'/g), item => item[1])));
-for (const id of ['references', 'memory', 'state', 'scopes', 'recovery', 'transfer', 'general']) {
+for (const id of ['references', 'memory', 'scopes', 'recovery', 'transfer', 'general']) {
   assert.ok(settingsSections.has(id), `missing settings category: ${id}`);
 }
+assert.equal(settingsSections.has('logs'), false,
+  '기록 보관소 is consolidated under 디버그 및 로그 rather than 기억과 검색');
 assert.equal(settingsSections.has('server'), false,
   'Settings storage category removes duplicate server entry button; dedicated sidebar server navigation remains authoritative');
 assert.match(settingsLayout, /sections:\['scopes','recovery','transfer'\]/,
@@ -78,18 +80,18 @@ const migration = between('const migrateCustomWorkshopSelection = () =>', 'const
 assert.match(migration, /Gui\.bookSettingsWorkbenchSection='pipeline'/);
 const selectRoom = between('const selectBookSettingsRoomSection = id =>', 'if (id === \'agents\')');
 assert.match(selectRoom, /if \(id === 'custom'\) \{ migrateCustomWorkshopSelection\(\); id = 'pipeline'; \}/);
-const settingsPanel = between('const buildApprovedMockupSettingsPanel = (groupId, sectionId) =>', "if(groupId==='mem')");
+const settingsPanel = between('const buildApprovedMockupSettingsPanel = (groupId, sectionId, previousScopePanel) =>', "if(groupId==='mem')");
 assert.match(settingsPanel, /if\(sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel\(false,false\)/);
 assert.match(settingsPanel, /if\(sectionId==='logs'\)return buildSharedExecutionLogsPanel\(\)/);
 const analyzer = between('const buildLibrarianAnalyzerPanel =', 'const exportConfiguration =');
-assert.match(between('const buildApprovedMockupSettingsPanel = (groupId, sectionId) =>', 'const BOOK_EXTERNAL_SETTINGS_ITEMS'), /bindingRow\('lens'[\s\S]*openApprovedPromptDialog\(\)/, 'prompt authoring opens the Lens Studio from the lens binding');
+assert.match(between('const buildApprovedMockupSettingsPanel = (groupId, sectionId, previousScopePanel) =>', 'const BOOK_EXTERNAL_SETTINGS_ITEMS'), /bindingRow\('lens'[\s\S]*openApprovedPromptDialog\(\)/, 'prompt authoring opens the Lens Studio from the lens binding');
 assert.match(analyzer, /text:'기억 분석 상세 설정'/, 'analyzer limits are one visible card instead of an extra fold layer');
 assert.doesNotMatch(analyzer, /이번 턴 적용 결과|id: 'injection'|buildLibraSgaPanel|buildPromptInjectionPanel/,
   'the analyzer route is authoring only and does not duplicate execution results');
 
 const logs = between('const buildSharedExecutionLogsPanel =', 'const buildAnalysisInputPanel =');
 assert.match(logs, /normalizeHubChoice\(Gui\.executionLogSection,SHARED_EXECUTION_LOG_SECTIONS,'memory'\)/);
-assert.match(logs, /class:'tabs',role:'tablist'/);
+assert.match(logs, /class:'tabs(?:\s+exec-logs__tabs)?',role:'tablist'/);
 assert.match(logs, /'aria-selected':String\(viewOf\(\)\[0\]===id\)/);
 for (const id of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) {
   assert.ok(source.includes(`['${id}', `), `missing execution category: ${id}`);

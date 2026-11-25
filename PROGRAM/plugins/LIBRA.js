@@ -41705,6 +41705,12 @@ function createLibraReadonlySourceContext(owner) {
         rawPayloadDigests: asArray(pair?.assistant?.rawPayloadDigests)
       }
     }).replace(/[^a-z0-9]/gi, '');
+    const completedTurnRevisionMatches = (pairOrReceipt, revisionId) => {
+      const id = string(revisionId || '');
+      if (!id || !pairOrReceipt) return false;
+      return completedTurnRevisionId(pairOrReceipt) === id
+        || completedTurnRevisionIdLegacy(pairOrReceipt) === id;
+    };
     const completedTurnSourceRow = (role, row) => ({
       role, chatId: string(row?.chatId || ''), chatIds: asArray(row?.chatIds).map(string),
       identitySource: string(row?.identitySource || ''), identityStable: row?.identityStable === true,
@@ -44483,6 +44489,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (sourceOptions.worldlineId && head.worldlineId !== sourceOptions.worldlineId) continue;
         if (turn > limit) continue;
+        if (sourceOptions.allowedTurns instanceof Set && !sourceOptions.allowedTurns.has(turn)) continue;
         const sourcePair = sourcePairs[turn - 1], targetPair = targetPairs[turn - 1];
         if (!sourcePair || !targetPair || nativeCopyPairSignature(sourcePair) !== nativeCopyPairSignature(targetPair)) {
           throw new Error(`LIBRA_NATIVE_COPY_MICRO_PREFIX_CHANGED:T${turn}`);
@@ -44490,7 +44497,7 @@ function createLibraReadonlySourceContext(owner) {
         // A source edit can publish a new receipt while the old Micro head
         // still points to the prior revision. The pending graph reader below
         // transfers that predecessor as history, never as the child's head.
-        if (head.sourceRevisionId !== completedTurnRevisionId(sourcePair)) continue;
+        if (!completedTurnRevisionMatches(sourcePair, head.sourceRevisionId)) continue;
         const receiptKey = key.completedTurnReceipt(scope, head.worldlineId, head.sessionEpoch,
           turn, head.sourceRevisionId);
         const receipt = await readSource(receiptKey, scope, null);
@@ -44500,7 +44507,7 @@ function createLibraReadonlySourceContext(owner) {
           || Number(receipt.sessionEpoch) !== Number(head.sessionEpoch)
           || Number(receipt.turn) !== turn || receipt.revisionId !== head.sourceRevisionId
           || receipt.sourceDigest !== head.sourceDigest
-          || completedTurnRevisionId(sourcePair) !== receipt.revisionId
+          || !completedTurnRevisionMatches(sourcePair, receipt.revisionId)
           || sourceDigest([sourcePair]) !== receipt.sourceDigest
           || record?.schema !== 'libra.micro_memory.v1'
           || record.scopeKey !== scope.scopeKey || record.worldlineId !== head.worldlineId
@@ -44539,6 +44546,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (sourceOptions.worldlineId && head.worldlineId !== sourceOptions.worldlineId) continue;
         if (turn > limit) continue;
+        if (sourceOptions.allowedTurns instanceof Set && !sourceOptions.allowedTurns.has(turn)) continue;
         const priorMicroHeadKey = key.microMemoryHead(scope, head.worldlineId,
           head.sessionEpoch, turn);
         const priorMicroHead = keys.includes(priorMicroHeadKey)
@@ -44551,7 +44559,7 @@ function createLibraReadonlySourceContext(owner) {
         if (!sourcePair || !targetPair
           || nativeCopyPairSignature(sourcePair) !== nativeCopyPairSignature(targetPair)
           || head.receiptKey !== receiptKey
-          || head.revisionId !== completedTurnRevisionId(sourcePair)
+          || !completedTurnRevisionMatches(sourcePair, head.revisionId)
           || head.sourceDigest !== sourceDigest([sourcePair])
           || receipt?.schema !== 'libra.completed_turn_receipt.v1'
           || receipt.scopeKey !== scope.scopeKey
@@ -44560,7 +44568,7 @@ function createLibraReadonlySourceContext(owner) {
           || Number(receipt.turn) !== turn
           || receipt.revisionId !== head.revisionId
           || receipt.sourceDigest !== head.sourceDigest
-          || completedTurnRevisionId(receipt) !== head.revisionId) {
+          || !completedTurnRevisionMatches(receipt, head.revisionId)) {
           throw new Error(`LIBRA_NATIVE_COPY_PENDING_RECEIPT_INVALID:T${turn}`);
         }
         const base = `${head.worldlineId}:e${head.sessionEpoch}:t${turn}:`;
@@ -44944,7 +44952,7 @@ function createLibraReadonlySourceContext(owner) {
             || Number(historicalReceipt.turn) !== turn
             || historicalReceipt.revisionId !== historicalRecord.sourceRevisionId
             || historicalReceipt.sourceDigest !== historicalRecord.sourceDigest
-            || completedTurnRevisionId(historicalReceipt) !== historicalReceipt.revisionId
+            || !completedTurnRevisionMatches(historicalReceipt, historicalReceipt.revisionId)
             || !microRecallMemoryFromRecord(historicalRecord, historicalReceipt, historicalKey)
             || historicalWork?.schema !== 'libra.micro_work.v1'
             || historicalWork.scopeKey !== sourceScope.scopeKey
@@ -45217,7 +45225,7 @@ function createLibraReadonlySourceContext(owner) {
             || oldReceipt.worldlineId !== sourceWorldlineId
             || Number(oldReceipt.sessionEpoch) !== Number(source.receipt.sessionEpoch)
             || Number(oldReceipt.turn) !== turn
-            || completedTurnRevisionId(oldReceipt) !== oldReceipt.revisionId
+            || !completedTurnRevisionMatches(oldReceipt, oldReceipt.revisionId)
             || sourceDigest([oldReceipt]) !== oldReceipt.sourceDigest
             || oldReceiptKey !== key.completedTurnReceipt(sourceScope,
               sourceWorldlineId, oldReceipt.sessionEpoch, turn, oldReceipt.revisionId)) {
@@ -51956,7 +51964,7 @@ function createLibraReadonlySourceContext(owner) {
         return await rebuildStateFromCanonicalChainUnlocked({ ...options, context: live });
       });
     };
-    const rebuildStateAfterCanonicalTransfer = async ({ context, manifest, seed = null, reason = 'canonical_transfer_state_rebuild', signal = null } = {}) => {
+    const rebuildStateAfterCanonicalTransfer = async ({ context, manifest, seed = null, reason = 'canonical_transfer_state_rebuild', signal = null, allowIncompletePrefix = false } = {}) => {
       const refs = statePipelineReplayRefs(manifest);
       if(refs.some(unifiedRefIsReadableUnified)){
         // Mirror/server transfer may briefly race the source copy's final durable
@@ -51965,7 +51973,7 @@ function createLibraReadonlySourceContext(owner) {
         // operation still fails closed when the namespace is not stable.
         let result=null;
         for(let attempt=0;attempt<3;attempt++){
-          result=await rebuildUnifiedStateForWorldline({context,manifest,reason,signal});
+          result=await rebuildUnifiedStateForWorldline({context,manifest,reason,signal,allowIncompletePrefix});
           if(result?.ok===true || result?.code!=='MEMORY_SUITE_BATCH_READ_SET_CHANGED')break;
           if(signal?.aborted)break;
           await new Promise(resolve=>setTimeout(resolve,0));
@@ -55821,7 +55829,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (value.schema === 'libra.completed_turn_receipt.v1') {
           if (row.key !== key.completedTurnReceipt({scopeKey: sourceScopeKey},
             value.worldlineId, value.sessionEpoch, value.turn, value.revisionId)
-            || completedTurnRevisionId(value) !== value.revisionId
+            || !completedTurnRevisionMatches(value, value.revisionId)
             || sourceDigest([value]) !== value.sourceDigest) {
             throw new Error('LIBRA_MICRO_HANDOFF_RECEIPT_INVALID');
           }
@@ -76074,14 +76082,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const turn = Number(head.turn);
         const receipt = byKey.get(string(head.receiptKey || ''));
         const ids = expectedIds.get(turn);
-        const directAllowed = !ids && allowDirectTurns.has(turn);
+        const directAllowed = allowDirectTurns.has(turn);
         if ((!ids && !directAllowed) || receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
-        if (ids && (receipt.user?.chatId !== ids.userChatId || receipt.assistant?.chatId !== ids.assistantChatId)) continue;
+        if (ids && !directAllowed && (receipt.user?.chatId !== ids.userChatId || receipt.assistant?.chatId !== ids.assistantChatId)) continue;
         const pair = {turn, user: receipt.user, assistant: receipt.assistant};
         if (!targetPairs[turn - 1]
           || head.revisionId !== receipt.revisionId
           || head.sourceDigest !== receipt.sourceDigest
-          || completedTurnRevisionId(pair) !== receipt.revisionId
+          || !completedTurnRevisionMatches(pair, receipt.revisionId)
           || sourceDigest([pair]) !== receipt.sourceDigest
           || nativeCopyPairSignature(pair) !== nativeCopyPairSignature(targetPairs[turn - 1])) {
           throw new Error(`portable_native_micro_source_invalid:t${head.turn}`);
@@ -76098,11 +76106,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       for (const turn of requiredTurns) {
         if (!selected.has(turn)) throw new Error(`portable_native_micro_source_unmatched:t${turn}`);
       }
+      const candidateSourceOptions = { ...sourceOptions, allowedTurns: new Set(selected.keys()) };
       const sourceRows = await nativeCopyVerifiedMicroCandidates(bundle.source,
-        sourcePairs, targetPairs, through, sourceOptions);
+        sourcePairs, targetPairs, through, candidateSourceOptions);
       const pendingRows = await nativeCopyVerifiedPendingMicroCandidates(bundle.source,
-        sourcePairs, targetPairs, through, sourceOptions);
-      return {sourcePairs, sourceRows, pendingRows, sourceOptions};
+        sourcePairs, targetPairs, through, candidateSourceOptions);
+      return {sourcePairs, sourceRows, pendingRows, sourceOptions: candidateSourceOptions};
     };
 
     const unifiedPortableCapsule = async (bundle,refs=null) => {
@@ -76482,6 +76491,30 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return !!head;
     };
 
+    const portableRebindMatchedMicroTurns = (bundle, targetPairs) => {
+      const matched = [];
+      const microOwnerRows = asArray(bundle?.microArchive?.records);
+      if (!microOwnerRows.length) return matched;
+      const microByKey = new Map(microOwnerRows.map(row => [row.key, row.value]));
+      const microWl = string(bundle.microArchive.activeWorldlineId || '');
+      for (const row of microOwnerRows) {
+        if (row.value?.schema !== 'libra.completed_turn_head.v1' || row.value.worldlineId !== microWl) continue;
+        const turn = Number(row.value.turn);
+        if (!Number.isInteger(turn) || turn < 1 || !targetPairs[turn - 1]) continue;
+        const receipt = microByKey.get(string(row.value.receiptKey || ''));
+        if (receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
+        const pair = { turn, user: receipt.user, assistant: receipt.assistant };
+        if (row.value.revisionId === receipt.revisionId
+          && row.value.sourceDigest === receipt.sourceDigest
+          && completedTurnRevisionMatches(pair, receipt.revisionId)
+          && sourceDigest([pair]) === receipt.sourceDigest
+          && nativeCopyPairSignature(pair) === nativeCopyPairSignature(targetPairs[turn - 1])) {
+          matched.push(turn);
+        }
+      }
+      return matched.sort((a, b) => a - b);
+    };
+
     const portableImportReceiptReadbackUnsafe = async ({ receipt, context, manifest, pairs, bundle, copiedMicro, lensRefs }) => {
       if (!receipt || receipt.verified !== true || receipt.durable !== true) return false;
       if (string(receipt.targetScopeKey || '') !== string(context?.scope?.scopeKey || '')) return false;
@@ -76534,19 +76567,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return await validatePortableStateTransferReceiptReadback({ receipt, context, manifest });
       }
       if (receipt.mode === 'reconstruct_native_copy') {
+        const isUpdatedBotRebind = receipt.updatedBotRebind === true;
         const starts = asArray(receipt.copiedStarts).map(Number).filter(value => value > 0);
         const lineageBatches = new Map(asArray(bundle?.lineage?.batches).map(item => [Number(item?.startTurn || 0), string(item?.contentDigest || '')]));
         const expectedStarts = [];
-        let expectedStart = 1;
-        for (const ref of asArray(bundle?.currentRefs)) {
-          const startTurn = Number(ref?.turnRange?.start || 0);
-          const batch = batchForStart(pairs, startTurn);
-          if (startTurn !== expectedStart || batch.length !== BATCH_SIZE
-            || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) break;
-          expectedStarts.push(startTurn);
-          expectedStart += BATCH_SIZE;
+        if (isUpdatedBotRebind) {
+          for (const ref of asArray(bundle?.currentRefs)) {
+            const startTurn = Number(ref?.turnRange?.start || 0);
+            if (startTurn < 1) continue;
+            const batch = batchForStart(pairs, startTurn);
+            if (batch.length !== BATCH_SIZE
+              || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) continue;
+            expectedStarts.push(startTurn);
+          }
+        } else {
+          let expectedStart = 1;
+          for (const ref of asArray(bundle?.currentRefs)) {
+            const startTurn = Number(ref?.turnRange?.start || 0);
+            const batch = batchForStart(pairs, startTurn);
+            if (startTurn !== expectedStart || batch.length !== BATCH_SIZE
+              || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) break;
+            expectedStarts.push(startTurn);
+            expectedStart += BATCH_SIZE;
+          }
         }
-        if (!starts.length || digest(starts) !== digest(expectedStarts)) return false;
+        const expectedMicroTurns = isUpdatedBotRebind ? portableRebindMatchedMicroTurns(bundle, pairs) : [];
+        if (isUpdatedBotRebind) {
+          const hasCurrentRefs = asArray(bundle?.currentRefs).length > 0;
+          if ((hasCurrentRefs ? !starts.length : !expectedMicroTurns.length) || digest(starts) !== digest(expectedStarts)) return false;
+        } else if (!starts.length || digest(starts) !== digest(expectedStarts)) {
+          return false;
+        }
         for (const startTurn of starts) {
           const ref = memoryRefForStart(manifest, startTurn);
           const memory = ref?.key ? await storage.getJson(ref.key, null) : null;
@@ -76620,7 +76671,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }, 8);
           if (!matches.every(Boolean)) return false;
         } else {
-          const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts);
+          const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts, isUpdatedBotRebind ? { allowDirectReceiptTurns: expectedMicroTurns } : {});
           verifiedMicro = await cloneNativeCopyMicroGraph({
             sourceScope: bundle.source, targetScope: context.scope,
             sourcePairs: nativeMicro.sourcePairs, targetPairs: pairs,
@@ -76707,27 +76758,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         rebindMatchedStarts.push(startTurn);
       }
-      const rebindMatchedMicroTurns = [];
-      const microOwnerRows = asArray(bundle.microArchive?.records);
-      if (microOwnerRows.length) {
-        const microByKey = new Map(microOwnerRows.map(row => [row.key, row.value]));
-        const microWl = string(bundle.microArchive.activeWorldlineId || '');
-        for (const row of microOwnerRows) {
-          if (row.value?.schema !== 'libra.completed_turn_head.v1' || row.value.worldlineId !== microWl) continue;
-          const turn = Number(row.value.turn);
-          if (!Number.isInteger(turn) || turn < 1 || !targetPairs[turn - 1]) continue;
-          const receipt = microByKey.get(string(row.value.receiptKey || ''));
-          if (receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
-          const pair = { turn, user: receipt.user, assistant: receipt.assistant };
-          if (row.value.revisionId === receipt.revisionId
-            && row.value.sourceDigest === receipt.sourceDigest
-            && completedTurnRevisionId(pair) === receipt.revisionId
-            && sourceDigest([pair]) === receipt.sourceDigest
-            && nativeCopyPairSignature(pair) === nativeCopyPairSignature(targetPairs[turn - 1])) {
-            rebindMatchedMicroTurns.push(turn);
-          }
-        }
-      }
+      const rebindMatchedMicroTurns = portableRebindMatchedMicroTurns(bundle, targetPairs);
       const priorReceipt = bundle.importId
         ? asArray(targetManifest.portableImports).find(item => string(item?.importId || '') === bundle.importId && item?.verified === true && item?.durable === true)
         : null;
@@ -77145,7 +77176,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           microInheritedArchiveRefsDigest: inheritedMicroPlan.refsDigest,
           ...crossBotDetails
         } });
-        targetManifest.frontiers = { observedTurn: pairs.length, committedTurn: copiedStarts.length ? copiedStarts.at(-1) + BATCH_SIZE - 1 : 0 };
+        const maxCopiedStart = copiedStarts.length ? Math.max(...copiedStarts) : 0;
+        targetManifest.frontiers = { observedTurn: pairs.length, committedTurn: maxCopiedStart ? maxCopiedStart + BATCH_SIZE - 1 : 0 };
         targetManifest.branchGuard = normalizeBranchGuard({ schema: BRANCH_GUARD_SCHEMA, status: BRANCH_GUARD_READY, batchSignatures: branchBatchSignaturesForPairs(pairs), verifiedStarts: copiedStarts, observedTurns: completeBatchStarts(pairs).length * BATCH_SIZE, completeBatches: completeBatchStarts(pairs).length, lastFullAuditAt: Date.now(), updatedAt: nowIso() });
         targetManifest.inFlight = null;
         targetManifest.portableImports = [...asArray(targetManifest.portableImports).filter(item => string(item?.importId || '') !== receipt.importId), receipt].slice(-24);
@@ -77154,7 +77186,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const commitContext = await resolveContext();
         if (string(commitContext.scope?.scopeKey || '') !== string(context.scope.scopeKey || '')) throw new Error('portable_chat_copy_target_changed');
         const commitPairs = buildPairs(commitContext.chat, commitContext.scope.scopeKey);
-        for (const startTurn of preview.matchedStarts) {
+        for (const startTurn of effectiveStarts) {
           if (sourceDigest(batchForStart(commitPairs, startTurn)) !== sourceDigest(batchForStart(pairs, startTurn))) {
             throw new Error(`portable_chat_copy_source_changed:t${startTurn}`);
           }
@@ -77168,13 +77200,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const fullSourceFrontierMatched = copiedStarts.length === bundle.currentRefs.length;
         let stateTransferRebuild = null;
         await capturePortableStateDerivedRollback({ rollback, scope: context.scope, manifest: persisted });
-        const capsule=await unifiedPortableCapsule(bundle,[...bundle.inheritedRefs,...bundle.currentRefs.filter(r=>preview.matchedStarts.includes(r.turnRange.start))]);
+        const capsule=await unifiedPortableCapsule(bundle,[...bundle.inheritedRefs,...bundle.currentRefs.filter(r=>effectiveStarts.includes(r.turnRange.start))]);
         await installUnifiedLineageCapsule({context,manifest:persisted,capsule,rollback});
+        const sortedCopiedStarts = copiedStarts.slice().sort((a, b) => a - b);
+        const hasCanonicalGap = crossBot && sortedCopiedStarts.some((startTurn, idx) => startTurn !== 1 + idx * BATCH_SIZE);
         try {
           stateTransferRebuild = await rebuildStateAfterCanonicalTransfer({
             context, manifest: persisted,
             seed: fullSourceFrontierMatched ? bundle.continuityState : null,
-            reason: 'portable_chat_copy_target_chain_rebuild'
+            reason: 'portable_chat_copy_target_chain_rebuild',
+            allowIncompletePrefix: hasCanonicalGap
           });
           continuityStateCopied = stateTransferRebuild.seedPersisted === true;
         } catch (error) {
@@ -81490,7 +81525,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       node.classList.toggle('is-on',active);node.setAttribute('aria-current',active?'page':'false');
     });
     const activeRoom=bookSettingsRoomActiveSection();
-    const group=({ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'mem',references:'ref',source_edits:'ref',scopes:'store',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'})[activeRoom]||'mem';
+    const group=({ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'adv',references:'ref',source_edits:'ref',scopes:'store',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'})[activeRoom]||'mem';
     Gui.app.querySelectorAll('.setnav button[data-subtab]').forEach(node=>{const active=node.dataset.subtab===group;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
     const currentItem=BOOK_NATIVE_SETTINGS_SECTIONS.find(item=>item.id===activeRoom);
     Gui.app.querySelectorAll('[data-product-settings-section] > nav.tabs > button').forEach(node=>{const active=node.textContent===currentItem?.label;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
@@ -82327,7 +82362,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const LIBRA_APPROVED_PROMPT_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-prompt\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dps-t\"><div class=\"eyebrow\">Prompt Studio</div><h2 id=\"dps-t\">분석기 · 지침</h2><div class=\"field\"><label for=\"ps-an\">분석기</label><select class=\"select\" id=\"ps-an\" data-no-track><option>기본 기억 분석기</option></select></div><div class=\"field\" style=\"margin-top:10px\"><label for=\"ps-in\">지침</label><textarea class=\"textarea\" id=\"ps-in\" rows=\"5\" data-no-track aria-describedby=\"ps-state\">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class=\"hint\" id=\"ps-state\">저장된 지침입니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button><button class=\"btn\" id=\"ps-default\">기본값 채우기</button><button class=\"btn btn--primary\" id=\"ps-save\" data-close data-act=\"prompt-save\" data-toast=\"지침을 저장했습니다. (시안)\">저장</button></div></div></div>";
   const LIBRA_APPROVED_CORRECTION_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-correct\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dco-t\"><div class=\"eyebrow\">Correction</div><h2 id=\"dco-t\">교정 · <span data-fill=\"target\">M-25 · 북쪽 정원의 기록실</span></h2><p class=\"muted\" style=\"font-size:13px\">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class=\"field\"><label for=\"co-in\">교정 내용</label><textarea class=\"textarea\" id=\"co-in\" rows=\"3\" data-no-track data-fill=\"text\" aria-describedby=\"co-hint\">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea><span class=\"hint\" id=\"co-hint\">교정할 내용을 적어야 기록할 수 있습니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" id=\"co-go\" data-close data-act=\"corr-add\" data-toast=\"‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)\">교정 기록</button></div></div></div>";
 
-  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 데이터 이동</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>복구 · 진단</b><small>상태 점검 · 실행 기록 · 진단</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
+  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 설정 내보내기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>디버그 및 로그</b><small>실행 기록 · 상태 · 진단</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
   // SVG path data only for the mockup icons; no suite.js behavior is loaded.
   const LIBRA_APPROVED_ICON_PATHS = {"home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "grid": "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "shelf": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3z\"/><path d=\"m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6\"/>", "users": "<circle cx=\"9\" cy=\"8.5\" r=\"3.2\"/><circle cx=\"17\" cy=\"9.5\" r=\"2.5\"/><path d=\"M3 19c.5-3.3 3-5 6-5s5.5 1.7 6 5M16 14.2c2.6 0 4.5 1.4 5 4.3\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.6 2.5 3.8 5.3 3.8 8.5S14.6 18 12 20.5C9.4 18 8.2 15.2 8.2 12S9.4 6 12 3.5z\"/>", "timeline": "<path d=\"M5 6h9M5 12h14M5 18h7\"/><circle cx=\"17\" cy=\"6\" r=\"2\"/><circle cx=\"9\" cy=\"18\" r=\"2\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.2 1.3L10 21h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z\"/>", "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5M12 8v.1\"/>", "x": "<path d=\"m6 6 12 12M18 6 6 18\"/>", "more": "<circle cx=\"5.5\" cy=\"12\" r=\"1.2\"/><circle cx=\"12\" cy=\"12\" r=\"1.2\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.2\"/>", "refresh": "<path d=\"M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "save": "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>", "db": "<ellipse cx=\"12\" cy=\"6\" rx=\"7.5\" ry=\"3\"/><path d=\"M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6\"/>", "server": "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"2\"/><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"2\"/><path d=\"M7.5 7.2v.1M7.5 16.8v.1\"/>", "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>", "shield": "<path d=\"M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z\"/><path d=\"m9 12 2.2 2.2L15.2 10\"/>", "bolt": "<path d=\"M13 3 5 13.5h6L10 21l9-11h-6z\"/>", "film": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"14\" rx=\"2\"/><path d=\"M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "pen": "<path d=\"m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z\"/>", "image": "<rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\"/><circle cx=\"9\" cy=\"10\" r=\"1.8\"/><path d=\"m4 17 5-4.5 3.5 3L16 12l4.5 5\"/>", "sync": "<path d=\"M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4.5 20z\"/><path d=\"M8 9h8M8 12.5h5\"/>", "arrow": "<path d=\"m9 5 7 7-7 7\"/>", "back": "<path d=\"m15 5-7 7 7 7\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "trash": "<path d=\"M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "route": "<circle cx=\"6\" cy=\"17\" r=\"2.2\"/><circle cx=\"18\" cy=\"7\" r=\"2.2\"/><path d=\"M8.2 17H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8\"/>", "pin": "<path d=\"m14 4 6 6-3 1-4 4-1 4-2.5-2.5L5 20l3.5-3.5L6 14l4-1 4-4z\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "flag": "<path d=\"M6 21V4M6 5h11l-2 4 2 4H6\"/>", "eye": "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "bookmark": "<path d=\"M7 4h10v16l-5-3.5L7 20z\"/>", "lamp": "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z\"/>"};
   // Exact approved LIBRA app structure; its demo handlers/data are never loaded.
@@ -82878,18 +82913,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .delivery-metric{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--line,rgba(0,0,0,.08));border-radius:var(--r-md,10px);background:var(--surface,transparent);min-width:0}',
     '.t-libra .delivery-metric>span{font-size:12px;color:var(--text2)}.t-libra .delivery-metric>strong{font:750 20px/1.2 var(--font-sans);font-variant-numeric:tabular-nums}',
     '.t-libra .delivery-families{display:flex;flex-wrap:wrap;gap:6px}.t-libra .delivery-family{padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line,rgba(0,0,0,.1));background:var(--surface-2,rgba(0,0,0,.03))}',
-    // Debug log: a fixed-width list rail beside a fluid detail card; rows stack badge / title / meta so titles never collapse to one glyph per line.
-    '.t-libra .diag-log{grid-template-columns:minmax(240px,340px) minmax(0,1fr);align-items:start;gap:16px}',
-    '@media (max-width:860px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr)}}',
-    '.t-libra .diag-log__rail{display:flex;flex-direction:column;gap:10px;min-width:0}',
-    '.t-libra .diag-log__intro{display:block}.t-libra .diag-log__intro h3{margin:0 0 4px}.t-libra .diag-log__intro p{margin:0;color:var(--text2);font-size:13px;line-height:1.55}',
-    '.t-libra .diag-log__rail>.cluster{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}',
-    '.t-libra .diag-log .list{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;min-width:0}',
-    '.t-libra .diag-log__row{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:10px;row-gap:2px;align-items:center;width:100%;min-width:0;text-align:left;padding:10px 12px}',
+    // Debug log: a frameless, breathable list rail beside a softly tinted detail surface.
+    '.t-libra .diag-log{grid-template-columns:minmax(250px,320px) minmax(0,1fr);align-items:stretch;gap:20px}',
+    '@media (max-width:860px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr);gap:16px}}',
+    '@container app (max-width:760px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr);gap:16px}}',
+    '.t-libra .diag-log .diag-log__rail{display:flex;flex-direction:column;gap:12px;min-width:0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;padding:0}',
+    '.t-libra .diag-log__intro{display:block;margin:0;padding:0 2px;border:0}.t-libra .diag-log__intro h3{margin:0 0 4px;font-size:14.5px;font-weight:700}.t-libra .diag-log__intro p{margin:0;color:var(--text2);font-size:12.5px;line-height:1.55}',
+    '.t-libra .diag-log__rail>.cluster{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.t-libra .diag-log__rail>.cluster>.hint{padding:0 2px;font-size:12px;color:var(--text3)}',
+    '.t-libra .diag-log .list{display:flex;flex-direction:column;gap:6px;max-height:58vh;overflow:auto;min-width:0;border:0;border-radius:0;background:transparent;box-shadow:none;padding:2px 0}',
+    '.t-libra .diag-log .list>.diag-log__row{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:10px;row-gap:3px;align-items:center;width:100%;min-width:0;text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm,10px);background:var(--surface2);cursor:pointer;transition:background var(--motion),border-color var(--motion)}',
+    '.t-libra .diag-log .list>.diag-log__row:hover{background:var(--surface3)}',
+    '.t-libra .diag-log .list>.diag-log__row.active,.t-libra .diag-log .list>.diag-log__row[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));box-shadow:none}',
     '.t-libra .diag-log__row>:first-child{grid-area:badge}.t-libra .diag-log__row>strong{grid-area:title;min-width:0;overflow-wrap:anywhere;word-break:normal;writing-mode:horizontal-tb;font-size:13.5px;line-height:1.4}.t-libra .diag-log__row>small{grid-area:meta;min-width:0;color:var(--text2);overflow-wrap:anywhere}',
-    '.t-libra .diag-log__head{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:12px;row-gap:2px;align-items:center;margin-bottom:12px}',
+    '.t-libra .diag-log>.card{border:0;box-shadow:none;background:var(--surface2);border-radius:var(--r-md,12px);padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}',
+    '.t-libra .diag-log__head{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:12px;row-gap:2px;align-items:center;margin:0;padding-bottom:12px;border-bottom:1px solid var(--border)}',
     '.t-libra .diag-log__head>:first-child{grid-area:badge}.t-libra .diag-log__head>strong{grid-area:title;overflow-wrap:anywhere;font-size:15px}.t-libra .diag-log__head>small{grid-area:meta;color:var(--text2)}',
     '.t-libra details.fold>.fold__body pre,.t-libra .card pre{box-sizing:border-box;min-width:0;max-width:100%;max-height:520px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;margin:0;padding:12px 14px;border-radius:var(--r-sm,8px);background:var(--surface-2,rgba(0,0,0,.03));font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}',
+    '.t-libra .diag-log .diag-log__detail{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm,8px);padding:14px 16px;min-height:110px}',
+    '.t-libra .diag-log>.card>.cluster{margin-top:0;gap:8px}',
     '.t-libra .mem-entry__heading{margin:4px 0 -6px;font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}',
     '.t-libra .mem-entry__text{margin:0;max-height:440px;overflow:auto;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:13px;line-height:1.75}',
     '.t-libra .mem-footnote{margin:0;padding:0 4px;font-size:11.5px;line-height:1.6}',
@@ -85015,6 +85056,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     version: PLUGIN_VERSION,
     memorySuite: MemorySuiteStorageBridge.getCachedDiagnostics(),
     portableBackup: safeClone(globalThis.__LIBRAPortableMemoryBackup?.status?.().backupDiagnostics || null),
+    portableRestore: safeClone((() => {
+      const st = globalThis.__LIBRAPortableMemoryBackup?.status?.();
+      if (!st) return null;
+      return {
+        lastRestore: st.lastRestore || null,
+        lastRecovery: st.lastRecovery || null,
+        lastError: st.lastError || '',
+        busy: st.busy === true,
+        message: st.message || ''
+      };
+    })()),
     memoryVersion: LibraMemoryCore.VERSION,
     memoryBatchSize: LibraMemoryCore.BATCH_SIZE,
     memoryStageOrder: LibraMemoryCore.STAGE_ORDER.slice(),
@@ -85323,7 +85375,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const SHARED_MEMORY_HUB_SECTIONS = Object.freeze(['read', 'context', 'manage']);
   const SHARED_PIPELINE_HUB_SECTIONS = Object.freeze(['memory_pipeline']);
   const SHARED_AGENT_HUB_SECTIONS = Object.freeze(['memory']);
-  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','state','server','ai','embedding','recovery','transfer','general','source_edits','scopes']);
+  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','server','ai','embedding','recovery','transfer','general','source_edits','scopes']);
   const SHARED_CUSTOM_HUB_SECTIONS = Object.freeze(['memory', 'state', 'active_draft', 'ooc']);
   const SHARED_EXECUTION_LOG_SECTIONS = Object.freeze(['memory','state','draft','recall','embedding','rebuild']);
 
@@ -89764,33 +89816,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return result;
   };
 
-  const buildStateTrackingAvailabilityPanel = (surface='pipeline') => {
-    const view=worldManagerSnapshotView(),snapshot=LibraMemoryCore.peekSnapshot()||{},embedding=LibraMemoryCore.getEmbeddingRebuildState();
-    const committed=Object.values(snapshot.manifest?.memories||{}).filter(row=>row?.status==='committed');
-    const saved=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
-    return guiEl('div',{class:'stack',dataset:{stateRuntimeSurface:surface,librarianLocalState:'true'}},[
-      guiEl('div',{class:'three-status'},[
-        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),saved?`T${saved}까지 · ${committed.length}개`:'저장된 기억 없음']),
-        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),Number(view.throughTurn)>0?`T${view.throughTurn}까지`:'반영 기준 미확인']),
-        guiEl('div',{},[guiEl('b',{text:'임베딩'}),`${embedding.status||'미확인'} · 최신 ${Number(embedding.counts?.ready||0)}개`])
-      ]),
-      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적입니다. 현재 상태 적용은 추가 AI 호출 0회로 실행됩니다.'}),
-      buildApprovedRecoveryActions(),
-    ]);
-  };
-
-
-
-
-
-
-
-
-
-
-
-
-
   const setSharedCustomPromptDomain = domain => {
     if (Gui.promptStudioDomain === domain) return;
     Gui.promptStudioDomain = domain;
@@ -89804,7 +89829,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const migrateCustomWorkshopSelection = () => {
     const section=normalizeHubChoice(Gui.customHubSection,SHARED_CUSTOM_HUB_SECTIONS,'memory');
     if(section==='state'){
-      Gui.settingsHubSection='state';
+      Gui.settingsHubSection='general';
       Gui.bookSettingsWorkbenchSection='settings';
       return section;
     }
@@ -89958,7 +89983,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             canResume ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : '작업 재개', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
             canCancel ? guiEl('button', { class: 'btn btn--danger', type: 'button', text: '취소 요청', onClick: async () => { if (!(await confirmApprovedOperation('현재 정본 작업을 취소할까요? 이미 완료된 항목은 유지됩니다.',{title:'정본 작업 취소',target:job.jobId}))) return; try { await LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 취소를 요청했습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
             canReanalyze?guiEl('button',{class:'btn',type:'button',text:'재분석',dataset:{canonicalJobReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:job.scopeKey,startTurns:guiAsArray(job.failures).length?job.failures.map(row=>Number(row.startTurn)):guiAsArray(job.targetStarts)})}):null,
-            guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 일반 · 진단에 표시했습니다.'); } })
+            guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 디버그 및 로그에 표시했습니다.'); } })
           ].filter(Boolean))
         ]);
       }) : [guiEl('section', { class: 'card hint', text: Gui.canonicalJobsLoading ? '최근 정본 작업을 읽는 중입니다.' : Gui.canonicalJobsError ? '조회에 실패했습니다. 저장된 작업이 없다는 뜻은 아닙니다.' : '최근 정본 작업이 없습니다.' })])
@@ -90176,6 +90201,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // 통합 로그가 기본이다. 검색·필터·상세를 갖춘 목록이며, 아래 분류들은 각자의 기존 패널을
     // 그대로 유지한다 — 통합이 기존 진단을 없애는 것이 아니다.
     Object.freeze({ id: 'log', label: '디버그 로그', note: '실행 이벤트 · 상태 스냅샷' }),
+    Object.freeze({ id: 'execution', label: '실행 기록', note: '최근 작업 · 작업 로그 · 오류' }),
     Object.freeze({ id: 'health', label: '운영 상태', note: '핵심 엔진 · 저장소 상태' }),
     Object.freeze({ id: 'swallowed', label: '무시된 오류', note: '조용히 실패한 위치 집계' }),
     Object.freeze({ id: 'state_reflection', label: '상태 반영', note: '기억 분석 · 상태 추적' }),
@@ -90329,8 +90355,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const buildDiagnosticLogSection = id => {
     // 선택된 분류만 렌더링한다 — 숨겨진 진단을 미리 만들지 않는다.
-    // 기존 네 패널은 각자의 분류로 계속 접근 가능하다(운영 상태 포함). 통합 로그가 기본일 뿐,
-    // 어떤 기존 진단도 사라지지 않는다.
+    // 기존 네 패널과 실행 기록(기록 보관소)은 각자의 분류로 계속 접근 가능하다(운영 상태 포함).
+    // 통합 로그가 기본일 뿐, 어떤 기존 진단도 사라지지 않는다.
+    if (id === 'execution') return buildSharedExecutionLogsPanel();
     if (id === 'health') return buildOperationalHealthPanel();
     if (id === 'swallowed') return buildSwallowedDiagPanel();
     if (id === 'state_reflection') return buildWorldManagerDiagnosticsPanel();
@@ -90345,7 +90372,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const active=sections.some(row=>row.id===Gui.diagnosticLogSection)?Gui.diagnosticLogSection:'log';
     return guiEl('div',{class:'stack',dataset:{diagnosticSettings:active}},[
       guiEl('div',{class:'card'},[
-        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'복구 · 진단'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 실제 기록과 실행 상태를 확인합니다.'})])]),
+        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'진단 기록'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 실제 기록과 실행 상태를 확인합니다.'})])]),
         fieldNode('확인할 기록',guiEl('select',{class:'select',value:active,dataset:{diagnosticField:'section'},onChange:event=>{Gui.diagnosticLogSection=event.target.value;queueGuiNavigationRender();}},optionNodes(sections.map(row=>[row.id,`${row.label} · ${row.note}`]),active)))
       ]),
       guiLazyDetails({class:'fold',dataset:{diagnosticLog:active}},guiEl('summary',{text:`${sections.find(row=>row.id===active).label} 상세`}),()=>guiEl('div',{class:'fold__body stack'},[buildDiagnosticLogSection(active)]))
@@ -92593,13 +92620,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'원문 태그 필터',note:'분석에서 뺄 태그 · 표식',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '분석 자료 · 모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
-    Object.freeze({ id: 'state', group: 'settings', no: '04', label: '현재 상태 적용', note: '로컬 적용 · 추가 호출 0회', eyebrow: 'STATE TRACKING' }),
     Object.freeze({ id: 'server', group: 'settings', no: '05', label: '서버 · 저장', note: 'Storage · Compute', eyebrow: 'STORAGE & COMPUTE' }),
     Object.freeze({ id: 'ai', group: 'settings', no: 'C1', label: 'AI 연결', note: '모델 · 제공자 · 연결 프리셋', eyebrow: 'AI CONNECTION' }),
     Object.freeze({ id: 'embedding', group: 'settings', no: 'C2', label: '임베딩 연결', note: '검색용 임베딩 모델 · 연결', eyebrow: 'EMBEDDING CONNECTION' }),
     Object.freeze({ id: 'recovery', group: 'settings', no: '06', label: '백업 · 복구', note: 'Portable JSON 기억 복원', eyebrow: 'RECOVERY' }),
-    Object.freeze({ id: 'transfer', group: 'settings', no: '07', label: '데이터 이동', note: 'JSON 가져오기 · 내보내기', eyebrow: 'DATA TRANSFER' }),
-    Object.freeze({ id: 'general', group: 'settings', no: '08', label: '일반 · 진단', note: '실행 상태 · Debug', eyebrow: 'GENERAL & DIAGNOSTICS' }),
+    Object.freeze({ id: 'transfer', group: 'settings', no: '07', label: '설정 내보내기', note: 'JSON 가져오기 · 내보내기', eyebrow: 'DATA TRANSFER' }),
+    Object.freeze({ id: 'general', group: 'settings', no: '08', label: '디버그 및 로그', note: '실행 상태 · Debug', eyebrow: 'GENERAL & DIAGNOSTICS' }),
     Object.freeze({ id: 'pipeline', group: 'workbench', no: 'W1', label: '기억 분석', note: '분석 한도 · 참고 자료 · 지침', eyebrow: 'MEMORY ANALYSIS' }),
     Object.freeze({ id: 'logs', group: 'workbench', no: 'W4', label: '기록 보관소', note: '실행 기록 · 리콜 · 임베딩', eyebrow: 'RECORD ARCHIVE' })
   ]);
@@ -92608,26 +92634,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (Gui.bookSettingsWorkbenchSection === 'custom') migrateCustomWorkshopSelection();
     if (Gui.bookSettingsWorkbenchSection === 'agents') {
       if (Gui.agentHubSection === 'state') {
-        Gui.settingsHubSection = 'state';
+        Gui.settingsHubSection = 'general';
         Gui.bookSettingsWorkbenchSection = 'settings';
-        return 'state';
+        return 'general';
       }
       Gui.pipelineHubSection = Gui.agentHubSection === 'memory' ? 'memory_pipeline' : 'response_generation';
       Gui.bookSettingsWorkbenchSection = 'pipeline';
     }
     const workbench = normalizeHubChoice(Gui.bookSettingsWorkbenchSection, BOOK_SETTINGS_WORKBENCH_SECTIONS, 'settings');
+    if (workbench === 'logs') {
+      Gui.diagnosticLogSection = 'execution';
+      Gui.settingsHubSection = 'general';
+      Gui.bookSettingsWorkbenchSection = 'settings';
+      return 'general';
+    }
     if (workbench !== 'settings') return workbench;
     return normalizeHubChoice(Gui.settingsHubSection, SHARED_SETTINGS_HUB_SECTIONS, 'memory');
   };
 
   const selectBookSettingsRoomSection = id => {
     if (id === 'server') { bookNavigate('server'); return; }
+    if (id === 'state') id = 'general';
+    if (id === 'logs') { Gui.diagnosticLogSection = 'execution'; id = 'general'; }
     Gui.invalidations.add('sidebar');
     if (id === 'custom') { migrateCustomWorkshopSelection(); id = 'pipeline'; }
     if (id === 'agents') {
       if (Gui.agentHubSection === 'state') {
-        Gui.settingsHubSection = 'state';
-        id = 'state';
+        Gui.settingsHubSection = 'general';
+        id = 'general';
       } else {
       Gui.pipelineHubSection = Gui.agentHubSection === 'memory' ? 'memory_pipeline' : 'response_generation';
       id = 'pipeline';
@@ -92764,7 +92798,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if(sectionId==='references')return buildLibraReferenceHubPanel();
     if(sectionId==='scopes')return buildLibraScopeDataPanel(previousScopePanel);
     if(sectionId==='source_edits')return buildAnalysisInputPanel();
-    if(sectionId==='state')return buildStateTrackingAvailabilityPanel('settings');
+    if(sectionId==='state')return buildGeneralSettingsPanel();
     if(sectionId==='transfer')return buildTransferTab();
     if(sectionId==='general')return buildGeneralSettingsPanel();
     if(sectionId==='server')return buildLibraServerConnectionPanel();
@@ -92787,7 +92821,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // server health) run inside the one-stop check; only the destructive scope delete stays here.
       const extraDetails=[
 guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'현재 채팅 데이터 삭제'}),()=>guiEl('div',{class:'fold__body stack'},[
-          guiEl('p',{class:'hint',text:'현재 채팅의 LIBRA 메모리·벡터·실행 기록을 지웁니다. 누락·불일치 복구는 현재 상태 적용의 원스톱 상태 점검을 쓰세요.'}),
+          guiEl('p',{class:'hint',text:'현재 채팅의 LIBRA 메모리·벡터·실행 기록을 지웁니다. 누락·불일치 복구는 현재 열람대의 상태 점검 및 자동 복구를 쓰세요.'}),
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ]))
 ];
@@ -93069,19 +93103,7 @@ advanced
       card('기억 백업 · 복원','Portable JSON 검증과 scope 확인 후 기존 복원 절차를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('기억 백업 · 복원…','recovery')])]),
       card('설정 이동','기억 데이터와 분리된 설정 JSON 이동 기능을 사용합니다.',[routeButton('설정 가져오기 · 내보내기…','transfer')])
     ]);
-    const snap=LibraMemoryCore.peekSnapshot()||{};
-    const memories=Object.values(snap.manifest?.memories||{}).filter(row=>row?.status==='committed').length;
-    const turn=Number(snap.continuityState?.throughTurn||snap.manifest?.frontiers?.committedTurn||0);
-    return guiEl('div',{class:'stack',dataset:{settingsCategory:'adv',settingsReadback:'snapshot'}},[
-      guiEl('div',{class:'three-status'},[
-        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),turn?`T${turn}까지 · ${memories}개`:'저장된 기억 없음']),
-        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),turn?`T${turn}까지`:'미확인']),
-        guiEl('div',{},[guiEl('b',{text:'임베딩'}),guiEl('span',{text:'실제 저장 상태 확인 필요'})])
-      ]),
-      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
-      card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 상태에는 현재 값이 우선합니다. 과거 내용은 후보로만 남고, 불확실·조건부 내용은 빈 칸에만 표시를 달고 들어가며 이미 있는 값을 바꾸거나 지우지 않습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
-      card('복구 · 진단','원스톱 상태 점검이 누락·지연·불일치를 찾아 한 번에 복구합니다.',[guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()}),routeButton('실행 기록…','logs')])])
-    ]);
+    return buildGeneralSettingsPanel();
   };
 
 
@@ -93098,10 +93120,9 @@ advanced
     {id:'scopes',group:'저장과 백업',label:'스코프 데이터 관리',section:'scopes'},
     {id:'server',group:'저장과 백업',label:'저장 위치 · 서버',section:'server'},
     {id:'recovery',group:'저장과 백업',label:'백업 · 복구',section:'recovery'},
-    {id:'transfer',group:'저장과 백업',label:'가져오기 · 내보내기',section:'transfer'},
-    {id:'state',group:'고급 · 진단',label:'현재 상태 적용',section:'state'},
-    {id:'logs',group:'고급 · 진단',label:'실행 기록',section:'logs'},
-    {id:'debug',group:'고급 · 진단',label:'문제 해결 · 진단',section:'general'}
+    {id:'transfer',group:'저장과 백업',label:'설정 내보내기',section:'transfer'},
+    {id:'logs',group:'디버그 및 로그',label:'실행 기록',section:'logs'},
+    {id:'debug',group:'디버그 및 로그',label:'디버그 및 로그',section:'general'}
   ].map(item=>Object.freeze(item)));
   const bookExternalSettingsActive = item => item?.id === 'server'
     ? Gui.bookPage === 'server'
@@ -94769,18 +94790,7 @@ advanced
     overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();return;}if(event.target.closest('button:not([data-corrections-close])')&&(canonicalReaderBindingKey(canonicalReaderBinding())!==canonicalReaderBindingKey(binding)||overlay.dataset.correctionsScope!==binding.scopeKey||overlay.dataset.correctionsWorldline!==binding.worldlineId)){event.preventDefault();event.stopImmediatePropagation();overlay.querySelector('#corr-list').replaceChildren(guiEl('p',{class:'note note--danger',text:'채팅 또는 scope가 바뀌었습니다. 다시 열어 확인하세요.'}));}},true);
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
-  // Re-apply, receipt repair, Micro publish, rollback-anchor release, legacy cutover, State journal
-  // retry and vector post-processing all run inside the one-stop check; corrections stay in the
-  // people/world/story manage views ('교정 기록').
-  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'maintenance'}},[
-    guiEl('div',{class:'act-card'},[
-      guiEl('div',{},[
-        guiEl('b',{text:'⚡ 원스톱 상태 점검 및 자동 복구'}),
-        guiEl('small',{text:'정본·미크로·렌즈 누락, 현재 상태 반영, 원문 저장 영수증, 이전 시점 고정, 기존 기억 전환, 임베딩, 캐시와 임시 자료를 한 번에 점검하고 필요한 것만 복구합니다.'})
-      ]),
-      guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()})
-    ])
-  ]);
+  // Corrections stay in the people/world/story manage views ('교정 기록').
 
   const createApprovedMockupApp = () => {
     const template = document.createElement('template');
@@ -95973,10 +95983,10 @@ advanced
     const items = BOOK_NATIVE_SETTINGS_SECTIONS;
     const groups = [
       { id:'ai', label:'AI 연결', note:'생성 AI · 임베딩', icon:'cpu', sections:['ai','embedding'] },
-      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','logs'] },
+      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline'] },
       { id:'ref', label:'참고 자료', note:'로어 · 분석 입력 규칙', icon:'book', sections:['references','source_edits'] },
-      { id:'store', label:'저장과 백업', note:'스코프 · 백업 · 데이터 이동', icon:'db', sections:['scopes','recovery','transfer'] },
-      { id:'adv', label:'복구 · 진단', note:'상태 · 교정 · 재구축', icon:'wrench', sections:['state','general'] }
+      { id:'store', label:'저장과 백업', note:'스코프 · 백업 · 설정 내보내기', icon:'db', sections:['scopes','recovery','transfer'] },
+      { id:'adv', label:'디버그 및 로그', note:'실행 기록 · 상태 · 진단', icon:'wrench', sections:['general'] }
     ];
     const groupFor = id => groups.find(group=>group.sections.includes(id))||groups[1];
     const activeGroup=groupFor(active);
@@ -100816,11 +100826,18 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       summary.textContent = `백업: ${envelope.source?.characterName || envelope.source?.characterId || '-'} / ${envelope.source?.chatTitle || envelope.source?.chatId || '-'}\n현재: ${preview.target?.characterName || preview.target?.characterId || '-'} / ${preview.target?.chatTitle || preview.target?.chatId || '-'}\n백업 정본 ${Number(preview.sourceMemories || 0).toLocaleString('ko-KR')}개 · 과거 기억 ${Number(preview.sourceInheritedMemories || 0).toLocaleString('ko-KR')}개`;
       const list = document.createElement('div');
       list.className = 'choices';
+      const rebindBatchCount = Array.isArray(preview.rebindMatchedStarts) ? preview.rebindMatchedStarts.length : Number(preview.matchedMemories || 0);
+      const rebindMicroCount = Array.isArray(preview.rebindMatchedMicroTurns) ? preview.rebindMatchedMicroTurns.length : 0;
+      const rebindDetailParts = [
+        `대화 일치 정본 ${rebindBatchCount}개 구간`,
+        rebindMicroCount ? `미크로 ${rebindMicroCount}턴` : '',
+        preview.divergenceTurn && rebindBatchCount < Number(preview.sourceMemories || 0) ? `최초 불일치 T${preview.divergenceTurn}` : ''
+      ].filter(Boolean);
       const definitions = [
         { mode: 'restore_same_scope', title: '같은 채팅 되돌리기', description: '현재 기억을 백업 시점으로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.', detail: '같은 chatId에서만 사용' },
         { mode: 'import_as_predecessor_archive', title: '새 채팅으로 기억 이사', description: '이전 기억을 영구 과거 아카이브로 연결하고 현재 채팅의 TURN은 새로 시작합니다.', detail: '다른 chatId · 비어 있는 새 채팅' },
         { mode: 'reconstruct_native_copy', title: '채팅 복사 기억 복구', description: '현재 대화와 연속해서 일치하는 5턴 구간만 현재 세계선의 정본으로 재바인딩합니다.', detail: `일치 ${Number(preview.matchedMemories || 0)}개${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` },
-        { mode: 'rebind_updated_bot', title: '업데이트된 봇으로 이어하기', description: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 현재 채팅의 새 스코프로 기억을 다시 씁니다.', detail: `대화 일치 ${Number(preview.matchedMemories || 0)}개 구간${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` }
+        { mode: 'rebind_updated_bot', title: '업데이트된 봇으로 이어하기', description: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 현재 채팅의 새 스코프로 기억을 다시 씁니다.', detail: rebindDetailParts.join(' · ') }
       ];
       for (const definition of definitions) {
         const availability = preview.modes?.[definition.mode] || { available: false, reason: 'unavailable' };
@@ -100852,16 +100869,23 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     });
     const modeConfirmationText = (mode, envelope, preview, storageTarget = '') => {
       const storageLine = storageTarget ? [`저장 위치: ${storageTarget}`] : [];
-      if (mode === 'rebind_updated_bot') return [
-        previewText(envelope), '', '선택: 업데이트된 봇으로 이어하기',
-        `원래 봇: ${envelope.source?.characterName || envelope.source?.characterId || '-'}`,
-        `현재 봇: ${preview.target?.characterName || preview.target?.characterId || '-'}`,
-        `대화 내용이 일치하여 다시 연결할 정본: ${Number(preview.matchedMemories || 0)}개`,
-        preview.divergenceTurn ? `T${preview.divergenceTurn}부터는 가져오지 않고 현재 봇에서 다시 분석합니다.` : '백업의 활성 정본 구간이 현재 대화와 모두 일치합니다.',
-        '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
-        '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅의 새 스코프로 다시 씁니다. 원래 봇의 기억은 건드리지 않습니다.',
-        ...storageLine
-      ].join('\n');
+      if (mode === 'rebind_updated_bot') {
+        const rebindBatchCount = Array.isArray(preview.rebindMatchedStarts) ? preview.rebindMatchedStarts.length : Number(preview.matchedMemories || 0);
+        const rebindMicroCount = Array.isArray(preview.rebindMatchedMicroTurns) ? preview.rebindMatchedMicroTurns.length : 0;
+        const partialSource = rebindBatchCount < Number(preview.sourceMemories || 0);
+        return [
+          previewText(envelope), '', '선택: 업데이트된 봇으로 이어하기',
+          `원래 봇: ${envelope.source?.characterName || envelope.source?.characterId || '-'}`,
+          `현재 봇: ${preview.target?.characterName || preview.target?.characterId || '-'}`,
+          `대화 내용이 일치하여 다시 연결할 정본: ${rebindBatchCount}개${rebindMicroCount ? ` (미크로 ${rebindMicroCount}턴)` : ''}`,
+          partialSource
+            ? (preview.divergenceTurn ? `일치하지 않는 구간(T${preview.divergenceTurn} 등)은 가져오지 않고 현재 봇에서 다시 분석합니다.` : '일치하는 구간만 현재 봇으로 다시 연결하고 나머지는 현재 봇에서 다시 분석합니다.')
+            : '백업의 활성 정본 구간이 현재 대화와 모두 일치합니다.',
+          '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
+          '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅의 새 스코프로 다시 씁니다. 원래 봇의 기억은 건드리지 않습니다.',
+          ...storageLine
+        ].join('\n');
+      }
       if (mode === 'import_as_predecessor_archive') return [
         previewText(envelope), '', '선택: 새 채팅으로 기억 이사',
         `과거 아카이브로 연결할 기억: ${Number(preview.sourceMemories || 0) + Number(preview.sourceInheritedMemories || 0)}개`,
@@ -100947,7 +100971,24 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
             : mode === 'import_as_predecessor_archive'
               ? await LibraMemoryCore.importPortableAsPredecessorArchive(payload)
               : await LibraMemoryCore.importPortableAsNativeCopy(payload, { updatedBotRebind: mode === 'rebind_updated_bot' });
-          const verifiedCount = Number(result.verified || result.records || result.copiedStarts?.length || 0);
+          if (mode !== 'restore_same_scope') {
+            runtime.lastRestore = { at: Date.now(), mode, ...cloneJson(result) };
+            runtime.lastError = '';
+            await refreshRuntime(result);
+          }
+          if (result?.skipped === true && result?.reason === 'portable_import_already_complete') {
+            setUiBusy(false, '이미 복원 완료됨');
+            await notice('복원 완료', [
+              '이미 이 백업으로 복원이 완료되어 있습니다.',
+              `저장 위치: ${storageTarget}`,
+              '',
+              '채팅 메시지는 수정하지 않았습니다.',
+              '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
+            ].join('\n'));
+            return result;
+          }
+          const verifiedCount = Number(result.verified || result.records || result.copiedStarts?.length
+            || (mode === 'rebind_updated_bot' ? (result.receipt?.microActiveRecords || result.receipt?.microOwnerRecords || 0) : 0) || 0);
           setUiBusy(false, `복원 완료 · ${verifiedCount}개 검증`);
           await notice('복원 완료', [
             mode === 'restore_same_scope' ? `저장 ${Number(result.written || 0).toLocaleString('ko-KR')}개` : `복원 방식 ${mode === 'import_as_predecessor_archive' ? '새 채팅으로 기억 이사' : mode === 'rebind_updated_bot' ? '업데이트된 봇으로 이어하기' : '채팅 복사 기억 복구'}`,

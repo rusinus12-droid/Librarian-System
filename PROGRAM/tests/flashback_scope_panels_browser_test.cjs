@@ -87,7 +87,7 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
     const group={vault:'v',connect:'c',log:'l'}[route];
     const firstExists=await ev(`!!document.querySelector('[data-subtab][data-group="${group}"]')`);
     assert.ok(firstExists,`${route} detail tabs are present`);
-    const details={vault:['resp','wl','scopes'],connect:['emb','mig','srv'],log:['a','b','c']}[route];
+    const details={vault:['resp','wl','scopes'],connect:['emb','srv'],log:['a','b','c']}[route];
     for(const [index,detail] of details.entries()){
      await ev(`document.querySelector('[data-subtab="${detail}"][data-group="${group}"]').click()`);
      await wait(`document.querySelector('[data-subtab="${detail}"][data-group="${group}"]').getAttribute('aria-selected')==='true'`);
@@ -97,19 +97,19 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
       const readback=await ev(`({count:document.querySelectorAll('#manualEditorPanel [data-manual-record-key]').length,empty:document.querySelector('#manualEditorPanel')?.innerText?.slice(0,180)})`);
       assert.equal(readback.count,2,`synthetic response records read back in the manual editor: ${JSON.stringify(readback)}`);
      }
-     if(route==='connect'&&detail==='mig'&&viewport.name==='desktop'){
-      const mig=await ev(`(()=>{const root=document.querySelector('[data-subpanel="mig"][data-group="c"]>.stack');return JSON.stringify({cards:root?.children.length,headings:[...root.querySelectorAll(':scope>.card .card__title')].map(x=>x.textContent.trim()),preview:!!root?.querySelector('#sameSpacePreviewBtn'),probe:!!root?.querySelector('#multilingualProbeBtn'),applyUnderFirst:!!root?.querySelector(':scope>.card:first-child #sameSpaceApplyBtn'),probeUnderSecond:!!root?.querySelector(':scope>.card:nth-child(2) #multilingualProbeBtn'),desc:root?.querySelector(':scope>.card:first-child .card__desc')?.textContent||''})})()`);
-      const state=JSON.parse(mig);assert.equal(state.cards,2);assert.deepEqual(state.headings,['같은 공간 이전 미리보기','다국어 리콜 검증']);assert.ok(state.preview&&state.probe&&state.applyUnderFirst&&state.probeUnderSecond);assert.match(state.desc,/벡터 원본 보존 · API 호출 0/);
-      await ev(`document.querySelector('#sameSpacePreviewBtn').click()`);
-      await wait(`!!t.Runtime.sameSpacePreview`);
-      const counts=await ev(`({eligible:document.querySelector('#sameSpaceEligibleCount').textContent,unknown:document.querySelector('#sameSpaceUnknownCount').textContent,rows:t.Runtime.sameSpacePreview.rows.length,unverified:t.Runtime.sameSpacePreview.unknown.length})`);
-      assert.equal(counts.eligible,counts.rows.toLocaleString());assert.equal(counts.unknown,counts.unverified.toLocaleString()+' (등록부·생성 이력 검증 불일치)','read-only preview refreshes table from the actual result');
-     }
      if(index===0) await snap(`${viewport.name}-product-${route}`);
      else if(viewport.name==='desktop') await snap(`${viewport.name}-product-${route}-${detail}`);
     }
    }
-   else await snap(`${viewport.name}-product-${route}`);
+   else {
+    if(route==='care'&&viewport.name==='desktop'){
+     await ev(`document.querySelector('#maintenanceManualCard').open=true;document.querySelector('#sameSpacePreviewBtn').click()`);
+     await wait(`!!t.Runtime.sameSpacePreview`);
+     const counts=await ev(`({eligible:document.querySelector('#sameSpaceEligibleCount').textContent,unknown:document.querySelector('#sameSpaceUnknownCount').textContent,rows:t.Runtime.sameSpacePreview.rows.length,unverified:t.Runtime.sameSpacePreview.unknown.length})`);
+     assert.equal(counts.eligible,counts.rows.toLocaleString());assert.equal(counts.unknown,counts.unverified.toLocaleString()+' (등록부·생성 이력 검증 불일치)','read-only preview refreshes table from the actual result');
+    }
+    await snap(`${viewport.name}-product-${route}`);
+   }
   }
  }
  assert.ok(await ev(`document.querySelectorAll('#storageRows').length===1`),'real scope list mount exists');
@@ -126,7 +126,7 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
  await ev(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
  assert.equal(await ev(`window.portableChoicePromise`),'','Escape returns the existing empty decline value without restore');
  assert.ok(await ev(`document.activeElement===window.portableOpener`),'restore-choice decline returns focus to opener');
- const productLabels=await ev(`({healthText:document.querySelector('#sidebarHealth')?.textContent||'',healthClass:document.querySelector('#sidebarHealth')?.className||'',model:document.querySelector('#foot-model')?.textContent||'',meta:document.querySelector('#foot-meta')?.textContent||'',scope:document.querySelector('#currentScopeText')?.textContent||'',chat:document.querySelector('#currentChatText')?.textContent||'',log:document.querySelector('#nav-log-n')?.textContent||'0',scopeCount:document.querySelector('#nav-scope-n')?.textContent||'0',mode:document.querySelector('#topModeBadge')?.textContent||'ON',provider:document.querySelector('#embeddingProvider')?.value||'',embeddingModel:document.querySelector('#embeddingModel')?.value||'',url:document.querySelector('#embeddingUrl')?.value||'',keyPlaceholder:document.querySelector('#embeddingKey')?.placeholder||''})`);
+ const productLabels=await ev(`({healthText:document.querySelector('#sidebarHealth')?.textContent||'',healthClass:document.querySelector('#sidebarHealth')?.className||'',model:document.querySelector('#foot-model')?.textContent||'',meta:document.querySelector('#foot-meta')?.textContent||'',scope:document.querySelector('#currentScopeText')?.textContent||'',chat:document.querySelector('#currentChatText')?.textContent||'',log:document.querySelector('#nav-log-n')?.textContent||'0',scopeCount:document.querySelector('#nav-scope-n')?.textContent||'0',tabScopeCount:document.querySelector('#tab-scope-n')?.textContent||'—',mode:document.querySelector('#topModeBadge')?.textContent||'ON',provider:document.querySelector('#embeddingProvider')?.value||'',embeddingModel:document.querySelector('#embeddingModel')?.value||'',url:document.querySelector('#embeddingUrl')?.value||'',keyPlaceholder:document.querySelector('#embeddingKey')?.placeholder||''})`);
  await ev(`document.querySelector('[data-go="log"]').click();document.querySelector('[data-subtab="a"][data-group="l"]').click();window.lastActionNode=document.querySelector('#lastActionLog');window.lastActionNode.textContent='synthetic last-action detail';document.querySelector('#clearActivityLogBtn').click()`);
  const cleared=await ev(`JSON.stringify({records:t.Runtime.activityLog.length,nav:document.querySelector('#nav-log-n')?.textContent,tab:document.querySelector('#tab-log-n')?.textContent,detailNode:document.querySelector('#lastActionLog')===window.lastActionNode,detail:document.querySelector('#lastActionLog')?.textContent})`);
  assert.deepEqual(JSON.parse(cleared),{records:0,nav:'0',tab:'0',detailNode:true,detail:'synthetic last-action detail'},'clear empties session records, synchronizes mockup counters and preserves last-action detail component');
@@ -177,7 +177,7 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
  await wait('!!document.querySelector(".app") && !!document.querySelector("[data-page=lab]")');
  await ev(`document.documentElement.style.width='100vw';document.body.style.width='100vw';document.body.style.minHeight='100vh';document.querySelector('.proto-bar')?.remove();
  const scope=document.querySelector('.scope');if(scope){const parts=scope.querySelectorAll('b,span');if(parts[0])parts[0].textContent=${JSON.stringify(productLabels.scope)};if(parts[2])parts[2].textContent=${JSON.stringify(productLabels.chat)};const badge=scope.querySelector('.badge');if(badge)badge.textContent=${JSON.stringify(productLabels.mode)};}
- const count=document.querySelector('#nav-scope-n');if(count)count.textContent=${JSON.stringify(productLabels.scopeCount)};const tabCount=document.querySelector('#tab-scope-n');if(tabCount)tabCount.textContent=${JSON.stringify(productLabels.scopeCount)};const log=document.querySelector('#nav-log-n');if(log)log.textContent=${JSON.stringify(productLabels.log)};const footModel=document.querySelector('#foot-model');if(footModel)footModel.textContent=${JSON.stringify(productLabels.model)};const footMeta=document.querySelector('#foot-meta');if(footMeta)footMeta.textContent=${JSON.stringify(productLabels.meta)};const health=document.querySelector('.health');if(health){health.textContent=${JSON.stringify(productLabels.healthText)};health.className=${JSON.stringify(productLabels.healthClass)};}
+ const count=document.querySelector('#nav-scope-n');if(count)count.textContent=${JSON.stringify(productLabels.scopeCount)};const tabCount=document.querySelector('#tab-scope-n');if(tabCount)tabCount.textContent=${JSON.stringify(productLabels.tabScopeCount)};const log=document.querySelector('#nav-log-n');if(log)log.textContent=${JSON.stringify(productLabels.log)};const footModel=document.querySelector('#foot-model');if(footModel)footModel.textContent=${JSON.stringify(productLabels.model)};const footMeta=document.querySelector('#foot-meta');if(footMeta)footMeta.textContent=${JSON.stringify(productLabels.meta)};const health=document.querySelector('.health');if(health){health.textContent=${JSON.stringify(productLabels.healthText)};health.className=${JSON.stringify(productLabels.healthClass)};}
  const provider=document.querySelector('#emb-provider');if(provider){let opt=[...provider.options].find(item=>item.value===${JSON.stringify(productLabels.provider)});if(!opt){opt=document.createElement('option');opt.value=${JSON.stringify(productLabels.provider)};opt.textContent=${JSON.stringify(productLabels.provider)};provider.add(opt);}provider.value=${JSON.stringify(productLabels.provider)};}
  const model=document.querySelector('#emb-model');if(model)model.value=${JSON.stringify(productLabels.embeddingModel)};const url=document.querySelector('#emb-url');if(url)url.value=${JSON.stringify(productLabels.url)};const key=document.querySelector('#emb-key');if(key)key.placeholder=${JSON.stringify(productLabels.keyPlaceholder)};
  const category=document.querySelector('[data-detail-root-list]');if(category){const rows=[...category.querySelectorAll('[data-select-row]')];rows.slice(1).forEach(row=>row.remove());if(rows[0]){const icon=rows[0].querySelector('.row__icon');if(icon)icon.textContent='2';const title=rows[0].querySelector('.row__title');if(title)title.textContent='응답 턴';}}
@@ -196,7 +196,7 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
    await ev(`document.querySelector('[data-go="${route}"]').click()`);
    await wait(`document.querySelector('[data-page="${route}"]').classList.contains('is-active')`);
    if(['vault','connect','log'].includes(route)){
-    const details={vault:['resp','wl','scopes'],connect:['emb','mig','srv'],log:['a','b','c']}[route];
+    const details={vault:['resp','wl','scopes'],connect:['emb','srv'],log:['a','b','c']}[route];
     for(const [index,detail] of details.entries()){
      await ev(`document.querySelector('.page.is-active [data-subtab="${detail}"]').click()`);
      await wait(`document.querySelector('.page.is-active [data-subtab="${detail}"]').getAttribute('aria-selected')==='true'`);

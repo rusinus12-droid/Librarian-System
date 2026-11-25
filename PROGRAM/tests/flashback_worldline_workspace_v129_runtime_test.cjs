@@ -22,7 +22,7 @@ const {parent,branch,clone}=require('./fixtures/native_branch_fixture.cjs');
  f.context.__selectSourceEditTab309();const ui=await t.buildUiHtml();ok(ui.includes('data-page="vault"')&&ui.includes('data-subtab="wl"')&&ui.includes('id="panel-worldline"'),'worldline is reachable in the adopted vault detail route');
  const overview=ui.slice(ui.indexOf('data-page="lab"'),ui.indexOf('data-page="vault"'));ok(!overview.includes('원문 수정 동기화')&&!overview.includes('현재 세계선'),'overview no misplaced tools');
  const sourceEdits=ui.slice(ui.indexOf('id="panel-source-edits"'),ui.indexOf('id="panel-restore"'));
- ok(['fbReanalysisRefresh','fbReanalysisRanges','fbReanalysisRun','fbSourceEditStatus','fbSourceTrackingSettings'].every(id=>sourceEdits.includes(`id="${id}"`))&&sourceEdits.includes('직접 원문 재분석'),'source edits expose explicit range selection, refresh, execution and status');
+ ok(['fbReanalysisRefresh','fbReanalysisRanges','fbReanalysisRun','fbSourceEditStatus','fbSourceTrackingSettings'].every(id=>sourceEdits.includes(`id="${id}"`))&&sourceEdits.includes('재분석'),'source edits expose explicit range selection, refresh, execution and status');
  ok(sourceEdits.includes('id="fbReanalysisRun" disabled'),'reanalysis is unavailable before explicit range selection');
  ok(!ui.includes('완료된 원문 수정은 요청 전에 자동 반영')&&!ui.includes('완료된 U+A 원문의 수정은 요청 전에 자동으로 감지·반영'),'active page does not promise automatic adoption');
  ok((ui.match(/id="fbSourceTrackingSettings"/g)||[]).length===1,'unique source edit exception/history mount point');

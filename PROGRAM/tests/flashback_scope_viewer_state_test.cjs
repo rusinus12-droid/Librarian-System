@@ -19,8 +19,9 @@ async function openScopes(f) {
   await f.click('[data-subtab="scopes"][data-group="v"]');
 }
 const countRows = f => f.doc.querySelectorAll('#storageRows tr[data-storage-scope-row]').length;
-function counts(f, expected) {
-  for (const id of ['tab-scope-n','nav-scope-n']) assert.equal(f.doc.getElementById(id).textContent, String(expected), id);
+function counts(f, expected, expectedNav = 1) {
+  assert.equal(f.doc.getElementById('tab-scope-n').textContent, String(expected), 'tab-scope-n');
+  assert.equal(f.doc.getElementById('nav-scope-n').textContent, String(expectedNav), 'nav-scope-n');
 }
 test('scope badges track enumeration and deletion, independent of search/view filters', async t => {
   const f = await fixture(t);
@@ -82,7 +83,8 @@ test('first-load failure is unknown, never an empty store or a fabricated zero',
   assert.match(f.doc.querySelector('#storageScopeLoadStatus').textContent, /비었다/);
   assert.match(f.doc.querySelector('#storageRows').textContent, /조회 실패/);
   assert(!f.doc.querySelector('#storageRows').textContent.includes('저장된 스코프가 없습니다.'));
-  for (const id of ['tab-scope-n','nav-scope-n']) assert.equal(f.doc.getElementById(id).textContent, '—');
+  assert.equal(f.doc.getElementById('tab-scope-n').textContent, '—');
+  assert.equal(f.doc.getElementById('nav-scope-n').textContent, '1');
   await f.change('#storageManagementView', 'all');
   assert.match(f.doc.querySelector('#storageRows').textContent, /조회 실패/);
 });
@@ -90,7 +92,7 @@ test('a successful empty enumeration legitimately shows zero', async t => {
   const f = await fixture(t, 0);
   await openScopes(f);
   await until(() => f.doc.querySelector('#storageRows')?.textContent.includes('저장된 스코프가 없습니다.'), 'verified empty listing');
-  counts(f, 0);
+  counts(f, 0, 0);
   assert(f.doc.querySelector('#storageScopeLoadStatus').hidden);
 });
 test('a superseded failed refresh cannot overwrite a newer successful listing', async t => {

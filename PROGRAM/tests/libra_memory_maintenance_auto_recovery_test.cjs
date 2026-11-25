@@ -77,8 +77,8 @@ assert(
 );
 
 assert(
-  source.includes("text:'⚡ 원스톱 상태 점검 및 자동 복구'"),
-  'Settings recovery actions must include ⚡ 원스톱 상태 점검 및 자동 복구 card'
+  !source.includes("text:'⚡ 원스톱 상태 점검 및 자동 복구'"),
+  'Settings must not duplicate the Desk 상태 점검 및 자동 복구 card'
 );
 
 assert(

@@ -22,15 +22,16 @@ function setup(){
 }
 async function test(name,fn){await fn();results.push(name);console.log('PASS '+name);}
 (async()=>{
- await test('packet authoring stays inside Packets after its list and Worldline views',()=>{
+  await test('packet authoring stays inside Packets list view and outside Worldline view',()=>{
   const shell=slice('  const renderLedgerViewerShell =','  const showLedgerViewer =');
   const packet=shell.slice(shell.indexOf('const packetPage = `'),shell.indexOf('const recoveryPage = `'));
   const list=packet.slice(packet.indexOf('id="hayakuPacketListView"'),packet.indexOf('id="hayakuPacketWorldlineView"'));
-  const world=packet.slice(packet.indexOf('id="hayakuPacketWorldlineView"'),packet.indexOf('id="hayakuPacketAuthoring"'));
+  const world=packet.slice(packet.indexOf('id="hayakuPacketWorldlineView"'),packet.indexOf('id="hayakuPacketScopesView"'));
   assert(packet.includes('id="hayakuViewerPanelPackets"'));
   assert(list.indexOf('id="hayakuViewerRecords"') < list.indexOf('id="hayakuOrphanCleanupCount"'));
-  assert(packet.indexOf('id="hayakuPacketAuthoring"') > packet.indexOf('id="hayakuPacketWorldlineView"'));
-  assert.match(packet,/<div id="hayakuPacketAuthoring" class="card">[\s\S]*실제 요청·출력·저장 관측 기록/);
+  assert(list.indexOf('id="hayakuOrphanCleanupCount"') < list.indexOf('id="hayakuPacketAuthoring"'));
+  assert(!world.includes('id="hayakuPacketAuthoring"'));
+  assert.match(list,/<div id="hayakuPacketAuthoring" class="card">[\s\S]*실제 요청·출력·저장 관측 기록/);
   assert(!shell.includes('<main id="hayakuViewerPanelWorldline"'), 'Worldline is not a seventh destination');
   assert(world.includes('id="hayakuHostLineage"'));assert(world.indexOf('id="hayakuHostLineage"')<world.indexOf('id="hayakuWorldlineTimeline"'));
   const recovery=shell.slice(shell.indexOf('const recoveryPage = `'),shell.indexOf('const serverPage = `'));

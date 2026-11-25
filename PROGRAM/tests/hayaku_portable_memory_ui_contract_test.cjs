@@ -51,9 +51,8 @@ assert.match(source, /overlay\.setAttribute\('data-hayaku-portable-job', 'true'\
 assert.match(source, /data-portable-job-minimize/);
 assert.match(source, /data-portable-job-cancel/);
 assert.match(source, /chip\.className = 'btn btn--sm'/);
-assert.match(source, /id="exportHayakuViewer"[^>]*>[^<]*원장 JSON/);
-assert.match(source, /addEventListener\('click', \(\) => downloadLedgerViewerJson\(\)\)/,
-  'packet-ledger export remains a separate read-only export action, not a portable restore source');
+assert.doesNotMatch(source, /id="exportHayakuViewer"/, 'packet ledger JSON export button removed');
+assert.doesNotMatch(source, />[^<]*원장 JSON/, '원장 JSON label removed');
 assert.match(source, /input type="file" accept="\.json,application\/json" hidden/,
   'restore accepts a selected JSON backup file only');
 
