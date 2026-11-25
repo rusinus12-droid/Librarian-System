@@ -36671,7 +36671,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return terse
         ? [`Place ${count} inside ${opening} immediately before ${closing}; ${closing} is the final content and nothing follows it.`]
         : [
-            `Complete the main text inside ${opening}, then write ${count} as raw HTML comments immediately before ${closing}.`,
+            `Complete the main text inside ${opening}, then write ${count} immediately before ${closing}.`,
             `Close ${closing} only after the packet sequence. The packet must not appear after ${closing}; response post-processing may delete everything after that tag.`,
             `The final shape is ${opening}, main text, two blank lines, packet sequence, ${closing}; nothing follows ${closing}.`
           ];
@@ -36685,10 +36685,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           ];
     }
     return terse
-      ? [`After the main text, append ${count} as the final content, ending with "${PACKET_END} -->".`]
+      ? [`After the main text, append ${count} as the final content, ending with "${PACKET_END}".`]
       : [
           `After the main text, append ${count} as the final content.`,
-          `message.content ends with the packet sequence and the final "${PACKET_END} -->".`
+          `message.content ends with the packet sequence and the final "${PACKET_END}".`
         ];
   };
   const requestPacketLineageObject = settings => {
@@ -36836,7 +36836,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const lineage = requestPacketLineageObject(settings);
     if (lineage) meta.lineage = lineage;
     lines.push('RUNTIME META CONSTANTS:', JSON.stringify(meta),
-      `ENVELOPE: <!-- ${PACKET_START} [replace with completed strict JSON; no code fence] ${PACKET_END} -->`,
+      `MARKER ENVELOPE (raw lines, no code fence or HTML comments): ${PACKET_START} on its own line, the single JSON object, then ${PACKET_END} on the final line.`,
       RUNTIME_PACKET_SHAPE_END);
     return lines.join('\n').trim();
   };
@@ -66428,18 +66428,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const captureSource = mode === 'editoutput' ? 'editoutput' : 'output';
         if (hayakuSourceInputReadyError) {
           debugLog('output:source_input_deferred', { reason: hayakuSourceInputReadyError, captureSource });
-          return scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource);
+          return concealBarePacketMarkers(scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource));
         }
         if (Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.SCRIPT_OUTPUT_LEGACY) {
           // The hook is still needed as a packet/runtime sanitizer, but only the
           // selected compatibility backend may create capture records.
-          return scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource);
+          return concealBarePacketMarkers(scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource));
         }
         Memory.captureBackendObservedRuns += 1;
         Memory.captureBackendLastEventAt = now();
-        const captured = await captureHayakuOutput(content, captureSource, '');
+        const concealed = concealBarePacketMarkers(content);
+        const captured = await captureHayakuOutput(concealed, captureSource, '');
         try { await markFinalizedBindingOutputObserved(captured); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'capture.finalized.binding.mark.script', _e); } catch (__) {} }
-        return scrubHayakuRuntimeInstructionEchoForReturn(captured, captureSource);
+        return concealBarePacketMarkers(scrubHayakuRuntimeInstructionEchoForReturn(captured, captureSource));
       });
       if (!outputRegistered) {
         Memory.captureBackendFallbackReason += `${Memory.captureBackendFallbackReason ? ';' : ''}script_output_registration_failed:${Memory.outputHandler.registerError || 'unavailable'}`;

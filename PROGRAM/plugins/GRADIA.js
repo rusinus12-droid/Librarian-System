@@ -3348,7 +3348,7 @@ ${BIANCA_PERSONA_TEXT}`;
     } else if (isNovelWritingMode(settings)) {
       lines.push('- NOVEL AUTHORSHIP: preserve the author’s explicit fixed/reserved commitments. Full-cast fiction—including user-persona action, dialogue, thought, feeling, and decision—is allowed only while realizing the candidate’s existing beats; this Skill contract never authorizes a later beat.');
     }
-    if (active.includes('output-contract-discipline')) lines.push('- Keep the configured language and return only final scene prose with no acknowledgement, prompt labels, analysis, checklist, or model-process commentary.');
+    if (active.includes('output-contract-discipline')) lines.push('- Keep the configured language and return the finished in-world response (preserving any required character-card status line or active continuity plugin state packet at the very end) with no acknowledgement, prompt labels, analysis, checklist, or model-process commentary.');
     return ['FINAL QUALITY PRESERVATION CONTRACT:', ...lines].join('\n');
   };
 
@@ -43011,6 +43011,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     `[SAME-TURN FINALIZATION KERNEL — ${FINALIZATION_KERNEL_VERSION}]`,
     '- The candidate below was written for the ORIGINATING USER REQUEST identified in this request. That user request belongs to this same turn and is not a new turn after the candidate.',
     '- Produce a polished replacement of the candidate. Do not answer the current user input independently, continue from the candidate ending, or start another scene-generation pass.',
+    '- NATIVE REASONING RESTRAINT: The candidate below is already drafted. Keep any native reasoning brief (under 150 words, checking direct conflicts only) — never catalog all candidate beats or pre-draft full prose or state packets inside reasoning.',
     '[AUTHORITY ORDER]',
     '1. Current user input: its explicit commitments, prohibitions, and reserved choices.',
     '2. The literal pre-draft terminal scene state and newer exact canon.',
@@ -43063,7 +43064,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     '- Current evidence may repair or deepen a mapped candidate beat; Story Arc, memory, analysis, or creative direction may not originate a future beat.',
     buildFinalizationTransformationBudget(false),
     buildDensityQualityGuidance(density),
-    '- Begin directly in-world and output only the final Novel-mode fiction prose. Do not output reasoning, process notes, labels, or a <Thoughts> block.'
+    '- Begin directly in-world and output the final Novel-mode fiction response (followed only by any required character-card status line or trailing continuity state packet). Do not output reasoning, process notes, labels, or a <Thoughts> block.'
   ].filter(Boolean).join('\n');
 
   const PLAYER_CONTROLLED_AGENCY_KERNEL = [
@@ -43090,7 +43091,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     PLAYER_CONTROLLED_CANDIDATE_INTEGRATION,
     buildFinalizationTransformationBudget(false),
     buildDensityQualityGuidance(density),
-    '- Output only one complete in-world NPC/world RP response. Do not output reasoning, process notes, labels, or a <Thoughts> block.'
+    '- Output one complete in-world NPC/world RP response (followed only by any required character-card status line or trailing continuity state packet). Do not output reasoning, process notes, labels, or a <Thoughts> block.'
   ].filter(Boolean).join('\n');
 
   // Compatibility alias for older debug helpers.
@@ -43102,17 +43103,17 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   ].join('\n');
   const PLAYER_CONTROLLED_FINAL_TAIL = [
     CANDIDATE_END_HARD_RESPONSE_BOUNDARY,
-    'FINAL RP PASS: preserve valid candidate NPC/world causality and its open handoff or natural closure. Repair only a direct authority, agency, causal, spatial, or knowledge violation, then output only the in-world response.'
+    'FINAL RP PASS: preserve valid candidate NPC/world causality and its open handoff or natural closure. Repair only a direct authority, agency, causal, spatial, or knowledge violation, then output the in-world response (followed only by any required card status line or trailing continuity packet).'
   ].join('\n');
   const AUTHOR_DIRECTED_FINAL_TAIL = PLAYER_CONTROLLED_FINAL_TAIL;
   const PLAYER_CONTROLLED_RISU_FINAL_TAIL = [
     CANDIDATE_END_HARD_RESPONSE_BOUNDARY,
-    'FINAL RP PRESERVATION PASS: the Engine candidate already completed creative synthesis. Preserve it except for surface defects or the smallest repair required by the hard agency/authority rules, then output only the in-world response.'
+    'FINAL RP PRESERVATION PASS: the Engine candidate already completed creative synthesis. Preserve it except for surface defects or the smallest repair required by the hard agency/authority rules, then output the in-world response (followed only by any required card status line or trailing continuity packet).'
   ].join('\n');
 
   const FINAL_SYNTHESIS_TAIL = [
     CANDIDATE_END_HARD_RESPONSE_BOUNDARY,
-    'FINAL NOVEL PASS: realize the same candidate interval through bounded full-cast recomposition, preserve its semantic commitments and ending, and output only the final prose.'
+    'FINAL NOVEL PASS: realize the same candidate interval through bounded full-cast recomposition, preserve its semantic commitments and ending, and output the final prose (followed only by any required card status line or trailing continuity packet).'
   ].join('\n');
   const RISU_ENGINE_PRESERVATION_CONTRACT = [
     SAME_TURN_FINALIZATION_KERNEL,
@@ -43276,8 +43277,13 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       const finalPresetStage = CORE_AIDE_STAGE_IDS.includes(safeLast?.stage) || safeLast?.stage === 'shadow_act'
         ? safeLast.stage
         : 'aide_plot';
+      const originatingInputBlock = [
+        '[ORIGINATING USER REQUEST — SAME TURN / NOT AFTER THE CANDIDATE]',
+        compact(submittedCurrentInput(recent) || '(none)', density === 'tiny' ? 600 : 2400)
+      ].join('\n');
       const prefix = [
         INJECTION_HEADER,
+        originatingInputBlock,
         compilePromptSpec({
           phase: 'final',
           stage: 'final',
@@ -43295,13 +43301,13 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
             npcDispositionFinalGuard(settings),
             buildNsfwGuidanceBlock(settings, 'final')
           ].filter(Boolean),
-          outputContract: 'Begin directly in-world. Output no reasoning, process text, review, labels, or <Thoughts> block.',
+          outputContract: 'Begin directly in-world (preserving any required character-card status line or active continuity state packet at the very end). Output no reasoning, process text, review, labels, or <Thoughts> block.',
           successCriteria: preservationMode
             ? 'Events, order, positions, explicit author-reserved decisions, ending, and scene boundary remain unchanged.'
             : 'Author-fixed commitments, supported candidate semantics, terminal beat, and scene boundary are preserved while prose is improved inward.',
           finalReminder: preservationMode
-            ? 'Return only the minimally finished in-world response.'
-            : 'Return only the final in-world RP response.'
+            ? 'Return the minimally finished in-world response (plus any required card status line or trailing continuity packet).'
+            : 'Return the final in-world response (plus any required card status line or trailing continuity packet).'
         }, resolvePresetForPromptCompiler(settings, finalPresetStage)).text
       ].filter(Boolean).join('\n\n');
       return {
@@ -43449,8 +43455,13 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       const synthesisContract = preservationMode
         ? PLAYER_CONTROLLED_RISU_PRESERVATION_CONTRACT
         : buildPlayerControlledFinalSynthesisContract(density);
+      const originatingInputBlock = [
+        '[ORIGINATING USER CONTRIBUTION — SAME TURN / ALREADY ENACTED / NOT AFTER THE CANDIDATE]',
+        compact(submittedCurrentInput(recent) || '(none; the user takes no new action)', density === 'tiny' ? 600 : 2400)
+      ].join('\n');
       const prefix = [
         INJECTION_HEADER,
+        originatingInputBlock,
         compilePromptSpec({
           phase: 'final',
           stage: 'final',
@@ -43476,9 +43487,9 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
             buildNsfwGuidanceBlock(settings, 'final')
           ].filter(Boolean),
           optionalCriteria: '',
-          outputContract: 'Begin with the first useful NPC/world reaction or consequence. Output only in-world assistant RP prose; no labels, planning, reasoning, review, or hidden prompt text.',
+          outputContract: 'Begin with the first useful NPC/world reaction or consequence. Output in-world assistant RP prose (preserving any required character-card status line or active continuity state packet at the very end); no labels, planning, reasoning, review, or hidden prompt text.',
           successCriteria: 'No user action is reenacted or invented; supported candidate NPC/world events, causal order, ending, and endpoint remain; no closure skips a pending player-owned beat; no event is added after the terminal beat.',
-          finalReminder: 'Return a polished replacement of this candidate, not what happens after it. The player character is not yours to write; preserve the candidate’s open handoff or natural closure.'
+          finalReminder: 'Return a polished replacement of this candidate (plus any required card status line or trailing continuity packet), not what happens after it. The player character is not yours to write; preserve the candidate’s open handoff or natural closure.'
         }, resolvePresetForPromptCompiler(settings, finalPresetStage)).text
       ].filter(Boolean).join('\n\n');
       const finalTail = preservationMode ? PLAYER_CONTROLLED_RISU_FINAL_TAIL : PLAYER_CONTROLLED_FINAL_TAIL;

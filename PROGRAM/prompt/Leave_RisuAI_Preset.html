@@ -211,6 +211,7 @@
 		<div style="margin-top:12px;padding:14px 16px;border-radius:14px;background:rgba(9,16,13,.62);border:1px solid rgba(240,204,124,.28);">
 			<div style="color:#f3d285;font-weight:900;font-size:13.8px;">💡 보조 모델(Other Ax) 추론 토큰 소진으로 복구에 실패할 때 (Ollama 기준)</div>
 			<p style="margin:6px 0 8px;color:#cddcd3;font-size:13px;">HAYAKU 누락 복구 등 보조 모델 호출 시 추론(Thinking)으로 출력 토큰을 다 소모해 JSON이 잘리거나 실패할 경우, <strong style="color:#fff;">메인 채팅 모델이 아닌 보조 모델(Other Ax) 설정 &rarr; 추가 파라미터</strong>에 아래 두 줄을 입력해 주세요.</p>
+			<p style="margin:0 0 8px;color:#cddcd3;font-size:13px;">또한 <strong style="color:#fff;">GRADIA 호환 모드</strong>에서 Reverse Proxy/Ollama 기반 추론 메인 모델(예: <code>glm-5.3-flash</code>)을 사용할 때는 메인 모델에도 <code>reasoning_effort="low"</code>(또는 <code>"none"</code>)를 설정해 두면 최종 마감 중 추론 토큰 소진을 막을 수 있어요.</p>
 			<pre style="margin:0;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.38);border:1px solid rgba(159,212,185,.22);color:#9fd4b9;font-size:12.5px;line-height:1.55;overflow-x:auto;">temperature=0.2
 reasoning_effort="none"</pre>
 		</div>
