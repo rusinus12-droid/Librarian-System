@@ -68295,10 +68295,13 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         ? Math.ceil(Math.ceil(gradiaReserveChars / Math.max(1, blendedCharsPerRawToken)) * CONTEXT_CUTTER_TOKEN_MULTIPLIER)
         : 0;
       const totalReserveTokens = Math.min(Math.floor(effectiveMaxContext * 0.8), recallReserveTokens + gradiaReserveTokens);
-      const ratioTargetTokens = Math.floor(effectiveMaxContext * (1 - effectiveTrimPercent / 100));
       const reserveTargetTokens = Math.max(Math.floor(effectiveMaxContext * 0.2), effectiveMaxContext - totalReserveTokens);
       const triggerWithReserve = useShared && ctxPolicy.triggerWithReserve === true;
       const triggerTokens = triggerWithReserve ? reserveTargetTokens : effectiveMaxContext;
+      const ratioTargetTokens = Math.max(
+        Math.floor(triggerTokens * 0.2),
+        Math.floor(triggerTokens * (1 - effectiveTrimPercent / 100))
+      );
       return {
         source: useShared ? 'shared_recall_budget' : 'libra_recall_budget',
         sharedBudgetVersion: useShared ? Number(sharedBudget?.version || 1) : 0,
@@ -68450,17 +68453,39 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const reservePlan = computeContextCutterRecallReserve(settings, tokenizer, maxContext);
       const targetTokens = reservePlan.targetTokens;
       let trimmedThisTurn = false;
+      let deferredForCacheBatch = false;
 
       if (currentTokens > reservePlan.triggerTokens) {
+        const candidateMemos = [];
+        let simRawTotalKept = rawTotalKept;
+        let simCurrentTokens = currentTokens;
         for (const memo of order) {
-          if (currentTokens <= targetTokens) break;
+          if (simCurrentTokens <= targetTokens) break;
           if (removed.has(memo) || latest.has(memo) || blocked.has(memo)) continue;
           if (onlyMemorized && memorizedMemos.size > 0 && !memorizedMemos.has(memo)) continue;
-          removed.add(memo);
-          removedIds.push(memo);
-          rawTotalKept = Math.max(0, rawTotalKept - (costs.get(memo) || 0));
-          currentTokens = Math.ceil(rawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+          candidateMemos.push(memo);
+          simRawTotalKept = Math.max(0, simRawTotalKept - (costs.get(memo) || 0));
+          simCurrentTokens = Math.ceil(simRawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+        }
+        const desiredTrimTokens = Math.max(1, currentTokens - targetTokens);
+        const candidateTrimmedTokens = currentTokens - simCurrentTokens;
+        const reachedTarget = simCurrentTokens <= targetTokens;
+        const hardCeilingExceeded = currentTokens > reservePlan.effectiveMaxContext;
+        const shouldCommitBatch = candidateMemos.length > 0 && (
+          reachedTarget
+          || hardCeilingExceeded
+          || candidateTrimmedTokens >= Math.ceil(desiredTrimTokens * 0.5)
+        );
+        if (shouldCommitBatch) {
+          for (const memo of candidateMemos) {
+            removed.add(memo);
+            removedIds.push(memo);
+          }
+          rawTotalKept = simRawTotalKept;
+          currentTokens = simCurrentTokens;
           trimmedThisTurn = true;
+        } else if (candidateMemos.length > 0) {
+          deferredForCacheBatch = true;
         }
       }
 
@@ -68490,6 +68515,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         recallReserveChars: reservePlan.reserveChars,
         recallReserveSource: reservePlan.source,
         trimmedThisTurn,
+        deferredForCacheBatch,
         updatedAt: nowIso()
       };
       const prevIdsKey = prior.removedIds.join(',');

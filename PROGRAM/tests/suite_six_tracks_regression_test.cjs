@@ -410,6 +410,132 @@ test('Track 6: Shared Recall Budget v2 SDK, gradia_plugin_read recallBudgetChars
   assert.equal(reserve.triggerWithReserve, true);
   assert.equal(reserve.triggerTokens, 32000 - reserve.reserveTokens);
   assert.ok(reserve.gradiaReserveTokens > 0 && reserve.reserveTokens > reserve.recallReserveTokens);
+  assert.equal(reserve.targetTokens, Math.max(Math.floor(reserve.triggerTokens * 0.2), Math.floor(reserve.triggerTokens * (1 - 0.30))));
+  assert.ok(reserve.triggerTokens - reserve.targetTokens >= Math.floor(reserve.triggerTokens * 0.25), 'v2 triggerWithReserve preserves staircase drop gap');
+
+  // 3b. Staircase drop gap across balanced / heavy / ultra presets (never collapsing near 0)
+  for (const presetId of ['balanced', 'heavy', 'ultra']) {
+    const presetBudget = sdkCtx.SDK.memorySuiteRecallBudgetPresetValues(presetId, v2);
+    const presetCtx = vm.createContext({
+      CONTEXT_CUTTER_PROFILES: { tiktoken: { latinCharsPerToken: 4.0, cjkCharsPerToken: 1.5, overhead: 4 } },
+      CONTEXT_CUTTER_TOKEN_MULTIPLIER: 1.15,
+      UNIFIED_CLASSIC_HEADER: '[LIBRA MEMORY]',
+      UNIFIED_CLASSIC_FOOTER: '[/LIBRA MEMORY]',
+      RECALL_MAX_DYNAMIC_CHARS: 9000,
+      memorySuiteRecallBudget: () => presetBudget,
+      memorySuiteRecallBudgetContextPolicy: sdkCtx.SDK.memorySuiteRecallBudgetContextPolicy,
+      clamp: (val, lo, hi, def) => {
+        const n = Number(val);
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def;
+      },
+      Math, Number
+    });
+    vm.runInContext(reserveSlice + ';globalThis.computeReserve = computeContextCutterRecallReserve;', presetCtx);
+    const pr = presetCtx.computeReserve({}, 'tiktoken', 40000);
+    const expectedTarget = Math.max(
+      Math.floor(pr.triggerTokens * 0.2),
+      Math.floor(pr.triggerTokens * (1 - presetBudget.contextCutter.trimPercent / 100))
+    );
+    assert.equal(pr.targetTokens, expectedTarget, `${presetId} preset keeps full trimPercent staircase drop`);
+    assert.ok(pr.triggerTokens - pr.targetTokens >= Math.floor(pr.triggerTokens * 0.18), `${presetId} staircase gap is substantial`);
+  }
+
+  // 3c. applyLibraContextCutter batch-deferral vs commit gate
+  const cutterSlice = slice(libraSrc, 'const CONTEXT_CUTTER_SCHEMA =', 'let latestRecallPublicationOwner = null;');
+  const cutterBudget = sdkCtx.SDK.memorySuiteNormalizeRecallBudget({
+    version: 2,
+    enabled: true,
+    totalChars: 12000,
+    shares: { libra: 50, hayaku: 25, flashback: 25 },
+    contextCutter: {
+      enabled: true,
+      onlyMemorized: true,
+      maxContextTokens: 8000,
+      trimPercent: 30,
+      preserveMessages: 2,
+      tokenizer: 'tiktoken',
+      includeGradiaReserve: true,
+      gradiaReserveChars: 2400,
+      triggerWithReserve: true
+    }
+  });
+  const cutterStateObj = { contextCutterStates: new Map() };
+  const cutterCtx = vm.createContext({
+    UNIFIED_CLASSIC_HEADER: '[LIBRA MEMORY]',
+    UNIFIED_CLASSIC_FOOTER: '[/LIBRA MEMORY]',
+    RECALL_MAX_DYNAMIC_CHARS: 9000,
+    memorySuiteRecallBudget: () => cutterBudget,
+    memorySuiteRecallBudgetContextPolicy: sdkCtx.SDK.memorySuiteRecallBudgetContextPolicy,
+    clamp: (val, lo, hi, def) => {
+      const n = Number(val);
+      return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def;
+    },
+    normalizeChoice: (val, allowed, def) => {
+      const s = String(val || '').trim().toLowerCase();
+      return allowed.includes(s) ? s : def;
+    },
+    string: val => (val == null ? '' : String(val)),
+    asArray: val => (Array.isArray(val) ? val : []),
+    clone: val => JSON.parse(JSON.stringify(val)),
+    isPlainObject: val => Boolean(val && typeof val === 'object' && !Array.isArray(val)),
+    contentToText: val => (typeof val === 'string' ? val : ''),
+    nowIso: () => '2026-11-26T00:00:00.000Z',
+    listCurrentMemoryRefs: () => [{ turnRange: { start: 1, end: 1 } }],
+    state: cutterStateObj,
+    storage: { getJson: async () => null, setJson: async () => {} },
+    key: { contextCutter: s => `ctx:${s.scopeKey}` },
+    Math, Number, Set, Map, Array, Object, String, RegExp
+  });
+  vm.runInContext(cutterSlice + ';globalThis.applyCutter = applyLibraContextCutter;globalThis.computeReserve = computeContextCutterRecallReserve;', cutterCtx);
+  const mkUuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const cutterScope = { scopeKey: 'test_scope_batch' };
+  const cutterReserve = cutterCtx.computeReserve({}, 'tiktoken', 8000);
+  assert.ok(cutterReserve.triggerTokens < cutterReserve.effectiveMaxContext);
+  // Build 4 turns (8 messages): turn 1 is small & memorized, turns 2-3 are unmemorized, turn 4 is protected latest
+  const msgsSmallMem = [
+    { role: 'user', memo: mkUuid(1), content: 'a'.repeat(400) },
+    { role: 'assistant', memo: mkUuid(2), content: 'b'.repeat(400) },
+    { role: 'user', memo: mkUuid(3), content: 'c'.repeat(5500) },
+    { role: 'assistant', memo: mkUuid(4), content: 'd'.repeat(5500) },
+    { role: 'user', memo: mkUuid(5), content: 'e'.repeat(5500) },
+    { role: 'assistant', memo: mkUuid(6), content: 'f'.repeat(5500) },
+    { role: 'user', memo: mkUuid(7), content: 'g'.repeat(1200) },
+    { role: 'assistant', memo: mkUuid(8), content: 'h'.repeat(1200) }
+  ];
+  const pairsForCutter = [
+    { turn: 1, user: { chatId: mkUuid(1) }, assistant: { chatId: mkUuid(2) } },
+    { turn: 2, user: { chatId: mkUuid(3) }, assistant: { chatId: mkUuid(4) } },
+    { turn: 3, user: { chatId: mkUuid(5) }, assistant: { chatId: mkUuid(6) } },
+    { turn: 4, user: { chatId: mkUuid(7) }, assistant: { chatId: mkUuid(8) } }
+  ];
+  // Case 1: triggerTokens < currentTokens <= effectiveMaxContext, but memorized turn 1 is <50% of desired trim -> defer!
+  const deferredKept = await cutterCtx.applyCutter(msgsSmallMem, {
+    context: { scope: cutterScope },
+    settings: {},
+    completedPairs: pairsForCutter,
+    requestManifest: { mocked: true },
+    receiptSet: { requestedTurns: [1] }
+  });
+  const deferredState = cutterStateObj.contextCutterStates.get('test_scope_batch');
+  assert.ok(deferredState.estimatedTokensBefore > cutterReserve.triggerTokens && deferredState.estimatedTokensBefore <= cutterReserve.effectiveMaxContext);
+  assert.equal(deferredKept.length, msgsSmallMem.length, 'small partial memorized trim is deferred inside reserve cushion');
+  assert.equal(deferredState.trimmedThisTurn, false);
+  assert.equal(deferredState.deferredForCacheBatch, true);
+
+  // Case 2: currentTokens > effectiveMaxContext (hard ceiling exceeded) -> commit trim immediately
+  const msgsHardCeiling = msgsSmallMem.map((m, idx) => idx === 2 ? { ...m, content: 'c'.repeat(24000) } : m);
+  const committedKept = await cutterCtx.applyCutter(msgsHardCeiling, {
+    context: { scope: cutterScope },
+    settings: {},
+    completedPairs: pairsForCutter,
+    requestManifest: { mocked: true },
+    receiptSet: { requestedTurns: [1] }
+  });
+  const committedState = cutterStateObj.contextCutterStates.get('test_scope_batch');
+  assert.ok(committedState.estimatedTokensBefore > cutterReserve.effectiveMaxContext);
+  assert.equal(committedKept.length, msgsHardCeiling.length - 2, 'hard ceiling commits available memorized trim');
+  assert.equal(committedState.trimmedThisTurn, true);
+  assert.equal(committedState.deferredForCacheBatch, false);
 
   // 4. GRADIA gradiaSharedRecallPlan, libEvidenceBudget & GUI hooks
   const gradiaSrc = fs.readFileSync(GRADIA_PATH, 'utf8').replace(

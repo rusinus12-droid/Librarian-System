@@ -7,7 +7,7 @@
   "globalNote": "",
   "temperature": 85,
   "maxContext": 200000,
-  "maxResponse": 65536,
+  "maxResponse": 16384,
   "frequencyPenalty": -1000,
   "PresensePenalty": -1000,
   "formatingOrder": [
