@@ -86,7 +86,7 @@ test('3) Leave preset & GRADIA World AIDE carry updated object-count & split-tra
   assert.ok(hayakuSrc.includes("spoken in TARGET TURN\\'s visible response only"));
 });
 
-test('4) Leave preset caches chat history before lorebook and strips am-illustration-projection on request', () => {
+test('4) Leave preset caches chat history before lorebook and carries no external plugin regex', () => {
   const root = path.resolve(__dirname, '..', '..');
   const preset = JSON.parse(fs.readFileSync(path.join(root, 'PROGRAM', 'prompt', 'Leave_RisuAI_Preset.json'), 'utf8'));
   const tpl = preset.promptTemplate || [];
@@ -102,24 +102,6 @@ test('4) Leave preset caches chat history before lorebook and strips am-illustra
   assert.ok(loreIdx > secondCacheIdx && memIdx > loreIdx, 'dynamic lorebook and memory sit after second cachePoint');
   assert.ok(authorNoteIdx > memIdx && lastChatIdx > authorNoteIdx, 'authornote and final chat stay after lorebook/memory');
 
-  const stripRule = (preset.regex || []).find(item => item.type === 'editprocess' && String(item.in || '').includes('am-illustration-projection'));
-  assert.ok(stripRule, 'editprocess strip regex exists');
-  assert.equal(stripRule.ableFlag, true);
-  assert.equal(stripRule.out, '');
-
-  const re = new RegExp(stripRule.in, stripRule.flag);
-  const sample = [
-    '본문 첫 문장입니다.',
-    '',
-    '<div class="am-illustration-projection" data-am-message-id="id1"><span class="am-image" style="display:flex"><img class="am-image__media" src="{{raw::a.png}}" width="832" height="1216"></span></div>',
-    '',
-    '<img="Ah-rin_Normal">',
-    '<div class="note">keep</div>',
-    '본문 끝 문장입니다.'
-  ].join('\n');
-  const cleaned = sample.replace(re, stripRule.out);
-  assert.doesNotMatch(cleaned, /am-illustration-projection/);
-  assert.ok(cleaned.includes('<img="Ah-rin_Normal">'), 'character emote command preserved');
-  assert.ok(cleaned.includes('<div class="note">keep</div>'), 'unrelated div preserved');
-  assert.ok(cleaned.includes('본문 첫 문장입니다.') && cleaned.includes('본문 끝 문장입니다.'), 'surrounding prose preserved');
+  const externalRule = (preset.regex || []).find(item => String(item.in || '').includes('am-illustration-projection'));
+  assert.equal(externalRule, undefined, 'external plugin regex removed');
 });

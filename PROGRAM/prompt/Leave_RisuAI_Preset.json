@@ -285,14 +285,6 @@
       "type": "editdisplay",
       "ableFlag": true,
       "flag": "gi"
-    },
-    {
-      "comment": "Leave 요청 최적화 · 외부 삽화 투영 HTML(am-illustration-projection) API 전송 제외",
-      "in": "<div\\b[^>]*\\bclass=[\"'][^\"']*\\bam-illustration-projection\\b[^\"']*[\"'][^>]*>[\\s\\S]*?<\\/span><\\/div>\\s*",
-      "out": "",
-      "type": "editprocess",
-      "ableFlag": true,
-      "flag": "gi"
     }
   ],
   "thinkingType": "budget",
