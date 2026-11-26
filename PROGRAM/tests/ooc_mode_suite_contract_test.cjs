@@ -83,6 +83,7 @@ test('Leave preset OOC mode toggle emits marker, OOC contract, @기억 rules, re
   const preset = JSON.parse(fs.readFileSync(PRESET_PATH, 'utf8'));
   const html = fs.readFileSync(HTML_PATH, 'utf8');
   assert.match(preset.customPromptTemplateToggle, /ooc_mode=.*select=꺼짐.*OOC 모드 \(방랑 사서 리브\),OOC 모드 \(담백한 어시스턴트\)/);
+  assert.match(preset.customPromptTemplateToggle, /=↳ OOC 기억 조회: @기억\(전체\) · @리브라 · @하야쿠 · @플래시백.*=caption/);
   assert.match(html, /OOC 모드.*@기억.*@리브라.*@하야쿠.*@플래시백/s);
 
   const narrativeIndices = [1, 2, 3, 4, 5, 6, 7, 8];
