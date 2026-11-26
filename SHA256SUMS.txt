@@ -735,7 +735,7 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4df449fa4cffe0c94f09bb0ef59bddfc6100e49a837d077d95af26565066f088  ./PROGRAM/plugins/LIA_Persona_Linker.js
 204328c178a076dae7865ef0eca0755316196ea40fb48be2ffcb5ae57c515062  ./PROGRAM/plugins/LIBRA.js
 61a3792f1acf69ffb59301672dd6f28efa4806a760b0f367ade0fa391c5e5e1c  ./PROGRAM/plugins/RETRACE.js
-0a736f39d35d2d1f447284ee3b081732cf27d83f5ec1aaea7a9d9cec5e6a5496  ./PROGRAM/program-manifest.json
+069d64d7f643441c85321866c50064085e87069336a899a475995afa4289793d  ./PROGRAM/program-manifest.json
 30f01dadc6673365bf52946aae83956cb662f71a517cf8159ad4d7518ec55165  ./PROGRAM/prompt/Leave_RisuAI_Preset.html
 217e4224e54f88623730957c53716132962cad4e6b845f8f11ea950615624abf  ./PROGRAM/prompt/Leave_RisuAI_Preset.json
 f711477bf96606f862382f06439a26773cce3aee9134adc39f243da6d749ad0c  ./PROGRAM/release-policy.json
@@ -1404,7 +1404,7 @@ e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829  ./PROGRAM/test
 4f986f8da235773a81a8ee4b980e985711e7903dbce6a655d5d3774285bd5914  ./PROGRAM/tests/gradia/bianca-injection.test.cjs
 d85f9204bc5a6be3f5126c33b72f973ab353a9dbe58a01854a97150b7084aa33  ./PROGRAM/tests/gradia/bond-beat-intent.test.cjs
 f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/tests/gradia/context-degradation-gui.test.cjs
-0dace6ed2da8c73e83ba2caea78b462bbc2acaed492b6a094fe8910961aa6b9d  ./PROGRAM/tests/gradia/context-degradation.test.cjs
+c5c17d99b33175c0b46963c186294c0b4501fea78844031badc8d0fe52c1bb3b  ./PROGRAM/tests/gradia/context-degradation.test.cjs
 e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc  ./PROGRAM/tests/gradia/creative-direction-clear.test.cjs
 83431d603cac045210049bfa9fccae408b1aec5e61317456e70167c732b80549  ./PROGRAM/tests/gradia/dialogue-aide.test.cjs
 fb9260201a066496b09b6b986ab3bdea4db4942e96a50da8e1ec8c0a6c13be40  ./PROGRAM/tests/gradia/dialogue-repair-apply.test.cjs

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.5.0",
-  "generatedAt": "2026-11-26T17:20:18.794Z",
+  "generatedAt": "2026-11-26T18:25:54.486Z",
   "server": {
     "version": "1.5.0",
     "protocol": {
@@ -7032,8 +7032,8 @@
       "bytes": 1584
     },
     "tests/gradia/context-degradation.test.cjs": {
-      "sha256": "0dace6ed2da8c73e83ba2caea78b462bbc2acaed492b6a094fe8910961aa6b9d",
-      "bytes": 11037
+      "sha256": "c5c17d99b33175c0b46963c186294c0b4501fea78844031badc8d0fe52c1bb3b",
+      "bytes": 11084
     },
     "tests/gradia/creative-direction-clear.test.cjs": {
       "sha256": "e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc",

@@ -91,6 +91,7 @@ const dispositionRun=async(t,contextWindow,npcs=FOUR_NPCS)=>{
   const send=()=>f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
   await send();
   const key=f.host.plugin.debugActiveScopeKey();
+  await f.host.plugin.clearDraftCheckpoints();
   await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),npc_disposition:JSON.stringify({[key]:{default:'hostile',npcs}})});
   prompts.length=0;
   const out=await send();
