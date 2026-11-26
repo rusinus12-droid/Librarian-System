@@ -32406,6 +32406,42 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
   };
 
+  const normalizeDialogueForTargetMatch = value => text(value || '')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, '\'')
+    .replace(/…/g, '...')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s"'`「」『』()\[\].,!?~-]+|[\s"'`「」『』()\[\].,!?~-]+$/g, '')
+    .trim()
+    .toLowerCase();
+
+  const stripDialoguePunctForMatch = value => normalizeDialogueForTargetMatch(value)
+    .replace(/["'`「」『』()\[\].,!?~…:;—–\-\s]/g, '');
+
+  const isCriticalDialogueGroundedInTargetTurn = (item, sourceEvidence) => {
+    const normalizedEvidence = normalizeSourceEvidence(sourceEvidence);
+    if (!normalizedEvidence) return true;
+    const rawCorpus = [
+      normalizedEvidence.allText,
+      normalizedEvidence.outcomeText,
+      normalizedEvidence.intentText,
+      normalizedEvidence.supportText,
+      ...ensureArray(normalizedEvidence.allLines),
+      ...ensureArray(normalizedEvidence.lines)
+    ].filter(Boolean).join('\n');
+    if (!rawCorpus.trim()) return true;
+    const quoteRaw = objectish(item)
+      ? (item.text || item.quote || item.dialogue || item.line || item.content || item.summary || item.detail || '')
+      : text(item || '');
+    const quoteNorm = normalizeDialogueForTargetMatch(quoteRaw);
+    if (!quoteNorm) return false;
+    const corpusNorm = normalizeDialogueForTargetMatch(rawCorpus);
+    if (corpusNorm.includes(quoteNorm)) return true;
+    const strippedQuote = stripDialoguePunctForMatch(quoteRaw);
+    if (strippedQuote.length >= 2 && stripDialoguePunctForMatch(rawCorpus).includes(strippedQuote)) return true;
+    return false;
+  };
+
   const ingestLightPacketToStore = (store, packetRaw, packetHash, sourceMeta = {}) => {
     if (!packetRaw || store.ingestedPacketHashes.includes(packetHash)) return { ok: true, skipped: true, light: true };
     const rawParsed = safeJsonParse(packetRaw, null);
@@ -32479,7 +32515,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     store.narrative.conflictTraces = merge(store.narrative.conflictTraces, makeRows('narrative', 'conflict_trace', narrative.conflict_traces, 3), item => normalizeKey(item.id || item.summary || ''), 120);
     store.narrative.sceneDeltas = merge(store.narrative.sceneDeltas, makeRows('narrative', 'scene_delta', narrative.scene_deltas, 3), item => normalizeKey(item.id || item.summary || ''), 120);
     store.narrative.themeMotifs = merge(store.narrative.themeMotifs, makeRows('narrative', 'theme_motif', narrative.theme_motifs, 2), item => normalizeKey(item.id || item.motif || item.summary || ''), 80);
-    store.narrative.criticalDialogue = merge(store.narrative.criticalDialogue, makeRows('narrative', 'critical_dialogue', narrative.critical_dialogue, 4), item => normalizeKey(item.id || item.speaker || item.summary || ''), 80);
+    const groundedLightCriticalDialogue = packetItems(narrative.critical_dialogue)
+      .filter(item => isCriticalDialogueGroundedInTargetTurn(item, sourceMeta?.sourceEvidence));
+    store.narrative.criticalDialogue = merge(store.narrative.criticalDialogue, makeRows('narrative', 'critical_dialogue', groundedLightCriticalDialogue, 4), item => normalizeKey(item.id || item.speaker || item.summary || ''), 80);
     const lightNarrativeState = (narrative.scene_phase || narrative.current_arc || narrative.tension_level != null || narrative.dominant_mood || narrative.pacing || narrative.time_elapsed || narrative.state_summary || narrative.stateSummary)
       ? makeRows('narrative', 'state', [{ title: '내러티브 상태', ...narrative, summary: packetNarrativeStateSummary(narrative), conflict_traces: undefined, scene_deltas: undefined, theme_motifs: undefined, critical_dialogue: undefined }], 1)
       : [];
@@ -32708,6 +32746,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         };
       })
       .filter(item => item.summary || item.text)
+      .filter(item => isCriticalDialogueGroundedInTargetTurn(item, sourceMeta?.sourceEvidence))
       .map(item => applyPacketQualityToItem('narrative', 'critical_dialogue', packetDefault(item), packetQuality))
       .map(item => decorateItem('narrative', 'critical_dialogue', item, turn, packetHash, item?.speaker || item?.summary || 'dialogue', 'critical_dialogue', sourceMeta));
     const narrativeItems = [];
@@ -36396,9 +36435,35 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       latestLocationKey || latestSceneKey || 'unknown_scene',
       sceneStart.ordinal || sceneStart.hash
     ].join('\u0001'));
+    const participantItems = packetItems(latest.entity.characters || latest.entity.character || latest.entity.people).slice(0, 4);
+    let effectiveLocation = text(latest.location || '').trim();
+    if (!effectiveLocation) {
+      const candidateLocations = participantItems
+        .map(character => {
+          const item = itemObject(character);
+          const name = item.name || item.title || item.label || '';
+          const durable = durableSlots.get(normalizeKey(name)) || {};
+          return text(item.current_location || item.currentLocation || item.location || durable.location || '').trim();
+        })
+        .filter(Boolean);
+      if (candidateLocations.length) {
+        const uniqLocations = uniq(candidateLocations, candidateLocations.length);
+        const sharedPrefix = uniqLocations
+          .slice()
+          .sort((a, b) => a.length - b.length)
+          .find(candidate => uniqLocations.every(other => other === candidate || other.startsWith(candidate)));
+        if (sharedPrefix) {
+          effectiveLocation = sharedPrefix;
+        } else {
+          const counts = new Map();
+          for (const loc of candidateLocations) counts.set(loc, (counts.get(loc) || 0) + 1);
+          effectiveLocation = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        }
+      }
+    }
     const configuredLanguage = normalizeMemoryLanguage(options?.memoryLanguage || Memory.settings?.memoryLanguage || DEFAULT_SETTINGS.memoryLanguage);
     const language = configuredLanguage === 'source' ? inferMemoryNoteLanguage([
-      latest.location,
+      effectiveLocation,
       latest.time,
       itemText(latest.entity),
       itemText(latest.world)
@@ -36431,8 +36496,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       rows.push({ kind, text: body });
     };
     add('identity', `${labels.identity}: ${latest.sceneId || `epoch:${sceneEpoch}`}`);
-    add('place_time', `${labels.placeTime}: ${[latest.location, latest.time].filter(Boolean).join(' · ')}`);
-    const participantItems = packetItems(latest.entity.characters || latest.entity.character || latest.entity.people).slice(0, 4);
+    const placeTimeValue = [effectiveLocation, latest.time].filter(Boolean).join(' · ');
+    if (placeTimeValue) add('place_time', `${labels.placeTime}: ${placeTimeValue}`);
     const participantMaxChars = participantItems.length >= 3 ? 120 : 160;
     participantItems.forEach(character => {
       const item = itemObject(character);
@@ -38126,7 +38191,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       `Required fields for supplied records: ${Object.entries(HAYAKU_PACKET_SCHEMA_V2.requiredItemFields).map(([kind, keys]) => `${kind}.${keys.join('/')}`).join('; ')}. Use declared identifiers for ownership and knowledge boundaries; omit a record if its required identity is unknown.`,
       'A character record has NO nested state object: write name, current_state, location and action as SIBLING keys, never current_state holding location/action/emotion. That nested shape is rejected and the whole character is dropped.',
       'state/current_state and every description field are strings, not objects; boundary lists hold string IDs; world/narrative state scalars are direct sibling fields, never wrapped in state_scalars/stateScalars.',
-      'Scene deltas use summary; consequences use action plus consequence or expected_consequence; payoffs use setup plus payoff or expected_payoff. critical_dialogue.text is an exact quote, with speaker when known. meta.overpromotion_risks holds prohibited interpretations.'
+      'Scene deltas use summary; consequences use action plus consequence or expected_consequence; payoffs use setup plus payoff or expected_payoff. critical_dialogue.text is an exact quote spoken in TARGET TURN\'s visible response only (never copy earlier turns\' dialogue from memory blocks), with speaker when known. meta.overpromotion_risks holds prohibited interpretations.'
     ];
   };
   const buildHayakuPacketAuthoringProfile = (settings = Memory.settings || DEFAULT_SETTINGS) => {

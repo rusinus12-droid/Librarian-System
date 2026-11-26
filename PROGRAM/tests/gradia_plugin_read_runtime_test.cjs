@@ -101,6 +101,7 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   assert.ok(!JSON.stringify(f.prompts).includes('HAYAKU_IPC_MEMORY'), 'the Input Writer uses only its own context');
   assert.ok(!JSON.stringify(chat).includes('UNSUBMITTED_IPC_PROPOSAL'));
   // A store changing mid-run does not discard the draft.
+  await f.host.plugin.clearDraftCheckpoints();
   f.prompts.length = 0;
   await f.host.plugin.saveRuntimeSettings({ mode:'normal',default_preset:'writer',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off' });
   f.controls.onModel = async (...args) => { await pipelineModel(...args); await hstore.setItem('hayaku.v2.ledger.' + hscope, null); };

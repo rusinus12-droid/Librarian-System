@@ -23831,7 +23831,11 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       }
       card.appendChild(guiEl('div', {
         class: 'note',
-        text: [storedLabel ? `저장 시각 ${storedLabel}` : '', checkpoint?.finalDraft ? `${text(checkpoint.finalDraft).length.toLocaleString('ko-KR')}자` : ''].filter(Boolean).join(' · ')
+        text: [
+          storedLabel ? `저장 시각 ${storedLabel}` : '',
+          checkpoint?.finalDraft ? `${text(checkpoint.finalDraft).length.toLocaleString('ko-KR')}자` : '',
+          checkpoint?.sessionEvidenceOnly ? '세션 메모리 보관 (LIB 기억 반영)' : ''
+        ].filter(Boolean).join(' · ')
       }));
       card.appendChild(guiEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' } }, [
         guiEl('button', {
@@ -40664,6 +40668,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'List active rules, special conditions, laws, taboos, institutional norms, technology/magic/biology limits, and exact established details. Preserve short source conflicts rather than silently blending them.',
         'Apply the COMMIT BARRIER and classify implications as EXACT, DIRECTIONAL, PENDING, or PROPOSED. A handoff is not ownership transfer; an attempt or offer is not confirmed completion; never invent an exact value.',
         'Check CURRENT_SAME_TURN_DRAFT for unsupported movement, impossible perception/access, disappearing witnesses or objects, false ownership, broken chronology/causality, prematurely applied outcomes, ignored social consequences, and invented canon.',
+        'Verify exact object counts, splits, and custody transfers against the latest turn (e.g., if two slips were split one to each side, only one remains in play) and flag any doubled or ghost items.',
         'Recommend only small grounded reinforcement from supplied canon. Do not create new world rules or status fields merely to enrich prose.',
         'Do not write or revise the response draft. Return precise world constraints and direct rewrite actions.'
       ],
@@ -41895,7 +41900,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     ],
     aide_world: [
       'ROLE: World AIDE — serial world, physical-state, and causality patch editor.',
-      'Inspect the latest draft for only location, time, posture, distance, contact, object custody, perception, witnesses, chronology, rules, and physical/social causality.',
+      'Inspect the latest draft for only location, time, posture, distance, contact, object count, custody, and transfer splits, perception, witnesses, chronology, rules, and physical/social causality.',
       WORLD_AIDE_LAST_STATE_CHECK,
       'For boundary-risk facts, test each observer’s actual channel and barriers; concealed/interior or offscreen specifics require an open path or depicted present bridge at plausible timing.',
       'Advance time-sensitive physical or bodily facts only when story-time passage is confirmed. Do not calculate cycles, fertility, conception, or pregnancy.',
@@ -44187,6 +44192,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
 
   const RequestReuseCache = new Map();
   const SuppressedDraftCheckpointKeys = new Set();
+  const SessionEvidenceDraftCheckpoints = new Map();
   let RequestReuseCleanupTimer = null;
   const boundedDraftCheckpointText = (value, max = 120000) => {
     const body = text(value || '').replace(/\r\n/g, '\n').trim();
@@ -44431,6 +44437,19 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     entries[key] = entry;
     if (!await writeDraftCheckpointStore(entries)) return null;
     SuppressedDraftCheckpointKeys.delete(key);
+    for (const [sessionKey, sessionEntry] of SessionEvidenceDraftCheckpoints.entries()) {
+      if (
+        sessionKey === key
+        || (
+          entry.matchFingerprint
+          && sessionEntry?.chatIdentity === chatIdentity
+          && sessionEntry?.matchFingerprint === entry.matchFingerprint
+          && (!sessionEntry?.inputHash || sessionEntry.inputHash === entry.inputHash)
+        )
+      ) {
+        SessionEvidenceDraftCheckpoints.delete(sessionKey);
+      }
+    }
     Runtime.draftCheckpoint = {
       ...(Runtime.draftCheckpoint || {}),
       stores: Number(Runtime.draftCheckpoint?.stores || 0) + 1,
@@ -44452,6 +44471,199 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       reuseCount: Number(entry.reuseCount || 0) + 1
     };
     return await writeDraftCheckpointStore(entries) ? entries[entry.key] : null;
+  };
+  const clearSessionEvidenceDraftCheckpoints = () => {
+    SessionEvidenceDraftCheckpoints.clear();
+  };
+  const pruneSessionEvidenceDraftCheckpoints = () => {
+    const now = Date.now();
+    for (const [key, entry] of SessionEvidenceDraftCheckpoints.entries()) {
+      if (!entry || now - Number(entry.updatedAt || entry.createdAt || 0) > DRAFT_CHECKPOINT_TTL_MS) {
+        SessionEvidenceDraftCheckpoints.delete(key);
+      }
+    }
+    const sorted = [...SessionEvidenceDraftCheckpoints.values()]
+      .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0));
+    if (sorted.length > DRAFT_CHECKPOINT_MAX) {
+      for (const entry of sorted.slice(DRAFT_CHECKPOINT_MAX)) SessionEvidenceDraftCheckpoints.delete(entry.key);
+    }
+  };
+  const normalizeSessionEvidenceDraftCheckpoint = (raw = {}, fallbackKey = '') => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const chatIdentity = compact(raw.chatIdentity || raw.chat_identity || '', 160);
+    const requestFingerprintValue = compact(raw.requestFingerprint || raw.request_fingerprint || '', 160);
+    const key = compact(raw.key || fallbackKey || draftCheckpointKey(chatIdentity, requestFingerprintValue), 200);
+    const injection = boundedDraftCheckpointText(raw.injection, 120000);
+    const finalDraft = boundedDraftCheckpointText(raw.finalDraft || raw.final_draft, 80000);
+    if (!key || !chatIdentity || !requestFingerprintValue || !injection || !finalDraft) return null;
+    const createdAt = Number(raw.createdAt || raw.created_at || raw.storedAt || Date.now());
+    const updatedAt = Number(raw.updatedAt || raw.updated_at || createdAt || Date.now());
+    return {
+      schema: DRAFT_CHECKPOINT_SCHEMA,
+      sessionEvidenceOnly: true,
+      externalEvidence: true,
+      key,
+      chatIdentity,
+      requestFingerprint: requestFingerprintValue,
+      matchVersion: Math.max(0, Number(raw.matchVersion || raw.match_version || 0)),
+      matchFingerprint: compact(raw.matchFingerprint || raw.match_fingerprint || '', 160),
+      inputHash: compact(raw.inputHash || raw.input_hash || '', 80),
+      inputPreview: compact(raw.inputPreview || raw.input_preview || '', 600),
+      injection,
+      injectionHash: compact(raw.injectionHash || raw.injection_hash || stableDraftHash(injection), 80),
+      finalDraft,
+      finalDraftHash: compact(raw.finalDraftHash || raw.final_draft_hash || stableDraftHash(finalDraft), 80),
+      stageCount: Math.max(0, Number(raw.stageCount || raw.stage_count || 0)),
+      scopeCharacterId: compact(raw.scopeCharacterId || raw.scope_character_id || '', 160),
+      scopeChatId: compact(raw.scopeChatId || raw.scope_chat_id || '', 160),
+      createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
+      updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : Date.now(),
+      lastUsedAt: Math.max(0, Number(raw.lastUsedAt || raw.last_used_at || 0)),
+      reuseCount: Math.max(0, Number(raw.reuseCount || raw.reuse_count || 0))
+    };
+  };
+  const discardSessionEvidenceDraftCheckpoint = key => {
+    const cleanKey = compact(key || '', 200);
+    if (!cleanKey) return false;
+    SuppressedDraftCheckpointKeys.add(cleanKey);
+    const target = SessionEvidenceDraftCheckpoints.get(cleanKey) || null;
+    SessionEvidenceDraftCheckpoints.delete(cleanKey);
+    if (target) {
+      for (const [entryKey, entry] of SessionEvidenceDraftCheckpoints.entries()) {
+        if (
+          entry?.chatIdentity === target.chatIdentity
+          && target.matchFingerprint
+          && entry?.matchFingerprint === target.matchFingerprint
+          && (!entry?.inputHash || entry.inputHash === target.inputHash)
+        ) {
+          SessionEvidenceDraftCheckpoints.delete(entryKey);
+        }
+      }
+    }
+    Runtime.draftCheckpoint = {
+      ...(Runtime.draftCheckpoint || {}),
+      discards: Number(Runtime.draftCheckpoint?.discards || 0) + 1,
+      lastKey: cleanKey,
+      lastDecision: 'regenerate',
+      lastAt: Date.now(),
+      discardPersisted: true,
+      sessionOnly: true
+    };
+    return true;
+  };
+  const findSessionEvidenceDraftCheckpoint = (chatIdentity, requestFingerprintValue, currentInput = '', matchFingerprintValue = '') => {
+    if (LibReadConnection.status().readSource === 'off') return null;
+    const key = draftCheckpointKey(chatIdentity, requestFingerprintValue);
+    if (!key) return null;
+    pruneSessionEvidenceDraftCheckpoints();
+    const expectedInputHash = stableDraftHash(text(currentInput || '').trim());
+    const expectedChatIdentity = text(chatIdentity || '').trim();
+    const expectedRequestFingerprint = text(requestFingerprintValue || '').trim();
+    const expectedMatchFingerprint = text(matchFingerprintValue || '').trim();
+    const currentScopeChar = text(libReadBinding?.scope?.characterId || '').trim();
+    const currentScopeChat = text(libReadBinding?.scope?.chatId || '').trim();
+    const candidates = [
+      SessionEvidenceDraftCheckpoints.get(key),
+      ...[...SessionEvidenceDraftCheckpoints.values()]
+        .filter(entry => entry?.key !== key
+          && expectedMatchFingerprint
+          && entry?.chatIdentity === expectedChatIdentity
+          && entry?.matchFingerprint === expectedMatchFingerprint
+          && (!entry?.inputHash || entry.inputHash === expectedInputHash))
+        .sort((left, right) => Number(right.updatedAt || right.createdAt || 0) - Number(left.updatedAt || left.createdAt || 0))
+    ].filter(Boolean);
+    for (const entry of candidates) {
+      if (SuppressedDraftCheckpointKeys.has(entry.key)) continue;
+      if ((entry.scopeCharacterId || entry.scopeChatId) && (currentScopeChar || currentScopeChat)) {
+        if (entry.scopeCharacterId !== currentScopeChar || entry.scopeChatId !== currentScopeChat) continue;
+      }
+      const exactIdentity = entry.requestFingerprint === expectedRequestFingerprint;
+      const stableTurnIdentity = !!expectedMatchFingerprint && entry.matchFingerprint === expectedMatchFingerprint;
+      const valid = entry.sessionEvidenceOnly === true
+        && entry.chatIdentity === expectedChatIdentity
+        && (exactIdentity || stableTurnIdentity)
+        && (!entry.inputHash || entry.inputHash === expectedInputHash)
+        && entry.injectionHash === stableDraftHash(entry.injection)
+        && entry.finalDraftHash === stableDraftHash(entry.finalDraft);
+      if (!valid) {
+        Runtime.draftCheckpoint = {
+          ...(Runtime.draftCheckpoint || {}),
+          corruptions: Number(Runtime.draftCheckpoint?.corruptions || 0) + 1,
+          lastKey: entry.key,
+          lastDecision: 'invalid',
+          lastAt: Date.now(),
+          sessionOnly: true
+        };
+        discardSessionEvidenceDraftCheckpoint(entry.key);
+        continue;
+      }
+      Runtime.draftCheckpoint = {
+        ...(Runtime.draftCheckpoint || {}),
+        detections: Number(Runtime.draftCheckpoint?.detections || 0) + 1,
+        lastKey: entry.key,
+        lastDecision: 'detected',
+        lastAt: Date.now(),
+        matchKind: exactIdentity ? 'exact_request' : 'stable_turn',
+        sessionOnly: true
+      };
+      return entry;
+    }
+    return null;
+  };
+  const storeSessionEvidenceDraftCheckpoint = (value = {}) => {
+    const chatIdentity = text(value?.chatIdentity || '').trim();
+    const requestFingerprintValue = text(value?.requestFingerprint || '').trim();
+    const currentInput = text(value?.currentInput || '').trim();
+    const key = draftCheckpointKey(chatIdentity, requestFingerprintValue);
+    const entry = normalizeSessionEvidenceDraftCheckpoint({
+      ...value,
+      key,
+      chatIdentity,
+      requestFingerprint: requestFingerprintValue,
+      matchVersion: value?.matchFingerprint ? DRAFT_CHECKPOINT_MATCH_VERSION : 0,
+      matchFingerprint: text(value?.matchFingerprint || '').trim(),
+      inputHash: stableDraftHash(currentInput),
+      inputPreview: compact(currentInput, 600),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastUsedAt: 0,
+      reuseCount: 0
+    }, key);
+    if (!entry) return null;
+    if (entry.matchFingerprint) {
+      for (const existing of [...SessionEvidenceDraftCheckpoints.values()]) {
+        if (existing?.key !== key
+          && existing?.chatIdentity === chatIdentity
+          && existing?.matchFingerprint === entry.matchFingerprint
+          && (!existing?.inputHash || existing.inputHash === entry.inputHash)) {
+          SessionEvidenceDraftCheckpoints.delete(existing.key);
+        }
+      }
+    }
+    SessionEvidenceDraftCheckpoints.set(key, entry);
+    SuppressedDraftCheckpointKeys.delete(key);
+    pruneSessionEvidenceDraftCheckpoints();
+    Runtime.draftCheckpoint = {
+      ...(Runtime.draftCheckpoint || {}),
+      stores: Number(Runtime.draftCheckpoint?.stores || 0) + 1,
+      lastKey: key,
+      lastDecision: 'stored',
+      lastAt: Date.now(),
+      sessionOnly: true
+    };
+    return entry;
+  };
+  const touchSessionEvidenceDraftCheckpoint = entryValue => {
+    const entry = normalizeSessionEvidenceDraftCheckpoint(entryValue, entryValue?.key || '');
+    if (!entry || !SessionEvidenceDraftCheckpoints.has(entry.key)) return null;
+    const updated = {
+      ...entry,
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now(),
+      reuseCount: Number(entry.reuseCount || 0) + 1
+    };
+    SessionEvidenceDraftCheckpoints.set(entry.key, updated);
+    return updated;
   };
   const clearRequestReuseCache = () => {
     RequestReuseCache.clear();
@@ -44631,6 +44843,54 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       lastAt: Date.now(),
       prompted: true,
       promptUnavailable: false
+    };
+    return injectedMessages;
+  };
+  const applySessionEvidenceDraftCheckpointEntry = (entry, messages, requestSettings, fingerprint) => {
+    if (!entry || entry.sessionEvidenceOnly !== true || !entry.injection) return null;
+    if (entry.injectionHash !== stableDraftHash(entry.injection) || entry.finalDraftHash !== stableDraftHash(entry.finalDraft)) {
+      return null;
+    }
+    const injectedMessages = injectSystemMessage(messages, entry.injection, requestSettings);
+    const transportCheck = verifyOriginalMessagePreservation(messages, injectedMessages);
+    if (!transportCheck.preserved) return null;
+    libEvidenceResponseRedactionRequired = true;
+    Runtime.lastInjection = '';
+    Runtime.finalDraft = '';
+    Runtime.lastSafeStage = null;
+    Runtime.finalDraftMeta = {
+      at: Date.now(),
+      externalEvidence: true,
+      status: 'request_local_purged',
+      reused: true,
+      checkpointReuse: true,
+      checkpointKey: entry.key || '',
+      checkpointCreatedAt: Number(entry.createdAt || 0),
+      requestFingerprint: fingerprint,
+      messageTransport: transportCheck
+    };
+    Runtime.last = {
+      ...(Runtime.last || {}),
+      at: Date.now(),
+      ok: true,
+      skipped: false,
+      reused: true,
+      externalEvidence: true,
+      checkpointReuse: true,
+      reason: 'draft_checkpoint_reused',
+      requestFingerprint: fingerprint,
+      checkpointKey: entry.key || '',
+      stageCount: Number(entry.stageCount || 0)
+    };
+    Runtime.draftCheckpoint = {
+      ...(Runtime.draftCheckpoint || {}),
+      reuses: Number(Runtime.draftCheckpoint?.reuses || 0) + 1,
+      lastKey: entry.key || '',
+      lastDecision: 'reuse',
+      lastAt: Date.now(),
+      prompted: true,
+      promptUnavailable: false,
+      sessionOnly: true
     };
     return injectedMessages;
   };
@@ -53341,6 +53601,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try { next = normalizeLibReadUrl(next); } catch (_) {}
       const changed = next !== url;
       if (!changed) return;
+      clearSessionEvidenceDraftCheckpoints();
       const saving = forget('LIB_READ_SERVER_URL_CHANGED');
       url = next;
       void saving.catch(() => { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; });
@@ -53550,9 +53811,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         return status();
       },
       inspect,start,assertScope,ensureConnected,refreshOwners,
-      disconnect: () => { readSource = 'off'; return forget('LIB_READ_DISABLED', true); },
-      imported: () => forget('LIB_READ_SETTINGS_IMPORTED'),
-      dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
+      disconnect: () => { readSource = 'off'; clearSessionEvidenceDraftCheckpoints(); return forget('LIB_READ_DISABLED', true); },
+      imported: () => { clearSessionEvidenceDraftCheckpoints(); return forget('LIB_READ_SETTINGS_IMPORTED'); },
+      dispose:async()=>{disposed=true;clearSessionEvidenceDraftCheckpoints();clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
 
   // LIBRA, HAYAKU and Flashback are separate memory paths. Each gets its own read session, deadline and
@@ -56691,16 +56952,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       requestSettings,
       currentTurnResolution
     );
-    let draftCheckpoint = null;
-    try {
-      draftCheckpoint = await findDraftCheckpoint(
-        checkpointChatIdentity,
-        fingerprint,
-        currentTurnResolution.text,
-        checkpointMatchFingerprint
-      );
-    } catch (error) {
-      warn('draft_checkpoint_lookup_failed', error);
+    let draftCheckpoint = findSessionEvidenceDraftCheckpoint(
+      checkpointChatIdentity,
+      fingerprint,
+      currentTurnResolution.text,
+      checkpointMatchFingerprint
+    );
+    if (!draftCheckpoint) {
+      try {
+        draftCheckpoint = await findDraftCheckpoint(
+          checkpointChatIdentity,
+          fingerprint,
+          currentTurnResolution.text,
+          checkpointMatchFingerprint
+        );
+      } catch (error) {
+        warn('draft_checkpoint_lookup_failed', error);
+      }
     }
     if (draftCheckpoint) {
       await ensurePipelineWorkStatus(requestSettings);
@@ -56716,10 +56984,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         warn('draft_checkpoint_confirmation_failed', error);
       }
       if (checkpointDecision === 'reuse') {
-        const applied = applyDraftCheckpointEntry(draftCheckpoint, messages, requestSettings, fingerprint);
+        const isSessionEvidence = draftCheckpoint.sessionEvidenceOnly === true;
+        const applied = isSessionEvidence
+          ? applySessionEvidenceDraftCheckpointEntry(draftCheckpoint, messages, requestSettings, fingerprint)
+          : applyDraftCheckpointEntry(draftCheckpoint, messages, requestSettings, fingerprint);
         if (applied) {
-          try { await touchDraftCheckpoint(draftCheckpoint); }
-          catch (error) { warn('draft_checkpoint_touch_failed', error); }
+          try {
+            if (isSessionEvidence) touchSessionEvidenceDraftCheckpoint(draftCheckpoint);
+            else await touchDraftCheckpoint(draftCheckpoint);
+          } catch (error) { warn('draft_checkpoint_touch_failed', error); }
           try {
             let reuseScopeKey = compact(Runtime.activeScopeKey || '', 512);
             let reuseRawMessages = messages;
@@ -56742,7 +57015,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           } catch (error) {
             warn('draft_checkpoint_turn_timeline_restore_failed', error);
           }
-          storeRequestReuseEntry(fingerprint, draftCheckpoint);
+          if (!isSessionEvidence) storeRequestReuseEntry(fingerprint, draftCheckpoint);
           await updatePipelineWorkPanel('이전에 저장한 GRADIA 초안을 다시 전달했습니다 · 응답 모델이 장면을 작성하고 있습니다…', 'awaiting_response', {
             busy: true,
             source: 'draft_checkpoint',
@@ -56752,11 +57025,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           return applied;
         }
         warn('draft_checkpoint_transport_check_failed', draftCheckpoint.key || '');
-        try { await discardDraftCheckpoint(draftCheckpoint.key); } catch (_) {}
+        try {
+          if (isSessionEvidence) discardSessionEvidenceDraftCheckpoint(draftCheckpoint.key);
+          else await discardDraftCheckpoint(draftCheckpoint.key);
+        } catch (_) {}
       } else if (checkpointDecision === 'regenerate') {
         let discardPersisted = false;
-        try { discardPersisted = await discardDraftCheckpoint(draftCheckpoint.key); }
-        catch (error) { warn('draft_checkpoint_discard_failed', error); }
+        try {
+          discardPersisted = draftCheckpoint.sessionEvidenceOnly === true
+            ? discardSessionEvidenceDraftCheckpoint(draftCheckpoint.key)
+            : await discardDraftCheckpoint(draftCheckpoint.key);
+        } catch (error) { warn('draft_checkpoint_discard_failed', error); }
         if (!discardPersisted) warn('draft_checkpoint_discard_not_persisted', draftCheckpoint.key || '');
         Runtime.lastInjection = '';
         Runtime.finalDraft = '';
@@ -56834,6 +57113,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             return messages;
           }
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
+          const capturedFinalDraft = boundedDraftCheckpointText(Runtime.finalDraft, 80000);
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();
           const injected = injectSystemMessage(messages, injection, requestSettings);
@@ -56841,6 +57121,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           Runtime.last = { at: Date.now(), ok: true, externalEvidence: true, stageCount: result.stages.length };
           result.assertHandoffLocalCurrent();
           libEvidenceResponseRedactionRequired = true;
+          if (checkpointChatIdentity && capturedFinalDraft) {
+            storeSessionEvidenceDraftCheckpoint({
+              chatIdentity: checkpointChatIdentity,
+              requestFingerprint: fingerprint,
+              matchFingerprint: checkpointMatchFingerprint,
+              currentInput: currentTurnResolution.text,
+              injection,
+              finalDraft: capturedFinalDraft,
+              stageCount: result.stages?.length || 0,
+              scopeCharacterId: text(libReadBinding?.scope?.characterId || '').trim(),
+              scopeChatId: text(libReadBinding?.scope?.chatId || '').trim()
+            });
+          }
           return injected;
         } finally { result.closeEvidence(); }
       }
@@ -67257,6 +67550,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     async clearDraftCheckpoints() {
       await RisuCompat.removeItem(STORAGE_DRAFT_CHECKPOINTS_KEY);
       SuppressedDraftCheckpointKeys.clear();
+      clearSessionEvidenceDraftCheckpoints();
       Runtime.draftCheckpoint = { detections: 0, stores: 0, reuses: 0, discards: 0, corruptions: 0, lastKey: '', lastDecision: 'cleared', lastAt: Date.now(), prompted: false, promptUnavailable: false };
       return true;
     },
