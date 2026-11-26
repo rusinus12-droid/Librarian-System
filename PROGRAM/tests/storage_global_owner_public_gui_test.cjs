@@ -114,7 +114,10 @@ async function openPanel(s){
     await s.click('.setnav [data-subtab="store"]');
   }
  }
- else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
+ else if(s.name==='HAYAKU'){
+  const serverNav=s.doc.querySelector('[data-hayaku-viewer-goto="server"]');
+  await s.click(serverNav?'[data-hayaku-viewer-goto="server"]':'[data-hayaku-viewer-goto="settings"][data-go-sub="server"]');
+ }
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);
  assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');

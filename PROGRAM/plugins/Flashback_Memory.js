@@ -54957,11 +54957,12 @@ ${cleanedText}`, 80),
     if (!foot.querySelector('[data-current-status]')) {
       const doc = foot.ownerDocument;
       const node = (tag, text) => { const el = doc.createElement(tag); el.textContent = text; return el; };
+      const preservedBadges = foot.querySelector?.('#hayakuSideStatusBadges');
       // Retain the owner's sidebar footer, like LIBRA. It stays expanded and
       // participates in sidebar layout rather than covering the main content.
       foot.classList.add('current-status-panel');
       const body = node('div', ''); body.className = 'current-status-body';
-      foot.replaceChildren(node('b', '현재 상태'), body);
+      foot.replaceChildren(...(preservedBadges ? [node('b', '현재 상태'), preservedBadges, body] : [node('b', '현재 상태'), body]));
       foot.setAttribute('aria-label', '현재 상태 및 설정 바로가기');
       for (const row of [{ id:'storage', text:'저장: 확인 중', target:'server' }, ...options.getRows()]) {
         const button = node('button', row.text);

@@ -140,7 +140,7 @@ for(const name of ['HAYAKU','Flashback']) test(name+' full GUI mounts status and
     assert.equal(s.doc.querySelector('.current-status-panel details'),null,'status cannot be collapsed');
     const networkBefore=s.wire.length;
     await s.click('[data-current-status="storage"]');
-    if(name==='HAYAKU')assert.equal(s.doc.querySelector('[data-page="server"]').hidden,false);
+    if(name==='HAYAKU')assert.ok(s.doc.querySelector('[data-page="settings"]').classList.contains('is-active')&&s.doc.querySelector('[data-group="st"][data-subpanel="server"]').classList.contains('is-active'));
     else assert.ok(s.doc.querySelector('[data-group="c"][data-subpanel="srv"]').classList.contains('is-active'));
     await s.click('[data-current-status="recall"]');
     assert.ok(s.doc.querySelector('[data-page="settings"]').classList.contains('is-active'));

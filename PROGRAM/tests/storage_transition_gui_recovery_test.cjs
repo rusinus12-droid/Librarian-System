@@ -120,7 +120,8 @@ async function openServerPanelNormally(s) {
       await s.click('.setnav [data-subtab="store"]');
     }
   } else if (s.name === 'HAYAKU') {
-    await s.click('[data-hayaku-viewer-goto="server"]');
+    const serverNav = s.doc.querySelector('[data-hayaku-viewer-goto="server"]');
+    await s.click(serverNav ? '[data-hayaku-viewer-goto="server"]' : '[data-hayaku-viewer-goto="settings"][data-go-sub="server"]');
   } else {
     await s.click('[data-go="connect"]');
     await s.click('button[data-group="c"][data-subtab="srv"]');
@@ -393,7 +394,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             'HAYAKU server recovery panel mounted',
             8000
           );
-          const connectPage = s.doc.querySelector('[data-hayaku-viewer-panel="server"]');
+          const connectPage = s.doc.querySelector('[data-hayaku-viewer-panel="server"]') || s.doc.querySelector('[data-group="st"][data-subpanel="server"]');
           assert.ok(connectPage?.classList.contains('is-active'), 'HAYAKU opens directly on server connection page during transition');
           const notice = s.doc.querySelector('#hayakuStorageTransitionNotice');
           assert.ok(notice && notice.hidden === false, 'HAYAKU displays storage transition notice');

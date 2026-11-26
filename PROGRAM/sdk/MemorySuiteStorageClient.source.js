@@ -9650,7 +9650,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       [data-scope-manager] [data-scope-select]:disabled{pointer-events:none}[data-scope-manager] td[data-scope-select-cell]{cursor:default}
       [data-scope-manager] tr[data-selectable=false] td[data-scope-select-cell]{cursor:help}
       [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
-      </style><h3>스코프 데이터 관리</h3>
+      </style><h3>스코프 정리</h3>
       <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 저장 모드와 별개로 플러그인 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</p>
       <p class="scope-data-note" data-scope-readonly hidden role="status">이 화면은 보안 연결이 아니어서 목록 보기만 가능합니다. 브라우저가 암호화 기능(WebCrypto)을 제공하지 않아 삭제·백업 대상을 안전하게 확인할 수 없습니다. https 또는 localhost 주소로 접속하면 선택할 수 있습니다.</p>
       <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
