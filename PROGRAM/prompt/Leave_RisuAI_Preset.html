@@ -99,11 +99,11 @@
 		</div>
 		<div style="padding:17px;border-radius:17px;background:rgba(255,255,255,.038);border:1px solid rgba(159,212,185,.16);">
 			<div style="color:#f3d285;font-weight:900;font-size:15.5px;">🕯️ V. 심야 서고 (성인 &middot; 친밀 묘사)</div>
-			<p style="margin:7px 0 0;color:#c5d4cb;font-size:13.4px;">밤이 깊어질 때만 조용히 촛불을 켜는 비밀 서가예요. 평소(Off)에는 완전히 닫혀 있다가 <strong>묘사 수위(Level 1 Soft ~ Level 3 Explicit)</strong>를 열었을 때만 깨어나며, <strong>정사 AIDE</strong>를 함께 켜면 단계별 호흡, 공간 방음, 복장과 피임의 물리적 연속성까지 흐트러짐 없이 짚어 줘요. 전용 페르소나 <strong>비앙카 투입(&sect;0~&sect;11)</strong>도 이곳에서 부를 수 있어요.</p>
+			<p style="margin:7px 0 0;color:#c5d4cb;font-size:13.4px;">밤이 깊어질 때만 조용히 촛불을 켜는 비밀 서가예요. 평소(Off)에는 완전히 닫혀 있다가 <strong>묘사 수위(Level 1 Soft ~ Level 3 Explicit)</strong>를 열었을 때만 깨어나며, <strong>정사 AIDE</strong>를 함께 켜면 단계별 호흡, 공간 방음, 복장과 피임의 물리적 연속성까지 흐트러짐 없이 짚어 줘요. 전용 집필 규율 <strong>비앙카 투입(경량 집필 규율 / 원본 전문 &sect;0~&sect;11)</strong>도 이곳에서 고를 수 있어요.</p>
 		</div>
 		<div style="padding:17px;border-radius:17px;background:rgba(255,255,255,.038);border:1px solid rgba(159,212,185,.16);">
 			<div style="color:#9fd4b9;font-weight:900;font-size:15.5px;">🔗 VI. 장기기억 연동 &amp; 시스템</div>
-			<p style="margin:7px 0 0;color:#c5d4cb;font-size:13.4px;">외부 서고와 연결되는 통신구예요. <strong>LIB 시리즈(기본) &middot; RisuAI 기본 메모리(Hypa&middot;SupaMemory) &middot; 타 외부 플러그인/범용</strong> 중 환경에 맞는 기억 방식을 고를 수 있고, <strong>GRADIA 호환 모드</strong> 스위치 하나로 저를 최종 마감 에디터로 변신시킬 수 있어요! <strong>한&middot;영&middot;일 무누출 언어 전환</strong>과 <strong>모델 어댑터(Auto / Claude / Gemini / GPT)</strong>도 갖추고 있답니다.</p>
+			<p style="margin:7px 0 0;color:#c5d4cb;font-size:13.4px;">외부 서고와 연결되는 통신구예요. <strong>LIB 시리즈(기본) &middot; RisuAI 기본 메모리(Hypa&middot;SupaMemory) &middot; 타 외부 플러그인/범용</strong> 중 환경에 맞는 기억 방식을 고를 수 있고, <strong>GRADIA 호환 모드</strong> 스위치 하나로 저를 최종 마감 에디터로 변신시킬 수 있어요! <strong>한&middot;영&middot;일 무누출 언어 전환</strong>과 <strong>모델 어댑터(Auto / Claude / Gemini / GPT / DeepSeek)</strong>도 갖추고 있답니다.</p>
 		</div>
 	</div>
 
@@ -127,7 +127,7 @@
 
 	<ul style="margin:15px 0 0;padding-left:20px;color:#d2e0d7;font-size:14.5px;">
 		<li><strong style="color:#fff;">봇 고유 상태창 &middot; 에셋과도 사이좋게 공존 (Hard Stop Check)</strong>: 캐릭터 카드 자체의 에셋 명령어(<code>&lt;img="..."&gt;</code>)나 고유 상태 표시줄(<code>[ MM/DD ... ]</code>, <code>◈CG</code> 등)이 있더라도 누락 없이 <strong>본문 &rarr; Leave HUD &rarr; 캐릭터 카드 상태창 &rarr; 외부 메모리 패킷</strong> 순서로 단정하게 잠가 드려요.</li>
-		<li><strong style="color:#fff;">장기기억 무오염 &amp; 2단 캐시 포인트 &amp; 보조 호출 분리</strong>: 추론 블록과 <code>&lt;statusdata&gt;</code> HUD는 <strong>LIBRA &middot; HAYAKU &middot; Flashback</strong>이 기억 분석에서 자동으로 걸러 내고, <em>텍스트 태그 전용</em>으로 두면 내장 정규식이 화면에서만 깔끔히 숨겨 줘요. 2단 캐시 포인트와 보조 호출(<code>memory / emotion / translate / otherAx</code>) 추론 <code>off</code> 분리로 긴 여정의 비용과 대기 시간도 아껴 드려요.</li>
+		<li><strong style="color:#fff;">장기기억 무오염 &amp; 2단 캐시 포인트 &amp; 보조 호출 분리</strong>: 모델은 초경량 텍스트 <code>&lt;statusdata&gt;</code>만 작성하고 내장 정규식이 <em>HUD 카드 표시</em> 모드에서 접이식 카드로 자동 변환하며(<em>텍스트 태그 전용</em>에서는 화면 숨김), <strong>LIBRA &middot; HAYAKU &middot; Flashback</strong>이 추론 블록과 <code>&lt;statusdata&gt;</code> HUD를 기억 분석에서 자동으로 걸러 내요. 2단 캐시 포인트와 보조 호출(<code>memory / emotion / translate / otherAx</code>) 추론 <code>off</code> 분리로 긴 여정의 비용과 대기 시간도 아껴 드려요.</li>
 		<li><strong style="color:#f3d285;">GRADIA와 만날 땐 든든한 마감 에디터로!</strong>: GRADIA 호환 모드를 켜 주시면 저는 초안 작성 욕심을 내려놓고 HUD도 살며시 접어 둔 채, <strong>GRADIA가 건네준 원고의 패치 이음새를 매끄럽게 윤문하고 미처 못다 챙긴 LIB 장기기억 디테일을 은은하게 수놓는 최종 마감기</strong>가 된답니다.</li>
 		<li><strong style="color:#9fd4b9;">OOC 모드 &amp; 온디맨드 기억 조회(<code>@기억</code>)</strong>: <code>I. 서사 집필실</code>의 <strong>OOC 모드</strong>(<em>방랑 사서 리브</em> / <em>담백한 어시스턴트</em>)를 켜면 서사 작성과 <strong>LIBRA &middot; HAYAKU &middot; Flashback &middot; GRADIA</strong>의 분석&middot;저장이 자동으로 멈추며, 대화 내용은 <code>&lt;ooc&gt;...&lt;/ooc&gt;</code> 카드로 표시되고 이후 서사 기억에도 섞이지 않아요. 과거 사실 확인이 필요할 때만 질문 앞에 <code>@기억</code>(또는 <code>@리브라</code>, <code>@하야쿠</code>, <code>@플래시백</code>)을 붙여 주시면 필요한 기억만 읽기 전용으로 불러와 정확히 답해 드려요!</li>
 	</ul>
