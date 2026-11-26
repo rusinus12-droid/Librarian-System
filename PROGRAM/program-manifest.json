@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.5.0",
-  "generatedAt": "2026-11-26T18:25:54.486Z",
+  "generatedAt": "2026-11-26T19:52:23.406Z",
   "server": {
     "version": "1.5.0",
     "protocol": {
@@ -4360,12 +4360,12 @@
       "bytes": 1353774
     },
     "prompt/Leave_RisuAI_Preset.html": {
-      "sha256": "30f01dadc6673365bf52946aae83956cb662f71a517cf8159ad4d7518ec55165",
-      "bytes": 32781
+      "sha256": "7ba9566d5dc30b7fbb6fbf9fb85bb0cd3999d64d49073be8ceafaa3f99822c32",
+      "bytes": 32959
     },
     "prompt/Leave_RisuAI_Preset.json": {
-      "sha256": "217e4224e54f88623730957c53716132962cad4e6b845f8f11ea950615624abf",
-      "bytes": 99996
+      "sha256": "f9565056798a635e6f172cd9bc0ff562b4ced26d6ddba97e8105532c144825af",
+      "bytes": 107662
     },
     "release-policy.json": {
       "sha256": "f711477bf96606f862382f06439a26773cce3aee9134adc39f243da6d749ad0c",
@@ -8138,6 +8138,10 @@
     "tests/launcher_safety_regression_test.cjs": {
       "sha256": "de694e3ca9135fde6dcbf3d8987d40716dd512f8928b7c77d4bdeffe0f315b56",
       "bytes": 7189
+    },
+    "tests/leave_hud_and_bianca_contract_test.cjs": {
+      "sha256": "26135cba1a20fe1469d75b65a031f7338c4bb646f4e48e7afcbb44ff36b6e54c",
+      "bytes": 8985
     },
     "tests/lia_authoring_binding_and_aux_improvements_test.cjs": {
       "sha256": "c469a1f85c0c158075ed66692938ca97a054e727faa56399388d451bda29916a",
