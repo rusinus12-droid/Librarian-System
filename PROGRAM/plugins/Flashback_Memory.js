@@ -3295,9 +3295,62 @@ const PLUGIN_VERSION = '2.2.0';
     .replace(/\n{4,}/g, '\n\n\n')
     .trim();
 
+  const LIBRARIAN_OOC_MODE_MARKER = '[LIBRARIAN_OOC_MODE:ACTIVE]';
+  const LIBRARIAN_OOC_TAG_RE = /^\s*(?:<(?:thinking|thoughts?|think)\b[^>]*>[\s\S]*?<\/(?:thinking|thoughts?|think)>\s*)*<ooc\b[^>]*>[\s\S]*<\/ooc>\s*$/i;
+  const isOocResponseContent = (value = '') => LIBRARIAN_OOC_TAG_RE.test(String(value ?? ''));
+  const extractLibrarianOocMessageText = (msg) => {
+    if (!msg) return '';
+    const raw = msg?.content ?? msg?.data ?? msg?.text ?? msg?.message ?? msg?.mes ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw.map(part => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')).join('\n');
+    }
+    return String(raw || '');
+  };
+  const parseLibrarianOocRequest = (messages = [], resolvedUserText = '') => {
+    const list = Array.isArray(messages) ? messages : [];
+    let active = false;
+    let fallbackUserText = '';
+    for (const msg of list) {
+      const body = extractLibrarianOocMessageText(msg);
+      if (!body) continue;
+      if (body.toUpperCase().includes(LIBRARIAN_OOC_MODE_MARKER)) active = true;
+      const role = String(msg?.role || (msg?.isUser ? 'user' : '') || '').trim().toLowerCase();
+      if (role === 'user' || role === 'human') fallbackUserText = body;
+    }
+    const rawUserText = String(resolvedUserText || fallbackUserText || '');
+    const emptyTargets = { libra: false, hayaku: false, flashback: false };
+    if (!active) {
+      return { active: false, triggered: false, targets: emptyTargets, queryText: rawUserText.trim(), rawUserText };
+    }
+    const targets = { libra: false, hayaku: false, flashback: false };
+    let rest = rawUserText.trim();
+    const tokenRe = /^@(기억|memory|전체|all|lib|리브라|libra|하야쿠|hayaku|플래시백|flashback|fb)(?=$|[\s,:：])[\s,:：]*/i;
+    let matchedAny = false;
+    while (rest) {
+      const m = tokenRe.exec(rest);
+      if (!m) break;
+      matchedAny = true;
+      const token = m[1].toLowerCase();
+      if (token === '기억' || token === 'memory' || token === '전체' || token === 'all' || token === 'lib') {
+        targets.libra = true;
+        targets.hayaku = true;
+        targets.flashback = true;
+      } else if (token === '리브라' || token === 'libra') {
+        targets.libra = true;
+      } else if (token === '하야쿠' || token === 'hayaku') {
+        targets.hayaku = true;
+      } else if (token === '플래시백' || token === 'flashback' || token === 'fb') {
+        targets.flashback = true;
+      }
+      rest = rest.slice(m[0].length).trim();
+    }
+    return { active: true, triggered: matchedAny, targets, queryText: rest, rawUserText };
+  };
+
   const sanitizeSourceText = (value = '', max = 0) => {
     const explicit=memorySuiteCanonicalSource(value,'flashback');if(explicit!==null)return max>0?compact(explicit,max):explicit;
-    const body = stripSourceArtifacts(value);
+    const body = stripSourceArtifacts(String(value ?? '').replace(/<ooc\b[^>]*>[\s\S]*?<\/ooc>/gi, ''));
     return max > 0 ? compact(body, max) : body;
   };
 
@@ -21222,14 +21275,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       createdAt: firstFilled(message?.createdAt, message?.time, message?.date, message?.timestamp, message?.sendDate, message?.updatedAt)
     };
     const usable = Boolean(normalized?.content && !isOwnInjection(normalized.content));
+    const filteredEmptyAssistant = !own && role === 'assistant' && !normalized?.content && Boolean(normalized?.rawContent);
+    const normalizedEntry = usable
+      ? normalized
+      : (filteredEmptyAssistant ? { role: 'assistant', content: '', rawContent: normalized.rawContent, index, filteredEmptyAssistant: true, createdAt: normalized.createdAt } : null);
     const signature = stableHash([
       role, identity.source, identity.id, index,
-      normalized?.rawContent || '', normalized?.content || '', own ? 'own' : 'visible'
+      normalized?.rawContent || '', normalized?.content || '', own ? 'own' : (filteredEmptyAssistant ? 'filtered_empty_assistant' : 'visible')
     ].join('\u0001'));
     const retainedChars = Math.max(0, rawComparable.value.length + text(normalized?.rawContent || '').length + text(normalized?.content || '').length);
     entry = {
       key, index, role, identity, rawType: rawComparable.type, rawValue: rawComparable.value,
-      metaKey, normalized: usable ? normalized : null, signature, retainedChars, lastSeenAt: Date.now()
+      metaKey, normalized: normalizedEntry, signature, retainedChars, lastSeenAt: Date.now()
     };
     cache.entries.set(key, entry);
     cache.retainedChars += retainedChars;
@@ -30989,6 +31046,12 @@ const MemorySuiteSnapshotCache = (() => {
         continue;
       }
       if (role !== 'assistant') continue;
+      if (message?.filteredEmptyAssistant === true) {
+        if (pendingUser?.text && assistantFragments.length) flushPair();
+        else assistantFragments = [];
+        pendingUser = null;
+        continue;
+      }
       const assistantText = canonicalChatResponseText(body);
       if (!assistantText) {
         if (text(message?.rawContent ?? body).trim().length > 0 && pendingUser?.text) {
@@ -31035,7 +31098,7 @@ const MemorySuiteSnapshotCache = (() => {
     for (const message of messages) {
       const position = Number(message?.index || 0) + 1;
       count = Math.max(count, position);
-      if (message?.role !== 'assistant') continue;
+      if (message?.role !== 'assistant' || message?.filteredEmptyAssistant === true) continue;
       const body = canonicalChatResponseText(message.contentText || message.content || '');
       if (body) assistants.set(position, body);
     }
@@ -32348,7 +32411,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -32702,7 +32765,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {
@@ -45064,7 +45127,10 @@ const MemorySuiteHealthRecovery = (() => {
     let recallToken = null, recallBranch = 0;
     const hookStartedAt = Date.now();
     const requestClass = classifyRequestType(type, messages);
-    if(!requestClass.auxiliary){flashbackInputRequestActive=true;flashbackReanalysisLifetime+=1;await getFlashbackSourceInput().ready();}
+    const preOocUserText = !requestClass.auxiliary ? (resolveFlashbackCurrentTurn(normalizeMessages(messages)).rawText || '') : '';
+    const oocState = !requestClass.auxiliary ? parseLibrarianOocRequest(messages, preOocUserText) : { active: false, triggered: false, targets: { libra: false, hayaku: false, flashback: false }, queryText: '' };
+    if (oocState.active) requestClass.ooc = true;
+    if(!requestClass.auxiliary && !oocState.active){flashbackInputRequestActive=true;flashbackReanalysisLifetime+=1;await getFlashbackSourceInput().ready();}
     if (!requestClass.auxiliary && Runtime.captureBackend === FLASHBACK_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && Runtime.captureBackendHealthPending) {
       Runtime.captureBackendHealthChecks += 1;
       const health = { ...Runtime.captureBackendHealthPending };
@@ -45141,6 +45207,56 @@ const MemorySuiteHealthRecovery = (() => {
       opLog('before_skip_auxiliary', { hook: 'beforeRequest', type, requestClass }, 'debug');
       log('beforeRequest skipped', Runtime.lastRecall);
       return cleanFlashbackOwnedMessages(messages);
+    }
+    if (oocState.active) {
+      ensureRequestDecision(Runtime.currentScope?.scopeKey || '');
+      clearPendingCaptureBarrierForDecision(requestDecision.decisionId || '');
+      if (!oocState.targets.flashback || !oocState.queryText) {
+        Runtime.lastRecall = {
+          at: Date.now(),
+          skipped: true,
+          ooc: true,
+          reason: oocState.targets.flashback ? 'ooc_empty_query' : 'ooc_mode_silent',
+          requestType: requestClass.requestType,
+          normalizedType: requestClass.normalizedType,
+          main: requestClass.main === true
+        };
+        refreshLastRecallPanel();
+        opLog('before_skip_ooc', { hook: 'beforeRequest', type, reason: Runtime.lastRecall.reason }, 'debug');
+        return cleanFlashbackOwnedMessages(messages);
+      }
+      try {
+        await getFlashbackSourceInput().ready();
+        const oocRecall = await withDeadline(
+          selectFlashbackRecallPrompt(oocState.queryText, () => ensureHookDeadline('beforeRequest ooc recall')),
+          hookRemainingMs(),
+          'beforeRequest ooc recall'
+        );
+        const dynamicBlock = text(oocRecall?.content || '').trim();
+        Runtime.lastRecall = {
+          at: Date.now(),
+          skipped: !dynamicBlock,
+          ooc: true,
+          oocReadOnly: true,
+          queryText: oocState.queryText,
+          injectedChars: dynamicBlock.length,
+          reason: dynamicBlock ? 'ooc_recall_injected' : 'ooc_recall_empty',
+          requestType: requestClass.requestType,
+          normalizedType: requestClass.normalizedType,
+          main: requestClass.main === true
+        };
+        refreshLastRecallPanel();
+        if (!dynamicBlock) return cleanFlashbackOwnedMessages(messages);
+        return injectFlashbackMessages(messages, {
+          staticContract: null,
+          dynamicBlock,
+          dynamicPosition: settings.injectionPosition,
+          promptCacheMode: settings.promptCacheMode
+        });
+      } catch (error) {
+        warn('OOC read-only recall failed open', error);
+        return cleanFlashbackOwnedMessages(messages);
+      }
     }
     if (settings.mode === 'off' || !Array.isArray(messages) || !messages.length) {
       if (settings.mode === 'off') clearPendingTurn('before_mode_off');
@@ -45839,6 +45955,10 @@ const MemorySuiteHealthRecovery = (() => {
     const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
     if (!live.known) return { ok: true, skipped: true, reason: 'chat_unavailable' };
     const messageIndex = Number(snapshot.chatInfo?.messageIndex);
+    const rawChatRows = Array.isArray(snapshot.chat?.message) ? snapshot.chat.message : (Array.isArray(snapshot.chat?.messages) ? snapshot.chat.messages : []);
+    const rawTargetMsg = rawChatRows[messageIndex] || null;
+    const rawTargetContent = rawTargetMsg ? rawMessageContentUnfiltered(rawTargetMsg) : '';
+    if (isOocResponseContent(rawTargetContent)) return { ok: true, skipped: true, reason: 'ooc_mode' };
     const assistantPosition = messageIndex + 1;
     const liveState = liveChatStateFromNormalized(live.normalized);
     const eventPair = liveState.pairByAssistantPosition instanceof Map
@@ -45953,6 +46073,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   const processLegacyScriptOutputCapture = content => {
     if (Runtime.unloaded || Runtime.captureBackend !== FLASHBACK_CAPTURE_BACKENDS.SCRIPT_OUTPUT_LEGACY) return content;
+    if (isOocResponseContent(content)) return content;
     Runtime.captureBackendObservedRuns += 1;
     Runtime.captureBackendLastEventAt = Date.now();
     const pending = Runtime.pendingTurn || (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns[Runtime.pendingTurns.length - 1] : null);
@@ -46144,6 +46265,12 @@ const MemorySuiteHealthRecovery = (() => {
     if (requestClass.auxiliary) {
       clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');
       opLog('after_skip_auxiliary', { hook: 'afterRequest', type, requestClass }, 'debug');
+      return content;
+    }
+    if (requestClass.ooc === true || isOocResponseContent(content)) {
+      clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');
+      Runtime.captureBackendHealthPending = null;
+      opLog('after_skip_ooc', { hook: 'afterRequest', type, requestClass }, 'debug');
       return content;
     }
     clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');

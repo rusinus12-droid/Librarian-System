@@ -19383,11 +19383,15 @@ ${passage.text || ''}`, 420));
 
   const isMainNarrativeRequest = (type) => normalizeRequestType(type) === 'model';
 
+  const isLibrarianOocRequest = (messages = []) => (Array.isArray(messages) ? messages : [])
+    .some(m => contentToText(m?.content ?? m?.data ?? '').toUpperCase().includes('[LIBRARIAN_OOC_MODE:ACTIVE]'));
+
   const shouldPassThrough = (messages, type, settings) => {
     const requestType = normalizeRequestType(type);
     if (!isMainNarrativeRequest(requestType)) return `non_model_request:${requestType || 'missing'}`;
     if (!Array.isArray(messages)) return 'non_array_payload';
     if (!messages.length) return 'empty_messages';
+    if (isLibrarianOocRequest(messages)) return 'ooc_mode';
     if (settings.inputAssistMode !== 'off' && settings.inputAssistScope === 'standalone') return 'input_assist_standalone';
     if (settings.mode === 'off') return 'mode_off';
     const allText = compact(messages.map(m => contentToText(m?.content)).join('\n'), 6000);
@@ -38262,7 +38266,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -38616,7 +38620,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {

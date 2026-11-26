@@ -21971,6 +21971,120 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
 
+  const LIBRARIAN_OOC_MODE_MARKER = '[LIBRARIAN_OOC_MODE:ACTIVE]';
+  const LIBRARIAN_OOC_TAG_RE = /^\s*(?:<(?:thinking|thoughts?|think)\b[^>]*>[\s\S]*?<\/(?:thinking|thoughts?|think)>\s*)*<ooc\b[^>]*>[\s\S]*<\/ooc>\s*$/i;
+  const isOocResponseContent = (value = '') => LIBRARIAN_OOC_TAG_RE.test(String(value ?? ''));
+  const extractLibrarianOocMessageText = (msg) => {
+    if (!msg) return '';
+    const raw = msg?.content ?? msg?.data ?? msg?.text ?? msg?.message ?? msg?.mes ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw.map(part => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')).join('\n');
+    }
+    return String(raw || '');
+  };
+  const parseLibrarianOocRequest = (messages = [], resolvedUserText = '') => {
+    const list = Array.isArray(messages) ? messages : [];
+    let active = false;
+    let fallbackUserText = '';
+    for (const msg of list) {
+      const body = extractLibrarianOocMessageText(msg);
+      if (!body) continue;
+      if (body.toUpperCase().includes(LIBRARIAN_OOC_MODE_MARKER)) active = true;
+      const role = String(msg?.role || (msg?.isUser ? 'user' : '') || '').trim().toLowerCase();
+      if (role === 'user' || role === 'human') fallbackUserText = body;
+    }
+    const rawUserText = String(resolvedUserText || fallbackUserText || '');
+    const emptyTargets = { libra: false, hayaku: false, flashback: false };
+    if (!active) {
+      return { active: false, triggered: false, targets: emptyTargets, queryText: rawUserText.trim(), rawUserText };
+    }
+    const targets = { libra: false, hayaku: false, flashback: false };
+    let rest = rawUserText.trim();
+    const tokenRe = /^@(기억|memory|전체|all|lib|리브라|libra|하야쿠|hayaku|플래시백|flashback|fb)(?=$|[\s,:：])[\s,:：]*/i;
+    let matchedAny = false;
+    while (rest) {
+      const m = tokenRe.exec(rest);
+      if (!m) break;
+      matchedAny = true;
+      const token = m[1].toLowerCase();
+      if (token === '기억' || token === 'memory' || token === '전체' || token === 'all' || token === 'lib') {
+        targets.libra = true;
+        targets.hayaku = true;
+        targets.flashback = true;
+      } else if (token === '리브라' || token === 'libra') {
+        targets.libra = true;
+      } else if (token === '하야쿠' || token === 'hayaku') {
+        targets.hayaku = true;
+      } else if (token === '플래시백' || token === 'flashback' || token === 'fb') {
+        targets.flashback = true;
+      }
+      rest = rest.slice(m[0].length).trim();
+    }
+    return { active: true, triggered: matchedAny, targets, queryText: rest, rawUserText };
+  };
+  const buildHayakuOocTimelineMatches = (packets = [], queryText = '', limit = 5, maxChars = 1500) => {
+    const list = Array.isArray(packets) ? packets : [];
+    const rawQuery = String(queryText || '').trim();
+    if (!list.length || !rawQuery) return '';
+    const tokens = [...new Set(
+      rawQuery
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .map(t => t.replace(/(?:이랑|랑|하고|에서|에게|부터|까지|은|는|이|가|을|를|의|에|도|만|한|된)$/, ''))
+        .filter(t => t.length >= 2)
+    )];
+    if (!tokens.length) return '';
+    const scored = [];
+    for (let idx = 0; idx < list.length; idx += 1) {
+      const packet = list[idx];
+      if (!packet || typeof packet !== 'object') continue;
+      const turnNum = Number(packet.targetPairIndex || packet.sourcePairIndex || packet.pairIndex || packet.worldlineOrdinal || (idx + 1)) || (idx + 1);
+      const world = packet.world && typeof packet.world === 'object' ? packet.world : {};
+      const meta = packet.meta && typeof packet.meta === 'object' ? packet.meta : {};
+      const timeText = String(world.time || world.date || meta.event_time || meta.eventTime || packet.sourceTime || '').trim();
+      const locText = String(world.current_location || world.location || '').trim();
+      const chars = Array.isArray(packet.entity?.characters)
+        ? packet.entity.characters.map(c => String(c?.name || c?.id || '').trim()).filter(Boolean)
+        : [];
+      const eventsText = [
+        ...(Array.isArray(world.active_events) ? world.active_events : []),
+        ...(Array.isArray(world.historical_events) ? world.historical_events : [])
+      ].map(e => (typeof e === 'string' ? e : [e?.event, e?.summary, e?.description, e?.outcome].filter(Boolean).join(' '))).filter(Boolean).join(' | ');
+      const summary = String(meta.summary_memory?.summary || meta.turn_anchor || eventsText || '').trim();
+      const searchable = [timeText, locText, chars.join(' '), summary, eventsText, JSON.stringify(packet.world || {}), JSON.stringify(packet.meta || {})].join(' ').toLowerCase();
+      let hits = 0;
+      for (const token of tokens) {
+        if (searchable.includes(token)) hits += 1;
+      }
+      if (hits <= 0) continue;
+      scored.push({
+        hits,
+        turnNum,
+        timeText,
+        locText,
+        cast: chars.slice(0, 6).join(', '),
+        summary: summary.slice(0, 260)
+      });
+    }
+    if (!scored.length) return '';
+    scored.sort((a, b) => b.hits - a.hits || b.turnNum - a.turnNum);
+    const lines = ['[HAYAKU OOC HISTORICAL TIMELINE MATCHES]'];
+    let used = lines[0].length;
+    for (const item of scored.slice(0, limit)) {
+      const parts = ['Turn #' + item.turnNum];
+      if (item.timeText) parts.push('time: ' + item.timeText);
+      if (item.locText) parts.push('location: ' + item.locText);
+      if (item.cast) parts.push('cast: ' + item.cast);
+      const line = '- [' + parts.join(' | ') + ']' + (item.summary ? ' ' + item.summary : '');
+      if (used + line.length + 1 > maxChars) break;
+      lines.push(line);
+      used += line.length + 1;
+    }
+    return lines.length > 1 ? lines.join('\n') : '';
+  };
+
   const latestUserText = (messages = []) => resolveHayakuCurrentTurn(messages).text || '';
   const escapeRegex = value => text(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const stripReservedPacketArtifacts = (value, options = {}) => {
@@ -26214,6 +26328,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       replacement: ' '
     }).content
       .replace(/<Thoughts>[\s\S]*?<\/Thoughts>/gi, ' ')
+      .replace(/<ooc\b[^>]*>[\s\S]*?<\/ooc>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ')
       .replace(/\[HAYAKU SIDE-WRITE FINAL REMINDER\][\s\S]*$/gi, ' ')
       .replace(/\r/g, '\n')
@@ -39201,6 +39316,54 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (requestClass.auxiliary) {
         return sanitizeAuxiliaryMessages(requestClass);
       }
+      if (!recallOnly) {
+        const oocState = parseLibrarianOocRequest(messages, latestUserText(messages));
+        if (oocState.active) {
+          Memory.lastOocRequest = { at: now(), active: true, triggered: Boolean(oocState.targets.hayaku), requestType };
+          if (!oocState.targets.hayaku || !oocState.queryText) {
+            Memory.store = emptyStore();
+            return sanitizeAuxiliaryMessages(
+              { ...requestClass, reason: oocState.targets.hayaku ? 'ooc_empty_query' : 'ooc_mode_silent' },
+              { ooc: true }
+            );
+          }
+          const oocMessages = ensureArray(messages).map(m => ({ ...m }));
+          let replacedUser = false;
+          for (let idx = oocMessages.length - 1; idx >= 0; idx -= 1) {
+            if (/^(?:user|human)$/i.test(roleOf(oocMessages[idx]))) {
+              oocMessages[idx] = { ...oocMessages[idx], content: oocState.queryText };
+              replacedUser = true;
+              break;
+            }
+          }
+          if (!replacedUser) oocMessages.push({ role: 'user', content: oocState.queryText });
+          const recalled = await handleBeforeRequest(oocMessages, requestType, {
+            recallOnly: true,
+            includeOocTimeline: true,
+            requestChars: requestPayloadChars(messages)
+          });
+          const oocPrompt = packetCoreJoinParts([recalled?.recallPrompt || '', recalled?.oocTimelineBlock || '']);
+          const oocInjected = injectPromptDetailed(
+            messages,
+            oocPrompt,
+            '',
+            { ...settings, promptCacheMode: 'off' },
+            ''
+          );
+          Memory.lastBeforeRequest = {
+            at: now(),
+            skipped: false,
+            ooc: true,
+            oocReadOnly: true,
+            packetWriteActive: false,
+            recallChars: oocPrompt.length,
+            requestType,
+            elapsedMs: now() - startedAt
+          };
+          return oocInjected.messages;
+        }
+        Memory.lastOocRequest = null;
+      }
       if (promptCacheModeOf(settings) === 'native' && Memory.promptCache.registered !== true && !Memory.promptCache.registerAttempted) {
         const nativeCacheRegistered = await RisuCompat.addBodyInterceptor(transformPromptCacheBody);
         if (!nativeCacheRegistered) {
@@ -40114,9 +40277,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (recallOnly) {
         // Only recalled continuity. Packet-writing instructions belong to the response model alone.
         const recallPrompt = packetCoreJoinParts([sceneBatonText, memoryBlock]);
+        const oocTimelineBlock = mode?.includeOocTimeline === true ? buildHayakuOocTimelineMatches(packets, query) : '';
         Memory.lastInjectedPrompt = recallPrompt;
         Memory.store = emptyStore();
-        return { recallPrompt, scopeKey: chatScope?.key || '', selectedRows: ensureArray(memoryContextResult?.deliveredRowKeys).length };
+        return { recallPrompt, oocTimelineBlock, scopeKey: chatScope?.key || '', selectedRows: ensureArray(memoryContextResult?.deliveredRowKeys).length };
       }
       const injectionResult = stage('injectPrompt', () => otherAxCanonicalPacketMode
         ? injectPromptDetailed(messages, packetCoreJoinParts([sceneBatonText, memoryBlock]), '', contextSettings, '')
@@ -54018,6 +54182,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     });
     const storedContent = hasOwnProperty(message, 'data') ? message.data : rawMessagePayload(message);
     const outputContent = unescapeRisuStoredPayload(storedContent);
+    if (isOocResponseContent(outputContent)) return { ok: true, skipped: true, reason: 'ooc_mode' };
     const pendingList = ensureArray(prunePendingCaptures())
       .filter(pending => pending?.scope?.key === observedScope.key);
     if (!pendingList.length) return { ok: true, skipped: true, reason: 'pending_capture_not_found', scopeKey: liveScope.key };
@@ -56862,7 +57027,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -57216,7 +57381,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {
@@ -66388,6 +66553,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const afterRequestRegistered = await RisuCompat.addAfterRequest(async (content, requestType) => {
         if(text(requestType||'model').trim().toLowerCase()==='model')hayakuInputRequestActive=false;
+        const isOocTurn = (Memory.lastOocRequest?.active === true && (now() - Number(Memory.lastOocRequest?.at || 0)) <= 120000) || isOocResponseContent(content);
+        if (isOocTurn) {
+          Memory.lastOocRequest = null;
+          Memory.captureBackendHealthPending = null;
+          return scrubHayakuRuntimeInstructionEchoForReturn(content, 'afterRequest');
+        }
         if (hayakuSourceInputReadyError) {
           debugLog('afterRequest:source_input_deferred', { reason: hayakuSourceInputReadyError });
           return scrubHayakuRuntimeInstructionEchoForReturn(content, 'afterRequest');
@@ -66426,6 +66597,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const outputRegistered = await RisuCompat.addOutputHandler(async (content, mode = 'output') => {
         const captureSource = mode === 'editoutput' ? 'editoutput' : 'output';
+        if (isOocResponseContent(content)) {
+          return concealBarePacketMarkers(scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource));
+        }
         if (hayakuSourceInputReadyError) {
           debugLog('output:source_input_deferred', { reason: hayakuSourceInputReadyError, captureSource });
           return concealBarePacketMarkers(scrubHayakuRuntimeInstructionEchoForReturn(content, captureSource));

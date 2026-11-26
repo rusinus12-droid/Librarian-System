@@ -30204,6 +30204,59 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   const hiddenReasoningStartRe = /^\s*(?:<\s*(?:thoughts?|thinking|reasoning|analysis)\s*>|(?:thoughts?|thinking|reasoning|analysis|key beats|structure|constraints check)\s*:)/i;
   const responseStartRe = /(?:^|\n)\s*(?:#\s*(?:응답|response)(?:\s|$)|#{2,6}\s+|####?\s*Chatindex\s*:|⏱️?\s*\[?\d{4}-\d{2}-\d{2}|<img\s+cmd=)/i;
 
+  const LIBRARIAN_OOC_MODE_MARKER = '[LIBRARIAN_OOC_MODE:ACTIVE]';
+  const LIBRARIAN_OOC_TAG_RE = /^\s*(?:<(?:thinking|thoughts?|think)\b[^>]*>[\s\S]*?<\/(?:thinking|thoughts?|think)>\s*)*<ooc\b[^>]*>[\s\S]*<\/ooc>\s*$/i;
+  const isOocResponseContent = (value = '') => LIBRARIAN_OOC_TAG_RE.test(String(value ?? ''));
+  const extractLibrarianOocMessageText = (msg) => {
+    if (!msg) return '';
+    const raw = msg?.content ?? msg?.data ?? msg?.text ?? msg?.message ?? msg?.mes ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw.map(part => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')).join('\n');
+    }
+    return String(raw || '');
+  };
+  const parseLibrarianOocRequest = (messages = [], resolvedUserText = '') => {
+    const list = Array.isArray(messages) ? messages : [];
+    let active = false;
+    let fallbackUserText = '';
+    for (const msg of list) {
+      const body = extractLibrarianOocMessageText(msg);
+      if (!body) continue;
+      if (body.toUpperCase().includes(LIBRARIAN_OOC_MODE_MARKER)) active = true;
+      const role = String(msg?.role || (msg?.isUser ? 'user' : '') || '').trim().toLowerCase();
+      if (role === 'user' || role === 'human') fallbackUserText = body;
+    }
+    const rawUserText = String(resolvedUserText || fallbackUserText || '');
+    const emptyTargets = { libra: false, hayaku: false, flashback: false };
+    if (!active) {
+      return { active: false, triggered: false, targets: emptyTargets, queryText: rawUserText.trim(), rawUserText };
+    }
+    const targets = { libra: false, hayaku: false, flashback: false };
+    let rest = rawUserText.trim();
+    const tokenRe = /^@(기억|memory|전체|all|lib|리브라|libra|하야쿠|hayaku|플래시백|flashback|fb)(?=$|[\s,:：])[\s,:：]*/i;
+    let matchedAny = false;
+    while (rest) {
+      const m = tokenRe.exec(rest);
+      if (!m) break;
+      matchedAny = true;
+      const token = m[1].toLowerCase();
+      if (token === '기억' || token === 'memory' || token === '전체' || token === 'all' || token === 'lib') {
+        targets.libra = true;
+        targets.hayaku = true;
+        targets.flashback = true;
+      } else if (token === '리브라' || token === 'libra') {
+        targets.libra = true;
+      } else if (token === '하야쿠' || token === 'hayaku') {
+        targets.hayaku = true;
+      } else if (token === '플래시백' || token === 'flashback' || token === 'fb') {
+        targets.flashback = true;
+      }
+      rest = rest.slice(m[0].length).trim();
+    }
+    return { active: true, triggered: matchedAny, targets, queryText: rest, rawUserText };
+  };
+
   const stripHiddenReasoningBlocks = (value) => {
     let body = text(value || '').trim();
     if (!body) return '';
@@ -41101,6 +41154,7 @@ function createLibraReadonlySourceContext(owner) {
         .replace(/<lb-(?:stage|stage-marker|lazy)\b[^>]*\/?\s*>/gi, '')
         .replace(/<img\b[^>]*>[\s\S]*?<\/img>/gi, '')
         .replace(/<img\b[^>]*\/?\s*>/gi, '')
+        .replace(/<ooc\b[^>]*>[\s\S]*?<\/ooc>/gi, '')
         .replace(/\[LIBRA (?:장기기억|LONG-TERM MEMORY)[\s\S]*$/gi, '')
         .trim();
       return body;
@@ -52721,7 +52775,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -53075,7 +53129,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {
@@ -65089,15 +65143,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // Some older/forked hosts expose addRisuChatListener but call it with the old
         // payload shape. Do not co-register a second detector; reuse the proven
         // scope-bound chat scan as a one-event compatibility reconcile.
+        const isOocTurn = state.lastRequestScope?.ooc === true && (Date.now() - Number(state.lastRequestScope?.at || 0)) <= TURN_BINDING_FRESHNESS_MS;
         const lastScope = asObject(state.lastRequestScope?.scope);
-        const compatibilityReconcile = state.settings?.autoAnalyze !== false && !!string(lastScope.scopeKey);
+        const compatibilityReconcile = !isOocTurn && state.settings?.autoAnalyze !== false && !!string(lastScope.scopeKey);
         if (compatibilityReconcile) scheduleScan({ delay: 140, reason: 'chat_output_payload_legacy_reconcile', args: 1, expectedScope: clone(lastScope) });
-        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, compatibilityReconcile, reason: 'message_index_missing', messageIndex };
+        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, compatibilityReconcile, reason: isOocTurn ? 'ooc_mode' : 'message_index_missing', messageIndex };
         return clone(state.lastOutputCapture);
       }
       const context = await outputEventContext(event);
       if (!context?.scope?.scopeKey) {
         state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, reason: 'output_context_unavailable', messageIndex };
+        return clone(state.lastOutputCapture);
+      }
+      const rawTargetRow = rawChatMessages(context.chat)[messageIndex];
+      const rawTargetBody = contentToText(rawTargetRow?.data ?? rawTargetRow?.content ?? rawTargetRow?.text ?? '');
+      if ((state.lastRequestScope?.ooc === true && (Date.now() - Number(state.lastRequestScope?.at || 0)) <= TURN_BINDING_FRESHNESS_MS)
+        || isOocResponseContent(rawTargetBody)) {
+        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, reason: 'ooc_mode', messageIndex, scopeKey: context.scope.scopeKey };
         return clone(state.lastOutputCapture);
       }
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
@@ -68568,6 +68630,46 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           1200 + RECALL_TIMEOUT_EXTENSION_MS
         );
         if (settings.enabled === false) return messages;
+        const resolvedOocUser = resolveCurrentTurnEvidence(messages)?.text || '';
+        const oocState = parseLibrarianOocRequest(messages, resolvedOocUser);
+        const oocActive = oocState.active === true;
+        if (oocActive && (!oocState.targets.libra || !oocState.queryText)) {
+          state.lastRequestScope = {
+            at: Date.now(),
+            requestType: normalizeRequestType(type) || 'missing',
+            scope: null,
+            ooc: true,
+            oocRecallTriggered: false,
+            pendingMicro: null
+          };
+          Runtime.lastInjection = '';
+          Runtime.lastMemoryRecall = null;
+          Runtime.lastMemoryRecallViewer = {
+            schema: 'libra.current_turn_recall_delivery.v1',
+            at: Date.now(),
+            scopeKey: '',
+            queryText: '',
+            selectedMemories: 0,
+            injectedMemories: 0,
+            blockChars: 0,
+            skipped: true,
+            skipReason: oocState.targets.libra ? 'ooc_empty_query' : 'ooc_mode_silent',
+            rows: []
+          };
+          Runtime.lastMemoryInjectionMeta = {
+            at: Date.now(),
+            requestType: normalizeRequestType(type) || 'missing',
+            scopeKey: '',
+            chars: 0,
+            selectedMemories: 0,
+            injectedMemories: 0,
+            injected: false,
+            skipped: true,
+            skipReason: oocState.targets.libra ? 'ooc_empty_query' : 'ooc_mode_silent'
+          };
+          scheduleGuiTraceRefresh();
+          return messages;
+        }
         // Historical source edits are inspected only by explicit actions.
         const context = await runRecallStep(
           guard,
@@ -68594,7 +68696,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           requestType: normalizeRequestType(type) || 'missing',
           scope: clone(context.scope),
           observedTurns: completedPairs.length,
-          pendingMicro: pendingUserText ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
+          ooc: oocActive,
+          oocRecallTriggered: oocActive && oocState.targets.libra === true,
+          pendingMicro: (!oocActive && pendingUserText) ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
             userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs),
             userMessageIdsHash: pendingUsers.every(row => row.identity.canonical)
               ? stateMemoryFingerprint(JSON.stringify(pendingUsers.map(row => row.identity.id))) : ''} : null
@@ -68608,7 +68712,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // Startup normally checks the marker in the background. If the host context or
         // Librarian System server was unavailable then, the first later model request gets one
         // scope-local retry before normal recall. No history is enumerated or backfilled.
-        if (settings.autoAnalyze !== false
+        if (!oocActive && settings.autoAnalyze !== false
           && !state.pendingBoundaryRecoveryCheckedScopes.has(string(context.scope?.scopeKey || ''))
           && completedPairs.length % BATCH_SIZE !== BATCH_SIZE - 1) {
           await runRecallStep(
@@ -68621,7 +68725,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         }
 
         // historical auto cold-start; it is a crash checkpoint for the request now in flight.
-        if (settings.autoAnalyze !== false && completedPairs.length % BATCH_SIZE === BATCH_SIZE - 1) {
+        if (!oocActive && settings.autoAnalyze !== false && completedPairs.length % BATCH_SIZE === BATCH_SIZE - 1) {
           await runRecallStep(
             guard,
             'before_pending_boundary_arm',
@@ -68652,21 +68756,23 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const bridgeMarker = nativeCopyBridgeMarkerState(context.chat, context.scope?.chatId);
         const copyHint = !!nativeCopyExplicitSourceChatId(context.chat) || bridgeMarker.valid || !!nativeCopyBranchSourceChatId(context.chat);
         const emptyManifest = !nativeCopyManifestHasData(requestManifest);
-        if (!nativeCacheFresh && emptyManifest && copyHint) {
+        if (!oocActive && !nativeCacheFresh && emptyManifest && copyHint) {
           const copyResult = await runRecallStep(guard, 'before_native_copy_rescue', () => ensureNativeChatCopyAdopted(context), 800 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: null, abortOnTimeout: false });
           if (copyResult?.ok === true && copyResult?.skipped !== true) {
             requestManifest = await runRecallStep(guard, 'before_manifest_after_copy', () => loadManifest(context.scope, completedPairs.length), 900 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: requestManifest, abortOnTimeout: false });
           }
-        } else if (!nativeCacheFresh) {
+        } else if (!oocActive && !nativeCacheFresh) {
           setTimeout(() => { void ensureNativeChatCopyAdopted(context).catch(error => warn('LIBRA deferred native-copy check failed', error)); }, 6000);
         }
 
         // Third-level recovery only schedules later 5-turn analysis. It has no bearing
         // on the current recall result, so keep it completely outside the send path.
-        setTimeout(() => {
-          void scheduleBeforeRequestRecovery({ context, settings, previousRequestScope, completedPairs })
-            .catch(error => warn('LIBRA deferred beforeRequest recovery scheduling failed', error));
-        }, 6000);
+        if (!oocActive) {
+          setTimeout(() => {
+            void scheduleBeforeRequestRecovery({ context, settings, previousRequestScope, completedPairs })
+              .catch(error => warn('LIBRA deferred beforeRequest recovery scheduling failed', error));
+          }, 6000);
+        }
 
         let responseView=await readUnifiedWorldlineView(context.scope,requestManifest,completedPairs);
         requestManifest=responseView.manifest;
@@ -68685,15 +68791,20 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // verified earlier turns; a later losing read cannot overwrite this state.
         state.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
         Runtime.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
-        messages = await applyLibraContextCutter(messages, {
-          context,
-          settings,
-          completedPairs: responseView.pairs,
-          requestManifest,
-          receiptSet: receiptView.receiptSet
-        });
-        let receiptSafeMessages = receiptDialogueMessages(receiptView.receiptSet, resolveCurrentTurnEvidence(messages).text);
-        queryBundle = buildQueryBundle(responseView.cutoffTurn==null?messages:[{role:'user',content:resolveCurrentTurnEvidence(messages).text||''}],
+        if (!oocActive) {
+          messages = await applyLibraContextCutter(messages, {
+            context,
+            settings,
+            completedPairs: responseView.pairs,
+            requestManifest,
+            receiptSet: receiptView.receiptSet
+          });
+        }
+        let receiptSafeMessages = receiptDialogueMessages(receiptView.receiptSet, oocActive ? oocState.queryText : resolveCurrentTurnEvidence(messages).text);
+        queryBundle = buildQueryBundle(
+          oocActive
+            ? [{ role: 'user', content: oocState.queryText }]
+            : (responseView.cutoffTurn==null?messages:[{role:'user',content:resolveCurrentTurnEvidence(messages).text||''}]),
           context, settings, receiptView.receiptSet.pairs, { receiptOnlyHistory: true });
         queryBundle.receiptReadSet = receiptView.receiptReadSet || null;
         queryBundle.currentCompletedTurn = Math.max(0,...receiptView.receiptSet.requestedTurns.map(Number));
@@ -68994,6 +69105,12 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         scheduled: false,
         blockedReason: ''
       };
+      if ((requestScopeFresh && state.lastRequestScope?.ooc === true) || isOocResponseContent(response)) {
+        state.lastAfterRequest.blockedReason = 'ooc_mode';
+        state.captureBackendHealthPending = null;
+        state.mainAfterRequestHealth = null;
+        return response;
+      }
       if(mainNarrativeType){
         const pendingMicro = expectedScope ? state.lastRequestScope?.pendingMicro : null;
         const cleanedResponse = pendingMicro ? cleanMessageText('assistant',{content:response}) : '';
@@ -99022,6 +99139,9 @@ advanced
             state.captureBackendObservedRuns += 1;
             state.captureBackendLastEventAt = Date.now();
             observeHookRuntime('output', 'legacy_script_output');
+            if (state.lastRequestScope?.ooc === true || isOocResponseContent(content)) {
+              return content;
+            }
             if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
               const lastScope = state.lastRequestScope;
               const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
