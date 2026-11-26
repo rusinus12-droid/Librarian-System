@@ -25,6 +25,7 @@ const {chromium}=require('playwright');const {lensFixture}=require('../fixtures/
   },seed);
   await page.addScriptTag({path:source});await page.waitForFunction(()=>!!window.__LIBRA__);await page.evaluate(()=>__LIBRA__.openSettingsGui());await page.locator('.app[data-response-family="libra"]').waitFor();
   await page.locator('[data-go="memory"]:visible').first().click();await page.locator('[data-memory-reader-kind="lens"]').click();
+  await page.locator('[data-lens-reader] [data-lens-view-mode="all"]').waitFor();await page.locator('[data-lens-reader] [data-lens-view-mode="all"]').click();await page.locator('[data-lens-reader] [data-lens-expand-all]').click();
   const group=page.locator('[data-lens-inherited-group]');await group.locator('.lens-item').waitFor();
   assert.match(await group.innerText(),/이전 대화에서 넘어온 기록/);assert.match(await group.innerText(),/이전 지침으로 생성/);
   assert.equal(await group.getByRole('button',{name:/항목 삭제/}).count(),0,'inherited items are read-only');

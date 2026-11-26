@@ -150,6 +150,9 @@ const checkReader = async (browser, data, width) => {
   try {
     const memories = data.truth.memories.filter(row => !row.inherited);
     await page.evaluate(() => { __approved.selectBookMemoryKind('lens'); __approved.bookNavigate('memory'); });
+    await page.waitForSelector('[data-lens-reader] [data-lens-view-mode="all"]');
+    await page.locator('[data-lens-reader] [data-lens-view-mode="all"]').click();
+    await page.locator('[data-lens-reader] [data-lens-expand-all]').click();
     await page.waitForSelector('[data-lens-reader] .lens-item');
     await page.waitForFunction(count => document.querySelectorAll('[data-lens-reader] .lens-item').length === count, memories.length).catch(() => {});
     const cards = await page.evaluate(() => [...document.querySelectorAll('[data-lens-reader] .lens-item')].map(card => ({
