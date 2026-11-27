@@ -81,6 +81,11 @@ class FakeElement {
     return this._innerHTML;
   }
 
+  contains(target) {
+    if (target === this) return true;
+    return this.children.some(child => child.contains(target));
+  }
+
   matches(selector) {
     if (selector === 'button') return this.tagName === 'BUTTON';
     if (selector === '.app.t-flashback') return ['app','t-flashback'].every(name=>this.className.split(/\s+/).includes(name));
@@ -171,15 +176,17 @@ const flushTimers = () => {
   for (const callback of pending) callback();
 };
 
+const portableBlock = between('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Flashback START', 'LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Flashback END');
+assert.equal(portableBlock.includes('startUiObserver'), false, 'Flashback portable backup no longer watches the full document');
+assert.equal(portableBlock.includes('MutationObserver'), false, 'Flashback portable backup uses explicit host mounting');
+
 const syncPortableUiStateSource = between('const syncPortableUiState = message => {', 'const setUiBusy = (busy, message = \'\') => {');
-const ensureUiSource = between('const ensureUi = () => {', 'const startUiObserver = () => {');
-const startObserverSource = between('const startUiObserver = () => {', 'const publicApi = Object.freeze({');
+const ensureUiSource = between('const ensureUi = hostOverride => {', '  const publicApi = Object.freeze({');
 const syncPortableUiStateFactory = new Function('runtime', 'document', 'config', 'Runtime', 'textValue', `${syncPortableUiStateSource}\nreturn syncPortableUiState;`);
 const ensureUiFactory = new Function('runtime', 'document', 'config', 'bindUi', 'syncPortableUiState', `${ensureUiSource}\nreturn ensureUi;`);
-const startObserverFactory = new Function('runtime', 'document', 'ensureUi', 'MutationObserver', 'setTimeout', 'clearTimeout', `${startObserverSource}\nreturn startUiObserver;`);
 
 const document = new FakeDocument();
-const runtime = { unloaded: false, observer: null, uiRoot: null, input: null, busy: false };
+const runtime = { unloaded: false, uiRoot: null, input: null, busy: false };
 const Runtime = { portableMemoryActiveOperationId: '', guiBusyDepth: 0, guiBusyLabel: '' };
 const config = {
   uiId: 'flashback-portable-memory-backup-controls',
@@ -195,11 +202,9 @@ const bindUi = root => {
 };
 const syncPortableUiState = syncPortableUiStateFactory(runtime, document, config, Runtime, value => String(value || ''));
 const ensureUi = ensureUiFactory(runtime, document, config, bindUi, syncPortableUiState);
-const startUiObserver = startObserverFactory(runtime, document, ensureUi, FakeMutationObserver, fakeSetTimeout, fakeClearTimeout);
 
-startUiObserver();
-assert.equal(document.getElementById(config.uiId), null, 'no floating control mounts before the maintenance host exists');
-assert.ok(runtime.observer, 'observer waits for the Flashback GUI mount');
+assert.equal(ensureUi(), null, 'no floating control mounts before the maintenance host exists');
+assert.equal(document.getElementById(config.uiId), null);
 
 const foreignGui = document.createElement('section');
 foreignGui.className = 'hayaku-viewer';
@@ -207,9 +212,8 @@ const foreignHost = document.createElement('div');
 foreignHost.setAttribute('data-portable-backup-host', 'hayaku_locator_continuity');
 foreignGui.appendChild(foreignHost);
 document.body.appendChild(foreignGui);
-FakeMutationObserver.latest.trigger();
-flushTimers();
-assert.equal(document.getElementById(config.uiId), null, 'Flashback controls ignore the HAYAKU portable-memory host');
+assert.equal(ensureUi(foreignHost), null, 'Flashback controls ignore the HAYAKU portable-memory host');
+assert.equal(document.getElementById(config.uiId), null, 'Flashback controls ignore foreign hosts');
 
 const mountMaintenanceGui = () => {
   const gui = document.createElement('section');
@@ -223,10 +227,8 @@ const mountMaintenanceGui = () => {
 };
 
 const first = mountMaintenanceGui();
-FakeMutationObserver.latest.trigger();
-flushTimers();
-const firstControls = document.getElementById(config.uiId);
-assert.ok(firstControls, 'observer mounts the portable controls after the GUI appears');
+const firstControls = ensureUi(first.host);
+assert.ok(firstControls, 'ensureUi mounts the portable controls into the GUI host');
 assert.equal(firstControls.parentNode, first.host, 'controls are nested in the maintenance card host');
 assert.equal(firstControls.className, 'stack stack--sm', 'controls use the adopted mockup layout classes');
 assert.equal(firstControls.style.cssText, '', 'dedicated controls do not use fixed body positioning');
@@ -240,9 +242,7 @@ Runtime.guiBusyDepth = 1;
 Runtime.guiBusyLabel = 'JSON 기억 복원';
 first.gui.remove();
 const second = mountMaintenanceGui();
-FakeMutationObserver.latest.trigger();
-flushTimers();
-const secondControls = document.getElementById(config.uiId);
+const secondControls = ensureUi(second.host);
 assert.ok(secondControls, 'controls remount after the GUI root is rebuilt');
 assert.notEqual(secondControls, firstControls);
 assert.equal(secondControls.parentNode, second.host);

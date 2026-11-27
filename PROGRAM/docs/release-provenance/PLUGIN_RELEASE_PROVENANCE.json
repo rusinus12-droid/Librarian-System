@@ -550,14 +550,14 @@
     "artifact": "Librarian-System-1.5.0-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "2.2.1",
-        "sha256": "e00d772f0e70d695c57190bd9dc4812aad59c4f46b3bcf289c47eb70debcd7e9",
-        "bytes": 4096622
+        "version": "2.2.2",
+        "sha256": "eace83a128aab6bce31586c500681ede8c805d82ed7f2a356aa3f5d8ca4f3774",
+        "bytes": 4101872
       },
       "hayaku": {
-        "version": "4.2.1",
-        "sha256": "cff84e790b7536117be4cf40c2a534884f29186595198ff63e1d5a3864e8b0b2",
-        "bytes": 4538544
+        "version": "4.2.2",
+        "sha256": "4e756a3985ac78de61164734b249f7d2b476418f6e95c06be8f2cfe85d0696be",
+        "bytes": 4541104
       },
       "libra": {
         "version": "3.2.1",

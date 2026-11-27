@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.2.1
+//@display-name HAYAKU · Locator Continuity v4.2.2
 //@api 3.0
-//@version 4.2.1
+//@version 4.2.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -815,7 +815,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.2.1';
+  const PLUGIN_VERSION = '4.2.2';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -61430,6 +61430,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           Memory.nativeRecovery.repairTimerDueAt = 0;
         }
       }
+      if (beforeSettings.enabled !== appliedSettings.enabled && typeof scheduleHayakuAttentionRefresh === 'function') {
+        scheduleHayakuAttentionRefresh('settings_saved', 120);
+      }
       pushOperationLog('settings:transaction_applied', { changed, readbackVerified: true }, 'success');
       return { ok: true, changed, readbackVerified: true, settings: applied };
     } catch (cause) {
@@ -63383,6 +63386,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (isPacketSub) {
       Memory.ledgerViewer.showPacketView?.(tab);
     }
+    if (active === 'recovery') {
+      try { globalThis.__HAYAKUPortableMemoryBackup?.mountUi?.(root.querySelector?.('[data-portable-backup-host="hayaku_locator_continuity"]')); } catch (_) {}
+    }
     root.querySelectorAll?.('.tabbar [data-go]')?.forEach(node => {
       const selected = node.getAttribute('data-go') === active;
       if (selected) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
@@ -64989,6 +64995,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }));
     showPacketView('list');
     bindLedgerViewerUi();
+    try { globalThis.__HAYAKUPortableMemoryBackup?.mountUi?.(root.querySelector?.('[data-portable-backup-host="hayaku_locator_continuity"]')); } catch (_) {}
     viewerSetTab(Memory.ledgerViewer.activeTab || 'overview');
     viewerRenderOverview();
     viewerRenderDebugExportText();
@@ -65269,6 +65276,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const HAYAKU_AUX_PROBE_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
   const HAYAKU_ATTENTION_REFRESH_DELAY_MS = 2500;
   const HAYAKU_ATTENTION_POLL_MS = 10000;
+  const HAYAKU_ATTENTION_IDLE_POLL_MS = 30000;
+  const HAYAKU_ATTENTION_IDLE_AFTER_QUIET_CHECKS = 3;
   const HAYAKU_PLACEMENT_WARNING_LABELS = Object.freeze({
     ambiguous_output_slot_use_verified_override: '프리셋에 출력 감싸기 태그가 여러 개라 패킷을 응답 끝에 둡니다.',
     requested_closing_tag_not_in_active_output_contract: '설정한 닫는 태그가 현재 프리셋에 없어 자동 위치를 씁니다.',
@@ -65278,6 +65287,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const hayakuPlacementWarningLabel = code => HAYAKU_PLACEMENT_WARNING_LABELS[text(code)] || text(code);
   const HayakuAttention = {
     started: false, refreshTimer: null, pollTimer: null, evaluating: false, dirty: false,
+    quietChecks: 0, hiddenSkips: 0, visibilityHandler: null,
     lastIndexes: '', buttonSignature: '', state: null, lastOtherAxSuccessAt: 0,
     dismissedPlacement: new Set(), inspectedKey: '', inspected: null
   };
@@ -65409,8 +65419,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       HayakuAttention.evaluating = false;
     }
   };
+  const hayakuAttentionPageHidden = () => {
+    try { return typeof document !== 'undefined' && document.visibilityState === 'hidden'; } catch (_) { return false; }
+  };
   function scheduleHayakuAttentionRefresh(reason = '', delay = HAYAKU_ATTENTION_REFRESH_DELAY_MS) {
     if (!HayakuAttention.started || Memory.unloaded) return false;
+    HayakuAttention.quietChecks = 0;
     if (HayakuAttention.refreshTimer) clearTimeout(HayakuAttention.refreshTimer);
     HayakuAttention.refreshTimer = setTimeout(() => { HayakuAttention.refreshTimer = null; void refreshHayakuAttention(); }, Math.max(0, Number(delay) || 0));
     HayakuAttention.refreshTimer?.unref?.();
@@ -65420,21 +65434,61 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const pollHayakuAttention = async () => {
     HayakuAttention.pollTimer = null;
     if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return;
-    try {
-      const indexApi = apiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function');
-      if (indexApi) {
-        const indexes = `${await indexApi.getCurrentCharacterIndex()}:${await indexApi.getCurrentChatIndex()}`;
-        if (indexes !== HayakuAttention.lastIndexes) {
-          HayakuAttention.lastIndexes = indexes;
-          scheduleHayakuAttentionRefresh('chat_switch', 500);
-        }
+    if (hayakuAttentionPageHidden()) {
+      HayakuAttention.hiddenSkips += 1;
+      HayakuAttention.quietChecks = 0;
+      if (!HayakuAttention.visibilityHandler && !Memory.unloaded) {
+        HayakuAttention.pollTimer = setTimeout(() => void pollHayakuAttention(), HAYAKU_ATTENTION_IDLE_POLL_MS);
+        HayakuAttention.pollTimer?.unref?.();
       }
-    } catch (_) {}
-    if (!Memory.unloaded) { HayakuAttention.pollTimer = setTimeout(() => void pollHayakuAttention(), HAYAKU_ATTENTION_POLL_MS); HayakuAttention.pollTimer?.unref?.(); }
+      return;
+    }
+    const disabled = Memory.settings?.enabled === false;
+    if (disabled) {
+      HayakuAttention.lastIndexes = '';
+      HayakuAttention.quietChecks = 0;
+    } else {
+      try {
+        const indexApi = apiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function');
+        if (indexApi) {
+          const indexes = `${await indexApi.getCurrentCharacterIndex()}:${await indexApi.getCurrentChatIndex()}`;
+          if (indexes !== HayakuAttention.lastIndexes) {
+            HayakuAttention.lastIndexes = indexes;
+            HayakuAttention.quietChecks = 0;
+            scheduleHayakuAttentionRefresh('chat_switch', 500);
+          } else {
+            HayakuAttention.quietChecks += 1;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!Memory.unloaded) {
+      const delayMs = disabled || HayakuAttention.quietChecks >= HAYAKU_ATTENTION_IDLE_AFTER_QUIET_CHECKS
+        ? HAYAKU_ATTENTION_IDLE_POLL_MS
+        : HAYAKU_ATTENTION_POLL_MS;
+      HayakuAttention.pollTimer = setTimeout(() => void pollHayakuAttention(), delayMs);
+      HayakuAttention.pollTimer?.unref?.();
+    }
   };
   const startHayakuAttention = () => {
     if (HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return false;
     HayakuAttention.started = true;
+    HayakuAttention.quietChecks = 0;
+    if (!HayakuAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.addEventListener === 'function') {
+      HayakuAttention.visibilityHandler = () => {
+        if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return;
+        if (hayakuAttentionPageHidden()) {
+          if (HayakuAttention.pollTimer) {
+            try { clearTimeout(HayakuAttention.pollTimer); } catch (_) {}
+            HayakuAttention.pollTimer = null;
+          }
+          return;
+        }
+        HayakuAttention.quietChecks = 0;
+        void pollHayakuAttention();
+      };
+      try { document.addEventListener('visibilitychange', HayakuAttention.visibilityHandler); } catch (_) {}
+    }
     void pollHayakuAttention();
     return true;
   };
@@ -65442,6 +65496,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for (const key of ['refreshTimer', 'pollTimer']) {
       if (HayakuAttention[key]) { try { clearTimeout(HayakuAttention[key]); } catch (_) {} HayakuAttention[key] = null; }
     }
+    if (HayakuAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.removeEventListener === 'function') {
+      try { document.removeEventListener('visibilitychange', HayakuAttention.visibilityHandler); } catch (_) {}
+    }
+    HayakuAttention.visibilityHandler = null;
+    HayakuAttention.quietChecks = 0;
+    HayakuAttention.hiddenSkips = 0;
     HayakuAttention.started = false;
     if (HayakuAttention.buttonSignature) {
       const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
@@ -69354,9 +69414,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (file) void doRestoreFile(file);
       };
     };
-    const ensureUi = () => {
-      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector) return;
-      const dedicatedHost = document.querySelector('[data-portable-backup-host="hayaku_locator_continuity"]');
+    const ensureUi = hostOverride => {
+      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector) return null;
+      const dedicatedHost = hostOverride?.getAttribute?.('data-portable-backup-host') === config.pluginId
+        ? hostOverride
+        : document.querySelector('[data-portable-backup-host="hayaku_locator_continuity"]');
       const existing = document.getElementById(config.uiId);
       if (!dedicatedHost) {
         if (existing?.getAttribute?.('data-memory-suite-portable-backup') === config.pluginId) {
@@ -69364,9 +69426,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
           runtime.uiRoot = null;
           runtime.input = null;
         }
-        return;
+        return null;
       }
-      if (existing && dedicatedHost.contains(existing)) return;
+      if (existing && dedicatedHost.contains(existing)) {
+        runtime.uiRoot = existing;
+        runtime.input = existing.querySelector('input[type=file]');
+        return existing;
+      }
       if (existing) {
         try { existing.remove(); } catch (_) {}
       }
@@ -69386,17 +69452,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       runtime.uiRoot = root;
       runtime.input = root.querySelector('input[type=file]');
       bindUi(root);
-    };
-    const startUiObserver = () => {
-      if (typeof document === 'undefined' || !document?.documentElement) return;
-      ensureUi();
-      if (typeof MutationObserver === 'undefined' || runtime.observer) return;
-      let timer = null;
-      runtime.observer = new MutationObserver(() => {
-        if (timer != null) clearTimeout(timer);
-        timer = setTimeout(() => { timer = null; ensureUi(); }, 80);
-      });
-      runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      return root;
     };
     const publicApi = Object.freeze({
       schema: Hayaku_PORTABLE_BACKUP_SCHEMA,
@@ -69427,6 +69483,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       storageTarget: portableStorageTargetText,
       importModes: Hayaku_PORTABLE_IMPORT_MODES,
       restoreFile: doRestoreFile,
+      mountUi: ensureUi,
       status: () => cloneJson({
         lastExport: runtime.lastExport,
         lastRestore: runtime.lastRestore,
@@ -69435,7 +69492,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       })
     });
     try { globalThis[config.globalApiKey] = publicApi; } catch (_) {}
-    startUiObserver();
+    ensureUi();
     const unloadApi = findHost(['onUnload']);
     if (typeof unloadApi?.onUnload === 'function' && !runtime.cleanupRegistered) {
       runtime.cleanupRegistered = true;
@@ -69443,8 +69500,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await unloadApi.onUnload(async () => {
           runtime.unloaded = true;
           closePortableJob();
-          try { runtime.observer?.disconnect?.(); } catch (_) {}
-          runtime.observer = null;
           try { document.getElementById(config.uiId)?.remove?.(); } catch (_) {}
           try {
             if (globalThis[config.globalApiKey] === publicApi) delete globalThis[config.globalApiKey];

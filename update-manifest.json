@@ -18,8 +18,8 @@
   "components": {
     "backend": "1.5.0",
     "libra": "3.2.1",
-    "hayaku": "4.2.1",
-    "flashback": "2.2.1",
+    "hayaku": "4.2.2",
+    "flashback": "2.2.2",
     "lia": "0.32.0",
     "retrace": "2.2.0",
     "gradia": "1.3.0",

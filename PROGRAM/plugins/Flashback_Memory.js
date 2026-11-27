@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name FLASHBACK Memory v2.2.1
+//@display-name FLASHBACK Memory v2.2.2
 //@api 3.0
-//@version 2.2.1
+//@version 2.2.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc libra
@@ -1340,7 +1340,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = 'FLASHBACK Memory';
-const PLUGIN_VERSION = '2.2.1';
+const PLUGIN_VERSION = '2.2.2';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1823,11 +1823,11 @@ const PLUGIN_VERSION = '2.2.1';
   const NATIVE_COPY_OBSERVER_POLL_MS = 1800;
   // The observer runs for the plugin's whole life, so its steady cost matters most on phones.
   // After a quiet stretch it checks less often; any change brings the short interval back.
-  const NATIVE_COPY_OBSERVER_IDLE_POLL_MS = 5400;
-  const NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS = 10;
+  const NATIVE_COPY_OBSERVER_IDLE_POLL_MS = 30000;
+  const NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS = 3;
   // How long a character id read for one character index is reused before it is read again.
-  const NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS = 30000;
-  const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([900, 3200]);
+  const NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS = 300000;
+  const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([2500]);
 
 
   // 캐시 안전화(v0.8.8) — 응답 모델 프롬프트 prefix 캐시 보호 + 임베딩 로컬 캐시.
@@ -1991,6 +1991,7 @@ const PLUGIN_VERSION = '2.2.1';
       changes: 0,
       quietChecks: 0,
       hiddenSkips: 0,
+      visibilityHandler: null,
       characterId: null,
       adoptions: 0,
       lastReason: '',
@@ -27509,9 +27510,13 @@ const MemorySuiteSnapshotCache = (() => {
     }
   };
 
-  const scheduleNativeCopyObserverFollowups = reason => {
+  const scheduleNativeCopyObserverFollowups = (reason, expectedIdentity = '') => {
     for (const delayMs of NATIVE_COPY_OBSERVER_FOLLOWUP_MS) {
       scheduleTimer(() => {
+        const observer = Runtime.nativeCopyObserver;
+        if (Runtime.unloaded || !observer.running) return;
+        if (Runtime.settings && !flashbackAttentionEnabled(Runtime.settings)) return;
+        if (expectedIdentity && observer.lastIdentity !== expectedIdentity) return;
         runNativeCopyObserverAdoptionProbe(`${reason}_followup_${delayMs}`).catch(error => warn('native copy follow-up probe failed', error));
       }, delayMs);
     }
@@ -27532,10 +27537,16 @@ const MemorySuiteSnapshotCache = (() => {
     const observer=Runtime.nativeCopyObserver;if(observer.running||Runtime.unloaded)return false;observer.running=true;
     const poll=async()=>{
       if(Runtime.unloaded||!observer.running)return;
+      if(Runtime.settings&&!flashbackAttentionEnabled(Runtime.settings)){
+        observer.quietChecks=0;
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_IDLE_POLL_MS);
+        return;
+      }
       if(nativeCopyObserverPageHidden()){
-        // No host read while hidden; the next visible poll runs at the short interval.
+        // No host read while hidden; back off to the idle interval after the initial skip.
         observer.hiddenSkips++;observer.quietChecks=0;
-        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_POLL_MS);return;
+        const hiddenDelay=observer.hiddenSkips<=1?NATIVE_COPY_OBSERVER_POLL_MS:NATIVE_COPY_OBSERVER_IDLE_POLL_MS;
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},hiddenDelay);return;
       }
       observer.checks++;
       try{
@@ -27544,12 +27555,26 @@ const MemorySuiteSnapshotCache = (() => {
         if(!identity&&observer.lastIdentity){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
         if(identity&&identity!==observer.lastIdentity&&!observer.inFlight){
           const first=!observer.lastIdentity;observer.lastIdentity=identity;observer.changes++;
-          await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');scheduleNativeCopyObserverFollowups(first?'observer_initial_scope':'observer_scope_changed');
+          const probeResult=await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');
+          const hasStored=Number(probeResult?.manifest?.count||0)>0||Number(probeResult?.manifest?.shardCount||0)>0||probeResult?.manifest?.copyAdoptedComplete===true;
+          const hasChatMessages=Number(probeResult?.scope?.chatMessageCount||0)>0;
+          if(probeResult?.adopted!==true&&probeResult?.fastPath!==true&&!hasStored&&hasChatMessages){
+            scheduleNativeCopyObserverFollowups(first?'observer_initial_scope':'observer_scope_changed',identity);
+          }
         }else if(identity)await refreshNativeCopyObserverSources();
       }catch(error){observer.lastError=formatErrorMessage(error,500);warn('native copy observer poll failed',error);}
       finally{if(!Runtime.unloaded&&observer.running)observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},
         observer.quietChecks>=NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS?NATIVE_COPY_OBSERVER_IDLE_POLL_MS:NATIVE_COPY_OBSERVER_POLL_MS);}
     };
+    if(!observer.visibilityHandler&&typeof document!=='undefined'&&typeof document?.addEventListener==='function'){
+      observer.visibilityHandler=()=>{
+        if(Runtime.unloaded||!observer.running||nativeCopyObserverPageHidden()||observer.inFlight)return;
+        observer.quietChecks=0;
+        if(observer.timer){try{clearTimeout(observer.timer);}catch(_){}observer.timer=null;}
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer resume failed',error));},250);
+      };
+      try{document.addEventListener('visibilitychange',observer.visibilityHandler);}catch(_){}
+    }
     observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer startup failed',error));},250);return true;
   };
 
@@ -55630,6 +55655,7 @@ ${cleanedText}`, 80),
     guiMounted = true;
     Runtime.guiPerf.fullMounts += 1;
     bindUiEvents(root);
+    try { globalThis.__FlashbackPortableMemoryBackup?.mountUi?.(root.querySelector?.('[data-portable-backup-host="flashback_memory"]')); } catch (_) {}
     restoreGuiViewState(root, viewState);
     applyBusyState();
     return true;
@@ -56180,6 +56206,7 @@ ${cleanedText}`, 80),
     getGuiNode('overviewBackupBtn')?.addEventListener('click', () => {
       setActiveGuiTab('restore');
       const host = root.querySelector?.('[data-portable-backup-host="flashback_memory"]');
+      try { globalThis.__FlashbackPortableMemoryBackup?.mountUi?.(host); } catch (_) {}
       const target = host?.querySelector?.('button') || host;
       target?.setAttribute?.('tabindex', target?.getAttribute?.('tabindex') || '-1');
       target?.focus?.();
@@ -57134,6 +57161,8 @@ ${cleanedText}`, 80),
     return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}" data-memory-owner="flashback"><title>${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#7c3aed" stroke="#ddd6fe"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">F</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
   };
   const FLASHBACK_ATTENTION_POLL_MS = 10000;
+  const FLASHBACK_ATTENTION_IDLE_POLL_MS = 30000;
+  const FLASHBACK_ATTENTION_IDLE_AFTER_QUIET_CHECKS = 3;
   const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
   const flashbackAttentionEnabled = (settings = Runtime.settings) => settings?.mode !== 'off'
     && settings?.mode !== 'disabled' && settings?.enabled !== false;
@@ -57145,6 +57174,9 @@ ${cleanedText}`, 80),
     refreshTimer: null,
     pollTimer: null,
     evaluating: false,
+    quietChecks: 0,
+    hiddenSkips: 0,
+    visibilityHandler: null,
     lastIndexes: '',
     lastRevision: '',
     revisionTracker: null,
@@ -57477,6 +57509,7 @@ ${cleanedText}`, 80),
   };
   function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
     if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.quietChecks = 0;
     const generation = FlashbackAttention.generation;
     if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
     FlashbackAttention.refreshTimer = setTimeout(() => {
@@ -57487,19 +57520,44 @@ ${cleanedText}`, 80),
     FlashbackAttention.refreshTimer?.unref?.();
     return true;
   }
+  const loadFlashbackAttentionChat = async () => {
+    const api = getLiveApi(['getChatFromIndex']) || getLiveApi();
+    const chatAlone = ['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']
+      .every(name => typeof api?.[name] === 'function');
+    if (chatAlone) {
+      const chatInfo = await loadCurrentChat(null, { preferDirect: true });
+      return { chatInfo, chat: chatInfo.chat };
+    }
+    return await loadRisuCaptureSnapshot();
+  };
   const pollFlashbackAttention = async () => {
     if (!FlashbackAttention.started || Runtime.unloaded) return;
     if (FlashbackAttention.pollFlight) return;
     if (FlashbackAttention.pollTimer) clearTimeout(FlashbackAttention.pollTimer);
     FlashbackAttention.pollTimer = null;
+    if (nativeCopyObserverPageHidden()) {
+      FlashbackAttention.hiddenSkips += 1;
+      FlashbackAttention.quietChecks = 0;
+      if (!FlashbackAttention.visibilityHandler && !Runtime.unloaded) {
+        const generation = FlashbackAttention.generation;
+        FlashbackAttention.pollTimer = setTimeout(() => {
+          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+        }, FLASHBACK_ATTENTION_IDLE_POLL_MS);
+        FlashbackAttention.pollTimer?.unref?.();
+      }
+      return;
+    }
     const generation = FlashbackAttention.generation, flight = { generation };
     FlashbackAttention.pollFlight = flight;
     const current = () => FlashbackAttention.started && !Runtime.unloaded
       && generation === FlashbackAttention.generation && FlashbackAttention.pollFlight === flight;
     try {
       const settings = await loadSettings(false);
-      if (!current() || !flashbackAttentionEnabled(settings)) return;
-      const snapshot = await loadRisuCaptureSnapshot();
+      if (!current() || !flashbackAttentionEnabled(settings)) {
+        FlashbackAttention.quietChecks = 0;
+        return;
+      }
+      const snapshot = await loadFlashbackAttentionChat();
       if (!current() || !flashbackAttentionEnabled()) return;
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
       const live = await flashbackAttentionRevision(snapshot?.chat || null, () => current() && flashbackAttentionEnabled());
@@ -57510,29 +57568,56 @@ ${cleanedText}`, 80),
       FlashbackAttention.lastIndexes = indexes;
       FlashbackAttention.lastRevision = revision;
       if (indexChanged || revisionChanged) {
+        FlashbackAttention.quietChecks = 0;
         scheduleFlashbackAttentionRefresh(indexChanged ? 'chat_switch' : 'chat_source_changed', 500);
+      } else {
+        FlashbackAttention.quietChecks += 1;
       }
     } catch (_) {}
     finally {
       const rearm = current();
       if (FlashbackAttention.pollFlight === flight) FlashbackAttention.pollFlight = null;
       if (rearm) {
-        if (!flashbackAttentionEnabled()) {
+        const disabled = !flashbackAttentionEnabled();
+        if (disabled) {
           FlashbackAttention.revisionTracker = null;
           FlashbackAttention.lastIndexes = '';
           FlashbackAttention.lastRevision = '';
+          FlashbackAttention.quietChecks = 0;
         }
-        FlashbackAttention.pollTimer = setTimeout(() => {
-          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
-        }, FLASHBACK_ATTENTION_POLL_MS);
-        FlashbackAttention.pollTimer?.unref?.();
+        const hidden = nativeCopyObserverPageHidden();
+        if (!hidden || !FlashbackAttention.visibilityHandler) {
+          const delayMs = disabled || hidden || FlashbackAttention.quietChecks >= FLASHBACK_ATTENTION_IDLE_AFTER_QUIET_CHECKS
+            ? FLASHBACK_ATTENTION_IDLE_POLL_MS
+            : FLASHBACK_ATTENTION_POLL_MS;
+          FlashbackAttention.pollTimer = setTimeout(() => {
+            if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+          }, delayMs);
+          FlashbackAttention.pollTimer?.unref?.();
+        }
       }
     }
   };
   const startFlashbackAttention = () => {
     if (FlashbackAttention.started || Runtime.unloaded) return false;
-    FlashbackAttention.generation += 1;
+    const generation = ++FlashbackAttention.generation;
     FlashbackAttention.started = true;
+    FlashbackAttention.quietChecks = 0;
+    if (!FlashbackAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.addEventListener === 'function') {
+      FlashbackAttention.visibilityHandler = () => {
+        if (!FlashbackAttention.started || Runtime.unloaded || generation !== FlashbackAttention.generation) return;
+        if (nativeCopyObserverPageHidden()) {
+          if (FlashbackAttention.pollTimer) {
+            try { clearTimeout(FlashbackAttention.pollTimer); } catch (_) {}
+            FlashbackAttention.pollTimer = null;
+          }
+          return;
+        }
+        FlashbackAttention.quietChecks = 0;
+        void pollFlashbackAttention();
+      };
+      try { document.addEventListener('visibilitychange', FlashbackAttention.visibilityHandler); } catch (_) {}
+    }
     void pollFlashbackAttention();
     scheduleFlashbackAttentionRefresh('start', 800);
     return true;
@@ -57543,6 +57628,12 @@ ${cleanedText}`, 80),
     FlashbackAttention.pollFlight = null;
     FlashbackAttention.evaluationFlight = null;
     FlashbackAttention.evaluating = false;
+    FlashbackAttention.quietChecks = 0;
+    FlashbackAttention.hiddenSkips = 0;
+    if (FlashbackAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.removeEventListener === 'function') {
+      try { document.removeEventListener('visibilitychange', FlashbackAttention.visibilityHandler); } catch (_) {}
+    }
+    FlashbackAttention.visibilityHandler = null;
     for (const key of ['refreshTimer', 'pollTimer']) {
       if (FlashbackAttention[key]) {
         try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
@@ -58812,6 +58903,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         abortEmbeddingJobs('plugin_unloaded');
         Runtime.nativeCopyObserver.running = false;
         Runtime.nativeCopyObserver.timer = null;
+        if (Runtime.nativeCopyObserver.visibilityHandler && typeof document !== 'undefined' && typeof document?.removeEventListener === 'function') {
+          try { document.removeEventListener('visibilitychange', Runtime.nativeCopyObserver.visibilityHandler); } catch (_) {}
+        }
+        Runtime.nativeCopyObserver.visibilityHandler = null;
         clearScheduledTimers();
         Runtime.driftChecksInFlight.clear();
         Runtime.driftDismissed.clear();
@@ -61320,11 +61415,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (file) void doRestoreFile(file);
       };
     };
-    const ensureUi = () => {
-      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector || document.getElementById(config.uiId)) return;
+    const ensureUi = hostOverride => {
+      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector) return null;
       const ownerRoot = document.querySelector(`[data-flashback-memory="${config.pluginId}"]`);
-      const dedicatedHost = ownerRoot?.querySelector?.(`[data-portable-backup-host="${config.pluginId}"]`) || null;
-      if (!ownerRoot || !dedicatedHost) return;
+      const dedicatedHost = hostOverride?.getAttribute?.('data-portable-backup-host') === config.pluginId
+        ? hostOverride
+        : (ownerRoot?.querySelector?.(`[data-portable-backup-host="${config.pluginId}"]`) || null);
+      if (!ownerRoot || !dedicatedHost || (typeof ownerRoot.contains === 'function' && !ownerRoot.contains(dedicatedHost))) return null;
+      const mounted = document.getElementById(config.uiId);
+      if (mounted?.parentNode === dedicatedHost) {
+        runtime.uiRoot = mounted;
+        runtime.input = mounted.querySelector('input[type=file]');
+        syncPortableUiState();
+        return mounted;
+      }
+      mounted?.remove?.();
       const anchor = dedicatedHost;
       const root = document.createElement('div');
       root.id = config.uiId;
@@ -61342,17 +61447,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       runtime.input = root.querySelector('input[type=file]');
       bindUi(root);
       syncPortableUiState();
-    };
-    const startUiObserver = () => {
-      if (typeof document === 'undefined' || !document?.documentElement) return;
-      ensureUi();
-      if (typeof MutationObserver === 'undefined' || runtime.observer) return;
-      let timer = null;
-      runtime.observer = new MutationObserver(() => {
-        if (timer != null) clearTimeout(timer);
-        timer = setTimeout(() => { timer = null; ensureUi(); }, 80);
-      });
-      runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      return root;
     };
   const publicApi = Object.freeze({
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
@@ -61379,6 +61474,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       rebindToUpdatedBot: async envelope => await publicApi.restoreCurrentScope(envelope, { mode: Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT }),
       storageTarget: portableStorageTargetText,
       restoreFile: doRestoreFile,
+      mountUi: ensureUi,
+      syncUi: syncPortableUiState,
       status: () => cloneJson({
         lastExport: runtime.lastExport,
         lastRestore: runtime.lastRestore,
@@ -61388,15 +61485,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       })
     });
     try { globalThis[config.globalApiKey] = publicApi; } catch (_) {}
-    startUiObserver();
+    ensureUi();
     const unloadApi = findHost(['onUnload']);
     if (typeof unloadApi?.onUnload === 'function' && !runtime.cleanupRegistered) {
       runtime.cleanupRegistered = true;
       try {
         await unloadApi.onUnload(async () => {
           runtime.unloaded = true;
-          try { runtime.observer?.disconnect?.(); } catch (_) {}
-          runtime.observer = null;
           try { document.getElementById(config.uiId)?.remove?.(); } catch (_) {}
           try {
             if (globalThis[config.globalApiKey] === publicApi) delete globalThis[config.globalApiKey];
