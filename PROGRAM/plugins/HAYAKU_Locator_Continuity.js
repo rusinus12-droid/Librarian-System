@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.2.0
+//@display-name HAYAKU · Locator Continuity v4.2.1
 //@api 3.0
-//@version 4.2.0
+//@version 4.2.1
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -815,7 +815,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.2.0';
+  const PLUGIN_VERSION = '4.2.1';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -64813,10 +64813,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
 #${LEDGER_VIEWER_ROOT_ID} .rec>div{min-width:0}
 #${LEDGER_VIEWER_ROOT_ID} .rec time{min-width:0;overflow-wrap:anywhere}
 /* Local HAYAKU header fit: collapse auxiliary chips cleanly on narrow screens so menu and close remain inside .topbar and clickable. */
-@container app (max-width:560px){#${LEDGER_VIEWER_ROOT_ID} .topbar .grow{display:none}#${LEDGER_VIEWER_ROOT_ID} .topbar .brand{margin-right:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-portable-job-chip{max-width:76px;padding:4px 6px;font-size:11px}#${LEDGER_VIEWER_ROOT_ID} .page-head__copy{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .tabs{max-width:100%;overflow-x:auto;scrollbar-width:none}}
+@container app (max-width:560px){#${LEDGER_VIEWER_ROOT_ID} .topbar .grow{display:none}#${LEDGER_VIEWER_ROOT_ID} .topbar .brand{margin-right:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-portable-job-chip{max-width:76px;padding:4px 6px;font-size:11px}#${LEDGER_VIEWER_ROOT_ID} .tabs{max-width:100%;overflow-x:auto;scrollbar-width:none}}
 @container app (max-width:440px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 8px;gap:4px}#${LEDGER_VIEWER_ROOT_ID} .brand{flex:0 1 auto;min-width:0;gap:6px}#${LEDGER_VIEWER_ROOT_ID} .brand__mark{width:32px;height:32px}#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{font-size:15px;letter-spacing:.05em;white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip{width:36px;min-width:36px;min-height:36px;height:36px;padding:0;justify-content:center}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .topbar .btn--icon{width:36px;min-width:36px;min-height:36px;height:36px;padding:0}#${LEDGER_VIEWER_ROOT_ID} .menu__panel{max-width:calc(100vw - 16px)}}
 @container app (max-width:350px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 6px;gap:3px}#${LEDGER_VIEWER_ROOT_ID} .brand{gap:5px}#${LEDGER_VIEWER_ROOT_ID} .brand__mark{width:28px;height:28px}#${LEDGER_VIEWER_ROOT_ID} .brand__name{font-size:13.5px;letter-spacing:.03em}#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip,#${LEDGER_VIEWER_ROOT_ID} .topbar .btn--icon{width:32px;min-width:32px;min-height:34px;height:34px}}
 @container app (max-width:300px){#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
+/* Mobile layout: stack page headers, keep touch targets ≥40px, and keep inputs at 16px so mobile browsers do not zoom on focus. */
+@container app (max-width:640px){#${LEDGER_VIEWER_ROOT_ID} .page-body{padding:16px 14px 22px}#${LEDGER_VIEWER_ROOT_ID} .page-head{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}#${LEDGER_VIEWER_ROOT_ID} .page-head__copy{flex:0 0 auto;width:100%;min-width:0}#${LEDGER_VIEWER_ROOT_ID} .page-desc{max-width:none}#${LEDGER_VIEWER_ROOT_ID} .page-actions{width:100%;flex-wrap:wrap}#${LEDGER_VIEWER_ROOT_ID} .page-actions>.btn{flex:1 1 140px}#${LEDGER_VIEWER_ROOT_ID} .page-actions>.btn:only-child{flex:0 1 auto;margin-left:auto}#${LEDGER_VIEWER_ROOT_ID} .page-actions>.seg{display:flex;flex:1 1 100%;overflow-x:auto;scrollbar-width:none}#${LEDGER_VIEWER_ROOT_ID} .seg button{flex:1 0 auto;min-height:40px}#${LEDGER_VIEWER_ROOT_ID} .btn{white-space:normal;text-align:center}#${LEDGER_VIEWER_ROOT_ID} .linkbtn{min-height:36px;padding:6px 8px}#${LEDGER_VIEWER_ROOT_ID} .tabs{margin-bottom:14px;scroll-snap-type:x proximity}#${LEDGER_VIEWER_ROOT_ID} .tabs>*{flex:0 0 auto;scroll-snap-align:start}#${LEDGER_VIEWER_ROOT_ID} input:not([type=checkbox]):not([type=radio]):not([type=range]),#${LEDGER_VIEWER_ROOT_ID} select,#${LEDGER_VIEWER_ROOT_ID} textarea{font-size:16px}#${LEDGER_VIEWER_ROOT_ID} .savebar{gap:8px 12px;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}#${LEDGER_VIEWER_ROOT_ID} .savebar__copy{flex:1 1 100%;min-width:0}#${LEDGER_VIEWER_ROOT_ID} .savebar__copy b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#${LEDGER_VIEWER_ROOT_ID} .savebar__copy span{display:none}#${LEDGER_VIEWER_ROOT_ID} .savebar .cluster{width:100%}#${LEDGER_VIEWER_ROOT_ID} .st-nav{scroll-snap-type:x proximity;scrollbar-width:none}#${LEDGER_VIEWER_ROOT_ID} .st-nav button{scroll-snap-align:start;min-height:40px}}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin{display:inline-flex;align-items:center;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;line-height:16px;vertical-align:1px;border:1px solid transparent;white-space:nowrap}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="canonical"]{background:#e3f1ea;color:#145a3c;border-color:#bcdccb}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="auto"]{background:#e6eefb;color:#1d4a8f;border-color:#c3d4f1}
