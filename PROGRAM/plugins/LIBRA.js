@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.2.0
+//@display-name LIBRA v3.2.1
 //@api 3.0
-//@version 3.2.0
+//@version 3.2.1
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1307,7 +1307,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.2.0';
+  const PLUGIN_VERSION = '3.2.1';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -83114,6 +83114,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .recall-tag--micro{background:#e6e3ee;border-color:#b9b1cf;color:#43386b}.t-libra .recall-mix__part.recall-tag--micro,.t-libra .recall-dot.recall-tag--micro{background:#6a5c9c}',
     '.t-libra .recall-tag--other{background:var(--surface3);border-color:var(--border2);color:var(--text2)}.t-libra .recall-mix__part.recall-tag--other,.t-libra .recall-dot.recall-tag--other{background:var(--text3)}',
     '@container app (max-width:640px){.t-libra .recall-line{grid-template-columns:minmax(0,1fr);gap:4px}.t-libra .recall-list{max-height:340px}}',
+    // Phones: 16px fields so mobile browsers do not zoom on focus, and touch-sized small controls.
+    '@container app (max-width:640px){#sga-rp-gui-root .app input:not([type=checkbox]):not([type=radio]):not([type=range]),#sga-rp-gui-root .app select,#sga-rp-gui-root .app textarea{font-size:16px}#sga-rp-gui-root .app .linkbtn{display:inline-flex;align-items:center;min-height:36px}#sga-rp-gui-root .app .seg button{min-height:40px}#sga-rp-gui-root .app .lore-filter-pill{height:36px}#sga-rp-gui-root .app .chip.wchip{min-height:36px}#sga-rp-gui-root .app .note>button{min-height:36px}}',
     '.t-libra .recall-note__final{display:grid;gap:6px}.t-libra .recall-note__final p{margin:0;font-size:12px;color:var(--text2)}.t-libra .recall-note__links{display:flex;gap:14px;flex-wrap:wrap}',
     '.t-libra .recall-excluded{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);padding:8px 12px;font-size:12.5px;color:var(--text2)}',
     '.t-libra .recall-excluded--empty{display:flex;align-items:center;justify-content:space-between}',
