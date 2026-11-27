@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.5.0",
-  "generatedAt": "2026-11-26T19:52:23.406Z",
+  "generatedAt": "2026-11-27T02:48:57.739Z",
   "server": {
     "version": "1.5.0",
     "protocol": {
@@ -4366,6 +4366,10 @@
     "prompt/Leave_RisuAI_Preset.json": {
       "sha256": "f9565056798a635e6f172cd9bc0ff562b4ced26d6ddba97e8105532c144825af",
       "bytes": 107662
+    },
+    "prompt/Leave_RisuAI_Preset.risup": {
+      "sha256": "c4375737a53531c1398bb69c0f7e60f0405bd6c2eac3745e719691237fce0b9f",
+      "bytes": 104318
     },
     "release-policy.json": {
       "sha256": "f711477bf96606f862382f06439a26773cce3aee9134adc39f243da6d749ad0c",
