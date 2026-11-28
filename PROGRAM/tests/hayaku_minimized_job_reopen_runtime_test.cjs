@@ -15,5 +15,5 @@ c.render();assert.equal(nodes['#hayakuNativeJobOverlay'].hidden,false);assert.eq
 nodes['#minimizeHayakuNativeJob'].click();assert.equal(nodes['#hayakuNativeJobOverlay'].hidden,true);assert.equal(nodes['#hayakuNativeJobChip'].hidden,false,'minimized job exposes its task tray');assert(nodes['#hayakuNativeJobChip'].attrs['aria-label'].includes('3 / 8'));assert.equal(focusBindings[0].cleaned,true,'minimizing releases the dialog focus binding');
 nodes['#hayakuNativeJobChip'].click();assert.equal(Memory.ledgerViewer.jobMinimized,false);assert.equal(nodes['#hayakuNativeJobOverlay'].hidden,false);
 Memory.nativeRecovery.job.state='completed';nodes['#minimizeHayakuNativeJob'].click();assert.equal(nodes['#hayakuNativeJobChip'].hidden,false,'finished minimized job remains reviewable');
-Memory.nativeRecovery.job=null;c.render();assert.equal(nodes['#hayakuNativeJobChip'].hidden,false,'idle task tray remains visible');assert.equal(nodes['#hayakuNativeJobOverlay'].hidden,true);
+Memory.nativeRecovery.job=null;c.render();assert.equal(nodes['#hayakuNativeJobChip'].hidden,true,'idle task tray stays hidden until a job runs');assert.equal(nodes['#hayakuNativeJobOverlay'].hidden,true);
 console.log('PASS minimize/reopen with mockup task tray, progress, terminal review and no-job cleanup');

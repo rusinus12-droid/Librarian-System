@@ -426,85 +426,44 @@ const createMockDom = () => {
   };
 };
 
-test('groupLensMemoriesForReader groups by lens -> primary person -> turn range without duplication', async t => {
-  const seam = '  const groupLensMemoriesForReader = ';
+test('bucketLensMemoriesForReader buckets by 5-turn end turn, separates inherited, and preserves total items', async t => {
+  const seam = '  const bucketLensMemoriesForReader = ';
   const h = await createLibraVmHarness({}, {}, {
     transformSource: raw => {
       const source = raw.replace(/\r\n/g, '\n');
       assert.ok(source.includes(seam));
-      return source.replace(seam, '  globalThis.__groupLensMemoriesForReader = (...args) => groupLensMemoriesForReader(...args);\n' + seam);
+      return source.replace(seam, '  globalThis.__bucketLensMemoriesForReader = (...args) => bucketLensMemoriesForReader(...args);\n' + seam);
     }
   });
   t.after(() => h.cleanup());
 
-  const groupFn = (...args) => JSON.parse(JSON.stringify(h.context.__groupLensMemoriesForReader(...args)));
-  const lenses = [
-    { lensId: 'lens_rel', name: '관계 변화' },
-    { lensId: 'lens_sec', name: '비밀' }
-  ];
+  const bucketFn = (...args) => JSON.parse(JSON.stringify(h.context.__bucketLensMemoriesForReader(...args)));
   const items = [
-    {
-      itemId: 'i1', lensId: 'lens_sec', lensName: '비밀', whoTracked: true,
-      turnRange: { start: 1, end: 5 },
-      people: [{ key: 'p_user', name: '푸딩', role: 'user' }, { key: 'p_hayeon', name: '천하연', role: 'named' }]
-    },
-    {
-      itemId: 'i2', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: true,
-      turnRange: { start: 11, end: 15 },
-      people: [{ key: 'p_user', name: '푸딩', role: 'user' }, { key: 'p_soyeon', name: '천소연', role: 'named' }]
-    },
-    {
-      itemId: 'i3', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: true,
-      turnRange: { start: 1, end: 5 },
-      people: [{ key: 'p_soyeon', name: '천소연', role: 'named' }]
-    },
-    {
-      itemId: 'i4', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: true,
-      turnRange: { start: 6, end: 10 },
-      people: []
-    },
-    {
-      itemId: 'i5', lensId: 'lens_rel', lensName: '관계 변화', whoTracked: false,
-      turnRange: { start: 6, end: 10 },
-      people: []
-    }
+    { itemId: 'i_e3', lensId: 'l1', turnRange: { start: 1, end: 3 }, whoTracked: true, people: [{ key: 'p1', name: '소연', role: 'named' }] },
+    { itemId: 'i_e5', lensId: 'l2', turnRange: { start: 1, end: 5 }, whoTracked: true, people: [{ key: 'p2', name: '하연', role: 'named' }] },
+    { itemId: 'i_e7', lensId: 'l1', turnRange: { start: 6, end: 7 }, whoTracked: false, people: [] },
+    { itemId: 'i_e12', lensId: 'l1', turnRange: { start: 11, end: 12 }, whoTracked: false, people: [] },
+    { itemId: 'i_e0', lensId: 'l1', turnRange: { start: 0, end: 0 }, whoTracked: false, people: [] },
+    { itemId: 'i_inh', lensId: 'l1', inherited: true, sourceScopeKey: 'prev-1', sourceChatName: '이전 채팅', turnRange: { start: 1, end: 8 } }
   ];
 
-  const desc = groupFn(items, { lenses, filterPerson: 'all', turnOrder: 'desc' });
-  assert.deepEqual(desc.map(g => g.lensId), ['lens_rel', 'lens_sec'], 'follows registry lens order');
-  const rel = desc[0];
-  assert.equal(rel.count, 4);
+  const desc = bucketFn(items, { turnOrder: 'desc' });
   assert.deepEqual(
-    rel.personGroups.map(pg => ({ key: pg.key, name: pg.name, count: pg.count })),
-    [
-      { key: 'p_soyeon', name: '천소연', count: 2 },
-      { key: '__unassigned__', name: '인물 미지정', count: 1 },
-      { key: 'unknown', name: '인물 불명', count: 1 }
-    ]
+    desc.map(b => b.key),
+    ['c:15', 'c:10', 'c:5', 'c:0', 'i:prev-1:10'],
+    'buckets current items desc with 0 last, followed by inherited buckets'
   );
-  assert.deepEqual(rel.personGroups[0].spanGroups.map(s => s.label), ['T11–T15', 'T1–T5']);
-  assert.equal(rel.personGroups[0].rangeLabel, 'T1–T15');
+  assert.equal(desc.find(b => b.key === 'c:10').label, 'T6–T10');
+  assert.equal(desc.find(b => b.key === 'c:0').label, '구간 미상');
+  assert.deepEqual(desc.find(b => b.key === 'c:5').personNames, ['하연', '소연']);
+  assert.equal(desc.reduce((sum, b) => sum + b.count, 0), items.length, 'preserves total item count');
 
-  const sec = desc[1];
-  assert.equal(sec.personGroups.length, 1);
-  assert.equal(sec.personGroups[0].key, 'p_hayeon');
-  assert.equal(sec.personGroups[0].name, '천하연');
-
-  const asc = groupFn(items, { lenses, filterPerson: 'all', turnOrder: 'asc' });
-  assert.deepEqual(asc[0].personGroups[0].spanGroups.map(s => s.label), ['T1–T5', 'T11–T15']);
-
-  const userFiltered = groupFn(items, { lenses, filterPerson: 'p_user', turnOrder: 'desc' });
-  assert.equal(userFiltered[0].personGroups[0].key, 'p_user');
-  assert.equal(userFiltered[0].personGroups[0].count, 1);
-
-  const totalInGroups = desc.reduce(
-    (sum, lg) => sum + lg.personGroups.reduce(
-      (pSum, pg) => pSum + pg.spanGroups.reduce((sSum, sg) => sSum + sg.items.length, 0),
-      0
-    ),
-    0
+  const asc = bucketFn(items, { turnOrder: 'asc' });
+  assert.deepEqual(
+    asc.map(b => b.key),
+    ['c:5', 'c:10', 'c:15', 'c:0', 'i:prev-1:10'],
+    'buckets current items asc with 0 still last in current section'
   );
-  assert.equal(totalInGroups, items.length);
 });
 
 test('groupLensMemoriesByPersonForReader groups memories across lenses by primary person', async t => {
@@ -564,7 +523,7 @@ test('groupLensMemoriesByPersonForReader groups memories across lenses by primar
   assert.deepEqual(grouped[0].items.map(i => i.itemId), ['i2', 'i1'], 'descending turn order inside person group');
 });
 
-test('lens viewer defaults to individual card grid, supports character grouping, skips managed disclosures on restore, expands/collapses in-place with lazy hydration, and preserves scroll/input', async t => {
+test('lens viewer defaults to turn bucket view with compact rows, supports all-list person folders, lazy hydration, and partial search highlight', async t => {
   const dom = createMockDom();
   const seam = '  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
   const h = await createLibraVmHarness({}, {}, {
@@ -606,15 +565,12 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   assert.equal(writeCount, 1, 'stale style element is refreshed once');
   assert.ok(staleStyle.dataset.libraStyleSig, 'style signature is stored');
   assert.match(staleStyle.textContent, /\.lens-item__head-right\{/);
-  assert.match(staleStyle.textContent, /\.lens-card-grid\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(300px,1fr\)\)/);
-  assert.match(staleStyle.textContent, /\.lens-item--compact \.lens-item__head-right \.btn--sm\{/);
-  assert.match(staleStyle.textContent, /\.lens-group-span\{[^}]*content-visibility:auto/);
-  assert.match(staleStyle.textContent, /\.lens-item:not\(\.lens-item--compact\)\{content-visibility:auto/);
+  assert.match(staleStyle.textContent, /\.lens-item--row\{/);
+  assert.match(staleStyle.textContent, /mark\.lens-hit\{/);
+  assert.match(staleStyle.textContent, /\.lens-turns\{/);
   assert.match(staleStyle.textContent, /\.lens-group-person\[open\]>\.lens-group-person__summary \.lens-group-person__chev/);
   const personRule = staleStyle.textContent.match(/\.lens-group-person\{([^}]*)\}/)?.[1] || '';
-  const spanRule = staleStyle.textContent.match(/\.lens-group-span\{([^}]*)\}/)?.[1] || '';
   assert.doesNotMatch(personRule, /overflow\s*:\s*hidden/, '.lens-group-person avoids overflow:hidden clipping lag');
-  assert.doesNotMatch(spanRule, /overflow\s*:\s*hidden/, '.lens-group-span avoids overflow:hidden clipping lag');
 
   ui.injectGuiStyle();
   assert.equal(writeCount, 1, 'identical signature skips redundant style textContent rewrite');
@@ -682,7 +638,7 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   unmanagedFold.appendChild(unmanagedSummary);
   pageBody.appendChild(unmanagedFold);
 
-  assert.equal(reader.groupMode, 'flat', 'default groupMode is individual cards (flat)');
+  assert.equal(reader.viewMode, 'turn', 'default viewMode is turn');
   const mountedReader = ui.buildBookLensReaderProjection();
   mountedReader.id = 'memory-root';
   mountedReader.dataset.productReadback = 'lens-memory-reader';
@@ -690,60 +646,55 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   mountedReader.setAttribute('aria-label', '렌즈 기억');
   pageBody.appendChild(mountedReader);
 
-  const defaultGrid = pageBody.querySelector('.lens-card-grid[data-lens-card-grid="true"]');
-  assert.ok(defaultGrid, 'default view renders cards inside .lens-card-grid');
-  const defaultCards = [...pageBody.querySelectorAll('.lens-card-grid > .lens-item')];
-  assert.equal(defaultCards.length, 2);
-  assert.ok(defaultCards.every(card => !String(card.className).includes('lens-item--compact')), 'default flat grid renders full individual cards');
-  assert.equal(pageBody.querySelectorAll('details.lens-group-person').length, 0, 'default view has no person group wrappers');
+  const bucketBtns = () => [...pageBody.querySelectorAll('[data-lens-bucket]')];
+  assert.deepEqual(bucketBtns().map(b => b.dataset.lensBucket), ['c:10', 'c:5']);
+  assert.equal(bucketBtns()[0].getAttribute('aria-pressed'), 'true');
 
-  // Switch to character-grouped mode ('인물별') and verify .lens-card-grid inside person folders
-  const clickGroupMode = label => {
-    const btn = [...pageBody.querySelectorAll('[data-lens-toolbar="true"] button')].find(b => b.textContent.trim() === label);
-    assert.ok(btn, `missing groupMode button: ${label}`);
-    btn.click();
-  };
-  clickGroupMode('인물별');
-  assert.equal(reader.groupMode, 'person');
-  const personDetails = () => [...pageBody.querySelectorAll('details.lens-group-person')];
-  assert.equal(personDetails().length, 2, 'character grouping creates one folder per person');
-  assert.ok(pageBody.querySelectorAll('.lens-group-person__body > .lens-card-grid[data-lens-card-grid="true"] > .lens-item').length === 2, 'character groups render full cards in a grid');
-  assert.ok(pageBody.querySelector('[data-lens-expand-all="true"]'), 'character grouping shows expand-all');
-  assert.ok(pageBody.querySelector('[data-lens-collapse-all="true"]'), 'character grouping shows collapse-all');
-  pageBody.querySelector('[data-lens-collapse-all="true"]').click();
-  assert.ok(personDetails().every(d => d.open === false), 'collapse-all works in character grouping mode');
-  pageBody.querySelector('[data-lens-expand-all="true"]').click();
-  assert.ok(personDetails().every(d => d.open === true), 'expand-all works in character grouping mode');
+  // Default bucket c:10 shows only m2 as a collapsed row
+  const visibleRows = () => [...pageBody.querySelectorAll('.lens-item--row')];
+  assert.equal(visibleRows().length, 1);
+  assert.equal(visibleRows()[0].querySelector('.lens-item__text').textContent, '하연이 방문을 두드렸다.');
+  assert.equal(pageBody.querySelector('.lens-prov'), null, 'collapsed row hides provenance fold');
+  assert.equal(pageBody.querySelector('[data-lens-item-edit]'), null, 'collapsed row hides edit button');
 
-  // Switch to '종류 · 인물 · 구간' to verify existing compact grouped mode as well
-  clickGroupMode('종류 · 인물 · 구간');
-  assert.equal(reader.groupMode, 'lens_person_span');
-  assert.equal(personDetails().length, 2);
-  assert.ok(personDetails().every(d => d.open === true), 'all person groups start open');
-  assert.ok(personDetails().every(d => d.dataset.guiManagedDisclosure === 'true'));
-  const provFolds = pageBody.querySelectorAll('details.lens-prov');
-  assert.equal(provFolds.length, 2);
-  assert.ok(provFolds.every(d => d.dataset.guiManagedDisclosure === 'true'));
-
-  const firstCard = pageBody.querySelector('.lens-item');
-  const headRight = firstCard.querySelector('.lens-item__head > .lens-item__head-right');
-  assert.ok(headRight, 'card header has right-side container');
-  assert.deepEqual(headRight.children.map(n => n.textContent), ['수정', '재분석', '인용 확인']);
+  // Expand row via toggle
+  pageBody.querySelector('[data-lens-row-toggle]').click();
+  const expandedCard = pageBody.querySelector('.lens-item--row');
+  assert.ok(expandedCard.querySelector('.lens-prov'), 'expanded row renders provenance fold');
+  assert.equal(expandedCard.querySelector('.lens-prov').dataset.guiManagedDisclosure, 'true');
+  const headRight = expandedCard.querySelector('.lens-item__head > .lens-item__head-right');
+  assert.deepEqual(headRight.children.map(n => n.textContent), ['수정', '재분석', '인용 확인', '접기']);
   assert.equal(headRight.children[0].dataset.lensItemEdit, 'true');
   assert.equal(headRight.children[1].dataset.lensItemReanalysis, 'true');
-  const foot = firstCard.querySelector('.lens-item__foot');
-  assert.ok(foot, 'card footer still holds delete action');
-  assert.equal(foot.querySelector('[data-lens-item-edit]'), null);
-  assert.equal(foot.querySelector('[data-lens-item-reanalysis]'), null);
+  const foot = expandedCard.querySelector('.lens-item__foot');
   assert.deepEqual(foot.querySelectorAll('button').map(b => b.textContent), ['삭제']);
 
-  // 2) Capture state while open, then collapse-all and run restoreGuiViewportState() + rAF flush:
-  // unmanagedFold is restored, managed lens disclosures must NOT be reverted!
+  // Prev/next bucket navigation and direct bucket click show m1
+  pageBody.querySelector('[data-lens-next-bucket]').click();
+  assert.deepEqual(visibleRows().map(r => r.querySelector('.lens-item__text').textContent), ['소연이 비밀을 털어놓았다.']);
+  pageBody.querySelector('[data-lens-prev-bucket]').click();
+  assert.deepEqual(visibleRows().map(r => r.querySelector('.lens-item__text').textContent), ['하연이 방문을 두드렸다.']);
+  pageBody.querySelector('[data-lens-bucket="c:5"]').click();
+  assert.deepEqual(visibleRows().map(r => r.querySelector('.lens-item__text').textContent), ['소연이 비밀을 털어놓았다.']);
+
+  // Inner group toggle to 'lens'
+  pageBody.querySelector('[data-lens-inner-group="lens"]').click();
+  assert.equal(pageBody.querySelector('.lens-bucket-group').dataset.lensBucketGroup, 'lens_rel');
+
+  // Switch to 'all' view: person folders with rows, collapse-all/expand-all & lazy hydration
+  pageBody.querySelector('[data-lens-view-mode="all"]').click();
+  assert.equal(reader.viewMode, 'all');
+  const personDetails = () => [...pageBody.querySelectorAll('details.lens-group-person')];
+  assert.equal(personDetails().length, 2, 'all view creates one folder per person');
+  assert.equal(pageBody.querySelectorAll('.lens-group-person__body > .lens-rows > .lens-item--row').length, 2);
+  assert.ok(pageBody.querySelector('[data-lens-expand-all="true"]'));
+  assert.ok(pageBody.querySelector('[data-lens-collapse-all="true"]'));
+
+  // 2) Capture state while open, then collapse-all and run restoreGuiViewportState() + rAF flush
   const captured = ui.captureGuiViewportState();
   unmanagedFold.open = false;
 
-  const collapseBtn = pageBody.querySelector('[data-lens-collapse-all="true"]');
-  collapseBtn.click();
+  pageBody.querySelector('[data-lens-collapse-all="true"]').click();
   assert.ok(personDetails().every(d => d.open === false), 'collapse-all closes every person group synchronously in-place');
   assert.equal(reader.collapsedGroups.size, 2, 'collapsedGroups tracks all collapsed group keys');
 
@@ -753,15 +704,14 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   assert.ok(personDetails().every(d => d.open === false), 'restoreGuiViewportState does not undo collapse-all');
 
   // 3) Expand-all reopens in-place and clears collapsedGroups
-  const expandBtn = pageBody.querySelector('[data-lens-expand-all="true"]');
-  expandBtn.click();
+  pageBody.querySelector('[data-lens-expand-all="true"]').click();
   assert.ok(personDetails().every(d => d.open === true), 'expand-all reopens every person group');
   assert.equal(reader.collapsedGroups.size, 0, 'collapsedGroups clears on expand-all');
 
   // 4) Lazy hydration for collapsed person groups on re-render
   pageBody.querySelector('[data-lens-collapse-all="true"]').click();
   pageBody.scrollTop = 240;
-  pageBody.querySelector('[data-lens-turn-order="true"]').click(); // synchronous rerenderLensReaderInPlace()
+  pageBody.querySelector('[data-lens-turn-order="true"]').click();
 
   const reRenderedReader = pageBody.querySelector('[data-lens-reader="true"]');
   assert.equal(reRenderedReader.id, 'memory-root', 'rerenderLensReaderInPlace preserves #memory-root');
@@ -774,20 +724,18 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   assert.equal(closedBodies.length, 2);
   assert.ok(closedBodies.every(b => b.childNodes.length === 0), 'collapsed groups skip building heavy DOM until opened');
 
-  // Opening one group via summary click hydrates its body immediately
   const firstPerson = pageBody.querySelector('details.lens-group-person');
-  const firstSummary = firstPerson.querySelector('.lens-group-person__summary');
-  firstSummary.click();
+  firstPerson.querySelector('.lens-group-person__summary').click();
   assert.equal(firstPerson.open, true);
   assert.ok(firstPerson.querySelectorAll('.lens-item').length >= 1, 'summary click hydrates collapsed person group');
   const secondPerson = personDetails()[1];
   assert.equal(secondPerson.querySelector('.lens-group-person__body').childNodes.length, 0, 'sibling group remains unhydrated');
 
-  // Expand-all hydrates remaining collapsed sibling group and opens it
   pageBody.querySelector('[data-lens-expand-all="true"]').click();
   assert.ok(secondPerson.open === true && secondPerson.querySelectorAll('.lens-item').length >= 1, 'expand-all hydrates collapsed sibling groups');
 
-  // 5) Debounced search input uses detailOnly in-place swap, keeps input node identity & scrollTop
+  // 5) Debounced search in turn view swaps turns+body partially, keeps input identity & scrollTop, highlights match
+  pageBody.querySelector('[data-lens-view-mode="turn"]').click();
   const searchInput = pageBody.querySelector('input[type="search"]');
   assert.ok(searchInput);
   pageBody.scrollTop = 180;
@@ -795,8 +743,10 @@ test('lens viewer defaults to individual card grid, supports character grouping,
   searchInput.dispatchEvent({ type: 'input', target: searchInput });
   await new Promise(resolve => setTimeout(resolve, 140));
 
-  assert.equal(pageBody.querySelector('input[type="search"]'), searchInput, 'search keeps the same input element in rail');
+  assert.equal(pageBody.querySelector('input[type="search"]'), searchInput, 'search keeps the same input element in toolbar');
   assert.equal(pageBody.scrollTop, 180, 'debounced search preserves scrollTop');
+  assert.deepEqual(bucketBtns().map(b => b.dataset.lensBucket), ['c:5'], 'rail keeps only buckets with matches');
   const visibleTexts = [...pageBody.querySelectorAll('.lens-item__text')].map(n => n.textContent);
   assert.deepEqual(visibleTexts, ['소연이 비밀을 털어놓았다.']);
+  assert.equal(pageBody.querySelector('mark.lens-hit')?.textContent, '비밀', 'matched text is highlighted');
 });

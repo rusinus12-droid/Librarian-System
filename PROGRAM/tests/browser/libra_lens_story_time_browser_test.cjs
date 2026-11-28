@@ -42,7 +42,10 @@ const touching = (page, scope) => page.evaluate(sel => {
       });
 
       await page.evaluate(() => { __approved.selectBookMemoryKind('lens'); __approved.bookNavigate('memory'); });
-      await page.waitForSelector('[data-lens-reader] .lens-item');
+      await page.waitForSelector('[data-lens-reader] [data-lens-view-mode="all"]');
+      await page.locator('[data-lens-reader] [data-lens-view-mode="all"]').click();
+      await page.locator('[data-lens-reader] [data-lens-expand-all]').click();
+      await page.waitForSelector('[data-lens-reader] .lens-item [data-lens-when]');
       const items = page.locator('[data-lens-reader] .lens-item');
       assert.equal(await items.count(), 3);
       const stated = items.filter({ hasText: '재방문' });

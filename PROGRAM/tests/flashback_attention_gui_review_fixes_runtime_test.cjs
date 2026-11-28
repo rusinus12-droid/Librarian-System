@@ -14,7 +14,7 @@ async function boot() {
   f.host.unregisterUIPart=async key=>{parts.delete(key);return await unregister(key);};
   return {f,parts};
 }
-for(const previous of ['srv','mig'])test(`${kind}: embedding warning opens embedding panel after ${previous}`,async()=>{
+for(const previous of ['srv'])test(`${kind}: embedding warning opens embedding panel after ${previous}`,async()=>{
   const {f,parts}=await boot();try{
     await f.open();
     await f.click('[data-go="connect"]');

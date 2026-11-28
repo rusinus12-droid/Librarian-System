@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name FLASHBACK Memory v2.2.0
+//@display-name FLASHBACK Memory v2.2.3
 //@api 3.0
-//@version 2.2.0
+//@version 2.2.3
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc libra
@@ -1340,7 +1340,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = 'FLASHBACK Memory';
-const PLUGIN_VERSION = '2.2.0';
+const PLUGIN_VERSION = '2.2.3';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1823,11 +1823,11 @@ const PLUGIN_VERSION = '2.2.0';
   const NATIVE_COPY_OBSERVER_POLL_MS = 1800;
   // The observer runs for the plugin's whole life, so its steady cost matters most on phones.
   // After a quiet stretch it checks less often; any change brings the short interval back.
-  const NATIVE_COPY_OBSERVER_IDLE_POLL_MS = 5400;
-  const NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS = 10;
+  const NATIVE_COPY_OBSERVER_IDLE_POLL_MS = 30000;
+  const NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS = 3;
   // How long a character id read for one character index is reused before it is read again.
-  const NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS = 30000;
-  const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([900, 3200]);
+  const NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS = 300000;
+  const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([2500]);
 
 
   // 캐시 안전화(v0.8.8) — 응답 모델 프롬프트 prefix 캐시 보호 + 임베딩 로컬 캐시.
@@ -1991,6 +1991,7 @@ const PLUGIN_VERSION = '2.2.0';
       changes: 0,
       quietChecks: 0,
       hiddenSkips: 0,
+      visibilityHandler: null,
       characterId: null,
       adoptions: 0,
       lastReason: '',
@@ -2177,13 +2178,9 @@ const PLUGIN_VERSION = '2.2.0';
       abortEmbeddingJobs('chat_changed');
       Runtime.previousScope = Runtime.currentScope ? { ...Runtime.currentScope } : null;
       Runtime.lastCapture = null;
-      Runtime.pendingTurn = null;
-      Runtime.pendingTurns = [];
-      Runtime.afterRequestCaptureCandidates.clear();
+      prunePendingTurns('scope_changed');
       Runtime.latentEpisodeCooldown.clear();
       Runtime.pendingCaptureBarrier = null;
-      Runtime.requestDecisionQueue = [];
-      Runtime.lastRequestDecision = null;
       Runtime.guiManualEditor = { sourceType: '', search: '', sort: 'newest', limit: MANUAL_EDITOR_PAGE_SIZE, pendingDeleteKeys: [] };
       invalidateGuiDataCache('all');
     }
@@ -2281,7 +2278,16 @@ const PLUGIN_VERSION = '2.2.0';
   };
 
 
-  const currentPendingCaptureBarrier = () => Runtime.pendingCaptureBarrier || null;
+  const PENDING_CAPTURE_BARRIER_TTL_MS = 45000;
+  const currentPendingCaptureBarrier = () => {
+    const barrier = Runtime.pendingCaptureBarrier || null;
+    if (!barrier) return null;
+    if (Date.now() - Number(barrier.at || 0) > PENDING_CAPTURE_BARRIER_TTL_MS) {
+      Runtime.pendingCaptureBarrier = null;
+      return null;
+    }
+    return barrier;
+  };
 
   const removePendingTurnById = (pendingId = '') => {
     const id = text(pendingId || '');
@@ -3295,9 +3301,62 @@ const PLUGIN_VERSION = '2.2.0';
     .replace(/\n{4,}/g, '\n\n\n')
     .trim();
 
+  const LIBRARIAN_OOC_MODE_MARKER = '[LIBRARIAN_OOC_MODE:ACTIVE]';
+  const LIBRARIAN_OOC_TAG_RE = /^\s*(?:<(?:thinking|thoughts?|think)\b[^>]*>[\s\S]*?<\/(?:thinking|thoughts?|think)>\s*)*<ooc\b[^>]*>[\s\S]*<\/ooc>\s*$/i;
+  const isOocResponseContent = (value = '') => LIBRARIAN_OOC_TAG_RE.test(String(value ?? ''));
+  const extractLibrarianOocMessageText = (msg) => {
+    if (!msg) return '';
+    const raw = msg?.content ?? msg?.data ?? msg?.text ?? msg?.message ?? msg?.mes ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw.map(part => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')).join('\n');
+    }
+    return String(raw || '');
+  };
+  const parseLibrarianOocRequest = (messages = [], resolvedUserText = '') => {
+    const list = Array.isArray(messages) ? messages : [];
+    let active = false;
+    let fallbackUserText = '';
+    for (const msg of list) {
+      const body = extractLibrarianOocMessageText(msg);
+      if (!body) continue;
+      if (body.toUpperCase().includes(LIBRARIAN_OOC_MODE_MARKER)) active = true;
+      const role = String(msg?.role || (msg?.isUser ? 'user' : '') || '').trim().toLowerCase();
+      if (role === 'user' || role === 'human') fallbackUserText = body;
+    }
+    const rawUserText = String(resolvedUserText || fallbackUserText || '');
+    const emptyTargets = { libra: false, hayaku: false, flashback: false };
+    if (!active) {
+      return { active: false, triggered: false, targets: emptyTargets, queryText: rawUserText.trim(), rawUserText };
+    }
+    const targets = { libra: false, hayaku: false, flashback: false };
+    let rest = rawUserText.trim();
+    const tokenRe = /^@(기억|memory|전체|all|lib|리브라|libra|하야쿠|hayaku|플래시백|flashback|fb)(?=$|[\s,:：])[\s,:：]*/i;
+    let matchedAny = false;
+    while (rest) {
+      const m = tokenRe.exec(rest);
+      if (!m) break;
+      matchedAny = true;
+      const token = m[1].toLowerCase();
+      if (token === '기억' || token === 'memory' || token === '전체' || token === 'all' || token === 'lib') {
+        targets.libra = true;
+        targets.hayaku = true;
+        targets.flashback = true;
+      } else if (token === '리브라' || token === 'libra') {
+        targets.libra = true;
+      } else if (token === '하야쿠' || token === 'hayaku') {
+        targets.hayaku = true;
+      } else if (token === '플래시백' || token === 'flashback' || token === 'fb') {
+        targets.flashback = true;
+      }
+      rest = rest.slice(m[0].length).trim();
+    }
+    return { active: true, triggered: matchedAny, targets, queryText: rest, rawUserText };
+  };
+
   const sanitizeSourceText = (value = '', max = 0) => {
     const explicit=memorySuiteCanonicalSource(value,'flashback');if(explicit!==null)return max>0?compact(explicit,max):explicit;
-    const body = stripSourceArtifacts(value);
+    const body = stripSourceArtifacts(String(value ?? '').replace(/<ooc\b[^>]*>[\s\S]*?<\/ooc>/gi, ''));
     return max > 0 ? compact(body, max) : body;
   };
 
@@ -16388,7 +16447,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     }
   };
   const artifact = row => row.artifact === true || row.logicalKey.includes('::chunk:v1:') || str(row.key).includes('::chunk:v1:');
-  const control = key => /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || key === 'vector_rag_memory:settings:v2';
+  const control = key => /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || key === 'vector_rag_memory:settings:v2' || key === 'flashback.settings.source-tracking.v1';
   for (const row of records) {
     if (control(row.logicalKey)) row.classification = 'control';
     else if (artifact(row)) row.classification = 'artifact';
@@ -17019,6 +17078,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       legacyModeUnresolved,
       userMessagePosition: Math.max(0, Number(value.userMessagePosition || 0) || 0),
       requestUserMessageIdHash: text(value.requestUserMessageIdHash || '').trim().slice(0, 160),
+      requestUserMessageIdSource: text(value.requestUserMessageIdSource || '').trim().slice(0, 80),
       expectedAssistantPosition: Math.max(0, Number(value.expectedAssistantPosition || 0) || 0),
       requestMessageCount: Math.max(0, Number(value.requestMessageCount || 0) || 0),
       requestUserIndex: Number(value.requestUserIndex ?? -1),
@@ -17086,6 +17146,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       mode: serializedMode,
       userMessagePosition: pending.userMessagePosition,
       requestUserMessageIdHash: pending.requestUserMessageIdHash,
+      requestUserMessageIdSource: pending.requestUserMessageIdSource,
       expectedAssistantPosition: pending.expectedAssistantPosition,
       requestMessageCount: pending.requestMessageCount,
       requestUserIndex: pending.requestUserIndex,
@@ -20775,20 +20836,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const validHostIndex = value => value !== null && value !== undefined && value !== '' && Number.isInteger(Number(value)) && Number(value) >= 0;
+  const explicitNegativeHostIndex = value => value !== null && value !== undefined && value !== '' && Number.isInteger(Number(value)) && Number(value) < 0;
   const currentChatFromCharacter = character => validHostIndex(character?.chatPage) ? (character?.chats?.[Number(character.chatPage)] || null) : null;
   const loadCurrentChat = async (character, options = {}) => {
     const api=getLiveApi(['getChatFromIndex'])||getLiveApi(['getCurrentChatIndex'])||getLiveApi();let charIndex=-1,chatIndex=-1;
     if(typeof api?.getCurrentCharacterIndex==='function'){
       const value=await safeApi('getCurrentCharacterIndex',()=>api.getCurrentCharacterIndex(),{silent:true});
-      if(!validHostIndex(value))return {chat:null,source:'no_active_chat',charIndex:-1,chatIndex:-1};charIndex=Number(value);
+      if(explicitNegativeHostIndex(value))return {chat:null,source:'no_active_chat',charIndex:-1,chatIndex:-1};
+      if(validHostIndex(value))charIndex=Number(value);
     }
     if(typeof api?.getCurrentChatIndex==='function'){
       const value=await safeApi('getCurrentChatIndex',()=>api.getCurrentChatIndex(),{silent:true});
-      if(!validHostIndex(value))return {chat:null,source:'no_active_chat',charIndex,chatIndex:-1};chatIndex=Number(value);
+      if(explicitNegativeHostIndex(value))return {chat:null,source:'no_active_chat',charIndex,chatIndex:-1};
+      if(validHostIndex(value))chatIndex=Number(value);
+      else if(validHostIndex(character?.chatPage))chatIndex=Number(character.chatPage);
     }else if(validHostIndex(character?.chatPage))chatIndex=Number(character.chatPage);
     if(charIndex>=0&&chatIndex>=0&&typeof api?.getChatFromIndex==='function'){
       const chat=await safeApi('getChatFromIndex',()=>api.getChatFromIndex(charIndex,chatIndex),{silent:true});
-      return {chat:chat||null,source:chat?'getChatFromIndex':'no_active_chat',charIndex,chatIndex};
+      if(chat)return {chat,source:'getChatFromIndex',charIndex,chatIndex};
     }
     const fallback=chatIndex>=0?character?.chats?.[chatIndex]:currentChatFromCharacter(character);
     if(fallback)return {chat:fallback,source:'character.chats',charIndex,chatIndex};
@@ -20997,6 +21062,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const rawMessageContent = (message) => memorySuiteCanonicalSource(rawMessageContentUnfiltered(message),'flashback') ?? sanitizeSourceText(rawMessageContentUnfiltered(message));
 
+  const NON_UNIQUE_HOST_MEMO_RE = /^(?:newchat|firstmessage|first_message|greeting|main|mainprompt|jailbreak|globalnote|authornote|description|persona|lorebook|memory|inlay|posteverything|prompt|system|user|assistant|char|bot|chat|example|example_dialogue)$/i;
   const stableChatMessageSourceIdentity = (message = {}) => {
     const candidates = [
       ['chatId', message?.chatId ?? message?.chat_id],
@@ -21011,7 +21077,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ];
     for (const [source, raw] of candidates) {
       const id = compact(raw, 160);
-      if (id) return { id, source, stable: true, canonical: source === 'chatId' };
+      if (!id) continue;
+      if (source === 'memo' && NON_UNIQUE_HOST_MEMO_RE.test(id)) continue;
+      return { id, source, stable: true, canonical: source === 'chatId' };
     }
     return { id: '', source: '', stable: false, canonical: false };
   };
@@ -21222,14 +21290,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       createdAt: firstFilled(message?.createdAt, message?.time, message?.date, message?.timestamp, message?.sendDate, message?.updatedAt)
     };
     const usable = Boolean(normalized?.content && !isOwnInjection(normalized.content));
+    const filteredEmptyAssistant = !own && role === 'assistant' && !normalized?.content && Boolean(normalized?.rawContent);
+    const normalizedEntry = usable
+      ? normalized
+      : (filteredEmptyAssistant ? { role: 'assistant', content: '', rawContent: normalized.rawContent, index, filteredEmptyAssistant: true, createdAt: normalized.createdAt } : null);
     const signature = stableHash([
       role, identity.source, identity.id, index,
-      normalized?.rawContent || '', normalized?.content || '', own ? 'own' : 'visible'
+      normalized?.rawContent || '', normalized?.content || '', own ? 'own' : (filteredEmptyAssistant ? 'filtered_empty_assistant' : 'visible')
     ].join('\u0001'));
     const retainedChars = Math.max(0, rawComparable.value.length + text(normalized?.rawContent || '').length + text(normalized?.content || '').length);
     entry = {
       key, index, role, identity, rawType: rawComparable.type, rawValue: rawComparable.value,
-      metaKey, normalized: usable ? normalized : null, signature, retainedChars, lastSeenAt: Date.now()
+      metaKey, normalized: normalizedEntry, signature, retainedChars, lastSeenAt: Date.now()
     };
     cache.entries.set(key, entry);
     cache.retainedChars += retainedChars;
@@ -27452,9 +27524,13 @@ const MemorySuiteSnapshotCache = (() => {
     }
   };
 
-  const scheduleNativeCopyObserverFollowups = reason => {
+  const scheduleNativeCopyObserverFollowups = (reason, expectedIdentity = '') => {
     for (const delayMs of NATIVE_COPY_OBSERVER_FOLLOWUP_MS) {
       scheduleTimer(() => {
+        const observer = Runtime.nativeCopyObserver;
+        if (Runtime.unloaded || !observer.running) return;
+        if (Runtime.settings && !flashbackAttentionEnabled(Runtime.settings)) return;
+        if (expectedIdentity && observer.lastIdentity !== expectedIdentity) return;
         runNativeCopyObserverAdoptionProbe(`${reason}_followup_${delayMs}`).catch(error => warn('native copy follow-up probe failed', error));
       }, delayMs);
     }
@@ -27475,24 +27551,52 @@ const MemorySuiteSnapshotCache = (() => {
     const observer=Runtime.nativeCopyObserver;if(observer.running||Runtime.unloaded)return false;observer.running=true;
     const poll=async()=>{
       if(Runtime.unloaded||!observer.running)return;
+      if(Runtime.settings&&!flashbackAttentionEnabled(Runtime.settings)){
+        observer.quietChecks=0;
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_IDLE_POLL_MS);
+        return;
+      }
       if(nativeCopyObserverPageHidden()){
-        // No host read while hidden; the next visible poll runs at the short interval.
+        // No host read while hidden; back off to the idle interval after the initial skip.
         observer.hiddenSkips++;observer.quietChecks=0;
-        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_POLL_MS);return;
+        const hiddenDelay=observer.hiddenSkips<=1?NATIVE_COPY_OBSERVER_POLL_MS:NATIVE_COPY_OBSERVER_IDLE_POLL_MS;
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},hiddenDelay);return;
       }
       observer.checks++;
       try{
         const identity=await lightweightNativeCopyObserverIdentity();
-        if(identity&&identity===observer.lastIdentity)observer.quietChecks++;else observer.quietChecks=0;
-        if(!identity&&observer.lastIdentity){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
+        if(identity){
+          observer.emptyChecks=0;
+          if(identity===observer.lastIdentity)observer.quietChecks++;else observer.quietChecks=0;
+        }else{
+          observer.quietChecks=0;
+          if(observer.lastIdentity){
+            observer.emptyChecks=Number(observer.emptyChecks||0)+1;
+            if(observer.emptyChecks>=2){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
+          }
+        }
         if(identity&&identity!==observer.lastIdentity&&!observer.inFlight){
           const first=!observer.lastIdentity;observer.lastIdentity=identity;observer.changes++;
-          await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');scheduleNativeCopyObserverFollowups(first?'observer_initial_scope':'observer_scope_changed');
+          const probeResult=await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');
+          const hasStored=Number(probeResult?.manifest?.count||0)>0||Number(probeResult?.manifest?.shardCount||0)>0||probeResult?.manifest?.copyAdoptedComplete===true;
+          const hasChatMessages=Number(probeResult?.scope?.chatMessageCount||0)>0;
+          if(probeResult?.adopted!==true&&probeResult?.fastPath!==true&&!hasStored&&hasChatMessages){
+            scheduleNativeCopyObserverFollowups(first?'observer_initial_scope':'observer_scope_changed',identity);
+          }
         }else if(identity)await refreshNativeCopyObserverSources();
       }catch(error){observer.lastError=formatErrorMessage(error,500);warn('native copy observer poll failed',error);}
       finally{if(!Runtime.unloaded&&observer.running)observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},
         observer.quietChecks>=NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS?NATIVE_COPY_OBSERVER_IDLE_POLL_MS:NATIVE_COPY_OBSERVER_POLL_MS);}
     };
+    if(!observer.visibilityHandler&&typeof document!=='undefined'&&typeof document?.addEventListener==='function'){
+      observer.visibilityHandler=()=>{
+        if(Runtime.unloaded||!observer.running||nativeCopyObserverPageHidden()||observer.inFlight)return;
+        observer.quietChecks=0;
+        if(observer.timer){try{clearTimeout(observer.timer);}catch(_){}observer.timer=null;}
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer resume failed',error));},250);
+      };
+      try{document.addEventListener('visibilitychange',observer.visibilityHandler);}catch(_){}
+    }
     observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer startup failed',error));},250);return true;
   };
 
@@ -30982,13 +31086,19 @@ const MemorySuiteSnapshotCache = (() => {
           rawText:text(message?.rawContent??body).replace(/\r\n/g,'\n').trim(),
           stableMessageId: text(message?.stableMessageId || ''),
           stableMessageIdHash: text(message?.stableMessageIdHash || ''),
-          stableMessageIdSource:stableChatMessageSourceIdentity(message).source,
+          stableMessageIdSource:text(message?.stableMessageIdSource||'')||stableChatMessageSourceIdentity(message).source,
           createdAt: message?.createdAt || '',
           swipeId
         } : null;
         continue;
       }
       if (role !== 'assistant') continue;
+      if (message?.filteredEmptyAssistant === true) {
+        if (pendingUser?.text && assistantFragments.length) flushPair();
+        else assistantFragments = [];
+        pendingUser = null;
+        continue;
+      }
       const assistantText = canonicalChatResponseText(body);
       if (!assistantText) {
         if (text(message?.rawContent ?? body).trim().length > 0 && pendingUser?.text) {
@@ -31035,7 +31145,7 @@ const MemorySuiteSnapshotCache = (() => {
     for (const message of messages) {
       const position = Number(message?.index || 0) + 1;
       count = Math.max(count, position);
-      if (message?.role !== 'assistant') continue;
+      if (message?.role !== 'assistant' || message?.filteredEmptyAssistant === true) continue;
       const body = canonicalChatResponseText(message.contentText || message.content || '');
       if (body) assistants.set(position, body);
     }
@@ -32348,7 +32458,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -32702,7 +32812,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {
@@ -38027,32 +38137,161 @@ const MemorySuiteHealthRecovery = (() => {
     return latestLiveResponseTurnIndex(records);
   };
 
-  const requestContainsPreviousTurn = (messages = [], previousAssistantText = '') => {
-    const wanted = canonicalChatResponseText(previousAssistantText);
-    if (!wanted || !Array.isArray(messages) || !messages.length) return false;
-    const visibleBodies = normalizedMessagesFrom(messages)
-      .filter(message => ['system', 'developer', 'user', 'assistant'].includes(message?.role))
-      .map(message => message?.contentText || message?.content || '')
-      .filter(body => body && !isOwnInjection(body));
-    if (visibleBodies.some(body => sameTurnText(body, wanted))) return true;
-    return visibleBodies.length > 1 && sameTurnText(visibleBodies.join('\n\n'), wanted);
+  const inspectRequestPreviousTurnMatch = (messages = [], previousAssistantText = '') => {
+    const wanted = canonicalTurnCompareText(canonicalChatResponseText(previousAssistantText));
+    if (!wanted || !Array.isArray(messages) || !messages.length) return { matched: false };
+    const normalized = normalizedMessagesFrom(messages);
+    const visible = [];
+    let assistantCount = 0;
+    for (let idx = 0; idx < normalized.length; idx += 1) {
+      const message = normalized[idx];
+      if (!['system', 'developer', 'user', 'assistant'].includes(message?.role)) continue;
+      const rawBody = message?.contentText || message?.content || '';
+      if (!rawBody || isOwnInjection(rawBody)) continue;
+      const canonicalBody = text(canonicalTurnCompareText(rawBody) || '');
+      if (!canonicalBody) continue;
+      if (message.role === 'assistant') assistantCount += 1;
+      visible.push({
+        requestMessageIndex: idx + 1,
+        assistantOrdinal: message.role === 'assistant' ? assistantCount : 0,
+        role: message.role,
+        body: canonicalBody,
+        chars: Array.from(canonicalBody).length
+      });
+    }
+    if (!visible.length) return { matched: false };
+    const wantedChars = Array.from(wanted).length;
+    const buildResult = (matchType, item, matchedExcerpt, matchOffset = 0) => ({
+      matched: true,
+      matchType,
+      role: item.role,
+      requestMessageIndex: item.requestMessageIndex,
+      assistantOrdinal: item.assistantOrdinal,
+      shownMessageCount: normalized.length,
+      shownAssistantCount: assistantCount,
+      storedChars: wantedChars,
+      matchedMessageChars: item.chars,
+      matchOffset,
+      storedPreview: compact(wanted, 120),
+      matchedPreview: compact(matchedExcerpt, 120)
+    });
+    const exactMatch = visible.find(item => item.body === wanted);
+    if (exactMatch) return buildResult('exact', exactMatch, exactMatch.body, 0);
+    if (wantedChars >= 12) {
+      for (const item of visible) {
+        if (item.chars < 12) continue;
+        if (item.body.includes(wanted)) {
+          const offset = item.body.indexOf(wanted);
+          const excerpt = offset > 0
+            ? item.body.slice(Math.max(0, offset - 24), offset + Math.min(wanted.length, 96) + 24)
+            : item.body;
+          return buildResult('contained_in_recent_message', item, excerpt, offset);
+        }
+        if (wanted.includes(item.body)) {
+          const offset = wanted.indexOf(item.body);
+          return buildResult('stored_contains_recent_message', item, item.body, offset);
+        }
+      }
+    }
+    if (visible.length > 1) {
+      const joined = visible.map(item => item.body).join('\n\n');
+      if (sameTurnText(joined, wanted)) {
+        return buildResult('joined_messages_match', {
+          role: 'joined',
+          requestMessageIndex: 0,
+          assistantOrdinal: 0,
+          chars: Array.from(joined).length
+        }, joined, 0);
+      }
+    }
+    return { matched: false };
   };
+
+  const requestContainsPreviousTurn = (messages = [], previousAssistantText = '') =>
+    inspectRequestPreviousTurnMatch(messages, previousAssistantText).matched === true;
 
   // Stored turns the model already sees in its recent chat. They are not delivered again as memory,
   // which also leaves their budget to older turns.
-  const recentChatDuplicateTurns = (records = [], options = {}) => {
+  const inspectRecentChatDuplicateTurns = (records = [], options = {}) => {
     const canonical = value => text(canonicalTurnCompareText(value) || '');
-    const shown = normalizedMessagesFrom(options.messages || []).filter(message => message?.role === 'assistant');
-    const bodies = shown.map(message => message?.contentText || message?.content || '').filter(body => body && !isOwnInjection(body)).map(canonical).filter(Boolean);
+    const normalized = normalizedMessagesFrom(options.messages || []);
+    const shownAssistants = [];
+    for (let idx = 0; idx < normalized.length; idx += 1) {
+      const message = normalized[idx];
+      if (message?.role !== 'assistant') continue;
+      const rawBody = message?.contentText || message?.content || '';
+      if (!rawBody || isOwnInjection(rawBody)) continue;
+      const canonicalBody = canonical(rawBody);
+      if (!canonicalBody) continue;
+      shownAssistants.push({
+        requestMessageIndex: idx + 1,
+        assistantOrdinal: shownAssistants.length + 1,
+        role: 'assistant',
+        body: canonicalBody,
+        chars: Array.from(canonicalBody).length
+      });
+    }
     const duplicates = new Set();
-    if (!bodies.length) return duplicates;
+    const matchesByKey = new Map();
+    const matches = [];
+    if (!shownAssistants.length) {
+      return {
+        duplicates,
+        shownMessageCount: normalized.length,
+        shownAssistantCount: 0,
+        checkedTurnGroups: 0,
+        matchesByKey,
+        matches
+      };
+    }
     const groups = buildStoredTurnVectorGroups(records.filter(isRecallIndexableRecord)).sort((a, b) => b.turnIndex - a.turnIndex).slice(0, 128);
     for (const group of groups) {
       const stored = canonical(group.assistantText);
-      if (Array.from(stored).length >= 12 && bodies.some(body => body.includes(stored))) duplicates.add(group.key);
+      const storedChars = Array.from(stored).length;
+      if (storedChars < 12) continue;
+      const matched = shownAssistants.find(item => item.body === stored) || shownAssistants.find(item => item.body.includes(stored));
+      if (!matched) continue;
+      duplicates.add(group.key);
+      const exact = matched.body === stored;
+      const matchOffset = exact ? 0 : matched.body.indexOf(stored);
+      const excerpt = exact
+        ? matched.body
+        : matched.body.slice(Math.max(0, matchOffset - 24), matchOffset + Math.min(stored.length, 96) + 24);
+      const matchInfo = {
+        source: 'recent_chat_assistant',
+        groupKey: group.key,
+        turnIndex: group.turnIndex,
+        pairIndex: group.pairIndex,
+        title: text(group.records[0] ? memoryRecordDisplayTitle(group.records[0]) : '') || `턴 ${group.turnIndex}`,
+        storedRecords: group.records.length,
+        droppedCandidates: 0,
+        matchType: exact ? 'exact' : 'contained_in_recent_message',
+        role: matched.role,
+        requestMessageIndex: matched.requestMessageIndex,
+        assistantOrdinal: matched.assistantOrdinal,
+        shownMessageCount: normalized.length,
+        shownAssistantCount: shownAssistants.length,
+        storedChars,
+        matchedMessageChars: matched.chars,
+        matchOffset,
+        storedPreview: compact(stored, 120),
+        matchedPreview: compact(excerpt, 120)
+      };
+      matchesByKey.set(group.key, matchInfo);
+      matches.push(matchInfo);
     }
-    return duplicates;
+    return {
+      duplicates,
+      shownMessageCount: normalized.length,
+      shownAssistantCount: shownAssistants.length,
+      checkedTurnGroups: groups.length,
+      matchesByKey,
+      matches
+    };
   };
+
+  const recentChatDuplicateTurns = (records = [], options = {}) =>
+    inspectRecentChatDuplicateTurns(records, options).duplicates;
 
   const selectPreviousTurnVectorContext = (records = [], options = {}) => {
     const targetTurn = previousTurnTargetNumber(options, records);
@@ -38072,7 +38311,8 @@ const MemorySuiteHealthRecovery = (() => {
     const originPriority = origin => origin === 'finalized_live_chat' ? 3 : (/^(?:cold_start_)?live_chat:/.test(origin) ? 2 : 1);
     candidates.sort((a, b) => originPriority(b.origin) - originPriority(a.origin) || b.updatedMs - a.updatedMs || b.records.length - a.records.length);
     const selected = candidates[0];
-    const requestMatched = requestContainsPreviousTurn(options.requestMessages, selected.assistantText);
+    const requestMatch = inspectRequestPreviousTurnMatch(options.requestMessages, selected.assistantText);
+    const requestMatched = requestMatch.matched === true;
     const queryProvider = normalizeProvider(options.queryProvider || DEFAULTS.embeddingProvider);
     const queryModel = text(options.queryModel || '');
     const queryDim = Number(options.queryDim || 0) || 0;
@@ -38103,6 +38343,7 @@ const MemorySuiteHealthRecovery = (() => {
       totalChunks: selected.records.length,
       liveMatched,
       requestMatched,
+      requestMatch: requestMatched ? requestMatch : null,
       recordIds: selected.records.map(record => text(record.id || record.hash || '')).filter(Boolean)
     };
   };
@@ -39761,10 +40002,11 @@ const MemorySuiteHealthRecovery = (() => {
     if (!records.length) {
       if (!await recallModelCurrent()) return unavailable('changed');
       stageElapsed.total = Date.now() - recallStartedAt;
-      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed,
+      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, recentChatFiltered: 0, recentChatExclusion: null, stageElapsed,
         ...(lexicalFallback ? { fallbackWarning: '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.', modelReadiness: { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } } : {}) };
     }
-    const excludedRecentChatTurns = recentChatDuplicateTurns(records, options);
+    const recentChatInspection = inspectRecentChatDuplicateTurns(records, options);
+    const excludedRecentChatTurns = recentChatInspection.duplicates;
     const recallContext = { scopeKey: scope.scopeKey, excludedRecentChatTurns, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, semanticQuery, episodeQueryType, episodeTemporalIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
     recallContext.allowLexicalFallback = !!lexicalFallback;
     recallContext.lexicalFallbackStatus = lexicalFallback?.status || '';
@@ -39814,6 +40056,10 @@ const MemorySuiteHealthRecovery = (() => {
     const rerankStartedAt = Date.now();
     const scoredRaw = [];
     let dimSkipped = 0;
+    let recentChatFiltered = 0;
+    let recentChatDroppedByAssistant = 0;
+    let recentChatDroppedByPreviousTurn = 0;
+    const droppedRecentChatMatches = new Map();
     const vectorCompatibility = {reasons:{}, samples:[], legacyCompatible:0};
     for (const fused of candidateHardGate) {
       const record = fused.record;
@@ -39828,6 +40074,51 @@ const MemorySuiteHealthRecovery = (() => {
         if(vectorCompatibility.samples.length<64)vectorCompatibility.samples.push({id:record.id,provider:record.provider,model:record.model,recordDimensions:compatibility.recordDimensions,queryDimensions:compatibility.queryDimensions,recordProfileId:compatibility.recordProfileId,queryProfileId:compatibility.queryProfileId,reasons:compatibility.reasons});
       }
       if (!compatibility.comparable && !keywordOnly) continue;
+      if (isResponseMemoryRecord(record) && contextExcludedPreviousTurnMatchesRecord(record, recallContext)) {
+        recentChatFiltered += 1;
+        const groupKey = responseTurnGroupKey(record);
+        const assistantMatch = groupKey ? recentChatInspection.matchesByKey.get(groupKey) : null;
+        if (assistantMatch) {
+          recentChatDroppedByAssistant += 1;
+          let entry = droppedRecentChatMatches.get(groupKey);
+          if (!entry) {
+            entry = { ...assistantMatch, droppedCandidates: 0 };
+            droppedRecentChatMatches.set(groupKey, entry);
+          }
+          entry.droppedCandidates += 1;
+        } else {
+          recentChatDroppedByPreviousTurn += 1;
+          const fallbackKey = groupKey || `previous_turn:${finiteTurnIndex(record) || previousTurnNumber || 0}`;
+          let entry = droppedRecentChatMatches.get(fallbackKey);
+          if (!entry) {
+            const prevMatch = previousTurn?.requestMatch || null;
+            const turn = finiteTurnIndex(record) || previousTurnNumber;
+            entry = {
+              source: 'previous_turn_in_request',
+              groupKey: fallbackKey,
+              turnIndex: turn,
+              pairIndex: Number(record?.pairIndex || previousTurn?.pairIndex || turn || 0) || 0,
+              title: text(memoryRecordDisplayTitle(record) || record?.title || '') || `턴 ${turn}`,
+              storedRecords: Number(previousTurn?.totalChunks || 1) || 1,
+              droppedCandidates: 0,
+              matchType: prevMatch?.matchType || 'exact',
+              role: prevMatch?.role || 'assistant',
+              requestMessageIndex: Number(prevMatch?.requestMessageIndex || 0) || 0,
+              assistantOrdinal: Number(prevMatch?.assistantOrdinal || 0) || 0,
+              shownMessageCount: Number(prevMatch?.shownMessageCount || recentChatInspection.shownMessageCount || 0) || 0,
+              shownAssistantCount: Number(prevMatch?.shownAssistantCount || recentChatInspection.shownAssistantCount || 0) || 0,
+              storedChars: Number(prevMatch?.storedChars || Array.from(canonicalTurnCompareText(previousTurn?.assistantText || record?.text || '')).length) || 0,
+              matchedMessageChars: Number(prevMatch?.matchedMessageChars || 0) || 0,
+              matchOffset: Number(prevMatch?.matchOffset || 0) || 0,
+              storedPreview: prevMatch?.storedPreview || compact(canonicalTurnCompareText(previousTurn?.assistantText || record?.text || ''), 120),
+              matchedPreview: prevMatch?.matchedPreview || ''
+            };
+            droppedRecentChatMatches.set(fallbackKey, entry);
+          }
+          entry.droppedCandidates += 1;
+        }
+        continue;
+      }
       const item = cfg.heuristicRecall
         ? scoreRecordForRecall(record, primaryQueryText, queryVector, queryAnchors, cfg, recallContext)
         : (() => {
@@ -39900,11 +40191,36 @@ const MemorySuiteHealthRecovery = (() => {
     const contradictionCoverage = {bundles:cfg.contradictionBundleEnabled===false?[]:flashbackStateConflictBundles(preferenceCandidates,finalContext)};
     stageElapsed.finalRerankMmr += Date.now() - rerankStartedAt;
     stageElapsed.total = Date.now() - recallStartedAt;
+    const droppedMatchList = Array.from(droppedRecentChatMatches.values())
+      .sort((a, b) => (Number(a.turnIndex || 0) - Number(b.turnIndex || 0)) || (Number(a.requestMessageIndex || 0) - Number(b.requestMessageIndex || 0)));
+    const allCandidatesExcludedByRecentChat = candidateHardGate.length > 0
+      && recallCandidates.length === 0
+      && recentChatFiltered > 0
+      && (recentChatFiltered + dimSkipped) >= candidateHardGate.length;
+    const recentChatExclusion = recentChatFiltered > 0 || recentChatInspection.matches.length > 0
+      ? {
+          excludedCandidates: recentChatFiltered,
+          rrfCandidatesBeforeExclusion: candidateHardGate.length,
+          remainingCandidates: recallCandidates.length,
+          excludedTurnCount: droppedMatchList.length,
+          matchedStoreTurnCount: recentChatInspection.matches.length,
+          shownMessageCount: recentChatInspection.shownMessageCount,
+          shownAssistantCount: recentChatInspection.shownAssistantCount,
+          allCandidatesExcluded: allCandidatesExcludedByRecentChat,
+          byReason: {
+            recentChatAssistant: recentChatDroppedByAssistant,
+            previousTurnInRequest: recentChatDroppedByPreviousTurn
+          },
+          matches: droppedMatchList.slice(0, 16),
+          truncatedMatches: Math.max(0, droppedMatchList.length - 16)
+        }
+      : null;
     const filteredDiagnostics = {
       inactiveBranch: inactiveBranchFiltered + Number(hardGateDiagnostics.inactiveBranchFiltered || 0),
       worldlineMismatch: worldlineMismatchFiltered + Number(hardGateDiagnostics.worldlineMismatchFiltered || 0),
       privacy: privacyFiltered + Number(hardGateDiagnostics.privacyFiltered || 0),
       sourceEdit: sourceEditFiltered + Number(hardGateDiagnostics.sourceEditFiltered || 0),
+      recentChat: recentChatFiltered,
       time: Number(temporalHardGate.diagnostics?.timeFiltered || 0)
     };
     const candidateArmDiagnostics = {
@@ -39949,6 +40265,8 @@ const MemorySuiteHealthRecovery = (() => {
       worldlineMismatchFiltered: filteredDiagnostics.worldlineMismatch,
       privacyFiltered: filteredDiagnostics.privacy,
       sourceEditFiltered: filteredDiagnostics.sourceEdit,
+      recentChatFiltered: filteredDiagnostics.recentChat,
+      recentChatExclusion,
       gateRejected,
       scoreRejected,
       mmrDiagnostics,
@@ -41278,6 +41596,21 @@ const MemorySuiteHealthRecovery = (() => {
       (pair.userMessageIdSource&&requestIdSource&&pair.userMessageIdSource!==requestIdSource)
       || !sameMaintenanceTurnText(pair.userText||'',exactBody));
     if(idMatches.length===1&&!identityConflict)targetPair=idMatches[0];
+    const tailStart = Math.max(0, Number(resolution?.requestEndIndex ?? resolution?.requestIndex ?? -1)) + 1;
+    const tailAfterUser = normalizedMessages.slice(tailStart);
+    const matchesContinuationTail = (pair) => {
+      if (!pair || Number(pair.pairIndex || 0) !== Number(state.pairCount || 0)) return false;
+      let lastIdx = -1;
+      for (let idx = tailAfterUser.length - 1; idx >= 0; idx -= 1) {
+        const msg = tailAfterUser[idx];
+        if (msg?.role === 'assistant' && requestContainsLivePairAssistant([msg], pair)) {
+          lastIdx = idx;
+          break;
+        }
+      }
+      if (lastIdx < 0) return false;
+      return !tailAfterUser.slice(lastIdx + 1).some(msg => msg?.role === 'user' && canonicalChatUserText(msg.contentText || msg.content || ''));
+    };
     const sameBody=(state.pairs||[]).filter(pair=>sameMaintenanceTurnText(pair.userText||'',exactBody));
     if(!requestUser.stableMessageIdHash && sameBody.length){
       const prefix=normalizedMessages.slice(0,Math.max(0,resolution.requestIndex)).filter(m=>['user','assistant'].includes(m.role));
@@ -41287,11 +41620,25 @@ const MemorySuiteHealthRecovery = (() => {
         const previous=(state.pairs||[]).filter(pair=>sameMaintenanceTurnText(pair.assistantText||'',priorBody));
         if(previous.length===1)targetPair=sameBody.find(pair=>Number(pair.pairIndex)===Number(previous[0].pairIndex)+1)||null;
       }
+      if(!targetPair && sameBody.length===1 && matchesContinuationTail(sameBody[0])) targetPair=sameBody[0];
     }
     const reroll=!!(targetPair&&!requestContainsLivePairAssistant(normalizedMessages,targetPair));
+    const continuation=!!(targetPair&&!reroll&&matchesContinuationTail(targetPair));
     const historyEvidence=normalizedMessages.slice(0,Math.max(0,resolution.requestIndex)).some(message=>message.role==='assistant' && (state.pairs||[]).some(pair=>requestContainsLivePairAssistant([message],pair)));
     if(identityConflict || idMatches.length>1 || (!requestUser.stableMessageIdHash && sameBody.length && !targetPair && !historyEvidence))
-      return {mode:'awaiting_binding',pairIndex:0,requestUser,requestUserMessageIdHash:'',targetPair:null,bindingCandidatePairIndexes:idMatches.map(pair=>Number(pair.pairIndex)),reason:'ambiguous_turn_identity'};
+      return {mode:'awaiting_binding',pairIndex:0,requestUser,requestUserMessageIdHash:'',requestUserMessageIdSource:'',targetPair:null,bindingCandidatePairIndexes:idMatches.map(pair=>Number(pair.pairIndex)),reason:'ambiguous_turn_identity'};
+
+    if (continuation) {
+      return {
+        mode: 'reroll',
+        continuation: true,
+        pairIndex: Number(targetPair.pairIndex || 0) || 1,
+        requestUser,
+        requestUserMessageIdHash: requestUser.stableMessageIdHash || '',
+        requestUserMessageIdSource: requestIdSource || '',
+        targetPair
+      };
+    }
 
     const pairIndex = reroll
       ? Number(targetPair.pairIndex || 0) || 1
@@ -41301,6 +41648,7 @@ const MemorySuiteHealthRecovery = (() => {
       pairIndex,
       requestUser,
       requestUserMessageIdHash: requestUser.stableMessageIdHash || '',
+      requestUserMessageIdSource: requestIdSource || '',
       targetPair: reroll ? targetPair : null
     };
   };
@@ -41562,18 +41910,21 @@ const MemorySuiteHealthRecovery = (() => {
   const resolveFlashbackCurrentTurn = (messages = [], options = {}) => {
     const normalized=normalizedMessagesFrom(messages),terminalPrefillIndex=findFlashbackTerminalAssistantPrefillIndex(normalized);
     const range=latestFlashbackCurrentInputRange(normalized),candidates=[];
-    const usable=body=>body && !hasUnresolvedPromptTemplate(body)
+    const usable=(body, provenance = false)=>body
       && !flashbackIsBackstageUserPayload(body) && !flashbackIsExternalMemoryInjectionPayload(body)
-      && !FlashbackCurrentInputRequestKind.isModuleOnlyPrompt(body) && !FlashbackCurrentInputRequestKind.isHardAuxiliaryPrompt(body);
-    if(range?.text && usable(range.text))candidates.push({body:range.text,start:range.start,end:range.end??range.start,source:'explicit_wrapper',tag:range.tag});
+      && !FlashbackCurrentInputRequestKind.isModuleOnlyPrompt(body)
+      && (provenance || (!hasUnresolvedPromptTemplate(body) && !FlashbackCurrentInputRequestKind.isHardAuxiliaryPrompt(body)));
+    if(range?.text && usable(range.text, false))candidates.push({body:range.text,start:range.start,end:range.end??range.start,source:'explicit_wrapper',tag:range.tag});
     for(let i=0;i<normalized.length;i++){
       const message=normalized[i],role=flashbackCurrentTurnRole(message);
       if(role && !/^(?:user|human)$/i.test(role))continue;
       if(terminalPrefillIndex>=0 && i>=terminalPrefillIndex)continue;
-      if(range?.text && usable(range.text) && i>=range.start && i<=(range.end??range.start))continue;
+      if(range?.text && usable(range.text, false) && i>=range.start && i<=(range.end??range.start))continue;
       const raw=flashbackRawCurrentTurnBody(message),wrapped=flashbackCurrentInputFrom(raw),body=wrapped||raw;
-      if(!usable(raw)||!usable(body))continue;
-      candidates.push({body,start:i,end:i,source:wrapped?'inline_wrapper':hasFlashbackChatProvenance(message)?'request_provenance_user':'request_order_user'});
+      const provenance = hasFlashbackChatProvenance(message);
+      if(!wrapped && !provenance && isLikelyMetaUserMessage(raw))continue;
+      if(!usable(raw, provenance)||!usable(body, provenance))continue;
+      candidates.push({body,start:i,end:i,source:wrapped?'inline_wrapper':provenance?'request_provenance_user':'request_order_user'});
     }
     // Provenance distinguishes chat input from appended prompt rows within the
     // same turn. An ID on an older, completed turn must not outrank a new user.
@@ -42359,6 +42710,7 @@ const MemorySuiteHealthRecovery = (() => {
       pairIndex: expectedPairIndex,
       userMessagePosition: awaitingBinding ? 0 : userMessagePosition,
       requestUserMessageIdHash: captureLineage.requestUserMessageIdHash || '',
+      requestUserMessageIdSource: captureLineage.requestUserMessageIdSource || '',
       expectedAssistantPosition: awaitingBinding ? 0 : expectedAssistantPosition,
       turnIndex: expectedPairIndex,
       baselineAssistantPosition: targetPair ? expectedAssistantPosition : 0,
@@ -42737,7 +43089,10 @@ const MemorySuiteHealthRecovery = (() => {
         return !!baseline && baseline.assistantHash!==stableHash(canonicalChatResponseText(pair.assistantText));
       }
       if(Number(pair.pairIndex)!==Number(pending.pairIndex))return false;
-      if(pending.requestUserMessageIdHash && pair.userMessageIdHash && pending.requestUserMessageIdHash!==pair.userMessageIdHash)return false;
+      const crossSourceMemoMismatch = pending.requestUserMessageIdSource === 'memo'
+        && pair.userMessageIdSource === 'chatId'
+        && stableHash(canonicalChatUserText(pair.userText || '')) === pending.userTextHash;
+      if(pending.requestUserMessageIdHash && pair.userMessageIdHash && pending.requestUserMessageIdHash!==pair.userMessageIdHash && !crossSourceMemoMismatch)return false;
       if(pending.mode==='reroll' && pending.baselineAssistantHash===stableHash(canonicalChatResponseText(pair.assistantText)))return false;
       return true;
     });
@@ -42815,10 +43170,16 @@ const MemorySuiteHealthRecovery = (() => {
     if (!scope?.scopeKey || !snapshot?.chat) return false;
     const character = snapshot.character || {};
     const chat = snapshot.chat || {};
-    const characterId = firstFilled(character.id, character._id, character.uid, character.uuid, character.key, character.nickname, character.name, character.charName);
-    if (scope.characterId && characterId && keyHash(scope.characterId) !== keyHash(characterId)) return false;
-    const chatStableId = firstFilled(chat.id, chat._id, chat.uid, chat.uuid, chat.key, chat.chatId, chat.fileName, chat.filename);
-    if (scope.chatId && chatStableId) return keyHash(scope.chatId) === keyHash(chatStableId);
+    const canonicalCharId = firstFilled(character.chaId, character.characterId, character.charId, character.id, character._id, character.uid, character.uuid, character.key);
+    if (scope.canonicalCharacterId && canonicalCharId) {
+      if (keyHash(scope.canonicalCharacterId) !== keyHash(canonicalCharId)) return false;
+    } else {
+      const characterId = firstFilled(character.id, character._id, character.uid, character.uuid, character.key, character.nickname, character.name, character.charName);
+      if (scope.characterId && characterId && keyHash(scope.characterId) !== keyHash(characterId)) return false;
+    }
+    const chatStableId = firstFilled(chat.id, chat.chatId, chat._id, chat.uid, chat.uuid, chat.key, chat.fileName, chat.filename);
+    const expectedChatId = firstFilled(scope.canonicalChatId, scope.chatId);
+    if (expectedChatId && chatStableId) return keyHash(expectedChatId) === keyHash(chatStableId);
     const scopeChatIndex = Number(scope.chatIndex);
     const liveChatIndex = Number(snapshot.chatInfo?.chatIndex);
     if (Number.isInteger(scopeChatIndex) && scopeChatIndex >= 0 && Number.isInteger(liveChatIndex) && liveChatIndex >= 0 && scopeChatIndex !== liveChatIndex) return false;
@@ -42918,7 +43279,8 @@ const MemorySuiteHealthRecovery = (() => {
     let deferredCurrent = 0;
     for (const entry of currentEntries) {
       if((Runtime.pendingTurns||[]).some(item=>item.pendingId===entry.pendingId))continue;
-      if(options.userTextHash&&options.userTextHash!==entry.userTextHash){deferredCurrent+=1;continue;}
+      const idMatchesOption = Boolean(options.userMessageIdHash && entry.requestUserMessageIdHash && options.userMessageIdHash === entry.requestUserMessageIdHash);
+      if(!idMatchesOption&&options.userTextHash&&options.userTextHash!==entry.userTextHash){deferredCurrent+=1;continue;}
       const expectedUserIndex = Math.max(0, Number(entry.userMessagePosition || 0) - 1);
       const directUser = live.normalized[expectedUserIndex];
       const directUserText = directUser?.role === 'user'
@@ -42999,6 +43361,7 @@ const MemorySuiteHealthRecovery = (() => {
         mode: modeResolution.mode,
         userMessagePosition: Number(pair?.userPosition || userMessage.position || entry.userMessagePosition || 0) || 0,
         requestUserMessageIdHash: entry.requestUserMessageIdHash || '',
+        requestUserMessageIdSource: entry.requestUserMessageIdSource || '',
         expectedAssistantPosition: Number(pair?.assistantPosition || entry.expectedAssistantPosition || 0) || 0,
         turnIndex: Number(pair?.pairIndex || entry.pairIndex || 0) || 0,
         baselineAssistantPosition: entry.baselineAssistantPosition,
@@ -44856,7 +45219,10 @@ const MemorySuiteHealthRecovery = (() => {
     let recallToken = null, recallBranch = 0;
     const hookStartedAt = Date.now();
     const requestClass = classifyRequestType(type, messages);
-    if(!requestClass.auxiliary){flashbackInputRequestActive=true;flashbackReanalysisLifetime+=1;await getFlashbackSourceInput().ready();}
+    const preOocUserText = !requestClass.auxiliary ? (resolveFlashbackCurrentTurn(normalizeMessages(messages)).rawText || '') : '';
+    const oocState = !requestClass.auxiliary ? parseLibrarianOocRequest(messages, preOocUserText) : { active: false, triggered: false, targets: { libra: false, hayaku: false, flashback: false }, queryText: '' };
+    if (oocState.active) requestClass.ooc = true;
+    if(!requestClass.auxiliary && !oocState.active){flashbackInputRequestActive=true;flashbackReanalysisLifetime+=1;await getFlashbackSourceInput().ready();}
     if (!requestClass.auxiliary && Runtime.captureBackend === FLASHBACK_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && Runtime.captureBackendHealthPending) {
       Runtime.captureBackendHealthChecks += 1;
       const health = { ...Runtime.captureBackendHealthPending };
@@ -44933,6 +45299,56 @@ const MemorySuiteHealthRecovery = (() => {
       opLog('before_skip_auxiliary', { hook: 'beforeRequest', type, requestClass }, 'debug');
       log('beforeRequest skipped', Runtime.lastRecall);
       return cleanFlashbackOwnedMessages(messages);
+    }
+    if (oocState.active) {
+      ensureRequestDecision(Runtime.currentScope?.scopeKey || '');
+      clearPendingCaptureBarrierForDecision(requestDecision.decisionId || '');
+      if (!oocState.targets.flashback || !oocState.queryText) {
+        Runtime.lastRecall = {
+          at: Date.now(),
+          skipped: true,
+          ooc: true,
+          reason: oocState.targets.flashback ? 'ooc_empty_query' : 'ooc_mode_silent',
+          requestType: requestClass.requestType,
+          normalizedType: requestClass.normalizedType,
+          main: requestClass.main === true
+        };
+        refreshLastRecallPanel();
+        opLog('before_skip_ooc', { hook: 'beforeRequest', type, reason: Runtime.lastRecall.reason }, 'debug');
+        return cleanFlashbackOwnedMessages(messages);
+      }
+      try {
+        await getFlashbackSourceInput().ready();
+        const oocRecall = await withDeadline(
+          selectFlashbackRecallPrompt(oocState.queryText, () => ensureHookDeadline('beforeRequest ooc recall')),
+          hookRemainingMs(),
+          'beforeRequest ooc recall'
+        );
+        const dynamicBlock = text(oocRecall?.content || '').trim();
+        Runtime.lastRecall = {
+          at: Date.now(),
+          skipped: !dynamicBlock,
+          ooc: true,
+          oocReadOnly: true,
+          queryText: oocState.queryText,
+          injectedChars: dynamicBlock.length,
+          reason: dynamicBlock ? 'ooc_recall_injected' : 'ooc_recall_empty',
+          requestType: requestClass.requestType,
+          normalizedType: requestClass.normalizedType,
+          main: requestClass.main === true
+        };
+        refreshLastRecallPanel();
+        if (!dynamicBlock) return cleanFlashbackOwnedMessages(messages);
+        return injectFlashbackMessages(messages, {
+          staticContract: null,
+          dynamicBlock,
+          dynamicPosition: settings.injectionPosition,
+          promptCacheMode: settings.promptCacheMode
+        });
+      } catch (error) {
+        warn('OOC read-only recall failed open', error);
+        return cleanFlashbackOwnedMessages(messages);
+      }
     }
     if (settings.mode === 'off' || !Array.isArray(messages) || !messages.length) {
       if (settings.mode === 'off') clearPendingTurn('before_mode_off');
@@ -45377,6 +45793,8 @@ const MemorySuiteHealthRecovery = (() => {
         worldlineMismatchFiltered: recall.worldlineMismatchFiltered || 0,
         privacyFiltered: recall.privacyFiltered || 0,
         sourceEditFiltered: recall.sourceEditFiltered || 0,
+        recentChatFiltered: recall.recentChatFiltered || 0,
+        recentChatExclusion: recall.recentChatExclusion || null,
         sparseCache: recall.sparseCache || null,
         stageElapsed: recall.stageElapsed || null,
         recallAlignment: recall.recallAlignment || { ...Runtime.recallAlignment },
@@ -45469,7 +45887,9 @@ const MemorySuiteHealthRecovery = (() => {
       const recallActivityMessage = activityStoredCount <= 0
         ? '저장된 기억이 없어 이번 리콜에서 선택된 기억이 없습니다.'
         : (activityCandidateCount <= 0
-          ? '현재 입력과 관련된 기억 후보를 찾지 못했습니다.'
+          ? (recall.recentChatExclusion?.allCandidatesExcluded
+            ? `검색 후보 ${formatNumber(recall.recentChatExclusion.excludedCandidates)}건(${formatNumber(recall.recentChatExclusion.excludedTurnCount)}개 턴)이 이미 최근 대화에 포함되어 리콜을 생략했습니다.`
+            : '현재 입력과 관련된 기억 후보를 찾지 못했습니다.')
           : (activitySelectedCount <= 0
             ? '후보를 검토했지만 주입할 기억을 선택하지 못했습니다.'
             : `${formatNumber(activitySelectedCount)}개의 기억을 선택했습니다.`));
@@ -45478,6 +45898,7 @@ const MemorySuiteHealthRecovery = (() => {
         pairIndex: Number(pendingCapture.pending?.pairIndex || 0) || 0,
         stored: activityStoredCount,
         candidates: activityCandidateCount,
+        recentChatFiltered: recall.recentChatFiltered || 0,
         selected: activitySelectedCount,
         blockChars: text(dynamicBlock).length,
         injected: !!dynamicBlock
@@ -45626,6 +46047,10 @@ const MemorySuiteHealthRecovery = (() => {
     const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
     if (!live.known) return { ok: true, skipped: true, reason: 'chat_unavailable' };
     const messageIndex = Number(snapshot.chatInfo?.messageIndex);
+    const rawChatRows = Array.isArray(snapshot.chat?.message) ? snapshot.chat.message : (Array.isArray(snapshot.chat?.messages) ? snapshot.chat.messages : []);
+    const rawTargetMsg = rawChatRows[messageIndex] || null;
+    const rawTargetContent = rawTargetMsg ? rawMessageContentUnfiltered(rawTargetMsg) : '';
+    if (isOocResponseContent(rawTargetContent)) return { ok: true, skipped: true, reason: 'ooc_mode' };
     const assistantPosition = messageIndex + 1;
     const liveState = liveChatStateFromNormalized(live.normalized);
     const eventPair = liveState.pairByAssistantPosition instanceof Map
@@ -45634,7 +46059,7 @@ const MemorySuiteHealthRecovery = (() => {
     if (!eventPair?.userText || !eventPair?.assistantText) return { ok: true, skipped: true, reason: 'logical_turn_not_ready' };
     const eventUserHash = stableHash(canonicalChatUserText(eventPair.userText));
     return await enqueueChatOutputCaptureWork(scope.scopeKey, async () => {
-    await recoverPendingCapturesFromJournal(Runtime.settings || await loadSettings(), {snapshot, scheduleMonitor:false, userTextHash:eventUserHash});
+    await recoverPendingCapturesFromJournal(Runtime.settings || await loadSettings(), {snapshot, scheduleMonitor:false, userTextHash:eventUserHash, userMessageIdHash:text(eventPair.userMessageIdHash||'')});
     const pendingList = (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns : [])
       .filter(pending => pending?.pendingId && pending?.scope?.scopeKey === scope.scopeKey)
       .filter(pending => {
@@ -45740,6 +46165,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   const processLegacyScriptOutputCapture = content => {
     if (Runtime.unloaded || Runtime.captureBackend !== FLASHBACK_CAPTURE_BACKENDS.SCRIPT_OUTPUT_LEGACY) return content;
+    if (isOocResponseContent(content)) return content;
     Runtime.captureBackendObservedRuns += 1;
     Runtime.captureBackendLastEventAt = Date.now();
     const pending = Runtime.pendingTurn || (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns[Runtime.pendingTurns.length - 1] : null);
@@ -45807,15 +46233,19 @@ const MemorySuiteHealthRecovery = (() => {
             const confirmed = Number(result?.captured || 0) > 0 || Number(result?.duplicates || 0) > 0;
             if (confirmed) {
               Runtime.captureBackendHealthPending = null;
-            } else if (Runtime.captureBackendHealthPending) {
-              Runtime.captureBackendHealthPending = {
-                ...Runtime.captureBackendHealthPending,
-                lastObservedAt: Date.now(),
-                lastReason: text(result?.reason || 'capture_not_confirmed'),
-                lastScopeKey: text(result?.scopeKey || ''),
-                observedRuns: Number(Runtime.captureBackendObservedRuns || 0)
-              };
+            } else {
+              if (Runtime.captureBackendHealthPending) {
+                Runtime.captureBackendHealthPending = {
+                  ...Runtime.captureBackendHealthPending,
+                  lastObservedAt: Date.now(),
+                  lastReason: text(result?.reason || 'capture_not_confirmed'),
+                  lastScopeKey: text(result?.scopeKey || ''),
+                  observedRuns: Number(Runtime.captureBackendObservedRuns || 0)
+                };
+              }
+              const targetScopeKey = text(result?.scopeKey || '');
               for (const pending of (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns : [])) {
+                if (targetScopeKey && pending?.scope?.scopeKey !== targetScopeKey) continue;
                 try { scheduleFinalizedCaptureMonitor(pending, Runtime.settings || DEFAULTS, { responseCompleted: true }); } catch (_) {}
               }
             }
@@ -45933,8 +46363,20 @@ const MemorySuiteHealthRecovery = (() => {
       opLog('after_skip_auxiliary', { hook: 'afterRequest', type, requestClass }, 'debug');
       return content;
     }
+    if (requestClass.ooc === true || isOocResponseContent(content)) {
+      clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');
+      Runtime.captureBackendHealthPending = null;
+      opLog('after_skip_ooc', { hook: 'afterRequest', type, requestClass }, 'debug');
+      return content;
+    }
     clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');
     if (Runtime.captureBackend === FLASHBACK_CAPTURE_BACKENDS.CHAT_OUTPUT_V3) {
+      if (settings.mode !== 'off' && settings.captureAfterRequest) {
+        const pendingForCandidate = queuedDecision?.pendingId
+          ? (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns.find(item => item?.pendingId === queuedDecision.pendingId) : null)
+          : (Runtime.pendingTurn || (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns[Runtime.pendingTurns.length - 1] : null));
+        if (pendingForCandidate) retainAfterRequestCaptureCandidate(pendingForCandidate, content, requestClass);
+      }
       Runtime.captureBackendHealthPending = {
         schema: 'flashback.capture_backend_health.v1',
         at: Date.now(),
@@ -51407,11 +51849,18 @@ ${cleanedText}`, 80),
   };
 
   const storageScopeCountLabel = () => Number.isInteger(Runtime.guiStorageScopeCount) ? formatNumber(Runtime.guiStorageScopeCount) : '—';
+  const storageResponseCountLabel = (current = Runtime.guiCurrentStatsCache?.value || null) => {
+    if (!current || typeof current !== 'object' || !text(current?.scope?.scopeKey || '').trim()) return '—';
+    const rawStats = current.stats || current.manifest?.stats;
+    if (!rawStats || typeof rawStats !== 'object') return '—';
+    const stats = normalizeStatsForDisplay(rawStats);
+    const count = Math.max(0, Number(stats?.byType?.response?.records || 0) || 0);
+    return formatNumber(count);
+  };
   const rememberConfirmedStorageRows = rows => {
     Runtime.guiStorageLastConfirmedRows = rows.slice();
     Runtime.guiStorageScopeCount = new Set(rows.map(row => text(row?.scopeKey || '').trim()).filter(Boolean)).size;
     setNodeText('tab-scope-n', storageScopeCountLabel());
-    setNodeText('nav-scope-n', storageScopeCountLabel());
   };
 
   const selectableStorageScopeKeys = (scopeStats = [], currentScopeKey = '') => (Array.isArray(scopeStats) ? scopeStats : [])
@@ -51684,6 +52133,9 @@ ${cleanedText}`, 80),
       Runtime.guiManualEditor.sort = data.sort;
       Runtime.guiManualEditor.limit = data.limit;
       node.innerHTML = renderManualEditorPanelHtml(data);
+      if (!data.search && !data.selectedTurn) {
+        setNodeText('nav-scope-n', formatNumber(Math.max(0, Number(data.total ?? data.expectedTotal ?? 0) || 0)));
+      }
       return true;
     } catch (error) {
       if (!cancelled()) node.innerHTML = `<div class="note note--danger">수동 편집 목록 로딩 실패: ${escapeHtml(error?.message || error)}</div>`;
@@ -51711,6 +52163,67 @@ ${cleanedText}`, 80),
     return previous && !previous.skipped ? previous : recall;
   };
 
+  const recentChatMatchTypeLabel = (match = {}) => {
+    switch (String(match?.matchType || '')) {
+      case 'exact': return '본문 완전 일치';
+      case 'contained_in_recent_message': return '최근 응답 본문에 포함됨';
+      case 'stored_contains_recent_message': return '저장 턴 본문에 최근 응답 포함';
+      case 'joined_messages_match': return '전송 메시지 결합 본문과 일치';
+      default: return '최근 대화 본문 일치';
+    }
+  };
+
+  const recentChatMatchLocationLabel = (match = {}) => {
+    if (match?.role === 'joined' || !Number(match?.requestMessageIndex || 0)) {
+      return '전송 메시지 결합 본문';
+    }
+    if (Number(match?.assistantOrdinal || 0) > 0) {
+      return `전송 메시지 #${formatNumber(match.requestMessageIndex)} · 최근 어시스턴트 응답 ${formatNumber(match.assistantOrdinal)}/${formatNumber(match.shownAssistantCount || match.assistantOrdinal)}`;
+    }
+    return `전송 메시지 #${formatNumber(match.requestMessageIndex)} (${text(match.role || 'assistant')})`;
+  };
+
+  const renderRecentChatExclusionSection = (recall = {}, selectedCount = 0) => {
+    const ex = recall?.recentChatExclusion && typeof recall.recentChatExclusion === 'object' ? recall.recentChatExclusion : null;
+    const excludedCandidates = Math.max(0, Number(ex?.excludedCandidates ?? recall?.recentChatFiltered ?? 0) || 0);
+    if (excludedCandidates <= 0) {
+      return { noticeHtml: '', emptyHtml: '', detailHtml: '', chipHtml: '', metaSuffix: '', allExcluded: false };
+    }
+    const matches = Array.isArray(ex?.matches) ? ex.matches : [];
+    const excludedTurns = Math.max(0, Number(ex?.excludedTurnCount || matches.length || 0) || 0);
+    const shownAssistantCount = Math.max(0, Number(ex?.shownAssistantCount || 0) || 0);
+    const shownMessageCount = Math.max(0, Number(ex?.shownMessageCount || 0) || 0);
+    const allExcluded = ex?.allCandidatesExcluded === true && selectedCount === 0;
+    const chipHtml = `<span class="badge badge--info">최근 챗 일치 제외 ${formatNumber(excludedCandidates)}건${excludedTurns ? ` · ${formatNumber(excludedTurns)}턴` : ''}</span>`;
+    const metaSuffix = ` · 최근 챗 일치 제외 ${formatNumber(excludedCandidates)}건${excludedTurns ? `(${formatNumber(excludedTurns)}턴)` : ''}`;
+    const noticeHtml = allExcluded
+      ? `<div class="note"><b>정상 생략 · 최근 대화에 이미 포함된 기억이라 리콜을 건너뛰었습니다</b><span> 검색 후보 ${formatNumber(excludedCandidates)}건${excludedTurns ? `(${formatNumber(excludedTurns)}개 턴)` : ''}이 모델에 전달된 최근 챗(어시스턴트 응답 ${formatNumber(shownAssistantCount)}개 / 전체 메시지 ${formatNumber(shownMessageCount)}개)과 이미 일치해 중복 주입을 방지했습니다.</span></div>`
+      : '';
+    const emptyHtml = selectedCount === 0
+      ? (allExcluded
+        ? '<div class="empty"><b>최근 대화와 일치하는 기억만 검색되어 중복 주입을 생략했습니다.</b><p class="hint" style="margin:6px 0 0">플래시백 오류가 아닙니다. 아래 일치 근거에서 어떤 저장 턴이 어느 최근 챗 메시지와 어떻게 일치했는지 확인할 수 있습니다.</p></div>'
+        : `<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b><p class="hint" style="margin:6px 0 0">후보 중 ${formatNumber(excludedCandidates)}건${excludedTurns ? `(${formatNumber(excludedTurns)}개 턴)` : ''}은 최근 대화에 이미 포함되어 제외되었습니다.</p></div>`)
+      : '';
+    const rowsHtml = matches.map(match => {
+      const turn = Number(match?.turnIndex || 0) || 0;
+      const title = text(match?.title || '') || (turn ? `턴 ${turn}` : '저장 기억');
+      const typeLabel = recentChatMatchTypeLabel(match);
+      const locationLabel = recentChatMatchLocationLabel(match);
+      const sourceLabel = match?.source === 'previous_turn_in_request' ? '직전 턴 요청 포함 확인' : '최근 챗 어시스턴트 응답 대조';
+      const offsetNote = match?.matchType === 'contained_in_recent_message' && Number(match?.matchOffset || 0) > 0
+        ? ` (일치 시작 +${formatNumber(match.matchOffset)}자)`
+        : '';
+      const storedPreview = escapeHtml(text(match?.storedPreview || '') || '미리보기 없음');
+      const matchedPreview = text(match?.matchedPreview || '');
+      return `<article class="row" style="display:block;padding:10px 12px;margin-bottom:8px"><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;justify-content:space-between"><strong>${turn ? `T${formatNumber(turn)} · ` : ''}${escapeHtml(title)}</strong><div style="display:flex;flex-wrap:wrap;gap:6px"><span class="badge badge--info">${escapeHtml(typeLabel)}</span><span class="badge">제외 ${formatNumber(match?.droppedCandidates || 0)}건</span></div></div><dl class="kv" style="margin:6px 0 0"><dt>일치 판정</dt><dd>${escapeHtml(typeLabel)} · ${escapeHtml(sourceLabel)}</dd><dt>일치 메시지</dt><dd>${escapeHtml(locationLabel)}</dd><dt>비교 길이</dt><dd>저장 턴 ${formatNumber(match?.storedChars || 0)}자 ↔ 최근 챗 ${formatNumber(match?.matchedMessageChars || 0)}자${escapeHtml(offsetNote)}</dd><dt>저장 기억 발췌</dt><dd>${storedPreview}</dd>${matchedPreview ? `<dt>${match?.matchType === 'exact' ? '최근 챗 발췌 (동일)' : '최근 챗 일치 구간'}</dt><dd>${escapeHtml(matchedPreview)}</dd>` : ''}</dl></article>`;
+    }).join('');
+    const truncatedHtml = Number(ex?.truncatedMatches || 0) > 0
+      ? `<p class="hint" style="margin:4px 0 0">외 ${formatNumber(ex.truncatedMatches)}개 턴이 최근 챗과 일치해 추가 제외되었습니다.</p>`
+      : '';
+    const detailHtml = `<details class="fold" ${selectedCount === 0 ? 'open' : ''}><summary>최근 챗 일치로 제외된 기억 근거 · ${excludedTurns ? `${formatNumber(excludedTurns)}개 턴 (${formatNumber(excludedCandidates)}건)` : `${formatNumber(excludedCandidates)}건`}</summary><div class="fold__body"><p class="hint" style="margin:0 0 8px">정규화 본문(canonicalTurnCompareText · 12자 이상) 기준으로 모델에 이미 전달된 최근 챗 응답과 일치하는 저장 턴은 중복 주입을 막기 위해 제외됩니다.</p>${rowsHtml || '<p class="hint" style="margin:0">세부 일치 내역이 기록되지 않았습니다.</p>'}${truncatedHtml}</div></details>`;
+    return { noticeHtml, emptyHtml, detailHtml, chipHtml, metaSuffix, allExcluded };
+  };
+
   const renderLastRecallPanel = (recall = Runtime.lastRecall, currentScopeKey = Runtime.currentScope?.scopeKey || '') => {
     recall = resolveDisplayRecall(recall, currentScopeKey);
     if (!recall || (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey)) {
@@ -51727,6 +52240,7 @@ ${cleanedText}`, 80),
     const delivered = returned ? (pipeline.budgetedFragments ?? delivery.returnedFragments ?? delivery.delivered ?? null) : null;
     const selectedCount = Math.max(0, Number(pipeline.selectedRecords ?? selected.length) || 0);
     const returnedMessages = returned ? (pipeline.returnedMessages ?? null) : null;
+    const recentDedup = renderRecentChatExclusionSection(recall, selectedCount);
     const rows = selected.map((item, index) => {
       const detail = turnPairDisplayText(item.detail || item.preview || item.record?.text || '');
       const title = text(item.displayTitle || item.title || item.record?.title || item.id || item.record?.id || '제목 없음');
@@ -51737,7 +52251,10 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || '이번 세션에서 주입된 프롬프트가 없습니다.')}</pre></div></details>`;
+    const emptyPromptFallback = recentDedup.allExcluded
+      ? '최근 대화와 이미 일치하는 기억만 있어 이번 요청에는 별도 기억 블록을 주입하지 않았습니다.'
+      : '이번 세션에서 주입된 프롬프트가 없습니다.';
+    return queryFailure + keywordFallback + recentDedup.noticeHtml + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}${recentDedup.metaSuffix}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span>${recentDedup.chipHtml}</div></div><div class="frames">${rows || recentDedup.emptyHtml || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div>${recentDedup.detailHtml}<div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || emptyPromptFallback)}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
@@ -51795,7 +52312,7 @@ ${cleanedText}`, 80),
       title: '기억 유지보수',
       description: '기억 상태 진단과 안전한 유지보수를 진행합니다.'
     }),
-    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'직접 원문 재분석',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
+    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'재분석',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
     restore: Object.freeze({eyebrow:'MEMORY RESTORE',title:'기억 복원',description:'JSON 기억 백업과 복원·채팅 이사를 관리합니다.'}),
     worldline: Object.freeze({ eyebrow: 'WORLDLINE CONTINUITY', title: '세계선', description: '채팅 분기 근거, 원문 승계 기록과 턴 연속성을 읽기 전용으로 확인합니다.' }),
     storage: Object.freeze({
@@ -51941,6 +52458,13 @@ ${cleanedText}`, 80),
     }
     const selected = Array.isArray(recall.selected) ? recall.selected.length : 0;
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
+    if (selected === 0 && actualChars === 0 && recall.recentChatExclusion?.allCandidatesExcluded === true) {
+      return {
+        value: '최근 챗 중복 생략',
+        meta: `최근 대화 일치 ${formatNumber(recall.recentChatExclusion.excludedTurnCount || 0)}턴(${formatNumber(recall.recentChatExclusion.excludedCandidates || 0)}건) · ${recallAgeText(recall.at)}`,
+        badge: '정상 생략'
+      };
+    }
     const injected = actualChars > 0 ? '주입됨' : '미주입';
     return {
       value: `${formatNumber(selected)}개 선택`,
@@ -52298,7 +52822,7 @@ ${cleanedText}`, 80),
       await guiDialog('원문 조회 실패: '+String(error?.message||error),{title:`${range?.label||''} 원문 보기`,okText:'닫기'});
     }
   };
-  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 id="fbSourceEditTitle" class="card__title">직접 원문 재분석</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><div data-reanalysis-fold class="stack stack--sm"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="fb-reanalysis-grid"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div></div></section>`;
+  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 id="fbSourceEditTitle" class="card__title">재분석</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><div data-reanalysis-fold class="stack stack--sm"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="fb-reanalysis-grid"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div></div></section>`;
   const buildFlashbackTagFilterCard=()=>`<section id="panel-tag-filter" data-panel="tag-filter" class="card fb-tag-filter-card"><div class="card__head"><div><h2 class="card__title">원문 태그 필터</h2><p class="card__desc">분석과 저장에서 제외하거나 태그만 걷어낼 표식을 관리합니다.</p></div></div><div id="fbSourceTrackingSettings" class="fb-tag-filter-host"></div></section>`;
   const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
@@ -52479,7 +53003,9 @@ ${cleanedText}`, 80),
   const maintenancePlanPresentation = (plan = {}) => {
     const incomplete = plan.inspection?.complete === false;
     const pending = Number(plan.embeddingWorkIncompleteRecords || 0);
+    const reusable = Array.isArray(plan.sameSpacePreview?.rows) ? plan.sameSpacePreview.rows.length : 0;
     if (incomplete) return { label: '점검 미완료', tone: 'warn', headline: '점검을 끝내지 못해 정상 여부를 확인하지 못했습니다.' };
+    if (plan.healthy === true && !pending && reusable > 0) return { label: '무료 벡터 재사용 가능', tone: 'warn', headline: `기존 임베딩 벡터 ${formatNumber(reusable)}개를 API 호출 없이 바로 이어 쓸 수 있습니다.` };
     if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
     if (maintenanceServerStorageVerified(plan)) return { label: '서버 저장 점검 통과', tone: 'ok', headline: '원문·저장 점검을 마쳤고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' };
     if (plan.automatic?.strategy === 'server_episode_rebuild') return { label: '에피소드 갱신 필요', tone: 'warn', headline: '저장된 기억과 벡터를 재사용해 에피소드 인덱스를 갱신할 수 있습니다.' };
@@ -52539,32 +53065,69 @@ ${cleanedText}`, 80),
     const serverModeText = plan.inspection?.coverage === 'server_snapshot'
       ? '서버 스냅샷 기준 점검입니다. 실제 복구 가능 범위는 아래 자동 복구 경로와 보호 조건을 따릅니다.'
       : '로컬 저장소 기준 점검입니다. 복구 시 저장 변경과 필요한 임베딩 제공자 호출이 발생할 수 있습니다.';
+    const reuseRows = Array.isArray(plan.sameSpacePreview?.rows) ? plan.sameSpacePreview.rows.length : 0;
+    const reuseUnknown = Array.isArray(plan.sameSpacePreview?.unknown) ? plan.sameSpacePreview.unknown.length : 0;
+    const reuseProposalHtml = reuseRows > 0
+      ? `<div id="maintenanceSameSpaceProposal" class="note" role="status" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px"><div><strong>무료 벡터 재사용 제안 · API 호출 0</strong><span> 기존 임베딩 벡터 ${formatNumber(reuseRows)}개를 재계산 없이 현재 연결에 그대로 이어 쓸 수 있습니다.${reuseUnknown > 0 ? ` (재임베딩 필요 ${formatNumber(reuseUnknown)}개)` : ''}</span></div><button type="button" class="btn btn--primary btn--sm" data-same-space-quick-apply="1">기존 벡터 ${formatNumber(reuseRows)}개 무료 이어 쓰기</button></div>`
+      : '';
     const executionText = maintenanceServerStorageVerified(plan) ? '추가로 실행할 복구 작업이 없습니다.'
       : !complete || plan.automatic?.blocked ? '현재 계획으로 자동 복구를 실행할 수 없습니다.'
       : plan.automatic?.strategy === 'no_action' ? '현재 계획에는 자동으로 실행할 복구 작업이 없습니다.'
       : `진단 창에서 실행 버튼을 누르면 ${maintenanceStrategyText(plan.automatic)} 작업을 시작합니다.`;
-    target.innerHTML = `<div class="note${state.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong style="display:block">${escapeHtml(state.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div><div class="plan-grid">${metrics.map(([label,value,warning], index) => `<div${complete && warning ? ' style="border-color:var(--warn-ink);color:var(--warn-ink)"' : ''}><b>${escapeHtml(label)}</b>${escapeHtml(!complete && !(isServerMode && index >= 6) ? '미확인' : value)}</div>`).join('')}</div><dl class="cost-table" style="row-gap:10px"><dt>예정 작업</dt><dd>${escapeHtml(executionText)}</dd><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(complete ? credentialText : '미확인')}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd></dl><details id="maintenancePlanDetails" class="fold"${detailsOpen ? ' open' : ''}><summary>점검 세부 정보</summary><div class="fold__body"><dl class="cost-table">${details.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl></div></details>`;
+    target.innerHTML = `<div class="note${state.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong style="display:block">${escapeHtml(state.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div>${reuseProposalHtml}<div class="plan-grid">${metrics.map(([label,value,warning], index) => `<div${complete && warning ? ' style="border-color:var(--warn-ink);color:var(--warn-ink)"' : ''}><b>${escapeHtml(label)}</b>${escapeHtml(!complete && !(isServerMode && index >= 6) ? '미확인' : value)}</div>`).join('')}</div><dl class="cost-table" style="row-gap:10px"><dt>예정 작업</dt><dd>${escapeHtml(executionText)}</dd><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(complete ? credentialText : '미확인')}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd></dl><details id="maintenancePlanDetails" class="fold"${detailsOpen ? ' open' : ''}><summary>점검 세부 정보</summary><div class="fold__body"><dl class="cost-table">${details.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl></div></details>`;
     const badge = getGuiNode('maintenancePlanBadge');
     if (badge) { badge.textContent = state.label; badge.className = `badge badge--${state.tone}`; }
+    const manual = getGuiNode('maintenanceManualCard');
+    if (manual && 'open' in manual && (reuseRows > 0 || plan.automatic?.blocked === true)) manual.open = true;
     return true;
   };
 
   const buildImportTab = () => {
+    const preview = Runtime.sameSpacePreview;
+    const previewRows = Array.isArray(preview?.rows) ? preview.rows.length : null;
+    const previewUnknown = Array.isArray(preview?.unknown) ? preview.unknown.length : null;
     return `<section id="panel-import" data-panel="import" class="stack stack--lg">
-      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태 점검</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>실행 선택</b><span>진단 창에서 복구 실행</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button id="maintenanceAutoBtn" class="btn sr-only" type="button" tabindex="-1" aria-hidden="true" style="display:none">자동 점검·복구</button></div><p class="hint">점검은 먼저 저장소를 안전하게 읽기만 합니다. 누락되거나 변경된 턴이 발견되면 진단 창에서 바로 확인 후 원스톱으로 동기화·복구를 실행할 수 있습니다. (로컬 / 서버 모드 자동 감지)</p></div>
-      <section class="card"><div class="card__head"><div><h2 class="card__title">점검 · 복구 계획</h2><p class="card__desc">실행 전 확인된 원문과 저장 상태를 비교합니다. 자격 증명이나 제공자 호출이 필요하면 동의 전에 구분해 표시합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? (maintenancePlanPresentation(Runtime.guiLastMaintenancePlan).label) : '진단 대기'}</span></div><div id="maintenancePlan" class="stack" style="gap:20px"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태 점검 및 자동 복구’를 눌러 읽기 전용 결과를 확인하세요.</span></div></div>
-      </section>
-      <section id="maintenanceManualCard" class="card"><div class="card__head"><div><h2 class="card__title">수동 복구</h2><p class="card__desc">개별 작업을 지정해 실행합니다. 작업 종류와 보호 조건을 확인하세요.</p></div></div>
-        <div class="stack" style="gap:20px">
-        <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴 동기화 (서버/로컬 공통)</option><option value="rebuild">현재 채팅에서 전체 재구축 (로컬 전용)</option><option value="reembed">로컬 미완료 벡터 복구 (로컬 전용)</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
-        <div class="cluster" style="gap:12px;padding-top:4px"><button id="maintenanceRunBtn" class="btn" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">이전 세션 응답 벡터 복구</button></div>
+      <section class="card">
+        <div class="card__head"><div><h2 class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">누락·변경 턴, 기존 벡터 무료 재사용, 임베딩 대기·실패 작업, 실행 현황을 한 번에 점검하고 필요한 작업만 자동으로 제안합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? escapeHtml(maintenancePlanPresentation(Runtime.guiLastMaintenancePlan).label) : '진단 대기'}</span></div>
+        <div class="stack" style="gap:18px">
+          <div>
+            <div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태 점검</b><span>읽기 전용 · 호출 0</span></div><div class="step"><span class="step__no">2</span><b>자동 제안</b><span>복구·재사용·임베딩</span></div><div class="step"><span class="step__no">3</span><b>실행 선택</b><span>필요한 항목만 실행</span></div><div class="step"><span class="step__no">4</span><b>검증 완료</b><span>저장 후 readback</span></div></div>
+            <div class="cluster" style="margin-top:12px"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button id="maintenanceAutoBtn" class="btn sr-only" type="button" tabindex="-1" aria-hidden="true" style="display:none">자동 점검·복구</button></div>
+            <p class="hint">점검은 저장소를 안전하게 읽기만 합니다. 누락 턴, 기존 벡터 무료 재사용, 미완료 임베딩이 있으면 바로 제안해 드립니다. (로컬 / 서버 모드 자동 감지)</p>
+          </div>
+          <div id="maintenancePlan" class="stack" style="gap:16px"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태 점검 및 자동 복구’를 누르면 저장 상태·임베딩 작업·무료 벡터 재사용 여부를 한 번에 확인하고 필요한 작업만 제안합니다.</span></div></div>
+          <div id="embeddingWorkSection" class="stack stack--sm" style="padding-top:14px;border-top:1px solid var(--border)">
+            <div class="split"><div><b>임베딩 작업 상태</b> <span class="hint">대기 작업을 진행하거나 실패한 항목만 다시 시도합니다.</span></div></div>
+            <div id="embeddingWorkStatus" class="note" role="status" aria-live="polite">작업 상태를 불러오는 중…</div>
+            <div class="cluster"><button id="embeddingWorkRefreshBtn" class="btn btn--sm" type="button">상태 새로고침</button><button id="embeddingWorkRunBtn" class="btn btn--sm" type="button" disabled>대기·이전 작업 진행</button><button id="embeddingWorkRetryFailedBtn" class="btn btn--sm" type="button" disabled>실패 작업만 재시도</button></div>
+          </div>
+          <details id="maintenanceExecutionCard" class="fold" aria-labelledby="maintenanceExecutionTitle">
+            <summary><span id="maintenanceExecutionTitle">유지보수 실행 현황</span> <span id="maintenanceExecutionBadge" class="badge" data-tone="neutral">대기</span></summary>
+            <div class="fold__body stack stack--sm">
+              <p id="maintenanceExecutionStatus" class="note" role="status" aria-live="polite" aria-atomic="true">아직 실행한 유지보수 작업이 없습니다.</p>
+              <dl id="maintenanceExecutionMetrics" class="kv" hidden><dt>완료 배치</dt><dd id="maintenanceCompletedBatches">—</dd><dt>실제 요청</dt><dd id="maintenanceRequests">미확인</dd><dt>응답 대기</dt><dd id="maintenancePending">미확인</dd><dt>결과 미확정</dt><dd id="maintenanceUnknown">미확인</dd></dl>
+              <div id="maintenanceExecutionActions" class="cluster" hidden><button id="maintenanceExecutionDetailsBtn" class="btn" type="button" aria-expanded="false" aria-controls="maintenanceExecutionDetails">실행 상세 보기</button><button id="cancelMaintenanceResultBtn" class="btn btn--danger" type="button" disabled hidden>유지보수 중지 요청</button></div>
+              <div id="maintenanceExecutionDetails" class="fold__body" hidden><dl class="kv"><dt>요청 차원</dt><dd id="maintenanceRequestedDimensions">자동</dd><dt>적용 차원</dt><dd id="maintenanceResolvedDimensions">미확인</dd><dt>사용량 보고</dt><dd id="maintenanceUsageReported">미확인</dd><dt>체크포인트 재사용</dt><dd id="maintenanceResumedBatches">—</dd><dt>작업 범위 ID</dt><dd id="maintenanceExecutionScope">확인 중</dd></dl><p class="hint">미확인 사용량은 0건과 다릅니다. 완료 배치는 기억 개수가 아닌 임베딩 처리 묶음입니다.</p></div>
+              <p id="maintenanceExecutionCancelNote" class="hint" hidden>중지 요청 후에도 이미 전송된 요청은 처리 중일 수 있습니다. 완료된 체크포인트만 다음 작업에서 재사용합니다.</p>
+            </div>
+          </details>
+          <details id="maintenanceManualCard" class="fold">
+            <summary>고급 · 개별 작업 <span class="hint">기존 벡터 무료 재사용 · 수동 복구</span></summary>
+            <div class="fold__body stack" style="gap:18px">
+              <div class="stack stack--sm">
+                <div class="split"><div><b>기존 임베딩 벡터 재사용 (무료 이전)</b><p class="hint" style="margin:4px 0 0">임베딩 연결 경로(예: 직접 연결 ↔ 프록시·경유)만 바꾸고 같은 모델·차원을 그대로 쓸 때, 이미 만든 벡터를 다시 계산하지 않고 이어 씁니다. <b>API 호출 0.</b></p></div><span class="badge">API 호출 0</span></div>
+                <dl class="cost-table"><dt>재사용 가능</dt><dd id="sameSpaceEligibleCount">${previewRows == null ? '아직 확인 안 함' : formatNumber(previewRows)}</dd><dt>재임베딩 필요</dt><dd id="sameSpaceUnknownCount">${previewUnknown == null ? '미확인' : `${formatNumber(previewUnknown)} (등록부·생성 이력 검증 불일치)`}</dd></dl>
+                <div class="cluster"><button id="sameSpacePreviewBtn" class="btn btn--sm" type="button">재사용 가능 항목 확인</button><button id="sameSpaceApplyBtn" class="btn btn--primary btn--sm" type="button">기존 벡터 그대로 이어 쓰기</button></div>
+                <p id="sameSpaceStatus" class="hint" role="status">${preview ? '확인이 끝났습니다. 적용을 누르면 기존 벡터를 그대로 유지한 채 연결 정보만 갱신합니다.' : '상태 점검 및 자동 복구를 누르거나 확인을 누르면 무료로 이어 쓸 수 있는 벡터 수를 보여 줍니다.'}</p>
+              </div>
+              <div class="stack stack--sm" style="padding-top:14px;border-top:1px solid var(--border)">
+                <b>수동 복구 (개별 지정 실행)</b>
+                <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴 동기화 (서버/로컬 공통)</option><option value="rebuild">현재 채팅에서 전체 재구축 (로컬 전용)</option><option value="reembed">로컬 미완료 벡터 복구 (로컬 전용)</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
+                <div class="cluster" style="gap:12px;padding-top:4px"><button id="maintenanceRunBtn" class="btn" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">이전 세션 응답 벡터 복구</button></div>
+              </div>
+            </div>
+          </details>
         </div>
-      </section>
-      <section id="maintenanceExecutionCard" class="card" aria-labelledby="maintenanceExecutionTitle"><div class="card__head"><div><h2 id="maintenanceExecutionTitle" class="card__title">유지보수 실행 현황</h2><p class="card__desc">요청 수, 완료 배치, 미확정 결과는 별도로 표시합니다.</p></div><span id="maintenanceExecutionBadge" class="badge" data-tone="neutral">대기</span></div>
-        <p id="maintenanceExecutionStatus" class="note" role="status" aria-live="polite" aria-atomic="true">아직 실행한 유지보수 작업이 없습니다.</p>
-        <dl id="maintenanceExecutionMetrics" class="kv" hidden><dt>완료 배치</dt><dd id="maintenanceCompletedBatches">—</dd><dt>실제 요청</dt><dd id="maintenanceRequests">미확인</dd><dt>응답 대기</dt><dd id="maintenancePending">미확인</dd><dt>결과 미확정</dt><dd id="maintenanceUnknown">미확인</dd></dl>
-        <div id="maintenanceExecutionActions" class="cluster" hidden><button id="maintenanceExecutionDetailsBtn" class="btn" type="button" aria-expanded="false" aria-controls="maintenanceExecutionDetails">실행 상세 보기</button><button id="cancelMaintenanceResultBtn" class="btn btn--danger" type="button" disabled hidden>유지보수 중지 요청</button></div>
-        <div id="maintenanceExecutionDetails" class="fold__body" hidden><dl class="kv"><dt>요청 차원</dt><dd id="maintenanceRequestedDimensions">자동</dd><dt>적용 차원</dt><dd id="maintenanceResolvedDimensions">미확인</dd><dt>사용량 보고</dt><dd id="maintenanceUsageReported">미확인</dd><dt>체크포인트 재사용</dt><dd id="maintenanceResumedBatches">—</dd><dt>작업 범위 ID</dt><dd id="maintenanceExecutionScope">확인 중</dd></dl><p class="hint">미확인 사용량은 0건과 다릅니다. 완료 배치는 기억 개수가 아닌 임베딩 처리 묶음입니다.</p></div><p id="maintenanceExecutionCancelNote" class="hint" hidden>중지 요청 후에도 이미 전송된 요청은 처리 중일 수 있습니다. 완료된 체크포인트만 다음 작업에서 재사용합니다.</p>
       </section>
     </section>`;
   };
@@ -52861,6 +53424,12 @@ ${cleanedText}`, 80),
       #vector-rag-memory-root .brand__mark{width:30px;height:30px}
       #vector-rag-memory-root .topbar > .btn--icon,#vector-rag-memory-root #topMoreBtn{width:44px}
       #vector-rag-memory-root .health{padding:5px 8px}
+      /* Phones: 16px fields so mobile browsers do not zoom on focus; search fields take their own row. */
+      #vector-rag-memory-root input:not([type=checkbox]):not([type=radio]):not([type=range]),#vector-rag-memory-root select,#vector-rag-memory-root textarea{font-size:16px}
+      #vector-rag-memory-root .cluster>.search{flex:1 1 100%;min-width:0}
+      #vector-rag-memory-root .manual-turn-search-box{flex:1 1 auto}
+      #vector-rag-memory-root #manualTurnSearchInput{width:72px!important;height:38px!important}
+      #vector-rag-memory-root .seg button,#vector-rag-memory-root .tabs [role=tab]{min-height:40px}
     }
   `;
   const FLASHBACK_GUI_MOCKUP_STYLES = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n/* CI 글꼴 (docs/brand): 라틴 글자만 내장, 외부 요청 없음. Space Grotesk와 IBM Plex Mono는 SIL OFL 1.1 (assets/fonts) */\n@font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:\"IBM Plex Sans KR\",Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-brand:\"Space Grotesk\",\"IBM Plex Sans KR\",Pretendard,\"Noto Sans KR\",system-ui,sans-serif;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:clip;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}.brand__mark .brand__symbol{display:block;width:66%;height:66%}\n.brand__name{font:700 17px/1.15 var(--font-brand);letter-spacing:.08em;text-transform:uppercase;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;inset:0;margin:0;opacity:0;width:1px;height:1px;pointer-events:none}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}.switch input:disabled+.switch__track{opacity:.45;cursor:not-allowed}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice:disabled,.choice[aria-disabled=true]{opacity:.58;cursor:not-allowed;background:var(--surface2)}.choice:disabled:hover,.choice[aria-disabled=true]:hover{border-color:var(--border2)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#2f3f8f; --brand-ink:#fff;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n   --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#126457; --brand-ink:#fff;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#a3530a; --brand-ink:#fff;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#6b3fa0; --brand-ink:#fff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#a3365a; --brand-ink:#fff;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#3e5566; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */\n.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}\n.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}\n.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}\n.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}\n.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}\n.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}\n.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}\n.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}\n.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}\n.frame-card>summary{list-style:none;cursor:pointer;display:block}\n.frame-card>summary::-webkit-details-marker{display:none}\n.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}\n.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}\n.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}\n.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}\n.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}\n.frame-card__more{color:var(--accent-ink);font-size:12px}\n.frame-card__more::after{content:\"기억 펼치기 ↗\"}.frame-card[open] .frame-card__more::after{content:\"기억 접기 −\"}\n.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}\n.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}\n.meter meter{width:100%;height:12px;accent-color:var(--accent)}\n.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}\n.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}\n.film a:hover{background:#76594b}\n.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}\n.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}\n.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}\n.work+.work{margin-top:10px}\n.scopes tr.is-cur td{background:var(--accent-soft)}\n.tbl-act{display:flex;gap:6px;justify-content:flex-end}\n.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}\n.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}\n.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}\n.plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.plan-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px}.plan-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.mode-opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 14px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.mode-opt.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}\n.mode-opt[disabled]{opacity:.62;cursor:not-allowed;background:var(--surface2)}\n.mode-opt b{font-size:14px}.mode-opt small{grid-column:1/-1;font-size:12.5px;color:var(--text2)}.mode-opt .why{grid-column:1/-1;font-size:12px;color:var(--danger-ink)}\n.film a.is-on{background:var(--accent);color:var(--on-accent)}\n.frame-card.is-cut .frame-card__img{opacity:.78}\n.cut-tag{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px dashed var(--border2);color:var(--text3)}\n.btn[disabled]+.why-d{display:block}.why-d{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n@container app (max-width:900px){.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}\n\n/* 설정 행: 이름과 설명을 두 줄로 분리 */\nlabel.setting>span:first-child{display:grid;gap:3px;min-width:0}\nlabel.setting .setting__name,label.setting .setting__desc{display:block}\n";
@@ -52904,7 +53473,7 @@ ${cleanedText}`, 80),
       provider: 'connect', server: 'connect', activity: 'log', advanced: 'settings'
     })[tab] || 'lab';
     const pageFor = routeFor(activeTab);
-    const subtabs = { vault: Runtime.guiVaultSubtab || (activeTab === 'worldline' ? 'wl' : 'resp'), care: Runtime.guiCareSubtab || (activeTab === 'source-edits' ? 'reanalyze' : activeTab === 'restore' ? 'restore' : 'import'), connect: Runtime.guiConnectSubtab || (activeTab === 'server' ? 'srv' : 'emb') };
+    const subtabs = { vault: Runtime.guiVaultSubtab || (activeTab === 'worldline' ? 'wl' : 'resp'), care: Runtime.guiCareSubtab || (activeTab === 'source-edits' ? 'reanalyze' : activeTab === 'restore' ? 'restore' : 'import'), connect: Runtime.guiConnectSubtab === 'srv' ? 'srv' : (activeTab === 'server' ? 'srv' : 'emb') };
     if (activeTab === 'worldline') subtabs.vault = 'wl';
     if (activeTab === 'server') subtabs.connect = 'srv';
     const displayRecall = resolveDisplayRecall(Runtime.lastRecall, current.scope?.scopeKey || '');
@@ -52928,8 +53497,8 @@ ${cleanedText}`, 80),
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
     const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div class="cluster" style="justify-content:space-between;margin-bottom:10px"><span class="hint">저장되는 원문에서 뺄 태그와 표식은 원문 태그 필터에서 정합니다.</span><button class="btn btn--sm" type="button" data-fb-open-tag-filter>원문 태그 필터</button></div><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
-    const careBody = `<div class="tabs" role="tablist" data-subtabs="k">${subtab('k','import','유지보수',subtabs.care==='import')}${subtab('k','reanalyze','직접 원문 재분석',subtabs.care==='reanalyze')}${subtab('k','tags','원문 태그 필터',subtabs.care==='tags')}${subtab('k','restore','백업 · 복원',subtabs.care==='restore')}</div>`
-      + `<div data-subpanel="import" data-group="k" class="${subtabs.care==='import'?'is-active':''}"><div class="stack stack--lg">${buildImportTab()}${buildEmbeddingWorkCard()}</div></div>`
+    const careBody = `<div class="tabs" role="tablist" data-subtabs="k">${subtab('k','import','유지보수',subtabs.care==='import')}${subtab('k','reanalyze','재분석',subtabs.care==='reanalyze')}${subtab('k','tags','원문 태그 필터',subtabs.care==='tags')}${subtab('k','restore','백업 · 복원',subtabs.care==='restore')}</div>`
+      + `<div data-subpanel="import" data-group="k" class="${subtabs.care==='import'?'is-active':''}"><div class="stack stack--lg">${buildImportTab()}</div></div>`
       + `<div data-subpanel="reanalyze" data-group="k" class="${subtabs.care==='reanalyze'?'is-active':''}"><div class="stack stack--lg">${buildFlashbackSourceEditCard()}</div></div>`
       + `<div data-subpanel="tags" data-group="k" class="${subtabs.care==='tags'?'is-active':''}"><div class="stack stack--lg">${buildFlashbackTagFilterCard()}</div></div>`
       + `<div data-subpanel="restore" data-group="k" class="${subtabs.care==='restore'?'is-active':''}"><div class="stack stack--lg"><section id="panel-restore" data-panel="restore" class="card"><div class="card__head"><div><h2 class="card__title">백업 · 복원 · 이사</h2><p class="card__desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다. 대화 원문과 비공개 기억이 포함될 수 있으니 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></section></div></div>`;
@@ -52943,13 +53512,13 @@ ${cleanedText}`, 80),
       `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="card" id="turnVectorCard"><div class="card__head"><div><h2 class="card__title">턴별 벡터 상태</h2><p class="card__desc">${escapeHtml(turnVectorSummary)}</p></div>${turnVectorBadgeHtml}</div>${turnVectorRowsHtml}</div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
       `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
       `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
-      `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','벡터 재사용',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
+      `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
       `<section class="page ${pageFor==='log'?'is-active':''}" data-page="log"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">현상 기록</h1><p class="page-desc">현재 실행의 리콜·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.</p></div><div class="page-actions">${activityBody.match(/<div class="page-actions">([\s\S]*?)<\/div>/)?.[1] || ''}</div></div>${activityBody.replace(/<div class="page-actions">[\s\S]*?<\/div>/,'')}</section>`,
       `<section class="page ${pageFor==='settings'?'is-active':''}" data-page="settings" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recall settings</div><h1 class="page-title">리콜 설정</h1><p class="page-desc">프리셋으로 시작하고, 필요한 값만 세부 조정합니다. 저장 출처와 ARG 우선순위를 확인합니다.</p></div></div><div class="stack">${settingsBody}</div></section>`
     ].join('');
     const pageKey = routeTabKey[pageFor] || 'overview';
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
-    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
+    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageResponseCountLabel(Runtime.guiCurrentStatsCache?.value || null)}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="currentColor" stroke-width="1.4"/></svg></div><div><div class="brand__name">FLASHBACK</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta">${escapeHtml(flashbackHealthChipMeta(health, current))}</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}
 .frames>.frame-card,.list>.row{content-visibility:auto;contain-intrinsic-size:auto 72px}
@@ -53533,9 +54102,30 @@ ${cleanedText}`, 80),
       }
     }
 
+    const sameSpaceRows = Array.isArray(plan.sameSpacePreview?.rows) ? plan.sameSpacePreview.rows.length : 0;
+    const sameSpaceBannerHtml = sameSpaceRows > 0
+      ? `<div class="note" role="status"><strong style="display:block">무료 벡터 재사용 가능 · API 호출 0</strong><span>기존 임베딩 벡터 ${formatNumber(sameSpaceRows)}개를 재계산 없이 현재 연결에 그대로 이어 쓸 수 있습니다.</span></div>`
+      : '';
+    if (sameSpaceRows > 0 && !actionBtn) {
+      actionBtn = {
+        text: `기존 벡터 ${formatNumber(sameSpaceRows)}개 무료 이어 쓰기`,
+        className: 'btn btn--primary',
+        onClick: async () => {
+          const result = await applyVerifiedEmbeddingMigration(plan.sameSpacePreview);
+          Runtime.sameSpacePreview = null;
+          setNodeText('sameSpaceEligibleCount', '아직 확인 안 함');
+          setNodeText('sameSpaceUnknownCount', '미확인');
+          setNodeText('sameSpaceStatus', `기존 벡터 ${formatNumber(result.migrated || 0)}개 연결 갱신 완료 · 재읽기 확인 · API 호출 0`);
+          await refreshUi('import', { forceData: true });
+          await guiAlert(`기존 임베딩 벡터 ${formatNumber(result.migrated || 0)}개를 API 호출 없이 현재 연결에 맞게 갱신했습니다.`, '기존 벡터 재사용 완료');
+        }
+      };
+    }
+
     const bodyHtml = `
       <div style="display:grid;gap:12px">
         ${bannerHtml}
+        ${sameSpaceBannerHtml}
         ${metricsHtml}
         ${detailsHtml}
       </div>`;
@@ -54405,6 +54995,11 @@ ${cleanedText}`, 80),
       if(cancelButton){cancelButton.disabled=!status.canCancel;cancelButton.hidden=!(active||pending||status.canCancel);cancelButton.textContent=status.cancelled?'중지 요청됨':'유지보수 중지 요청';}
       const badge=getGuiNode('maintenanceExecutionBadge');
       if(badge){badge.textContent=label;badge.setAttribute('data-tone',tone);}
+      const execCard=getGuiNode('maintenanceExecutionCard');
+      if(execCard&&'open' in execCard){
+        if(active||pending||uncertain||status.status==='failed'||status.status==='abandoned'||status.cancelled)execCard.open=true;
+        else if(!hasRun)execCard.open=false;
+      }
       setNodeText('maintenanceExecutionStatus',summary);
       for(const id of ['maintenanceExecutionMetrics','maintenanceExecutionActions']){const node=getGuiNode(id);if(node)node.hidden=!hasRun;}
       const note=getGuiNode('maintenanceExecutionCancelNote');if(note)note.hidden=!(active||pending||uncertain);
@@ -54470,11 +55065,12 @@ ${cleanedText}`, 80),
     if (!foot.querySelector('[data-current-status]')) {
       const doc = foot.ownerDocument;
       const node = (tag, text) => { const el = doc.createElement(tag); el.textContent = text; return el; };
+      const preservedBadges = foot.querySelector?.('#hayakuSideStatusBadges');
       // Retain the owner's sidebar footer, like LIBRA. It stays expanded and
       // participates in sidebar layout rather than covering the main content.
       foot.classList.add('current-status-panel');
       const body = node('div', ''); body.className = 'current-status-body';
-      foot.replaceChildren(node('b', '현재 상태'), body);
+      foot.replaceChildren(...(preservedBadges ? [node('b', '현재 상태'), preservedBadges, body] : [node('b', '현재 상태'), body]));
       foot.setAttribute('aria-label', '현재 상태 및 설정 바로가기');
       for (const row of [{ id:'storage', text:'저장: 확인 중', target:'server' }, ...options.getRows()]) {
         const button = node('button', row.text);
@@ -54650,7 +55246,7 @@ ${cleanedText}`, 80),
     else if (activeTab === 'restore') Runtime.guiCareSubtab = 'restore';
     else if (activeTab === 'import' && !['reanalyze','tags','restore'].includes(Runtime.guiCareSubtab)) Runtime.guiCareSubtab = 'import';
     if (activeTab === 'server') Runtime.guiConnectSubtab = 'srv';
-    else if (activeTab === 'provider' && !['mig','srv'].includes(Runtime.guiConnectSubtab)) Runtime.guiConnectSubtab = 'emb';
+    else if (activeTab === 'provider' && Runtime.guiConnectSubtab !== 'srv') Runtime.guiConnectSubtab = 'emb';
     for (const page of Array.from(root.querySelectorAll?.('.page[data-page]') || [])) {
       page.classList?.toggle('is-active', page.getAttribute?.('data-page') === route);
     }
@@ -54731,7 +55327,7 @@ ${cleanedText}`, 80),
     setNodeText('metricTokenLabel', statsPartial ? '토큰 추정 (부분)' : '토큰 추정');
     setNodeText('metricTokenTotal', formatNumber(current.stats.tokenTotal));
     setNodeText('metricChunkTotal', formatNumber(current.records.length));
-    setNodeText('nav-scope-n', storageScopeCountLabel());
+    setNodeText('nav-scope-n', storageResponseCountLabel(current));
     const currentShardCount = Math.max(0, Number(current.manifest?.shardCount || 0) || 0);
     const currentShardSize = Math.max(1, Number(current.manifest?.shardSize || DEFAULTS.shardSize) || DEFAULTS.shardSize);
     setNodeText('storageShardCountNav', formatNumber(currentShardCount));
@@ -55136,6 +55732,7 @@ ${cleanedText}`, 80),
     guiMounted = true;
     Runtime.guiPerf.fullMounts += 1;
     bindUiEvents(root);
+    try { globalThis.__FlashbackPortableMemoryBackup?.mountUi?.(root.querySelector?.('[data-portable-backup-host="flashback_memory"]')); } catch (_) {}
     restoreGuiViewState(root, viewState);
     applyBusyState();
     return true;
@@ -55686,6 +56283,7 @@ ${cleanedText}`, 80),
     getGuiNode('overviewBackupBtn')?.addEventListener('click', () => {
       setActiveGuiTab('restore');
       const host = root.querySelector?.('[data-portable-backup-host="flashback_memory"]');
+      try { globalThis.__FlashbackPortableMemoryBackup?.mountUi?.(host); } catch (_) {}
       const target = host?.querySelector?.('button') || host;
       target?.setAttribute?.('tabindex', target?.getAttribute?.('tabindex') || '-1');
       target?.focus?.();
@@ -55938,7 +56536,8 @@ ${cleanedText}`, 80),
       setNodeText('sameSpaceUnknownCount', Array.isArray(preview?.unknown) ? `${formatNumber(preview.unknown.length)} (등록부·생성 이력 검증 불일치)` : '미확인');
     };
     getGuiNode('sameSpacePreviewBtn')?.addEventListener('click',async()=>{try{const preview=await previewVerifiedEmbeddingMigration();Runtime.sameSpacePreview=preview;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`현재 채팅 · 재사용 가능 ${preview.rows.length}개 · 재임베딩 필요 ${preview.unknown.length}개 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
-    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`기존 벡터 ${result.migrated}개 연결 갱신 완료 · 재읽기 확인 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`기존 벡터 ${result.migrated}개 연결 갱신 완료 · 재읽기 확인 · API 호출 0`);if(Runtime.guiLastMaintenancePlan){Runtime.guiLastMaintenancePlan={...Runtime.guiLastMaintenancePlan,sameSpacePreview:null};renderMaintenancePlanInUi(Runtime.guiLastMaintenancePlan);}refreshEmbeddingWorkPanel(guiRoot).catch(()=>false);updateGuiSummary({force:true}).catch(()=>null);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    getGuiNode('maintenancePlan')?.addEventListener?.('click',event=>{const quickApply=event?.target?.closest?.('[data-same-space-quick-apply]');if(quickApply)getGuiNode('sameSpaceApplyBtn')?.click?.();});
     getGuiNode('cancelMaintenanceResultBtn')?.addEventListener('click',()=>{if(!maintenanceExecutionStatus().canCancel)return;Runtime.maintenanceController?.abort();Runtime.maintenanceExecutionLedger?.cancel();renderMaintenanceExecution();});
     getGuiNode('maintenanceExecutionDetailsBtn')?.addEventListener('click',()=>{
       const button=getGuiNode('maintenanceExecutionDetailsBtn'),panel=getGuiNode('maintenanceExecutionDetails');
@@ -56108,6 +56707,16 @@ ${cleanedText}`, 80),
       try {
         const plan = await runMaintenanceGuiTask('inspection', onProgress => inspectMemoryMaintenance({ requestPermission: true, onProgress }));
         if(guiVisible&&maintenanceJobInScope(maintenanceLiveJob)){
+          try {
+            const sameSpace = await previewVerifiedEmbeddingMigration();
+            if (sameSpace) {
+              Runtime.sameSpacePreview = sameSpace;
+              refreshSameSpacePreviewCounts();
+              setNodeText('sameSpaceStatus', `현재 채팅 · 재사용 가능 ${formatNumber(sameSpace.rows.length)}개 · 재임베딩 필요 ${formatNumber(sameSpace.unknown.length)}개 · API 호출 0`);
+              plan.sameSpacePreview = sameSpace;
+            }
+          } catch (_) {}
+          await refreshEmbeddingWorkPanel(guiRoot).catch(() => false);
           renderMaintenancePlanInUi(plan);
           await showMaintenanceInspectionModal(plan);
         }
@@ -56629,6 +57238,8 @@ ${cleanedText}`, 80),
     return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}" data-memory-owner="flashback"><title>${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#7c3aed" stroke="#ddd6fe"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">F</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
   };
   const FLASHBACK_ATTENTION_POLL_MS = 10000;
+  const FLASHBACK_ATTENTION_IDLE_POLL_MS = 30000;
+  const FLASHBACK_ATTENTION_IDLE_AFTER_QUIET_CHECKS = 3;
   const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
   const flashbackAttentionEnabled = (settings = Runtime.settings) => settings?.mode !== 'off'
     && settings?.mode !== 'disabled' && settings?.enabled !== false;
@@ -56640,6 +57251,9 @@ ${cleanedText}`, 80),
     refreshTimer: null,
     pollTimer: null,
     evaluating: false,
+    quietChecks: 0,
+    hiddenSkips: 0,
+    visibilityHandler: null,
     lastIndexes: '',
     lastRevision: '',
     revisionTracker: null,
@@ -56972,6 +57586,7 @@ ${cleanedText}`, 80),
   };
   function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
     if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.quietChecks = 0;
     const generation = FlashbackAttention.generation;
     if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
     FlashbackAttention.refreshTimer = setTimeout(() => {
@@ -56982,19 +57597,44 @@ ${cleanedText}`, 80),
     FlashbackAttention.refreshTimer?.unref?.();
     return true;
   }
+  const loadFlashbackAttentionChat = async () => {
+    const api = getLiveApi(['getChatFromIndex']) || getLiveApi();
+    const chatAlone = ['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']
+      .every(name => typeof api?.[name] === 'function');
+    if (chatAlone) {
+      const chatInfo = await loadCurrentChat(null, { preferDirect: true });
+      return { chatInfo, chat: chatInfo.chat };
+    }
+    return await loadRisuCaptureSnapshot();
+  };
   const pollFlashbackAttention = async () => {
     if (!FlashbackAttention.started || Runtime.unloaded) return;
     if (FlashbackAttention.pollFlight) return;
     if (FlashbackAttention.pollTimer) clearTimeout(FlashbackAttention.pollTimer);
     FlashbackAttention.pollTimer = null;
+    if (nativeCopyObserverPageHidden()) {
+      FlashbackAttention.hiddenSkips += 1;
+      FlashbackAttention.quietChecks = 0;
+      if (!FlashbackAttention.visibilityHandler && !Runtime.unloaded) {
+        const generation = FlashbackAttention.generation;
+        FlashbackAttention.pollTimer = setTimeout(() => {
+          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+        }, FLASHBACK_ATTENTION_IDLE_POLL_MS);
+        FlashbackAttention.pollTimer?.unref?.();
+      }
+      return;
+    }
     const generation = FlashbackAttention.generation, flight = { generation };
     FlashbackAttention.pollFlight = flight;
     const current = () => FlashbackAttention.started && !Runtime.unloaded
       && generation === FlashbackAttention.generation && FlashbackAttention.pollFlight === flight;
     try {
       const settings = await loadSettings(false);
-      if (!current() || !flashbackAttentionEnabled(settings)) return;
-      const snapshot = await loadRisuCaptureSnapshot();
+      if (!current() || !flashbackAttentionEnabled(settings)) {
+        FlashbackAttention.quietChecks = 0;
+        return;
+      }
+      const snapshot = await loadFlashbackAttentionChat();
       if (!current() || !flashbackAttentionEnabled()) return;
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
       const live = await flashbackAttentionRevision(snapshot?.chat || null, () => current() && flashbackAttentionEnabled());
@@ -57005,29 +57645,56 @@ ${cleanedText}`, 80),
       FlashbackAttention.lastIndexes = indexes;
       FlashbackAttention.lastRevision = revision;
       if (indexChanged || revisionChanged) {
+        FlashbackAttention.quietChecks = 0;
         scheduleFlashbackAttentionRefresh(indexChanged ? 'chat_switch' : 'chat_source_changed', 500);
+      } else {
+        FlashbackAttention.quietChecks += 1;
       }
     } catch (_) {}
     finally {
       const rearm = current();
       if (FlashbackAttention.pollFlight === flight) FlashbackAttention.pollFlight = null;
       if (rearm) {
-        if (!flashbackAttentionEnabled()) {
+        const disabled = !flashbackAttentionEnabled();
+        if (disabled) {
           FlashbackAttention.revisionTracker = null;
           FlashbackAttention.lastIndexes = '';
           FlashbackAttention.lastRevision = '';
+          FlashbackAttention.quietChecks = 0;
         }
-        FlashbackAttention.pollTimer = setTimeout(() => {
-          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
-        }, FLASHBACK_ATTENTION_POLL_MS);
-        FlashbackAttention.pollTimer?.unref?.();
+        const hidden = nativeCopyObserverPageHidden();
+        if (!hidden || !FlashbackAttention.visibilityHandler) {
+          const delayMs = disabled || hidden || FlashbackAttention.quietChecks >= FLASHBACK_ATTENTION_IDLE_AFTER_QUIET_CHECKS
+            ? FLASHBACK_ATTENTION_IDLE_POLL_MS
+            : FLASHBACK_ATTENTION_POLL_MS;
+          FlashbackAttention.pollTimer = setTimeout(() => {
+            if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+          }, delayMs);
+          FlashbackAttention.pollTimer?.unref?.();
+        }
       }
     }
   };
   const startFlashbackAttention = () => {
     if (FlashbackAttention.started || Runtime.unloaded) return false;
-    FlashbackAttention.generation += 1;
+    const generation = ++FlashbackAttention.generation;
     FlashbackAttention.started = true;
+    FlashbackAttention.quietChecks = 0;
+    if (!FlashbackAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.addEventListener === 'function') {
+      FlashbackAttention.visibilityHandler = () => {
+        if (!FlashbackAttention.started || Runtime.unloaded || generation !== FlashbackAttention.generation) return;
+        if (nativeCopyObserverPageHidden()) {
+          if (FlashbackAttention.pollTimer) {
+            try { clearTimeout(FlashbackAttention.pollTimer); } catch (_) {}
+            FlashbackAttention.pollTimer = null;
+          }
+          return;
+        }
+        FlashbackAttention.quietChecks = 0;
+        void pollFlashbackAttention();
+      };
+      try { document.addEventListener('visibilitychange', FlashbackAttention.visibilityHandler); } catch (_) {}
+    }
     void pollFlashbackAttention();
     scheduleFlashbackAttentionRefresh('start', 800);
     return true;
@@ -57038,6 +57705,12 @@ ${cleanedText}`, 80),
     FlashbackAttention.pollFlight = null;
     FlashbackAttention.evaluationFlight = null;
     FlashbackAttention.evaluating = false;
+    FlashbackAttention.quietChecks = 0;
+    FlashbackAttention.hiddenSkips = 0;
+    if (FlashbackAttention.visibilityHandler && typeof document !== 'undefined' && typeof document?.removeEventListener === 'function') {
+      try { document.removeEventListener('visibilitychange', FlashbackAttention.visibilityHandler); } catch (_) {}
+    }
+    FlashbackAttention.visibilityHandler = null;
     for (const key of ['refreshTimer', 'pollTimer']) {
       if (FlashbackAttention[key]) {
         try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
@@ -57871,6 +58544,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   publicApi._test.getManualEditorRecordText = getManualEditorRecordText;
   publicApi._test.manualEditorRecordStatus = manualEditorRecordStatus;
   publicApi._test.renderLastRecallPanel = renderLastRecallPanel;
+  publicApi._test.recentChatDuplicateTurns = recentChatDuplicateTurns;
+  publicApi._test.inspectRecentChatDuplicateTurns = inspectRecentChatDuplicateTurns;
+  publicApi._test.inspectRequestPreviousTurnMatch = inspectRequestPreviousTurnMatch;
+  publicApi._test.storageResponseCountLabel = storageResponseCountLabel;
   publicApi._test.normalizeFlashbackGuiTab = normalizeFlashbackGuiTab;
   publicApi._test.flashbackOverviewHealth = flashbackOverviewHealth;
   publicApi._test.flashbackOverviewRecallSummary = flashbackOverviewRecallSummary;
@@ -58303,6 +58980,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         abortEmbeddingJobs('plugin_unloaded');
         Runtime.nativeCopyObserver.running = false;
         Runtime.nativeCopyObserver.timer = null;
+        if (Runtime.nativeCopyObserver.visibilityHandler && typeof document !== 'undefined' && typeof document?.removeEventListener === 'function') {
+          try { document.removeEventListener('visibilitychange', Runtime.nativeCopyObserver.visibilityHandler); } catch (_) {}
+        }
+        Runtime.nativeCopyObserver.visibilityHandler = null;
         clearScheduledTimers();
         Runtime.driftChecksInFlight.clear();
         Runtime.driftDismissed.clear();
@@ -60811,11 +61492,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (file) void doRestoreFile(file);
       };
     };
-    const ensureUi = () => {
-      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector || document.getElementById(config.uiId)) return;
+    const ensureUi = hostOverride => {
+      if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector) return null;
       const ownerRoot = document.querySelector(`[data-flashback-memory="${config.pluginId}"]`);
-      const dedicatedHost = ownerRoot?.querySelector?.(`[data-portable-backup-host="${config.pluginId}"]`) || null;
-      if (!ownerRoot || !dedicatedHost) return;
+      const dedicatedHost = hostOverride?.getAttribute?.('data-portable-backup-host') === config.pluginId
+        ? hostOverride
+        : (ownerRoot?.querySelector?.(`[data-portable-backup-host="${config.pluginId}"]`) || null);
+      if (!ownerRoot || !dedicatedHost || (typeof ownerRoot.contains === 'function' && !ownerRoot.contains(dedicatedHost))) return null;
+      const mounted = document.getElementById(config.uiId);
+      if (mounted?.parentNode === dedicatedHost) {
+        runtime.uiRoot = mounted;
+        runtime.input = mounted.querySelector('input[type=file]');
+        syncPortableUiState();
+        return mounted;
+      }
+      mounted?.remove?.();
       const anchor = dedicatedHost;
       const root = document.createElement('div');
       root.id = config.uiId;
@@ -60833,17 +61524,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       runtime.input = root.querySelector('input[type=file]');
       bindUi(root);
       syncPortableUiState();
-    };
-    const startUiObserver = () => {
-      if (typeof document === 'undefined' || !document?.documentElement) return;
-      ensureUi();
-      if (typeof MutationObserver === 'undefined' || runtime.observer) return;
-      let timer = null;
-      runtime.observer = new MutationObserver(() => {
-        if (timer != null) clearTimeout(timer);
-        timer = setTimeout(() => { timer = null; ensureUi(); }, 80);
-      });
-      runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      return root;
     };
   const publicApi = Object.freeze({
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
@@ -60870,6 +61551,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       rebindToUpdatedBot: async envelope => await publicApi.restoreCurrentScope(envelope, { mode: Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT }),
       storageTarget: portableStorageTargetText,
       restoreFile: doRestoreFile,
+      mountUi: ensureUi,
+      syncUi: syncPortableUiState,
       status: () => cloneJson({
         lastExport: runtime.lastExport,
         lastRestore: runtime.lastRestore,
@@ -60879,15 +61562,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       })
     });
     try { globalThis[config.globalApiKey] = publicApi; } catch (_) {}
-    startUiObserver();
+    ensureUi();
     const unloadApi = findHost(['onUnload']);
     if (typeof unloadApi?.onUnload === 'function' && !runtime.cleanupRegistered) {
       runtime.cleanupRegistered = true;
       try {
         await unloadApi.onUnload(async () => {
           runtime.unloaded = true;
-          try { runtime.observer?.disconnect?.(); } catch (_) {}
-          runtime.observer = null;
           try { document.getElementById(config.uiId)?.remove?.(); } catch (_) {}
           try {
             if (globalThis[config.globalApiKey] === publicApi) delete globalThis[config.globalApiKey];

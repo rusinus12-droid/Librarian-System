@@ -43,7 +43,10 @@ const touching = (page, scope) => page.evaluate(sel => {
       });
 
       await page.evaluate(() => { __approved.selectBookMemoryKind('lens'); __approved.bookNavigate('memory'); });
-      await page.waitForSelector('[data-lens-reader] .lens-item');
+      await page.waitForSelector('[data-lens-reader] [data-lens-view-mode="all"]');
+      await page.locator('[data-lens-reader] [data-lens-view-mode="all"]').click();
+      await page.locator('[data-lens-reader] [data-lens-expand-all]').click();
+      await page.waitForSelector('[data-lens-reader] .lens-item [data-lens-who]');
       const reader = page.locator('[data-lens-reader]');
       assert.equal(await reader.locator('.lens-item').count(), 4);
       const fever = reader.locator('.lens-item').filter({ hasText: '38도' });

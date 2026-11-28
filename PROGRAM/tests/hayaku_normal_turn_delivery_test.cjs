@@ -44,6 +44,7 @@ const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs')
     const settings = { memoryLanguage: 'source' };
 
     const seal = t.buildPacketTerminalCompletionSeal(settings);
+    const skeleton = t.buildPacketRuntimeSkeletonInstruction(settings);
     const full = t.buildPacketCoreStaticWriteInstruction(settings);
     const compact = t.buildPacketCoreCompactWriteInstruction(settings);
     const critical = t.buildPacketCoreCompactWriteInstruction(settings, { critical: true });
@@ -80,6 +81,16 @@ const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs')
       'the seal must state the body is exactly one JSON value');
     assert.match(seal, /starts with \{ and ends with \}/i,
       'the seal must state the body\'s first and last characters, so nothing can trail the JSON');
+
+    // Runtime skeleton must match the same bare-marker rule (zero HTML comment decoration)
+    // while keeping the runtime metadata JSON object on its own `{...}` line.
+    assert.ok(!skeleton.includes('<!--') && !skeleton.includes('-->'),
+      'the runtime skeleton must not show HTML comment delimiters around packet markers');
+    assert.ok(skeleton.includes(START) && skeleton.includes(END),
+      'the runtime skeleton must name both packet markers bare');
+    const skeletonMetaLine = skeleton.split('\n').find(line => line.startsWith('{'));
+    assert.ok(skeletonMetaLine && JSON.parse(skeletonMetaLine).packet_type === 'current_snapshot',
+      'the runtime skeleton must keep RUNTIME META CONSTANTS JSON on its own `{...}` line');
 
     // ------------------------------------------------------------------------------------
     // 2. Fences must be forbidden where the model can see it.

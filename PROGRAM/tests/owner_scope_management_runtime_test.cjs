@@ -113,4 +113,39 @@ const deadline=setTimeout(()=>{throw Error('scope management regression timeout'
   await assert.rejects(()=>protectedFixture.bridge.manageScope({scopeId:'B',action:'delete',expectedFingerprint:b.fingerprint}),/SCOPE_DATA_DELETE_BLOCKED/);assert.equal(protectedFixture.values.get('hayaku.B'),'B_SOURCE');
   console.log('PASS hayaku: cross-scope references block local deletion');
  }finally{await protectedFixture.close();}
+
+ // Regression: source-tracking settings and LIBRA context-cutter keys are classified without unknown_owner_key blockers.
+ const libraCheck=await libraAdapter({
+  hostScopes:[{characterId:'two',chatId:'B'}],
+  registries:[],
+  records:[
+   {key:'libra:v1:settings:source-tracking:v1',location:'plugin',space:'plugin',value:JSON.stringify({mode:'off',epoch:0})},
+   {key:'libra:v1:scope:B:manifest',location:'plugin',space:'plugin',value:JSON.stringify({schema:'libra.manifest.v1',scopeKey:'B',characterId:'two',chatId:'B',memories:{},inheritedMemories:[]})},
+   {key:'libra:v1:scope:B:context-cutter:v1',location:'plugin',space:'plugin',value:JSON.stringify({schema:'libra.context_cutter_state.v1',scopeKey:'B',removedIds:[]})}
+  ]
+ });
+ assert.equal(libraCheck.completeKnownScopes,true,'libra source-tracking settings and context-cutter pass global discovery');
+ assert.equal(libraCheck.blockers.length,0);
+
+ const fbPlugin=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
+ const fbFrag=fbPlugin.slice(fbPlugin.indexOf('async function memorySuiteFlashbackDiscoverGlobalScopes'),fbPlugin.indexOf('// END FLASHBACK GLOBAL DISCOVERY ADAPTER'));
+ const fbAdapter=vm.runInNewContext(fbFrag+'\nmemorySuiteFlashbackDiscoverGlobalScopes',{
+  stableHash64:stableDraftHash,
+  memorySuiteFlashbackBucketed:()=>false,
+  memorySuiteFlashbackBucketCatalog:async()=>({keys:[],errors:[]}),
+  vectorTransferBinding:async()=>null,
+  keyHash:v=>stableDraftHash(v),
+  VECTOR_PAYLOAD_PREFIX:'vector_rag_memory:local-vector-shard:v1:',
+  TextEncoder
+ });
+ const fbCheck=await fbAdapter({
+  hostScopes:[{characterId:'two',chatId:'B'}],
+  registries:[],
+  records:[
+   {key:'flashback.settings.source-tracking.v1',location:'plugin',space:'plugin',value:JSON.stringify({mode:'off',epoch:0})}
+  ]
+ });
+ assert.equal(fbCheck.completeKnownScopes,true,'flashback source-tracking settings pass global discovery');
+ assert.equal(fbCheck.blockers.length,0);
+ console.log('PASS source-tracking and context-cutter keys pass LIBRA and Flashback global discovery');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>clearTimeout(deadline));

@@ -201,8 +201,8 @@ assert.ok(flashback.includes("box.setAttribute('role', 'dialog')"), 'Flashback c
 assert.ok(flashback.includes("doc.addEventListener('keydown', onKey);"), 'Flashback dialog key handling remains active until cleanup');
 assert.ok(!flashback.includes("doc.addEventListener('keydown', onKey, { once: true });"), 'Flashback dialog Escape handling is not consumed by the first unrelated key');
 assert.ok(flashback.includes("previousFocus.isConnected !== false"), 'Flashback restores focus after dialog close');
-assert.ok(hayaku.includes('data-hayaku-viewer-tab="${id.toLowerCase()}"') && hayaku.includes("${nav('Server','서버 연결',"), 'HAYAKU server side tab');
-assert.ok(hayaku.includes('id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server"'), 'HAYAKU server side panel');
+assert.ok(hayaku.includes('data-hayaku-settings-section-button="server"') && hayaku.includes('<b>서버 연결</b>'), 'HAYAKU server section lives in Settings');
+assert.ok(hayaku.includes('id="hayakuViewerPanelServer" data-subpanel="server"'), 'HAYAKU server panel lives inside Settings');
 assert.ok(libra.includes("Object.freeze({ id: 'ai', label: 'AI 연결'"), 'LIBRA registers AI Connections in the shared sidebar registry');
 assert.match(libra, /Object\.freeze\(\{ id: 'server', group: 'settings', no: '\d+', label: '서버 · 저장'/, 'LIBRA registers Server and Storage inside the Settings hub');
 assert.ok(libra.includes("{id:'server',group:'저장과 백업',label:'저장 위치 · 서버',section:'server'}"), 'LIBRA Settings hub routes Server and Storage to its section');

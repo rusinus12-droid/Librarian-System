@@ -12,16 +12,22 @@ const mockup = fs.readFileSync(path.resolve(__dirname, '..', 'docs', 'gui-redesi
 
 assert.match(source, releasePattern("^\\/\\/@version {hayaku}\\s*$", "m"));
 
-const routes = ['overview', 'packets', 'scopes', 'recovery', 'server', 'settings', 'logs'];
+const routes = ['overview', 'packets', 'recovery', 'settings'];
 const routeIds = source.match(/const HAYAKU_VIEWER_TAB_IDS = Object\.freeze\(\[([\s\S]*?)\]\);/)?.[1] || '';
 assert.deepEqual([...routeIds.matchAll(/'([^']+)'/g)].map(match => match[1]), routes,
-  'scope data management is independent from server settings; Worldline is a Packets view');
+  'Worldline and 스코프 정리 are subviews inside Packets');
 assert.match(source, /const nav = \(id,label,short,icon,aria\) => `.*data-hayaku-viewer-tab="\$\{id\.toLowerCase\(\)\}".*role="tab"/,
   'the canonical sidebar item factory must bind route identity and accessible state');
-for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Scopes', '스코프 데이터 관리'], ['Recovery', '구간 점검 · 복구'], ['Server', '서버 연결'], ['Settings', '설정'], ['Logs', '상태 · 작동 기록']]) {
+for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Recovery', '기억 관리'], ['Settings', '설정']]) {
   assert.ok(source.includes(`nav('${id}','${label}'`), `missing canonical ${id} destination`);
   assert.ok(source.includes(`data-hayaku-viewer-panel="${id.toLowerCase()}"`), `missing ${id} destination panel`);
 }
+assert.ok(!source.includes("nav('Server'"), 'standalone Server sidebar destination must be removed');
+assert.ok(!source.includes("nav('Logs'"), 'standalone Logs sidebar destination must be removed');
+assert.ok(source.includes('data-hayaku-settings-section-button="server"') && source.includes('<b>서버 연결</b>'), '서버 연결 must live in Settings');
+assert.ok(source.includes('data-hayaku-settings-section-button="logs"') && source.includes('<b>디버그 및 로그</b>'), '디버그 및 로그 must live in Settings');
+assert.ok(!source.includes("nav('Scopes'"), 'standalone Scopes sidebar destination must be removed');
+assert.ok(!source.includes('스코프 데이터 관리'), 'legacy 스코프 데이터 관리 title must be replaced by 스코프 정리');
 assert.ok(source.includes('<nav class="sidebar" aria-label="HAYAKU 메뉴">'), 'desktop navigation must use the mockup sidebar');
 assert.ok(source.includes('<nav class="tabbar" aria-label="HAYAKU 하단 메뉴">'), 'narrow navigation must use the mockup bottom bar');
 assert.ok(source.includes('data-more-list'), 'the remaining mobile destinations must use the mockup more sheet');
@@ -68,6 +74,7 @@ assert.ok(source.includes("const unboundCount = records.filter(record => record?
 assert.ok(source.includes('`결속 대기 ${unboundCount.toLocaleString()}개`') && source.includes("'현재 세계선'"), 'worldline status must distinguish pending binding from the active board');
 assert.ok(source.includes("state === 'unbound' ? 'pending'"), 'unbound records must render as pending, never active worldline nodes');
 assert.ok(source.includes('data-packet-view="worldline"'), 'Worldline remains an internal Packets view, not another destination');
+assert.ok(source.includes('data-packet-view="scopes"') && source.includes('id="hayakuPacketScopesView"') && source.includes('id="hayakuScopeDataManagementPanel"'), '스코프 정리 lives as an internal Packets view');
 assert.ok(mockup.includes('연속성 노선도'), 'approved mockup reference must include the canonical overview route card');
 assert.ok(source.includes('data-hayaku-open-record='), 'worldline selection must link to packet detail');
 
@@ -78,10 +85,10 @@ assert.ok(source.includes("mode: 'otherAx'"), 'auxiliary call test must use Risu
 assert.ok(source.includes('writesPacketLedger: false'), 'auxiliary call test must not write the packet ledger');
 assert.ok(!source.includes('const showIndependentRecoveryConfirmation'), 'the retired background repair dialog stays removed');
 const recoveryPanelStart = source.indexOf('const recoveryPage = `');
-const serverPanelStart = source.indexOf('const serverPage = `', recoveryPanelStart);
+const serverPanelStart = source.indexOf('const serverSection = `', recoveryPanelStart);
 const settingsMarkupStart = source.indexOf('const HAYAKU_MOCKUP_SETTINGS_PAGE =');
 const settingsMarkupEnd = source.indexOf('const HAYAKU_GUI_SETTING_SPECS', settingsMarkupStart);
-const logsPanelStart = source.indexOf('const logsPage = `');
+const logsPanelStart = source.indexOf('const logsSection = `');
 const logsPanelEnd = source.indexOf('`;', logsPanelStart);
 const logsPanel = source.slice(logsPanelStart, logsPanelEnd);
 const recoveryStatusIndex = logsPanel.indexOf('id="hayakuNativeRecoveryJson"');
@@ -121,7 +128,7 @@ assert.doesNotMatch(viewerSetTab, /viewerRender(?:Overview|Recall|OperationLog|R
   'tab click must not synchronously build a heavy panel');
 assert.match(source, /const viewerQueueActiveTabRender = activeValue => \{[\s\S]*setTimeout\(\(\) => \{[\s\S]*viewerRenderActiveTab\(active\);/,
   'active-panel hydration must run in a coalesced later task');
-assert.match(source, /active === 'logs'[\s\S]*viewerRenderOperationLog\(\);[\s\S]*viewerRenderDebugExportText\(\);[\s\S]*viewerRenderNativeRecovery\(\);/,
+assert.match(source, /section === 'logs'[\s\S]*viewerRenderOperationLog\(\);[\s\S]*viewerRenderDebugExportText\(\);[\s\S]*viewerRenderNativeRecovery\(\);/,
   'opening Operation Log must refresh the moved recovery diagnostic snapshot');
 assert.match(source, /root\.dataset\.hayakuViewerMounted = '1';/,
   'the mounted viewer shell must be marked for reuse');

@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.2.0
+//@display-name LIBRA v3.2.2
 //@api 3.0
-//@version 3.2.0
+//@version 3.2.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1307,7 +1307,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.2.0';
+  const PLUGIN_VERSION = '3.2.2';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -15797,7 +15797,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
   const artifact = row => row.artifact === true || row.logicalKey.includes('::chunk:v1:') || str(row.key).includes('::chunk:v1:');
   // State-first recall no longer reads or maintains these derived graph keys.
   const retiredGraph = key => /^libra:v1:scope:.+:(?:memory-graph:v1:corpus:.+|memory-graph-control:v1:root(?:::chunk:v1:.+)?)$/.test(key);
-  const control = key => retiredGraph(key) || /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || /^libra:v1:(?:provider-presets|provider-settings|agent-slots|unused-post-processors|prompt-overrides|runtime-settings|settings-transaction-journal|migration|reference-budget-migration|unused-writer-designs|unused-legacy-presets|unused-legacy-settings|memory-settings|embedding-rebuild)$/.test(key) || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:migration:remove-world-additional:v1';
+  const control = key => retiredGraph(key) || /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || /^libra:v1:(?:provider-presets|provider-settings|agent-slots|unused-post-processors|prompt-overrides|runtime-settings|settings-transaction-journal|migration|reference-budget-migration|unused-writer-designs|unused-legacy-presets|unused-legacy-settings|memory-settings|embedding-rebuild)$/.test(key) || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:migration:remove-world-additional:v1' || key === 'libra:v1:settings:source-tracking:v1';
   for (const row of records) {
     if (control(row.logicalKey)) row.classification = 'control';
     else if (artifact(row)) row.classification = 'artifact';
@@ -15918,7 +15918,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     const digest = `${(Math.imul(hash ^ 31,16777619) >>> 0).toString(16).padStart(8,'0')}:${length+1}`;
     return digest === payload.vectorHash ? JSON.stringify([payload.storageKey,payload.profileId,layout]) : null;
   };
-  const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|state-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory-review|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|story-clock|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
+  const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|state-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory-review|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|story-clock|context-cutter|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = await parse(row);
@@ -30204,6 +30204,59 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   const hiddenReasoningStartRe = /^\s*(?:<\s*(?:thoughts?|thinking|reasoning|analysis)\s*>|(?:thoughts?|thinking|reasoning|analysis|key beats|structure|constraints check)\s*:)/i;
   const responseStartRe = /(?:^|\n)\s*(?:#\s*(?:응답|response)(?:\s|$)|#{2,6}\s+|####?\s*Chatindex\s*:|⏱️?\s*\[?\d{4}-\d{2}-\d{2}|<img\s+cmd=)/i;
 
+  const LIBRARIAN_OOC_MODE_MARKER = '[LIBRARIAN_OOC_MODE:ACTIVE]';
+  const LIBRARIAN_OOC_TAG_RE = /^\s*(?:<(?:thinking|thoughts?|think)\b[^>]*>[\s\S]*?<\/(?:thinking|thoughts?|think)>\s*)*<ooc\b[^>]*>[\s\S]*<\/ooc>\s*$/i;
+  const isOocResponseContent = (value = '') => LIBRARIAN_OOC_TAG_RE.test(String(value ?? ''));
+  const extractLibrarianOocMessageText = (msg) => {
+    if (!msg) return '';
+    const raw = msg?.content ?? msg?.data ?? msg?.text ?? msg?.message ?? msg?.mes ?? '';
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) {
+      return raw.map(part => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')).join('\n');
+    }
+    return String(raw || '');
+  };
+  const parseLibrarianOocRequest = (messages = [], resolvedUserText = '') => {
+    const list = Array.isArray(messages) ? messages : [];
+    let active = false;
+    let fallbackUserText = '';
+    for (const msg of list) {
+      const body = extractLibrarianOocMessageText(msg);
+      if (!body) continue;
+      if (body.toUpperCase().includes(LIBRARIAN_OOC_MODE_MARKER)) active = true;
+      const role = String(msg?.role || (msg?.isUser ? 'user' : '') || '').trim().toLowerCase();
+      if (role === 'user' || role === 'human') fallbackUserText = body;
+    }
+    const rawUserText = String(resolvedUserText || fallbackUserText || '');
+    const emptyTargets = { libra: false, hayaku: false, flashback: false };
+    if (!active) {
+      return { active: false, triggered: false, targets: emptyTargets, queryText: rawUserText.trim(), rawUserText };
+    }
+    const targets = { libra: false, hayaku: false, flashback: false };
+    let rest = rawUserText.trim();
+    const tokenRe = /^@(기억|memory|전체|all|lib|리브라|libra|하야쿠|hayaku|플래시백|flashback|fb)(?=$|[\s,:：])[\s,:：]*/i;
+    let matchedAny = false;
+    while (rest) {
+      const m = tokenRe.exec(rest);
+      if (!m) break;
+      matchedAny = true;
+      const token = m[1].toLowerCase();
+      if (token === '기억' || token === 'memory' || token === '전체' || token === 'all' || token === 'lib') {
+        targets.libra = true;
+        targets.hayaku = true;
+        targets.flashback = true;
+      } else if (token === '리브라' || token === 'libra') {
+        targets.libra = true;
+      } else if (token === '하야쿠' || token === 'hayaku') {
+        targets.hayaku = true;
+      } else if (token === '플래시백' || token === 'flashback' || token === 'fb') {
+        targets.flashback = true;
+      }
+      rest = rest.slice(m[0].length).trim();
+    }
+    return { active: true, triggered: matchedAny, targets, queryText: rest, rawUserText };
+  };
+
   const stripHiddenReasoningBlocks = (value) => {
     let body = text(value || '').trim();
     if (!body) return '';
@@ -41101,11 +41154,13 @@ function createLibraReadonlySourceContext(owner) {
         .replace(/<lb-(?:stage|stage-marker|lazy)\b[^>]*\/?\s*>/gi, '')
         .replace(/<img\b[^>]*>[\s\S]*?<\/img>/gi, '')
         .replace(/<img\b[^>]*\/?\s*>/gi, '')
+        .replace(/<ooc\b[^>]*>[\s\S]*?<\/ooc>/gi, '')
         .replace(/\[LIBRA (?:장기기억|LONG-TERM MEMORY)[\s\S]*$/gi, '')
         .trim();
       return body;
     };
 
+    const NON_UNIQUE_HOST_MEMO_RE = /^(?:newchat|firstmessage|first_message|greeting|main|mainprompt|jailbreak|globalnote|authornote|description|persona|lorebook|memory|inlay|posteverything|prompt|system|user|assistant|char|bot|chat|example|example_dialogue)$/i;
     const messageIdentity = (value, index) => {
       const item = value?.msg && typeof value.msg === 'object' ? value.msg : value;
       const candidates = [
@@ -41124,7 +41179,9 @@ function createLibraReadonlySourceContext(owner) {
       ];
       for (const [source, raw] of candidates) {
         const id = string(raw || '').trim();
-        if (id) return { id, source, stable: true, canonical: source === 'chatId' };
+        if (!id) continue;
+        if (source === 'memo' && NON_UNIQUE_HOST_MEMO_RE.test(id)) continue;
+        return { id, source, stable: true, canonical: source === 'chatId' };
       }
       return { id: `idx_${index}`, source: 'index', stable: false, canonical: false };
     };
@@ -41705,6 +41762,12 @@ function createLibraReadonlySourceContext(owner) {
         rawPayloadDigests: asArray(pair?.assistant?.rawPayloadDigests)
       }
     }).replace(/[^a-z0-9]/gi, '');
+    const completedTurnRevisionMatches = (pairOrReceipt, revisionId) => {
+      const id = string(revisionId || '');
+      if (!id || !pairOrReceipt) return false;
+      return completedTurnRevisionId(pairOrReceipt) === id
+        || completedTurnRevisionIdLegacy(pairOrReceipt) === id;
+    };
     const completedTurnSourceRow = (role, row) => ({
       role, chatId: string(row?.chatId || ''), chatIds: asArray(row?.chatIds).map(string),
       identitySource: string(row?.identitySource || ''), identityStable: row?.identityStable === true,
@@ -44483,6 +44546,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (sourceOptions.worldlineId && head.worldlineId !== sourceOptions.worldlineId) continue;
         if (turn > limit) continue;
+        if (sourceOptions.allowedTurns instanceof Set && !sourceOptions.allowedTurns.has(turn)) continue;
         const sourcePair = sourcePairs[turn - 1], targetPair = targetPairs[turn - 1];
         if (!sourcePair || !targetPair || nativeCopyPairSignature(sourcePair) !== nativeCopyPairSignature(targetPair)) {
           throw new Error(`LIBRA_NATIVE_COPY_MICRO_PREFIX_CHANGED:T${turn}`);
@@ -44490,7 +44554,7 @@ function createLibraReadonlySourceContext(owner) {
         // A source edit can publish a new receipt while the old Micro head
         // still points to the prior revision. The pending graph reader below
         // transfers that predecessor as history, never as the child's head.
-        if (head.sourceRevisionId !== completedTurnRevisionId(sourcePair)) continue;
+        if (!completedTurnRevisionMatches(sourcePair, head.sourceRevisionId)) continue;
         const receiptKey = key.completedTurnReceipt(scope, head.worldlineId, head.sessionEpoch,
           turn, head.sourceRevisionId);
         const receipt = await readSource(receiptKey, scope, null);
@@ -44500,7 +44564,7 @@ function createLibraReadonlySourceContext(owner) {
           || Number(receipt.sessionEpoch) !== Number(head.sessionEpoch)
           || Number(receipt.turn) !== turn || receipt.revisionId !== head.sourceRevisionId
           || receipt.sourceDigest !== head.sourceDigest
-          || completedTurnRevisionId(sourcePair) !== receipt.revisionId
+          || !completedTurnRevisionMatches(sourcePair, receipt.revisionId)
           || sourceDigest([sourcePair]) !== receipt.sourceDigest
           || record?.schema !== 'libra.micro_memory.v1'
           || record.scopeKey !== scope.scopeKey || record.worldlineId !== head.worldlineId
@@ -44539,6 +44603,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (sourceOptions.worldlineId && head.worldlineId !== sourceOptions.worldlineId) continue;
         if (turn > limit) continue;
+        if (sourceOptions.allowedTurns instanceof Set && !sourceOptions.allowedTurns.has(turn)) continue;
         const priorMicroHeadKey = key.microMemoryHead(scope, head.worldlineId,
           head.sessionEpoch, turn);
         const priorMicroHead = keys.includes(priorMicroHeadKey)
@@ -44551,7 +44616,7 @@ function createLibraReadonlySourceContext(owner) {
         if (!sourcePair || !targetPair
           || nativeCopyPairSignature(sourcePair) !== nativeCopyPairSignature(targetPair)
           || head.receiptKey !== receiptKey
-          || head.revisionId !== completedTurnRevisionId(sourcePair)
+          || !completedTurnRevisionMatches(sourcePair, head.revisionId)
           || head.sourceDigest !== sourceDigest([sourcePair])
           || receipt?.schema !== 'libra.completed_turn_receipt.v1'
           || receipt.scopeKey !== scope.scopeKey
@@ -44560,7 +44625,7 @@ function createLibraReadonlySourceContext(owner) {
           || Number(receipt.turn) !== turn
           || receipt.revisionId !== head.revisionId
           || receipt.sourceDigest !== head.sourceDigest
-          || completedTurnRevisionId(receipt) !== head.revisionId) {
+          || !completedTurnRevisionMatches(receipt, head.revisionId)) {
           throw new Error(`LIBRA_NATIVE_COPY_PENDING_RECEIPT_INVALID:T${turn}`);
         }
         const base = `${head.worldlineId}:e${head.sessionEpoch}:t${turn}:`;
@@ -44944,7 +45009,7 @@ function createLibraReadonlySourceContext(owner) {
             || Number(historicalReceipt.turn) !== turn
             || historicalReceipt.revisionId !== historicalRecord.sourceRevisionId
             || historicalReceipt.sourceDigest !== historicalRecord.sourceDigest
-            || completedTurnRevisionId(historicalReceipt) !== historicalReceipt.revisionId
+            || !completedTurnRevisionMatches(historicalReceipt, historicalReceipt.revisionId)
             || !microRecallMemoryFromRecord(historicalRecord, historicalReceipt, historicalKey)
             || historicalWork?.schema !== 'libra.micro_work.v1'
             || historicalWork.scopeKey !== sourceScope.scopeKey
@@ -45217,7 +45282,7 @@ function createLibraReadonlySourceContext(owner) {
             || oldReceipt.worldlineId !== sourceWorldlineId
             || Number(oldReceipt.sessionEpoch) !== Number(source.receipt.sessionEpoch)
             || Number(oldReceipt.turn) !== turn
-            || completedTurnRevisionId(oldReceipt) !== oldReceipt.revisionId
+            || !completedTurnRevisionMatches(oldReceipt, oldReceipt.revisionId)
             || sourceDigest([oldReceipt]) !== oldReceipt.sourceDigest
             || oldReceiptKey !== key.completedTurnReceipt(sourceScope,
               sourceWorldlineId, oldReceipt.sessionEpoch, turn, oldReceipt.revisionId)) {
@@ -51956,7 +52021,7 @@ function createLibraReadonlySourceContext(owner) {
         return await rebuildStateFromCanonicalChainUnlocked({ ...options, context: live });
       });
     };
-    const rebuildStateAfterCanonicalTransfer = async ({ context, manifest, seed = null, reason = 'canonical_transfer_state_rebuild', signal = null } = {}) => {
+    const rebuildStateAfterCanonicalTransfer = async ({ context, manifest, seed = null, reason = 'canonical_transfer_state_rebuild', signal = null, allowIncompletePrefix = false } = {}) => {
       const refs = statePipelineReplayRefs(manifest);
       if(refs.some(unifiedRefIsReadableUnified)){
         // Mirror/server transfer may briefly race the source copy's final durable
@@ -51965,7 +52030,7 @@ function createLibraReadonlySourceContext(owner) {
         // operation still fails closed when the namespace is not stable.
         let result=null;
         for(let attempt=0;attempt<3;attempt++){
-          result=await rebuildUnifiedStateForWorldline({context,manifest,reason,signal});
+          result=await rebuildUnifiedStateForWorldline({context,manifest,reason,signal,allowIncompletePrefix});
           if(result?.ok===true || result?.code!=='MEMORY_SUITE_BATCH_READ_SET_CHANGED')break;
           if(signal?.aborted)break;
           await new Promise(resolve=>setTimeout(resolve,0));
@@ -52713,7 +52778,7 @@ function memorySuiteProjectSourceTags(value, owner) {
 // saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
 function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 const MEMORY_SUITE_DEFAULT_HIDDEN_REASONING_TAGS = Object.freeze(['thoughts', 'thought', 'think', 'thinking', 'reasoning', 'analysis', 'chainofthought']);
-const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo']);
+const MEMORY_SUITE_DEFAULT_AUX_NOISE_TAGS = Object.freeze(['statusdata', 'sot-memo', 'ooc']);
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard narrative evidence; exclude hidden CoT and structured status/memo carriers.
@@ -53067,7 +53132,7 @@ function memorySuiteExternalSourceRules(rules, migrate=false) {
 }
 function memorySuiteStripInternalSource(value) {
   const body=String(value??'').replace(/<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END\s*-->/gi,'');
-  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract'],unwrapTags:[],controls:['suite-blocks']}).text;
+  return memorySuiteProjectSourceRules(body,{sourceTags:[],ignoredTags:['hayaku_packet_contract','ooc'],unwrapTags:[],controls:['suite-blocks']}).text;
 }
 
 function memorySuiteCanonicalSource(value,owner) {
@@ -55821,7 +55886,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (value.schema === 'libra.completed_turn_receipt.v1') {
           if (row.key !== key.completedTurnReceipt({scopeKey: sourceScopeKey},
             value.worldlineId, value.sessionEpoch, value.turn, value.revisionId)
-            || completedTurnRevisionId(value) !== value.revisionId
+            || !completedTurnRevisionMatches(value, value.revisionId)
             || sourceDigest([value]) !== value.sourceDigest) {
             throw new Error('LIBRA_MICRO_HANDOFF_RECEIPT_INVALID');
           }
@@ -65081,15 +65146,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // Some older/forked hosts expose addRisuChatListener but call it with the old
         // payload shape. Do not co-register a second detector; reuse the proven
         // scope-bound chat scan as a one-event compatibility reconcile.
+        const isOocTurn = state.lastRequestScope?.ooc === true && (Date.now() - Number(state.lastRequestScope?.at || 0)) <= TURN_BINDING_FRESHNESS_MS;
         const lastScope = asObject(state.lastRequestScope?.scope);
-        const compatibilityReconcile = state.settings?.autoAnalyze !== false && !!string(lastScope.scopeKey);
+        const compatibilityReconcile = !isOocTurn && state.settings?.autoAnalyze !== false && !!string(lastScope.scopeKey);
         if (compatibilityReconcile) scheduleScan({ delay: 140, reason: 'chat_output_payload_legacy_reconcile', args: 1, expectedScope: clone(lastScope) });
-        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, compatibilityReconcile, reason: 'message_index_missing', messageIndex };
+        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, compatibilityReconcile, reason: isOocTurn ? 'ooc_mode' : 'message_index_missing', messageIndex };
         return clone(state.lastOutputCapture);
       }
       const context = await outputEventContext(event);
       if (!context?.scope?.scopeKey) {
         state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, reason: 'output_context_unavailable', messageIndex };
+        return clone(state.lastOutputCapture);
+      }
+      const rawTargetRow = rawChatMessages(context.chat)[messageIndex];
+      const rawTargetBody = contentToText(rawTargetRow?.data ?? rawTargetRow?.content ?? rawTargetRow?.text ?? '');
+      if ((state.lastRequestScope?.ooc === true && (Date.now() - Number(state.lastRequestScope?.at || 0)) <= TURN_BINDING_FRESHNESS_MS)
+        || isOocResponseContent(rawTargetBody)) {
+        state.lastOutputCapture = { at: Date.now(), ok: true, skipped: true, reason: 'ooc_mode', messageIndex, scopeKey: context.scope.scopeKey };
         return clone(state.lastOutputCapture);
       }
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
@@ -68287,10 +68360,13 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         ? Math.ceil(Math.ceil(gradiaReserveChars / Math.max(1, blendedCharsPerRawToken)) * CONTEXT_CUTTER_TOKEN_MULTIPLIER)
         : 0;
       const totalReserveTokens = Math.min(Math.floor(effectiveMaxContext * 0.8), recallReserveTokens + gradiaReserveTokens);
-      const ratioTargetTokens = Math.floor(effectiveMaxContext * (1 - effectiveTrimPercent / 100));
       const reserveTargetTokens = Math.max(Math.floor(effectiveMaxContext * 0.2), effectiveMaxContext - totalReserveTokens);
       const triggerWithReserve = useShared && ctxPolicy.triggerWithReserve === true;
       const triggerTokens = triggerWithReserve ? reserveTargetTokens : effectiveMaxContext;
+      const ratioTargetTokens = Math.max(
+        Math.floor(triggerTokens * 0.2),
+        Math.floor(triggerTokens * (1 - effectiveTrimPercent / 100))
+      );
       return {
         source: useShared ? 'shared_recall_budget' : 'libra_recall_budget',
         sharedBudgetVersion: useShared ? Number(sharedBudget?.version || 1) : 0,
@@ -68442,17 +68518,39 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const reservePlan = computeContextCutterRecallReserve(settings, tokenizer, maxContext);
       const targetTokens = reservePlan.targetTokens;
       let trimmedThisTurn = false;
+      let deferredForCacheBatch = false;
 
       if (currentTokens > reservePlan.triggerTokens) {
+        const candidateMemos = [];
+        let simRawTotalKept = rawTotalKept;
+        let simCurrentTokens = currentTokens;
         for (const memo of order) {
-          if (currentTokens <= targetTokens) break;
+          if (simCurrentTokens <= targetTokens) break;
           if (removed.has(memo) || latest.has(memo) || blocked.has(memo)) continue;
           if (onlyMemorized && memorizedMemos.size > 0 && !memorizedMemos.has(memo)) continue;
-          removed.add(memo);
-          removedIds.push(memo);
-          rawTotalKept = Math.max(0, rawTotalKept - (costs.get(memo) || 0));
-          currentTokens = Math.ceil(rawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+          candidateMemos.push(memo);
+          simRawTotalKept = Math.max(0, simRawTotalKept - (costs.get(memo) || 0));
+          simCurrentTokens = Math.ceil(simRawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+        }
+        const desiredTrimTokens = Math.max(1, currentTokens - targetTokens);
+        const candidateTrimmedTokens = currentTokens - simCurrentTokens;
+        const reachedTarget = simCurrentTokens <= targetTokens;
+        const hardCeilingExceeded = currentTokens > reservePlan.effectiveMaxContext;
+        const shouldCommitBatch = candidateMemos.length > 0 && (
+          reachedTarget
+          || hardCeilingExceeded
+          || candidateTrimmedTokens >= Math.ceil(desiredTrimTokens * 0.5)
+        );
+        if (shouldCommitBatch) {
+          for (const memo of candidateMemos) {
+            removed.add(memo);
+            removedIds.push(memo);
+          }
+          rawTotalKept = simRawTotalKept;
+          currentTokens = simCurrentTokens;
           trimmedThisTurn = true;
+        } else if (candidateMemos.length > 0) {
+          deferredForCacheBatch = true;
         }
       }
 
@@ -68482,6 +68580,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         recallReserveChars: reservePlan.reserveChars,
         recallReserveSource: reservePlan.source,
         trimmedThisTurn,
+        deferredForCacheBatch,
         updatedAt: nowIso()
       };
       const prevIdsKey = prior.removedIds.join(',');
@@ -68534,6 +68633,46 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           1200 + RECALL_TIMEOUT_EXTENSION_MS
         );
         if (settings.enabled === false) return messages;
+        const resolvedOocUser = resolveCurrentTurnEvidence(messages)?.text || '';
+        const oocState = parseLibrarianOocRequest(messages, resolvedOocUser);
+        const oocActive = oocState.active === true;
+        if (oocActive && (!oocState.targets.libra || !oocState.queryText)) {
+          state.lastRequestScope = {
+            at: Date.now(),
+            requestType: normalizeRequestType(type) || 'missing',
+            scope: null,
+            ooc: true,
+            oocRecallTriggered: false,
+            pendingMicro: null
+          };
+          Runtime.lastInjection = '';
+          Runtime.lastMemoryRecall = null;
+          Runtime.lastMemoryRecallViewer = {
+            schema: 'libra.current_turn_recall_delivery.v1',
+            at: Date.now(),
+            scopeKey: '',
+            queryText: '',
+            selectedMemories: 0,
+            injectedMemories: 0,
+            blockChars: 0,
+            skipped: true,
+            skipReason: oocState.targets.libra ? 'ooc_empty_query' : 'ooc_mode_silent',
+            rows: []
+          };
+          Runtime.lastMemoryInjectionMeta = {
+            at: Date.now(),
+            requestType: normalizeRequestType(type) || 'missing',
+            scopeKey: '',
+            chars: 0,
+            selectedMemories: 0,
+            injectedMemories: 0,
+            injected: false,
+            skipped: true,
+            skipReason: oocState.targets.libra ? 'ooc_empty_query' : 'ooc_mode_silent'
+          };
+          scheduleGuiTraceRefresh();
+          return messages;
+        }
         // Historical source edits are inspected only by explicit actions.
         const context = await runRecallStep(
           guard,
@@ -68560,7 +68699,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           requestType: normalizeRequestType(type) || 'missing',
           scope: clone(context.scope),
           observedTurns: completedPairs.length,
-          pendingMicro: pendingUserText ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
+          ooc: oocActive,
+          oocRecallTriggered: oocActive && oocState.targets.libra === true,
+          pendingMicro: (!oocActive && pendingUserText) ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
             userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs),
             userMessageIdsHash: pendingUsers.every(row => row.identity.canonical)
               ? stateMemoryFingerprint(JSON.stringify(pendingUsers.map(row => row.identity.id))) : ''} : null
@@ -68574,7 +68715,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // Startup normally checks the marker in the background. If the host context or
         // Librarian System server was unavailable then, the first later model request gets one
         // scope-local retry before normal recall. No history is enumerated or backfilled.
-        if (settings.autoAnalyze !== false
+        if (!oocActive && settings.autoAnalyze !== false
           && !state.pendingBoundaryRecoveryCheckedScopes.has(string(context.scope?.scopeKey || ''))
           && completedPairs.length % BATCH_SIZE !== BATCH_SIZE - 1) {
           await runRecallStep(
@@ -68587,7 +68728,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         }
 
         // historical auto cold-start; it is a crash checkpoint for the request now in flight.
-        if (settings.autoAnalyze !== false && completedPairs.length % BATCH_SIZE === BATCH_SIZE - 1) {
+        if (!oocActive && settings.autoAnalyze !== false && completedPairs.length % BATCH_SIZE === BATCH_SIZE - 1) {
           await runRecallStep(
             guard,
             'before_pending_boundary_arm',
@@ -68618,21 +68759,23 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const bridgeMarker = nativeCopyBridgeMarkerState(context.chat, context.scope?.chatId);
         const copyHint = !!nativeCopyExplicitSourceChatId(context.chat) || bridgeMarker.valid || !!nativeCopyBranchSourceChatId(context.chat);
         const emptyManifest = !nativeCopyManifestHasData(requestManifest);
-        if (!nativeCacheFresh && emptyManifest && copyHint) {
+        if (!oocActive && !nativeCacheFresh && emptyManifest && copyHint) {
           const copyResult = await runRecallStep(guard, 'before_native_copy_rescue', () => ensureNativeChatCopyAdopted(context), 800 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: null, abortOnTimeout: false });
           if (copyResult?.ok === true && copyResult?.skipped !== true) {
             requestManifest = await runRecallStep(guard, 'before_manifest_after_copy', () => loadManifest(context.scope, completedPairs.length), 900 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: requestManifest, abortOnTimeout: false });
           }
-        } else if (!nativeCacheFresh) {
+        } else if (!oocActive && !nativeCacheFresh) {
           setTimeout(() => { void ensureNativeChatCopyAdopted(context).catch(error => warn('LIBRA deferred native-copy check failed', error)); }, 6000);
         }
 
         // Third-level recovery only schedules later 5-turn analysis. It has no bearing
         // on the current recall result, so keep it completely outside the send path.
-        setTimeout(() => {
-          void scheduleBeforeRequestRecovery({ context, settings, previousRequestScope, completedPairs })
-            .catch(error => warn('LIBRA deferred beforeRequest recovery scheduling failed', error));
-        }, 6000);
+        if (!oocActive) {
+          setTimeout(() => {
+            void scheduleBeforeRequestRecovery({ context, settings, previousRequestScope, completedPairs })
+              .catch(error => warn('LIBRA deferred beforeRequest recovery scheduling failed', error));
+          }, 6000);
+        }
 
         let responseView=await readUnifiedWorldlineView(context.scope,requestManifest,completedPairs);
         requestManifest=responseView.manifest;
@@ -68651,15 +68794,20 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // verified earlier turns; a later losing read cannot overwrite this state.
         state.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
         Runtime.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
-        messages = await applyLibraContextCutter(messages, {
-          context,
-          settings,
-          completedPairs: responseView.pairs,
-          requestManifest,
-          receiptSet: receiptView.receiptSet
-        });
-        let receiptSafeMessages = receiptDialogueMessages(receiptView.receiptSet, resolveCurrentTurnEvidence(messages).text);
-        queryBundle = buildQueryBundle(responseView.cutoffTurn==null?messages:[{role:'user',content:resolveCurrentTurnEvidence(messages).text||''}],
+        if (!oocActive) {
+          messages = await applyLibraContextCutter(messages, {
+            context,
+            settings,
+            completedPairs: responseView.pairs,
+            requestManifest,
+            receiptSet: receiptView.receiptSet
+          });
+        }
+        let receiptSafeMessages = receiptDialogueMessages(receiptView.receiptSet, oocActive ? oocState.queryText : resolveCurrentTurnEvidence(messages).text);
+        queryBundle = buildQueryBundle(
+          oocActive
+            ? [{ role: 'user', content: oocState.queryText }]
+            : (responseView.cutoffTurn==null?messages:[{role:'user',content:resolveCurrentTurnEvidence(messages).text||''}]),
           context, settings, receiptView.receiptSet.pairs, { receiptOnlyHistory: true });
         queryBundle.receiptReadSet = receiptView.receiptReadSet || null;
         queryBundle.currentCompletedTurn = Math.max(0,...receiptView.receiptSet.requestedTurns.map(Number));
@@ -68960,6 +69108,12 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         scheduled: false,
         blockedReason: ''
       };
+      if ((requestScopeFresh && state.lastRequestScope?.ooc === true) || isOocResponseContent(response)) {
+        state.lastAfterRequest.blockedReason = 'ooc_mode';
+        state.captureBackendHealthPending = null;
+        state.mainAfterRequestHealth = null;
+        return response;
+      }
       if(mainNarrativeType){
         const pendingMicro = expectedScope ? state.lastRequestScope?.pendingMicro : null;
         const cleanedResponse = pendingMicro ? cleanMessageText('assistant',{content:response}) : '';
@@ -76074,14 +76228,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const turn = Number(head.turn);
         const receipt = byKey.get(string(head.receiptKey || ''));
         const ids = expectedIds.get(turn);
-        const directAllowed = !ids && allowDirectTurns.has(turn);
+        const directAllowed = allowDirectTurns.has(turn);
         if ((!ids && !directAllowed) || receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
-        if (ids && (receipt.user?.chatId !== ids.userChatId || receipt.assistant?.chatId !== ids.assistantChatId)) continue;
+        if (ids && !directAllowed && (receipt.user?.chatId !== ids.userChatId || receipt.assistant?.chatId !== ids.assistantChatId)) continue;
         const pair = {turn, user: receipt.user, assistant: receipt.assistant};
         if (!targetPairs[turn - 1]
           || head.revisionId !== receipt.revisionId
           || head.sourceDigest !== receipt.sourceDigest
-          || completedTurnRevisionId(pair) !== receipt.revisionId
+          || !completedTurnRevisionMatches(pair, receipt.revisionId)
           || sourceDigest([pair]) !== receipt.sourceDigest
           || nativeCopyPairSignature(pair) !== nativeCopyPairSignature(targetPairs[turn - 1])) {
           throw new Error(`portable_native_micro_source_invalid:t${head.turn}`);
@@ -76098,11 +76252,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       for (const turn of requiredTurns) {
         if (!selected.has(turn)) throw new Error(`portable_native_micro_source_unmatched:t${turn}`);
       }
+      const candidateSourceOptions = { ...sourceOptions, allowedTurns: new Set(selected.keys()) };
       const sourceRows = await nativeCopyVerifiedMicroCandidates(bundle.source,
-        sourcePairs, targetPairs, through, sourceOptions);
+        sourcePairs, targetPairs, through, candidateSourceOptions);
       const pendingRows = await nativeCopyVerifiedPendingMicroCandidates(bundle.source,
-        sourcePairs, targetPairs, through, sourceOptions);
-      return {sourcePairs, sourceRows, pendingRows, sourceOptions};
+        sourcePairs, targetPairs, through, candidateSourceOptions);
+      return {sourcePairs, sourceRows, pendingRows, sourceOptions: candidateSourceOptions};
     };
 
     const unifiedPortableCapsule = async (bundle,refs=null) => {
@@ -76482,6 +76637,30 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return !!head;
     };
 
+    const portableRebindMatchedMicroTurns = (bundle, targetPairs) => {
+      const matched = [];
+      const microOwnerRows = asArray(bundle?.microArchive?.records);
+      if (!microOwnerRows.length) return matched;
+      const microByKey = new Map(microOwnerRows.map(row => [row.key, row.value]));
+      const microWl = string(bundle.microArchive.activeWorldlineId || '');
+      for (const row of microOwnerRows) {
+        if (row.value?.schema !== 'libra.completed_turn_head.v1' || row.value.worldlineId !== microWl) continue;
+        const turn = Number(row.value.turn);
+        if (!Number.isInteger(turn) || turn < 1 || !targetPairs[turn - 1]) continue;
+        const receipt = microByKey.get(string(row.value.receiptKey || ''));
+        if (receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
+        const pair = { turn, user: receipt.user, assistant: receipt.assistant };
+        if (row.value.revisionId === receipt.revisionId
+          && row.value.sourceDigest === receipt.sourceDigest
+          && completedTurnRevisionMatches(pair, receipt.revisionId)
+          && sourceDigest([pair]) === receipt.sourceDigest
+          && nativeCopyPairSignature(pair) === nativeCopyPairSignature(targetPairs[turn - 1])) {
+          matched.push(turn);
+        }
+      }
+      return matched.sort((a, b) => a - b);
+    };
+
     const portableImportReceiptReadbackUnsafe = async ({ receipt, context, manifest, pairs, bundle, copiedMicro, lensRefs }) => {
       if (!receipt || receipt.verified !== true || receipt.durable !== true) return false;
       if (string(receipt.targetScopeKey || '') !== string(context?.scope?.scopeKey || '')) return false;
@@ -76534,19 +76713,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return await validatePortableStateTransferReceiptReadback({ receipt, context, manifest });
       }
       if (receipt.mode === 'reconstruct_native_copy') {
+        const isUpdatedBotRebind = receipt.updatedBotRebind === true;
         const starts = asArray(receipt.copiedStarts).map(Number).filter(value => value > 0);
         const lineageBatches = new Map(asArray(bundle?.lineage?.batches).map(item => [Number(item?.startTurn || 0), string(item?.contentDigest || '')]));
         const expectedStarts = [];
-        let expectedStart = 1;
-        for (const ref of asArray(bundle?.currentRefs)) {
-          const startTurn = Number(ref?.turnRange?.start || 0);
-          const batch = batchForStart(pairs, startTurn);
-          if (startTurn !== expectedStart || batch.length !== BATCH_SIZE
-            || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) break;
-          expectedStarts.push(startTurn);
-          expectedStart += BATCH_SIZE;
+        if (isUpdatedBotRebind) {
+          for (const ref of asArray(bundle?.currentRefs)) {
+            const startTurn = Number(ref?.turnRange?.start || 0);
+            if (startTurn < 1) continue;
+            const batch = batchForStart(pairs, startTurn);
+            if (batch.length !== BATCH_SIZE
+              || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) continue;
+            expectedStarts.push(startTurn);
+          }
+        } else {
+          let expectedStart = 1;
+          for (const ref of asArray(bundle?.currentRefs)) {
+            const startTurn = Number(ref?.turnRange?.start || 0);
+            const batch = batchForStart(pairs, startTurn);
+            if (startTurn !== expectedStart || batch.length !== BATCH_SIZE
+              || nativeCopyBatchContentDigest(batch) !== string(lineageBatches.get(startTurn) || '')) break;
+            expectedStarts.push(startTurn);
+            expectedStart += BATCH_SIZE;
+          }
         }
-        if (!starts.length || digest(starts) !== digest(expectedStarts)) return false;
+        const expectedMicroTurns = isUpdatedBotRebind ? portableRebindMatchedMicroTurns(bundle, pairs) : [];
+        if (isUpdatedBotRebind) {
+          const hasCurrentRefs = asArray(bundle?.currentRefs).length > 0;
+          if ((hasCurrentRefs ? !starts.length : !expectedMicroTurns.length) || digest(starts) !== digest(expectedStarts)) return false;
+        } else if (!starts.length || digest(starts) !== digest(expectedStarts)) {
+          return false;
+        }
         for (const startTurn of starts) {
           const ref = memoryRefForStart(manifest, startTurn);
           const memory = ref?.key ? await storage.getJson(ref.key, null) : null;
@@ -76620,7 +76817,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }, 8);
           if (!matches.every(Boolean)) return false;
         } else {
-          const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts);
+          const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts, isUpdatedBotRebind ? { allowDirectReceiptTurns: expectedMicroTurns } : {});
           verifiedMicro = await cloneNativeCopyMicroGraph({
             sourceScope: bundle.source, targetScope: context.scope,
             sourcePairs: nativeMicro.sourcePairs, targetPairs: pairs,
@@ -76707,27 +76904,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         rebindMatchedStarts.push(startTurn);
       }
-      const rebindMatchedMicroTurns = [];
-      const microOwnerRows = asArray(bundle.microArchive?.records);
-      if (microOwnerRows.length) {
-        const microByKey = new Map(microOwnerRows.map(row => [row.key, row.value]));
-        const microWl = string(bundle.microArchive.activeWorldlineId || '');
-        for (const row of microOwnerRows) {
-          if (row.value?.schema !== 'libra.completed_turn_head.v1' || row.value.worldlineId !== microWl) continue;
-          const turn = Number(row.value.turn);
-          if (!Number.isInteger(turn) || turn < 1 || !targetPairs[turn - 1]) continue;
-          const receipt = microByKey.get(string(row.value.receiptKey || ''));
-          if (receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
-          const pair = { turn, user: receipt.user, assistant: receipt.assistant };
-          if (row.value.revisionId === receipt.revisionId
-            && row.value.sourceDigest === receipt.sourceDigest
-            && completedTurnRevisionId(pair) === receipt.revisionId
-            && sourceDigest([pair]) === receipt.sourceDigest
-            && nativeCopyPairSignature(pair) === nativeCopyPairSignature(targetPairs[turn - 1])) {
-            rebindMatchedMicroTurns.push(turn);
-          }
-        }
-      }
+      const rebindMatchedMicroTurns = portableRebindMatchedMicroTurns(bundle, targetPairs);
       const priorReceipt = bundle.importId
         ? asArray(targetManifest.portableImports).find(item => string(item?.importId || '') === bundle.importId && item?.verified === true && item?.durable === true)
         : null;
@@ -77145,7 +77322,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           microInheritedArchiveRefsDigest: inheritedMicroPlan.refsDigest,
           ...crossBotDetails
         } });
-        targetManifest.frontiers = { observedTurn: pairs.length, committedTurn: copiedStarts.length ? copiedStarts.at(-1) + BATCH_SIZE - 1 : 0 };
+        const maxCopiedStart = copiedStarts.length ? Math.max(...copiedStarts) : 0;
+        targetManifest.frontiers = { observedTurn: pairs.length, committedTurn: maxCopiedStart ? maxCopiedStart + BATCH_SIZE - 1 : 0 };
         targetManifest.branchGuard = normalizeBranchGuard({ schema: BRANCH_GUARD_SCHEMA, status: BRANCH_GUARD_READY, batchSignatures: branchBatchSignaturesForPairs(pairs), verifiedStarts: copiedStarts, observedTurns: completeBatchStarts(pairs).length * BATCH_SIZE, completeBatches: completeBatchStarts(pairs).length, lastFullAuditAt: Date.now(), updatedAt: nowIso() });
         targetManifest.inFlight = null;
         targetManifest.portableImports = [...asArray(targetManifest.portableImports).filter(item => string(item?.importId || '') !== receipt.importId), receipt].slice(-24);
@@ -77154,7 +77332,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const commitContext = await resolveContext();
         if (string(commitContext.scope?.scopeKey || '') !== string(context.scope.scopeKey || '')) throw new Error('portable_chat_copy_target_changed');
         const commitPairs = buildPairs(commitContext.chat, commitContext.scope.scopeKey);
-        for (const startTurn of preview.matchedStarts) {
+        for (const startTurn of effectiveStarts) {
           if (sourceDigest(batchForStart(commitPairs, startTurn)) !== sourceDigest(batchForStart(pairs, startTurn))) {
             throw new Error(`portable_chat_copy_source_changed:t${startTurn}`);
           }
@@ -77168,13 +77346,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const fullSourceFrontierMatched = copiedStarts.length === bundle.currentRefs.length;
         let stateTransferRebuild = null;
         await capturePortableStateDerivedRollback({ rollback, scope: context.scope, manifest: persisted });
-        const capsule=await unifiedPortableCapsule(bundle,[...bundle.inheritedRefs,...bundle.currentRefs.filter(r=>preview.matchedStarts.includes(r.turnRange.start))]);
+        const capsule=await unifiedPortableCapsule(bundle,[...bundle.inheritedRefs,...bundle.currentRefs.filter(r=>effectiveStarts.includes(r.turnRange.start))]);
         await installUnifiedLineageCapsule({context,manifest:persisted,capsule,rollback});
+        const sortedCopiedStarts = copiedStarts.slice().sort((a, b) => a - b);
+        const hasCanonicalGap = crossBot && sortedCopiedStarts.some((startTurn, idx) => startTurn !== 1 + idx * BATCH_SIZE);
         try {
           stateTransferRebuild = await rebuildStateAfterCanonicalTransfer({
             context, manifest: persisted,
             seed: fullSourceFrontierMatched ? bundle.continuityState : null,
-            reason: 'portable_chat_copy_target_chain_rebuild'
+            reason: 'portable_chat_copy_target_chain_rebuild',
+            allowIncompletePrefix: hasCanonicalGap
           });
           continuityStateCopied = stateTransferRebuild.seedPersisted === true;
         } catch (error) {
@@ -81490,7 +81671,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       node.classList.toggle('is-on',active);node.setAttribute('aria-current',active?'page':'false');
     });
     const activeRoom=bookSettingsRoomActiveSection();
-    const group=({ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'mem',references:'ref',source_edits:'ref',scopes:'store',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'})[activeRoom]||'mem';
+    const group=({ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'adv',references:'ref',source_edits:'ref',scopes:'store',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'})[activeRoom]||'mem';
     Gui.app.querySelectorAll('.setnav button[data-subtab]').forEach(node=>{const active=node.dataset.subtab===group;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
     const currentItem=BOOK_NATIVE_SETTINGS_SECTIONS.find(item=>item.id===activeRoom);
     Gui.app.querySelectorAll('[data-product-settings-section] > nav.tabs > button').forEach(node=>{const active=node.textContent===currentItem?.label;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
@@ -82327,7 +82508,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const LIBRA_APPROVED_PROMPT_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-prompt\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dps-t\"><div class=\"eyebrow\">Prompt Studio</div><h2 id=\"dps-t\">분석기 · 지침</h2><div class=\"field\"><label for=\"ps-an\">분석기</label><select class=\"select\" id=\"ps-an\" data-no-track><option>기본 기억 분석기</option></select></div><div class=\"field\" style=\"margin-top:10px\"><label for=\"ps-in\">지침</label><textarea class=\"textarea\" id=\"ps-in\" rows=\"5\" data-no-track aria-describedby=\"ps-state\">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class=\"hint\" id=\"ps-state\">저장된 지침입니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button><button class=\"btn\" id=\"ps-default\">기본값 채우기</button><button class=\"btn btn--primary\" id=\"ps-save\" data-close data-act=\"prompt-save\" data-toast=\"지침을 저장했습니다. (시안)\">저장</button></div></div></div>";
   const LIBRA_APPROVED_CORRECTION_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-correct\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dco-t\"><div class=\"eyebrow\">Correction</div><h2 id=\"dco-t\">교정 · <span data-fill=\"target\">M-25 · 북쪽 정원의 기록실</span></h2><p class=\"muted\" style=\"font-size:13px\">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class=\"field\"><label for=\"co-in\">교정 내용</label><textarea class=\"textarea\" id=\"co-in\" rows=\"3\" data-no-track data-fill=\"text\" aria-describedby=\"co-hint\">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea><span class=\"hint\" id=\"co-hint\">교정할 내용을 적어야 기록할 수 있습니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" id=\"co-go\" data-close data-act=\"corr-add\" data-toast=\"‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)\">교정 기록</button></div></div></div>";
 
-  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 데이터 이동</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>복구 · 진단</b><small>상태 점검 · 실행 기록 · 진단</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
+  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 설정 내보내기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>디버그 및 로그</b><small>실행 기록 · 상태 · 진단</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
   // SVG path data only for the mockup icons; no suite.js behavior is loaded.
   const LIBRA_APPROVED_ICON_PATHS = {"home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "grid": "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "shelf": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3z\"/><path d=\"m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6\"/>", "users": "<circle cx=\"9\" cy=\"8.5\" r=\"3.2\"/><circle cx=\"17\" cy=\"9.5\" r=\"2.5\"/><path d=\"M3 19c.5-3.3 3-5 6-5s5.5 1.7 6 5M16 14.2c2.6 0 4.5 1.4 5 4.3\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.6 2.5 3.8 5.3 3.8 8.5S14.6 18 12 20.5C9.4 18 8.2 15.2 8.2 12S9.4 6 12 3.5z\"/>", "timeline": "<path d=\"M5 6h9M5 12h14M5 18h7\"/><circle cx=\"17\" cy=\"6\" r=\"2\"/><circle cx=\"9\" cy=\"18\" r=\"2\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.2 1.3L10 21h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z\"/>", "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5M12 8v.1\"/>", "x": "<path d=\"m6 6 12 12M18 6 6 18\"/>", "more": "<circle cx=\"5.5\" cy=\"12\" r=\"1.2\"/><circle cx=\"12\" cy=\"12\" r=\"1.2\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.2\"/>", "refresh": "<path d=\"M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "save": "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>", "db": "<ellipse cx=\"12\" cy=\"6\" rx=\"7.5\" ry=\"3\"/><path d=\"M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6\"/>", "server": "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"2\"/><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"2\"/><path d=\"M7.5 7.2v.1M7.5 16.8v.1\"/>", "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>", "shield": "<path d=\"M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z\"/><path d=\"m9 12 2.2 2.2L15.2 10\"/>", "bolt": "<path d=\"M13 3 5 13.5h6L10 21l9-11h-6z\"/>", "film": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"14\" rx=\"2\"/><path d=\"M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "pen": "<path d=\"m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z\"/>", "image": "<rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\"/><circle cx=\"9\" cy=\"10\" r=\"1.8\"/><path d=\"m4 17 5-4.5 3.5 3L16 12l4.5 5\"/>", "sync": "<path d=\"M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4.5 20z\"/><path d=\"M8 9h8M8 12.5h5\"/>", "arrow": "<path d=\"m9 5 7 7-7 7\"/>", "back": "<path d=\"m15 5-7 7 7 7\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "trash": "<path d=\"M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "route": "<circle cx=\"6\" cy=\"17\" r=\"2.2\"/><circle cx=\"18\" cy=\"7\" r=\"2.2\"/><path d=\"M8.2 17H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8\"/>", "pin": "<path d=\"m14 4 6 6-3 1-4 4-1 4-2.5-2.5L5 20l3.5-3.5L6 14l4-1 4-4z\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "flag": "<path d=\"M6 21V4M6 5h11l-2 4 2 4H6\"/>", "eye": "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "bookmark": "<path d=\"M7 4h10v16l-5-3.5L7 20z\"/>", "lamp": "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z\"/>"};
   // Exact approved LIBRA app structure; its demo handlers/data are never loaded.
@@ -82594,6 +82775,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-filter__item small{color:var(--text3);font-size:11px}',
     '.lens-filter__item b{min-width:24px;padding:1px 7px;border-radius:99px;background:var(--surface3);text-align:center;font-size:11.5px}',
     '.lens-filter__item[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}',
+    '.lens-turns{display:grid;gap:3px}',
+    '.lens-turn{flex-direction:column;align-items:stretch;gap:2px}',
+    '.lens-turn__top{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;min-width:0}',
+    '.lens-turn__top b{flex:0 0 auto;min-width:0;background:transparent;padding:0;border-radius:0;font:750 12.5px/1.3 var(--font-sans);text-align:left;white-space:nowrap}',
+    '.lens-turn__count{flex:0 0 auto;padding:1px 6px;border-radius:99px;background:var(--surface3);color:var(--text2);font:700 11px/1.4 var(--font-sans)}',
+    '.lens-turn small{display:block;color:var(--text3);font-size:11.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.lens-run-box>summary{cursor:pointer}',
     '.lens-run-box:not([open]){padding-block:12px}',
     '.lens-run-box[open]{display:grid;gap:8px}',
@@ -82601,19 +82788,30 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-run-box__range{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}',
     '.lens-run-box .note{margin:0;font-size:12px}',
     '.lens-reader__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-bottom:10px;border-bottom:1px solid var(--border)}',
-    '.lens-reader__head h2{margin:0}',
+    '.lens-reader__head h2,.lens-reader__head h3{margin:0}',
     '.lens-reader__head .deck{margin:4px 0 0;font-size:12.5px}','.lens-reader .detail-pane{overflow-anchor:none}','.lens-reader .detail-pane>.stack{gap:12px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
+    '.lens-bucket__head{padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}',
+    '.lens-bucket__when{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 0}',
     '.lens-items{gap:14px;overflow-anchor:none}',
-    '.lens-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px;padding:6px 0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}',
+    '.lens-toolbar{display:grid;gap:8px;padding:8px 0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}',
+    '.lens-toolbar__row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px}',
+    '.lens-toolbar__search{flex:1 1 200px;min-width:160px}',
     '.lens-toolbar__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}',
+    '.lens-bucket-group{display:grid;gap:4px;contain:layout style}',
+    '.lens-bucket-group__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 10px;padding:4px 2px 6px;border-bottom:1.5px solid var(--border)}',
+    '.lens-bucket-group__head strong{font:750 14px/1.4 var(--font-sans);color:var(--text)}',
+    '.lens-bucket-group__head span{font:600 11.5px/1.4 var(--font-sans);color:var(--text3)}',
+    '.lens-rows{display:grid;gap:0}',
+    '.lens-item--row{padding:9px 4px;gap:6px;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent;contain:layout style}',
+    '.lens-item--row:first-child{border-top:0}',
+    '.lens-item--row:not(.is-open) .lens-item__text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13.5px;line-height:1.55}',
+    '.lens-item--row.is-open{background:var(--surface2);border-radius:var(--r-sm);padding:12px}',
+    'mark.lens-hit{background:var(--accent-soft);color:inherit;padding:0 1px;border-radius:2px}',
+    '.lens-item__hit{margin:0;font-size:12px;color:var(--text3)}',
     '.lens-group-lens{display:grid;gap:10px;contain:layout style}',
     '.lens-group-lens__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;padding:2px 0 8px;border-bottom:2px solid var(--border)}',
     '.lens-group-lens__head strong{font:750 15px/1.4 var(--font-sans);color:var(--text)}',
     '.lens-group-lens__head span{font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
-    '.lens-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}',
-    '.lens-card-grid>.lens-item{min-width:0;margin:0}',
-    '.lens-card-grid>.lens-item.is-editing{grid-column:1/-1}',
-    '@container app (max-width:640px){.lens-card-grid{grid-template-columns:minmax(0,1fr)}}',
     '.lens-group-person{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);contain:layout style}',
     '.lens-group-person__summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 14px;border-radius:var(--r-md);cursor:pointer;user-select:none;background:var(--surface)}',
     '.lens-group-person__summary:hover{background:var(--surface2)}',
@@ -82625,11 +82823,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-group-person__chev{display:inline-block;line-height:1;font-size:11px;color:var(--text3)}',
     '.lens-group-person[open]>.lens-group-person__summary .lens-group-person__chev{transform:rotate(180deg)}',
     '.lens-group-person__body{padding:4px 14px 12px;display:grid;gap:10px;background:var(--surface);border-top:1px solid var(--border);border-radius:0 0 var(--r-md) var(--r-md)}',
-    '.lens-group-person__body>.lens-card-grid{padding-top:8px}',
-    '.lens-group-span{border:0;border-radius:0;background:transparent;content-visibility:auto;contain-intrinsic-size:auto 420px;contain:layout style}',
-    '.lens-group-span__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:6px 0 5px;background:transparent;border-bottom:1px dashed var(--border);font:700 11.5px/1.4 var(--font-sans);color:var(--accent-ink);letter-spacing:.02em}',
-    '.lens-group-span__list{display:grid;gap:0}',
-    '.lens-item:not(.lens-item--compact){content-visibility:auto;contain-intrinsic-size:auto 240px}',
+    '.lens-group-person__body>.lens-rows{padding-top:4px}',
+    '.lens-item:not(.lens-item--compact):not(.lens-item--row){content-visibility:auto;contain-intrinsic-size:auto 240px}',
     '.lens-item--compact{padding:11px 2px;gap:7px;border:0;border-radius:0;border-top:1px solid var(--border);background:transparent;contain:layout style}',
     '.lens-item--compact:first-child{border-top:0}',
     '.lens-item--compact .lens-item__text{font-size:14px;line-height:1.65}',
@@ -82878,18 +83073,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .delivery-metric{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--line,rgba(0,0,0,.08));border-radius:var(--r-md,10px);background:var(--surface,transparent);min-width:0}',
     '.t-libra .delivery-metric>span{font-size:12px;color:var(--text2)}.t-libra .delivery-metric>strong{font:750 20px/1.2 var(--font-sans);font-variant-numeric:tabular-nums}',
     '.t-libra .delivery-families{display:flex;flex-wrap:wrap;gap:6px}.t-libra .delivery-family{padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line,rgba(0,0,0,.1));background:var(--surface-2,rgba(0,0,0,.03))}',
-    // Debug log: a fixed-width list rail beside a fluid detail card; rows stack badge / title / meta so titles never collapse to one glyph per line.
-    '.t-libra .diag-log{grid-template-columns:minmax(240px,340px) minmax(0,1fr);align-items:start;gap:16px}',
-    '@media (max-width:860px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr)}}',
-    '.t-libra .diag-log__rail{display:flex;flex-direction:column;gap:10px;min-width:0}',
-    '.t-libra .diag-log__intro{display:block}.t-libra .diag-log__intro h3{margin:0 0 4px}.t-libra .diag-log__intro p{margin:0;color:var(--text2);font-size:13px;line-height:1.55}',
-    '.t-libra .diag-log__rail>.cluster{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}',
-    '.t-libra .diag-log .list{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;min-width:0}',
-    '.t-libra .diag-log__row{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:10px;row-gap:2px;align-items:center;width:100%;min-width:0;text-align:left;padding:10px 12px}',
+    // Debug log: a frameless, breathable list rail beside a softly tinted detail surface.
+    '.t-libra .diag-log{grid-template-columns:minmax(250px,320px) minmax(0,1fr);align-items:stretch;gap:20px}',
+    '@media (max-width:860px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr);gap:16px}}',
+    '@container app (max-width:760px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr);gap:16px}}',
+    '.t-libra .diag-log .diag-log__rail{display:flex;flex-direction:column;gap:12px;min-width:0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;padding:0}',
+    '.t-libra .diag-log__intro{display:block;margin:0;padding:0 2px;border:0}.t-libra .diag-log__intro h3{margin:0 0 4px;font-size:14.5px;font-weight:700}.t-libra .diag-log__intro p{margin:0;color:var(--text2);font-size:12.5px;line-height:1.55}',
+    '.t-libra .diag-log__rail>.cluster{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.t-libra .diag-log__rail>.cluster>.hint{padding:0 2px;font-size:12px;color:var(--text3)}',
+    '.t-libra .diag-log .list{display:flex;flex-direction:column;gap:6px;max-height:58vh;overflow:auto;min-width:0;border:0;border-radius:0;background:transparent;box-shadow:none;padding:2px 0}',
+    '.t-libra .diag-log .list>.diag-log__row{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:10px;row-gap:3px;align-items:center;width:100%;min-width:0;text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm,10px);background:var(--surface2);cursor:pointer;transition:background var(--motion),border-color var(--motion)}',
+    '.t-libra .diag-log .list>.diag-log__row:hover{background:var(--surface3)}',
+    '.t-libra .diag-log .list>.diag-log__row.active,.t-libra .diag-log .list>.diag-log__row[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));box-shadow:none}',
     '.t-libra .diag-log__row>:first-child{grid-area:badge}.t-libra .diag-log__row>strong{grid-area:title;min-width:0;overflow-wrap:anywhere;word-break:normal;writing-mode:horizontal-tb;font-size:13.5px;line-height:1.4}.t-libra .diag-log__row>small{grid-area:meta;min-width:0;color:var(--text2);overflow-wrap:anywhere}',
-    '.t-libra .diag-log__head{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:12px;row-gap:2px;align-items:center;margin-bottom:12px}',
+    '.t-libra .diag-log>.card{border:0;box-shadow:none;background:var(--surface2);border-radius:var(--r-md,12px);padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}',
+    '.t-libra .diag-log__head{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:12px;row-gap:2px;align-items:center;margin:0;padding-bottom:12px;border-bottom:1px solid var(--border)}',
     '.t-libra .diag-log__head>:first-child{grid-area:badge}.t-libra .diag-log__head>strong{grid-area:title;overflow-wrap:anywhere;font-size:15px}.t-libra .diag-log__head>small{grid-area:meta;color:var(--text2)}',
     '.t-libra details.fold>.fold__body pre,.t-libra .card pre{box-sizing:border-box;min-width:0;max-width:100%;max-height:520px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;margin:0;padding:12px 14px;border-radius:var(--r-sm,8px);background:var(--surface-2,rgba(0,0,0,.03));font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}',
+    '.t-libra .diag-log .diag-log__detail{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm,8px);padding:14px 16px;min-height:110px}',
+    '.t-libra .diag-log>.card>.cluster{margin-top:0;gap:8px}',
     '.t-libra .mem-entry__heading{margin:4px 0 -6px;font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}',
     '.t-libra .mem-entry__text{margin:0;max-height:440px;overflow:auto;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:13px;line-height:1.75}',
     '.t-libra .mem-footnote{margin:0;padding:0 4px;font-size:11.5px;line-height:1.6}',
@@ -82916,6 +83117,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .recall-tag--micro{background:#e6e3ee;border-color:#b9b1cf;color:#43386b}.t-libra .recall-mix__part.recall-tag--micro,.t-libra .recall-dot.recall-tag--micro{background:#6a5c9c}',
     '.t-libra .recall-tag--other{background:var(--surface3);border-color:var(--border2);color:var(--text2)}.t-libra .recall-mix__part.recall-tag--other,.t-libra .recall-dot.recall-tag--other{background:var(--text3)}',
     '@container app (max-width:640px){.t-libra .recall-line{grid-template-columns:minmax(0,1fr);gap:4px}.t-libra .recall-list{max-height:340px}}',
+    // Phones: 16px fields so mobile browsers do not zoom on focus, and touch-sized small controls.
+    '@container app (max-width:640px){#sga-rp-gui-root .app input:not([type=checkbox]):not([type=radio]):not([type=range]),#sga-rp-gui-root .app select,#sga-rp-gui-root .app textarea{font-size:16px}#sga-rp-gui-root .app .linkbtn{display:inline-flex;align-items:center;min-height:36px}#sga-rp-gui-root .app .seg button{min-height:40px}#sga-rp-gui-root .app .lore-filter-pill{height:36px}#sga-rp-gui-root .app .chip.wchip{min-height:36px}#sga-rp-gui-root .app .note>button{min-height:36px}}',
     '.t-libra .recall-note__final{display:grid;gap:6px}.t-libra .recall-note__final p{margin:0;font-size:12px;color:var(--text2)}.t-libra .recall-note__links{display:flex;gap:14px;flex-wrap:wrap}',
     '.t-libra .recall-excluded{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);padding:8px 12px;font-size:12.5px;color:var(--text2)}',
     '.t-libra .recall-excluded--empty{display:flex;align-items:center;justify-content:space-between}',
@@ -85015,6 +85218,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     version: PLUGIN_VERSION,
     memorySuite: MemorySuiteStorageBridge.getCachedDiagnostics(),
     portableBackup: safeClone(globalThis.__LIBRAPortableMemoryBackup?.status?.().backupDiagnostics || null),
+    portableRestore: safeClone((() => {
+      const st = globalThis.__LIBRAPortableMemoryBackup?.status?.();
+      if (!st) return null;
+      return {
+        lastRestore: st.lastRestore || null,
+        lastRecovery: st.lastRecovery || null,
+        lastError: st.lastError || '',
+        busy: st.busy === true,
+        message: st.message || ''
+      };
+    })()),
     memoryVersion: LibraMemoryCore.VERSION,
     memoryBatchSize: LibraMemoryCore.BATCH_SIZE,
     memoryStageOrder: LibraMemoryCore.STAGE_ORDER.slice(),
@@ -85323,7 +85537,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const SHARED_MEMORY_HUB_SECTIONS = Object.freeze(['read', 'context', 'manage']);
   const SHARED_PIPELINE_HUB_SECTIONS = Object.freeze(['memory_pipeline']);
   const SHARED_AGENT_HUB_SECTIONS = Object.freeze(['memory']);
-  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','state','server','ai','embedding','recovery','transfer','general','source_edits','scopes']);
+  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','server','ai','embedding','recovery','transfer','general','source_edits','scopes']);
   const SHARED_CUSTOM_HUB_SECTIONS = Object.freeze(['memory', 'state', 'active_draft', 'ooc']);
   const SHARED_EXECUTION_LOG_SECTIONS = Object.freeze(['memory','state','draft','recall','embedding','rebuild']);
 
@@ -87459,7 +87673,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         filterEvidence: text(Gui.lensReader?.filterEvidence || 'all'),
         filterPerson: text(Gui.lensReader?.filterPerson || 'all'),
         query: text(Gui.lensReader?.query || ''),
-        groupMode: ['flat', 'person', 'lens_person_span', 'lens_span'].includes(Gui.lensReader?.groupMode) ? Gui.lensReader.groupMode : 'flat',
+        viewMode: ['turn', 'all'].includes(Gui.lensReader?.viewMode) ? Gui.lensReader.viewMode : 'turn',
+        innerGroup: ['person', 'lens'].includes(Gui.lensReader?.innerGroup) ? Gui.lensReader.innerGroup : 'person',
+        selectedBucket: text(Gui.lensReader?.selectedBucket || ''),
         turnOrder: ['desc', 'asc'].includes(Gui.lensReader?.turnOrder) ? Gui.lensReader.turnOrder : 'desc',
         showSuperseded: Gui.lensReader?.showSuperseded === true,
         collapsedGroups: Gui.lensReader?.collapsedGroups instanceof Set ? Gui.lensReader.collapsedGroups : new Set(),
@@ -89764,33 +89980,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return result;
   };
 
-  const buildStateTrackingAvailabilityPanel = (surface='pipeline') => {
-    const view=worldManagerSnapshotView(),snapshot=LibraMemoryCore.peekSnapshot()||{},embedding=LibraMemoryCore.getEmbeddingRebuildState();
-    const committed=Object.values(snapshot.manifest?.memories||{}).filter(row=>row?.status==='committed');
-    const saved=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
-    return guiEl('div',{class:'stack',dataset:{stateRuntimeSurface:surface,librarianLocalState:'true'}},[
-      guiEl('div',{class:'three-status'},[
-        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),saved?`T${saved}까지 · ${committed.length}개`:'저장된 기억 없음']),
-        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),Number(view.throughTurn)>0?`T${view.throughTurn}까지`:'반영 기준 미확인']),
-        guiEl('div',{},[guiEl('b',{text:'임베딩'}),`${embedding.status||'미확인'} · 최신 ${Number(embedding.counts?.ready||0)}개`])
-      ]),
-      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적입니다. 현재 상태 적용은 추가 AI 호출 0회로 실행됩니다.'}),
-      buildApprovedRecoveryActions(),
-    ]);
-  };
-
-
-
-
-
-
-
-
-
-
-
-
-
   const setSharedCustomPromptDomain = domain => {
     if (Gui.promptStudioDomain === domain) return;
     Gui.promptStudioDomain = domain;
@@ -89804,7 +89993,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const migrateCustomWorkshopSelection = () => {
     const section=normalizeHubChoice(Gui.customHubSection,SHARED_CUSTOM_HUB_SECTIONS,'memory');
     if(section==='state'){
-      Gui.settingsHubSection='state';
+      Gui.settingsHubSection='general';
       Gui.bookSettingsWorkbenchSection='settings';
       return section;
     }
@@ -89958,7 +90147,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             canResume ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : '작업 재개', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
             canCancel ? guiEl('button', { class: 'btn btn--danger', type: 'button', text: '취소 요청', onClick: async () => { if (!(await confirmApprovedOperation('현재 정본 작업을 취소할까요? 이미 완료된 항목은 유지됩니다.',{title:'정본 작업 취소',target:job.jobId}))) return; try { await LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 취소를 요청했습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
             canReanalyze?guiEl('button',{class:'btn',type:'button',text:'재분석',dataset:{canonicalJobReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:job.scopeKey,startTurns:guiAsArray(job.failures).length?job.failures.map(row=>Number(row.startTurn)):guiAsArray(job.targetStarts)})}):null,
-            guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 일반 · 진단에 표시했습니다.'); } })
+            guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 디버그 및 로그에 표시했습니다.'); } })
           ].filter(Boolean))
         ]);
       }) : [guiEl('section', { class: 'card hint', text: Gui.canonicalJobsLoading ? '최근 정본 작업을 읽는 중입니다.' : Gui.canonicalJobsError ? '조회에 실패했습니다. 저장된 작업이 없다는 뜻은 아닙니다.' : '최근 정본 작업이 없습니다.' })])
@@ -90176,6 +90365,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // 통합 로그가 기본이다. 검색·필터·상세를 갖춘 목록이며, 아래 분류들은 각자의 기존 패널을
     // 그대로 유지한다 — 통합이 기존 진단을 없애는 것이 아니다.
     Object.freeze({ id: 'log', label: '디버그 로그', note: '실행 이벤트 · 상태 스냅샷' }),
+    Object.freeze({ id: 'execution', label: '실행 기록', note: '최근 작업 · 작업 로그 · 오류' }),
     Object.freeze({ id: 'health', label: '운영 상태', note: '핵심 엔진 · 저장소 상태' }),
     Object.freeze({ id: 'swallowed', label: '무시된 오류', note: '조용히 실패한 위치 집계' }),
     Object.freeze({ id: 'state_reflection', label: '상태 반영', note: '기억 분석 · 상태 추적' }),
@@ -90329,8 +90519,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const buildDiagnosticLogSection = id => {
     // 선택된 분류만 렌더링한다 — 숨겨진 진단을 미리 만들지 않는다.
-    // 기존 네 패널은 각자의 분류로 계속 접근 가능하다(운영 상태 포함). 통합 로그가 기본일 뿐,
-    // 어떤 기존 진단도 사라지지 않는다.
+    // 기존 네 패널과 실행 기록(기록 보관소)은 각자의 분류로 계속 접근 가능하다(운영 상태 포함).
+    // 통합 로그가 기본일 뿐, 어떤 기존 진단도 사라지지 않는다.
+    if (id === 'execution') return buildSharedExecutionLogsPanel();
     if (id === 'health') return buildOperationalHealthPanel();
     if (id === 'swallowed') return buildSwallowedDiagPanel();
     if (id === 'state_reflection') return buildWorldManagerDiagnosticsPanel();
@@ -90345,7 +90536,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const active=sections.some(row=>row.id===Gui.diagnosticLogSection)?Gui.diagnosticLogSection:'log';
     return guiEl('div',{class:'stack',dataset:{diagnosticSettings:active}},[
       guiEl('div',{class:'card'},[
-        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'복구 · 진단'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 실제 기록과 실행 상태를 확인합니다.'})])]),
+        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'진단 기록'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 실제 기록과 실행 상태를 확인합니다.'})])]),
         fieldNode('확인할 기록',guiEl('select',{class:'select',value:active,dataset:{diagnosticField:'section'},onChange:event=>{Gui.diagnosticLogSection=event.target.value;queueGuiNavigationRender();}},optionNodes(sections.map(row=>[row.id,`${row.label} · ${row.note}`]),active)))
       ]),
       guiLazyDetails({class:'fold',dataset:{diagnosticLog:active}},guiEl('summary',{text:`${sections.find(row=>row.id===active).label} 상세`}),()=>guiEl('div',{class:'fold__body stack'},[buildDiagnosticLogSection(active)]))
@@ -91235,21 +91426,85 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
 
-  const groupLensMemoriesForReader = (items = [], { lenses = [], filterPerson = 'all', turnOrder = 'desc' } = {}) => {
+  const LENS_READER_BUCKET_TURNS = 5;
+
+  const sortLensReaderItems = (list, { lenses = [], turnOrder = 'desc' } = {}) => {
     const lensOrder = new Map(guiAsArray(lenses).map((lens, idx) => [text(lens?.lensId || ''), idx]));
-    const lensNameById = new Map(guiAsArray(lenses).map(lens => [text(lens?.lensId || ''), text(lens?.name || lens?.lensId || '렌즈')]));
-    const sortSpans = spans => [...spans].sort((a, b) => (
-      turnOrder === 'asc'
-        ? a.start - b.start || a.end - b.end
-        : b.end - a.end || b.start - a.start
-    ));
-    const sortItems = list => [...list].sort((a, b) => {
+    return [...guiAsArray(list)].sort((a, b) => {
       const aStart = Number(a?.turnRange?.start || 0), aEnd = Number(a?.turnRange?.end || 0);
       const bStart = Number(b?.turnRange?.start || 0), bEnd = Number(b?.turnRange?.end || 0);
-      return turnOrder === 'asc'
+      const turnCmp = turnOrder === 'asc'
         ? aStart - bStart || aEnd - bEnd
         : bEnd - aEnd || aStart - bStart;
+      if (turnCmp !== 0) return turnCmp;
+      const ia = lensOrder.has(text(a?.lensId || '')) ? lensOrder.get(text(a?.lensId || '')) : Number.MAX_SAFE_INTEGER;
+      const ib = lensOrder.has(text(b?.lensId || '')) ? lensOrder.get(text(b?.lensId || '')) : Number.MAX_SAFE_INTEGER;
+      return ia - ib || Number(a?.createdAt || 0) - Number(b?.createdAt || 0);
     });
+  };
+
+  const bucketLensMemoriesForReader = (items = [], { turnOrder = 'desc' } = {}) => {
+    const map = new Map();
+    for (const item of guiAsArray(items)) {
+      const end = Number(item?.turnRange?.end || 0);
+      const bucketEnd = end > 0 ? Math.ceil(end / LENS_READER_BUCKET_TURNS) * LENS_READER_BUCKET_TURNS : 0;
+      const bucketStart = bucketEnd ? bucketEnd - (LENS_READER_BUCKET_TURNS - 1) : 0;
+      const inherited = item?.inherited === true;
+      const sourceScopeKey = text(item?.sourceScopeKey || '');
+      const key = inherited ? `i:${sourceScopeKey}:${bucketEnd}` : `c:${bucketEnd}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          inherited,
+          sourceScopeKey,
+          sourceChatName: text(item?.sourceChatName || sourceScopeKey || ''),
+          start: bucketStart,
+          end: bucketEnd,
+          label: bucketEnd > 0 ? `T${bucketStart}–T${bucketEnd}` : '구간 미상',
+          items: [],
+          lensIds: new Set()
+        });
+      }
+      const bucket = map.get(key);
+      bucket.items.push(item);
+      const lid = text(item?.lensId || '');
+      if (lid) bucket.lensIds.add(lid);
+    }
+    return [...map.values()].map(bucket => {
+      const sortedItems = sortLensReaderItems(bucket.items, { turnOrder });
+      const personNames = new Set();
+      for (const item of sortedItems) {
+        if (item?.whoTracked !== true) continue;
+        const person = primaryLensPerson(item);
+        if (person.key !== '__unassigned__' && person.key !== 'unknown' && person.name) {
+          personNames.add(person.name);
+        }
+      }
+      return {
+        key: bucket.key,
+        inherited: bucket.inherited,
+        sourceScopeKey: bucket.sourceScopeKey,
+        sourceChatName: bucket.sourceChatName,
+        start: bucket.start,
+        end: bucket.end,
+        label: bucket.label,
+        count: sortedItems.length,
+        items: sortedItems,
+        personNames: [...personNames].slice(0, 3),
+        lensIds: [...bucket.lensIds]
+      };
+    }).sort((a, b) => (
+      Number(a.inherited) - Number(b.inherited)
+      || Number(a.end === 0) - Number(b.end === 0)
+      || (turnOrder === 'asc' ? a.end - b.end : b.end - a.end)
+      || a.sourceChatName.localeCompare(b.sourceChatName, 'ko')
+      || a.key.localeCompare(b.key)
+    ));
+  };
+
+  const groupLensItemsByLensForReader = (items = [], { lenses = [], turnOrder = 'desc' } = {}) => {
+    const lensOrder = new Map(guiAsArray(lenses).map((lens, idx) => [text(lens?.lensId || ''), idx]));
+    const lensNameById = new Map(guiAsArray(lenses).map(lens => [text(lens?.lensId || ''), text(lens?.name || lens?.lensId || '렌즈')]));
     const byLens = new Map();
     for (const item of guiAsArray(items)) {
       const lid = text(item?.lensId || '');
@@ -91258,55 +91513,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       byLens.get(lid).items.push(item);
     }
-    const orderedLenses = [...byLens.values()].sort((a, b) => {
+    return [...byLens.values()].sort((a, b) => {
       const ia = lensOrder.has(a.lensId) ? lensOrder.get(a.lensId) : Number.MAX_SAFE_INTEGER;
       const ib = lensOrder.has(b.lensId) ? lensOrder.get(b.lensId) : Number.MAX_SAFE_INTEGER;
       return ia - ib || a.lensName.localeCompare(b.lensName, 'ko');
-    });
-    return orderedLenses.map(lensGroup => {
-      const personMap = new Map();
-      const lensSpanMap = new Map();
-      for (const item of lensGroup.items) {
-        const start = Number(item?.turnRange?.start || 0);
-        const end = Number(item?.turnRange?.end || 0);
-        const spanKey = `${start}-${end}`;
-        const label = start > 0 ? (start === end ? `T${start}` : `T${start}–T${end}`) : '구간 미상';
-        if (!lensSpanMap.has(spanKey)) lensSpanMap.set(spanKey, { key: spanKey, start, end, label, items: [] });
-        lensSpanMap.get(spanKey).items.push(item);
-
-        const person = primaryLensPerson(item, filterPerson);
-        if (!personMap.has(person.key)) personMap.set(person.key, { key: person.key, name: person.name, count: 0, spanMap: new Map(), minStart: Infinity, maxEnd: 0 });
-        const pg = personMap.get(person.key);
-        pg.count += 1;
-        if (start > 0 && start < pg.minStart) pg.minStart = start;
-        if (end > pg.maxEnd) pg.maxEnd = end;
-        if (!pg.spanMap.has(spanKey)) pg.spanMap.set(spanKey, { key: spanKey, start, end, label, items: [] });
-        pg.spanMap.get(spanKey).items.push(item);
-      }
-      const personGroups = [...personMap.values()].map(pg => ({
-        key: pg.key,
-        name: pg.name,
-        count: pg.count,
-        rangeLabel: pg.maxEnd > 0 && pg.minStart < Infinity ? (pg.minStart === pg.maxEnd ? `T${pg.minStart}` : `T${pg.minStart}–T${pg.maxEnd}`) : '',
-        spanGroups: sortSpans(pg.spanMap.values())
-      })).sort((a, b) => (
-        Number(['unknown', '__unassigned__'].includes(a.key)) - Number(['unknown', '__unassigned__'].includes(b.key))
-        || b.count - a.count
-        || a.name.localeCompare(b.name, 'ko')
-      ));
-      return {
-        lensId: lensGroup.lensId,
-        lensName: lensGroup.lensName,
-        count: lensGroup.items.length,
-        personGroups,
-        spanGroups: sortSpans(lensSpanMap.values()),
-        flatItems: sortItems(lensGroup.items)
-      };
-    });
+    }).map(lensGroup => ({
+      lensId: lensGroup.lensId,
+      lensName: lensGroup.lensName,
+      count: lensGroup.items.length,
+      items: sortLensReaderItems(lensGroup.items, { lenses, turnOrder })
+    }));
   };
 
   const groupLensMemoriesByPersonForReader = (items = [], { lenses = [], filterPerson = 'all', turnOrder = 'desc' } = {}) => {
-    const lensOrder = new Map(guiAsArray(lenses).map((lens, idx) => [text(lens?.lensId || ''), idx]));
     const personMap = new Map();
     for (const item of guiAsArray(items)) {
       const person = primaryLensPerson(item, filterPerson);
@@ -91323,24 +91542,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (end > pg.maxEnd) pg.maxEnd = end;
       pg.items.push(item);
     }
-    const sortItems = list => [...list].sort((a, b) => {
-      const aStart = Number(a?.turnRange?.start || 0), aEnd = Number(a?.turnRange?.end || 0);
-      const bStart = Number(b?.turnRange?.start || 0), bEnd = Number(b?.turnRange?.end || 0);
-      const turnCmp = turnOrder === 'asc'
-        ? aStart - bStart || aEnd - bEnd
-        : bEnd - aEnd || aStart - bStart;
-      if (turnCmp !== 0) return turnCmp;
-      const ia = lensOrder.has(text(a?.lensId || '')) ? lensOrder.get(text(a?.lensId || '')) : Number.MAX_SAFE_INTEGER;
-      const ib = lensOrder.has(text(b?.lensId || '')) ? lensOrder.get(text(b?.lensId || '')) : Number.MAX_SAFE_INTEGER;
-      return ia - ib || Number(a?.createdAt || 0) - Number(b?.createdAt || 0);
-    });
     return [...personMap.values()].map(pg => ({
       key: pg.key,
       name: pg.name,
       count: pg.count,
       lensCount: pg.lensIds.size,
       rangeLabel: pg.maxEnd > 0 && pg.minStart < Infinity ? (pg.minStart === pg.maxEnd ? `T${pg.minStart}` : `T${pg.minStart}–T${pg.maxEnd}`) : '',
-      items: sortItems(pg.items)
+      items: sortLensReaderItems(pg.items, { lenses, turnOrder })
     })).sort((a, b) => (
       Number(['unknown', '__unassigned__'].includes(a.key)) - Number(['unknown', '__unassigned__'].includes(b.key))
       || b.count - a.count
@@ -91348,143 +91556,73 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ));
   };
 
-  const buildGroupedLensRecords = (items, { sectionPrefix, reader, filterLensId, filterPerson, lenses, makeCardOptions }) => {
+  const buildGroupedLensRecords = (items, { sectionPrefix, reader, filterLensId, filterPerson, lenses, query = '', makeCardOptions }) => {
     const personGroupKeys = [];
-    if (reader.groupMode === 'person') {
-      const personGroups = groupLensMemoriesByPersonForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
-      const nodes = personGroups.map(personGroup => {
-        const groupKey = `${sectionPrefix}:person:${personGroup.key}`;
-        personGroupKeys.push(groupKey);
-        const isOpen = !reader.collapsedGroups?.has(groupKey);
-        const bodyNode = guiEl('div', { class: 'lens-group-person__body' });
-        let hydrated = false;
-        const ensureHydrated = () => {
-          if (hydrated) return;
-          hydrated = true;
-          appendGuiChildren(bodyNode, [
-            guiEl('div', { class: 'lens-card-grid', dataset: { lensCardGrid: 'true' } }, personGroup.items.map(item => lensItemCard(item, {
-              ...makeCardOptions(item),
-              showLens: filterLensId === 'all'
-            })))
-          ]);
-        };
-        if (isOpen) ensureHydrated();
-        const details = guiEl('details', {
-          class: 'lens-group-person',
-          open: isOpen,
-          dataset: { lensPersonGroup: personGroup.key, lensGroupKey: groupKey, guiManagedDisclosure: 'true' }
-        }, [
-          guiEl('summary', { class: 'lens-group-person__summary', onClick: () => ensureHydrated() }, [
-            guiEl('span', { class: 'lens-group-person__title' }, [
-              guiEl('span', { text: personGroup.name }),
-              guiEl('b', { text: `${personGroup.count}건` })
-            ]),
-            guiEl('span', { class: 'lens-group-person__meta' }, [
-              personGroup.rangeLabel ? guiEl('span', { text: personGroup.rangeLabel }) : null,
-              filterLensId === 'all' && personGroup.lensCount > 1 ? guiEl('span', { text: `렌즈 ${personGroup.lensCount}개` }) : null,
-              guiEl('span', { class: 'lens-group-person__chev', text: '▾', 'aria-hidden': 'true' })
-            ].filter(Boolean))
-          ]),
-          bodyNode
+    const personGroups = groupLensMemoriesByPersonForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
+    const nodes = personGroups.map(personGroup => {
+      const groupKey = `${sectionPrefix}:person:${personGroup.key}`;
+      personGroupKeys.push(groupKey);
+      const isOpen = !reader.collapsedGroups?.has(groupKey);
+      const bodyNode = guiEl('div', { class: 'lens-group-person__body' });
+      let hydrated = false;
+      const populate = () => {
+        appendGuiChildren(bodyNode, [
+          guiEl('div', { class: 'lens-rows', dataset: { lensRows: 'true' } }, personGroup.items.map(item => lensItemCard(item, {
+            ...makeCardOptions(item),
+            row: true,
+            query,
+            primaryPersonKey: personGroup.key,
+            showLens: filterLensId === 'all'
+          })))
         ]);
-        details._hydrateLensGroup = ensureHydrated;
-        details.addEventListener('toggle', () => {
-          if (details.open) ensureHydrated();
-          if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
-          if (details.open) reader.collapsedGroups.delete(groupKey);
-          else reader.collapsedGroups.add(groupKey);
-        });
-        return details;
+      };
+      const ensureHydrated = () => {
+        if (hydrated) return;
+        hydrated = true;
+        populate();
+      };
+      const rehydrate = () => {
+        if (!hydrated) {
+          ensureHydrated();
+          return;
+        }
+        bodyNode.replaceChildren();
+        populate();
+      };
+      if (isOpen) ensureHydrated();
+      const details = guiEl('details', {
+        class: 'lens-group-person',
+        open: isOpen,
+        dataset: { lensPersonGroup: personGroup.key, lensGroupKey: groupKey, guiManagedDisclosure: 'true' }
+      }, [
+        guiEl('summary', { class: 'lens-group-person__summary', onClick: () => ensureHydrated() }, [
+          guiEl('span', { class: 'lens-group-person__title' }, [
+            guiEl('span', { text: personGroup.name }),
+            guiEl('b', { text: `${personGroup.count}건` })
+          ]),
+          guiEl('span', { class: 'lens-group-person__meta' }, [
+            personGroup.rangeLabel ? guiEl('span', { text: personGroup.rangeLabel }) : null,
+            filterLensId === 'all' && personGroup.lensCount > 1 ? guiEl('span', { text: `렌즈 ${personGroup.lensCount}개` }) : null,
+            guiEl('span', { class: 'lens-group-person__chev', text: '▾', 'aria-hidden': 'true' })
+          ].filter(Boolean))
+        ]),
+        bodyNode
+      ]);
+      details._hydrateLensGroup = ensureHydrated;
+      details._rehydrateLensGroup = rehydrate;
+      details._isHydratedLensGroup = () => hydrated;
+      details.addEventListener('toggle', () => {
+        if (details.open) ensureHydrated();
+        if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+        if (details.open) reader.collapsedGroups.delete(groupKey);
+        else reader.collapsedGroups.add(groupKey);
       });
-      return { nodes, personGroupKeys };
-    }
-    const groups = groupLensMemoriesForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
-    const showLensHeader = filterLensId === 'all' || groups.length > 1;
-    const renderSpanSection = (spanGroup, primaryPersonKey = '') => guiEl('section', {
-      class: 'lens-group-span',
-      dataset: { lensSpanGroup: spanGroup.label }
-    }, [
-      guiEl('div', { class: 'lens-group-span__head' }, [
-        guiEl('span', { text: spanGroup.label }),
-        guiEl('span', { text: `${spanGroup.items.length}건` })
-      ]),
-      guiEl('div', { class: 'lens-group-span__list' }, spanGroup.items.map(item => lensItemCard(item, {
-        ...makeCardOptions(item),
-        compact: true,
-        showLens: false,
-        hideTurnRange: true,
-        primaryPersonKey
-      })))
-    ]);
-    const nodes = groups.map(lensGroup => {
-      if (reader.groupMode === 'flat') {
-        return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
-          showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
-            guiEl('strong', { text: lensGroup.lensName }),
-            guiEl('span', { text: `${lensGroup.count}건` })
-          ]) : null,
-          guiEl('div', { class: 'lens-card-grid', dataset: { lensCardGrid: 'true' } }, lensGroup.flatItems.map(item => lensItemCard(item, makeCardOptions(item))))
-        ].filter(Boolean));
-      }
-      if (reader.groupMode === 'lens_span') {
-        return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
-          showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
-            guiEl('strong', { text: lensGroup.lensName }),
-            guiEl('span', { text: `${lensGroup.count}건 · ${lensGroup.spanGroups.length}개 구간` })
-          ]) : null,
-          ...lensGroup.spanGroups.map(spanGroup => renderSpanSection(spanGroup, ''))
-        ].filter(Boolean));
-      }
-      return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
-        showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
-          guiEl('strong', { text: lensGroup.lensName }),
-          guiEl('span', { text: `${lensGroup.count}건 · 인물 ${lensGroup.personGroups.length}명` })
-        ]) : null,
-        ...lensGroup.personGroups.map(personGroup => {
-          const groupKey = `${sectionPrefix}:${lensGroup.lensId}:${personGroup.key}`;
-          personGroupKeys.push(groupKey);
-          const isOpen = !reader.collapsedGroups?.has(groupKey);
-          const bodyNode = guiEl('div', { class: 'lens-group-person__body' });
-          let hydrated = false;
-          const ensureHydrated = () => {
-            if (hydrated) return;
-            hydrated = true;
-            appendGuiChildren(bodyNode, personGroup.spanGroups.map(spanGroup => renderSpanSection(spanGroup, personGroup.key)));
-          };
-          if (isOpen) ensureHydrated();
-          const details = guiEl('details', {
-            class: 'lens-group-person',
-            open: isOpen,
-            dataset: { lensPersonGroup: personGroup.key, lensGroupKey: groupKey, guiManagedDisclosure: 'true' }
-          }, [
-            guiEl('summary', { class: 'lens-group-person__summary', onClick: () => ensureHydrated() }, [
-              guiEl('span', { class: 'lens-group-person__title' }, [
-                guiEl('span', { text: personGroup.name }),
-                guiEl('b', { text: `${personGroup.count}건` })
-              ]),
-              guiEl('span', { class: 'lens-group-person__meta' }, [
-                personGroup.rangeLabel ? guiEl('span', { text: personGroup.rangeLabel }) : null,
-                guiEl('span', { text: `${personGroup.spanGroups.length}개 구간` }),
-                guiEl('span', { class: 'lens-group-person__chev', text: '▾', 'aria-hidden': 'true' })
-              ].filter(Boolean))
-            ]),
-            bodyNode
-          ]);
-          details._hydrateLensGroup = ensureHydrated;
-          details.addEventListener('toggle', () => {
-            if (details.open) ensureHydrated();
-            if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
-            if (details.open) reader.collapsedGroups.delete(groupKey);
-            else reader.collapsedGroups.add(groupKey);
-          });
-          return details;
-        })
-      ].filter(Boolean));
+      return details;
     });
     return { nodes, personGroupKeys };
   };
 
-  const rerenderLensReaderInPlace = ({ detailOnly = false } = {}) => {
+  const rerenderLensReaderInPlace = ({ partial = false, detailOnly = false, resetScroll = false } = {}) => {
     if (Gui.lensSearchTimer) { clearTimeout(Gui.lensSearchTimer); Gui.lensSearchTimer = null; }
     const existing = Gui.app?.querySelector?.('[data-lens-reader="true"]');
     if (!existing) {
@@ -91492,13 +91630,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return false;
     }
     const scroller = Gui.app?.querySelector?.('.page-body');
-    const scrollTop = scroller ? Number(scroller.scrollTop || 0) : 0;
+    const scrollTop = resetScroll ? 0 : (scroller ? Number(scroller.scrollTop || 0) : 0);
     const next = buildBookLensReaderProjection();
-    if (detailOnly) {
-      const prevDetail = existing.querySelector?.('.detail-pane');
-      const nextDetail = next.querySelector?.('.detail-pane');
-      if (prevDetail && nextDetail && typeof prevDetail.replaceWith === 'function') {
-        prevDetail.replaceWith(nextDetail);
+    if (partial || detailOnly) {
+      const prevSwaps = Array.from(existing.querySelectorAll?.('[data-lens-swap]') || []);
+      const pairs = prevSwaps.map(prevNode => {
+        const key = prevNode.dataset?.lensSwap;
+        const nextNode = key ? next.querySelector?.(`[data-lens-swap="${key}"]`) : null;
+        return prevNode && nextNode && typeof prevNode.replaceWith === 'function' ? [prevNode, nextNode] : null;
+      });
+      if (pairs.length && pairs.every(Boolean)) {
+        for (const [prevNode, nextNode] of pairs) prevNode.replaceWith(nextNode);
         if (scroller) scroller.scrollTop = scrollTop;
         return true;
       }
@@ -91532,6 +91674,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const showExcluded = reader.category === 'excluded';
     const filterLensId = lensIds.has(reader.filterLensId) ? reader.filterLensId : 'all';
     const filterEvidence = ['quoted', 'interpreted'].includes(reader.filterEvidence) ? reader.filterEvidence : 'all';
+    const viewMode = reader.viewMode === 'all' ? 'all' : 'turn';
+    const innerGroup = reader.innerGroup === 'lens' ? 'lens' : 'person';
     const query = text(reader.query || '').trim().toLocaleLowerCase();
     const byLensAll = memoriesAll.filter(item => filterLensId === 'all' || item.lensId === filterLensId);
     const supersededTotal = byLensAll.filter(item => Boolean(item.supersededBy)).length;
@@ -91563,57 +91707,105 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ...Object.values(item.extra || {})
       ].map(value => text(value)).join(' ').toLocaleLowerCase().includes(query);
     });
-    const runLens=lenses.find(lens=>lens.lensId===filterLensId)||lenses.find(lens=>lens.status==='active')||lenses[0]||null;
+    const runLens = lenses.find(lens => lens.lensId === filterLensId) || lenses.find(lens => lens.status === 'active') || lenses[0] || null;
     const countFor = lensId => memories.filter(item => item.lensId === lensId).length;
     const evidenceCount = level => byLens.filter(item => item.evidenceLevel === level).length;
-    const filters = showExcluded ? [] : [
-      guiEl('div', { class: 'lens-rail__section' }, [
-        guiEl('input', { class: 'input', type: 'search', placeholder: '내용·인용·라벨·인물 검색', 'aria-label': '렌즈 기억 검색', value: reader.query || '',
-          onInput: event => {
-            reader.query = event.target.value;
-            if (Gui.lensSearchTimer) clearTimeout(Gui.lensSearchTimer);
-            Gui.lensSearchTimer = setTimeout(() => {
-              Gui.lensSearchTimer = null;
-              if (!LibraMemoryCore.state.disposed && Gui.app?.querySelector?.('[data-lens-reader="true"]')) {
-                rerenderLensReaderInPlace({ detailOnly: true });
-              }
-            }, 100);
-          } })
+    const buckets = !showExcluded && viewMode === 'turn'
+      ? bucketLensMemoriesForReader(filtered, { turnOrder: reader.turnOrder })
+      : [];
+    const activeBucket = buckets.find(b => b.key === reader.selectedBucket) || buckets[0] || null;
+    const hasActiveFilter = Boolean(query) || filterLensId !== 'all' || filterEvidence !== 'all' || filterPerson !== 'all';
+
+    const lensSelect = !showExcluded ? (() => {
+      const select = guiEl('select', {
+        class: 'input',
+        dataset: { lensFilterSelect: 'true' },
+        'aria-label': '렌즈 선택',
+        onChange: event => {
+          const id = text(event.target.value || 'all') || 'all';
+          reader.filterLensId = id;
+          reader.runLensId = id === 'all' ? '' : id;
+          rerenderLensReaderInPlace();
+        }
+      }, [
+        ['all', `모든 렌즈 (${memories.length})`],
+        ...lenses.map(lens => [lens.lensId, `${lens.name} (${countFor(lens.lensId)})${lens.status === 'paused' ? ' · 일시정지' : ''}`])
+      ].map(([id, optionLabel]) => guiEl('option', { value: id, text: optionLabel, selected: filterLensId === id })));
+      try { select.value = filterLensId; } catch (_) {}
+      return select;
+    })() : null;
+
+    const renderBucketButtons = list => list.map(bucket => guiEl('button', {
+      type: 'button',
+      role: 'listitem',
+      class: 'lens-filter__item lens-turn',
+      'aria-pressed': String(activeBucket?.key === bucket.key),
+      'aria-current': activeBucket?.key === bucket.key ? 'true' : null,
+      dataset: { lensBucket: bucket.key },
+      onClick: () => {
+        reader.selectedBucket = bucket.key;
+        Gui.lensEditing = null;
+        rerenderLensReaderInPlace({ resetScroll: true });
+      }
+    }, [
+      guiEl('div', { class: 'lens-turn__top' }, [
+        guiEl('b', { text: bucket.label }),
+        guiEl('span', { class: 'lens-turn__count', text: `${bucket.count}건` })
       ]),
-      guiEl('div', { class: 'lens-filter', role: 'group', 'aria-label': '렌즈 선택' }, [['all', '모든 렌즈', memories.length, ''], ...lenses.map(lens => [lens.lensId, lens.name, countFor(lens.lensId), lens.status])].map(([id, label, count, status]) => guiEl('button', {
-        type: 'button', class: 'lens-filter__item', 'aria-pressed': String(filterLensId === id), dataset: { lensFilter: id },
-        onClick: () => { reader.filterLensId = id; reader.runLensId = id === 'all' ? '' : id; rerenderLensReaderInPlace(); }
-      }, [guiEl('span', { text: label }), status === 'paused' ? guiEl('small', { text: '일시정지' }) : null, guiEl('b', { text: String(count) })]))),
-      guiEl('div', { class: 'lens-rail__section' }, [
-        guiEl('span', { class: 'lens-rail__label', text: '근거' }),
-        lensSeg(filterEvidence, [['all', `전체 ${byLens.length}`], ['quoted', `인용 ${evidenceCount('quoted')}`], ['interpreted', `해석 ${evidenceCount('interpreted')}`]], value => { reader.filterEvidence = value; rerenderLensReaderInPlace(); }, '근거 수준 필터')
-      ]),
-      personRows.length ? guiEl('div', { class: 'lens-rail__section', dataset: { lensPeople: 'true' } }, [
-        guiEl('span', { class: 'lens-rail__label', text: '인물' }),
-        guiEl('div', { class: 'lens-people', role: 'group', 'aria-label': '인물 필터' }, [{ key: 'all', name: '모든 인물', count: byLens.filter(item => item.whoTracked === true).length }, ...personRows].map(row => guiEl('button', {
-          type: 'button', class: `lens-person${row.key === 'unknown' ? ' is-unknown' : ''}`, 'aria-pressed': String(filterPerson === row.key), dataset: { lensPerson: row.key },
-          onClick: () => { reader.filterPerson = row.key; rerenderLensReaderInPlace(); }
-        }, [guiEl('span', { text: row.name }), guiEl('b', { text: String(row.count) })])))
-      ]) : null,
-      lenses.length?guiEl('div',{class:'lens-rail__section'},[
-        guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{lensReaderReanalysis:'true'},disabled:!runLens||!Number(data.pairCount),onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:runLens.lensId})}),
-        guiEl('small',{class:'hint',text:'원문 재분석에서 렌즈와 구간을 확인한 뒤 실행합니다.'})
-      ]):null
-    ];
+      guiEl('small', {
+        text: bucket.inherited
+          ? (bucket.sourceChatName || '이전 대화')
+          : (bucket.personNames.length ? bucket.personNames.join(' · ') : `렌즈 ${bucket.lensIds.length}개`)
+      })
+    ]));
+
+    const currentBuckets = buckets.filter(b => !b.inherited);
+    const inheritedBuckets = buckets.filter(b => b.inherited);
+    const turnRailSection = !showExcluded && viewMode === 'turn' ? guiEl('div', {
+      class: 'lens-rail__section',
+      dataset: { lensSwap: 'turns' }
+    }, [
+      guiEl('span', { class: 'lens-rail__label', text: reader.turnOrder === 'asc' ? '턴 구간 · 시간순' : '턴 구간 · 최신순' }),
+      buckets.length ? guiEl('div', { class: 'lens-turns', role: 'list' }, [
+        ...renderBucketButtons(currentBuckets),
+        inheritedBuckets.length ? guiEl('span', { class: 'lens-rail__label', text: '이전 대화' }) : null,
+        ...renderBucketButtons(inheritedBuckets)
+      ].filter(Boolean)) : guiEl('div', {
+        class: 'empty',
+        text: hasActiveFilter ? '일치하는 구간이 없습니다.' : '아직 기록이 없습니다.'
+      })
+    ]) : null;
+
     const rail = guiEl('aside', { class: 'rail lens-rail', 'aria-label': '렌즈 기억 필터' }, [
       guiEl('div', { class: 'lens-rail__head' }, [
         guiEl('strong', { text: '렌즈' }),
         guiEl('div', { class: 'cluster' }, [
           guiEl('button', { class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: refresh }),
-          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '렌즈 스튜디오', onClick: () => openApprovedPromptDialog() })
-        ])
+          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '렌즈 스튜디오', onClick: () => openApprovedPromptDialog() }),
+          lenses.length ? guiEl('button', {
+            class: 'btn btn--sm btn--primary',
+            type: 'button',
+            text: '재분석',
+            dataset: { lensReaderReanalysis: 'true' },
+            disabled: !runLens || !Number(data.pairCount),
+            onClick: () => void showLibraSourceReanalysisDrawer({ kind: 'lens', scopeKey: reader.scopeKey, lensId: runLens.lensId })
+          }) : null
+        ].filter(Boolean))
       ]),
       lensSeg(reader.category, [['current', '렌즈 기억'], ['excluded', `제외 ${excluded.length}`]], value => {
         reader.category = value;
         Gui.lensEditing = null;
         rerenderLensReaderInPlace();
       }, '렌즈 기록 범주'),
-      ...filters
+      !showExcluded ? guiEl('div', { class: 'lens-rail__section' }, [lensSelect]) : null,
+      !showExcluded ? guiEl('div', { class: 'lens-rail__section' }, [
+        lensSeg(viewMode, [['turn', '턴별'], ['all', '전체 목록']], value => {
+          reader.viewMode = value;
+          Gui.lensEditing = null;
+          rerenderLensReaderInPlace();
+        }, '렌즈 보기 방식', 'lensViewMode')
+      ]) : null,
+      turnRailSection
     ].filter(Boolean));
 
     const errorNote = reader.error ? guiEl('div', { class: 'note note--danger', role: 'alert' }, [
@@ -91621,139 +91813,326 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       guiEl('button', { class: 'btn btn--sm', type: 'button', text: '다시 시도', onClick: refresh })
     ]) : null;
     const oldInstruction = memories.filter(item => item.instructionCurrent === false).length;
+    const lensProvKey = item => text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
+
+    const makeCurrentCardOptions = item => ({
+      memory: true,
+      showLens: filterLensId === 'all',
+      onReanalyze: () => void showLibraSourceReanalysisDrawer({ kind: 'lens', scopeKey: reader.scopeKey, lensId: item.lensId, startTurn: item.turnRange.start, endTurn: item.turnRange.end }),
+      onEdit: async draft => {
+        draft.busy = true; draft.error = ''; rerenderLensReaderInPlace();
+        try {
+          await LibraMemoryCore.editLensMemory({
+            memoryId: draft.memoryId, recordId: draft.recordId, text: draft.text, label: draft.label, topic: draft.topic,
+            ...(item.evidenceLevel === 'interpreted' ? { basis: draft.basis } : {})
+          });
+          if (Gui.lensEditing === draft) Gui.lensEditing = null;
+          await loadLensReaderData(true);
+        } catch (error) { draft.busy = false; draft.error = text(error?.message || error); rerenderLensReaderInPlace(); }
+      },
+      onDelete: async () => {
+        if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
+        try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
+        await loadLensReaderData(true);
+      }
+    });
+    const makeInheritedCardOptions = () => ({ memory: true, showLens: filterLensId === 'all' });
+
     const content = showExcluded ? guiEl('div', { class: 'stack' }, [errorNote, buildExcludedLensRecords(reader, excluded)]) : guiEl('div', { class: 'stack' }, [
       guiEl('div', { class: 'lens-reader__head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: filterLensId === 'all' ? '렌즈 기억' : text(lenses.find(lens => lens.lensId === filterLensId)?.name || '렌즈 기억') }),
-          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item=>!item.inherited).length}개 · 이전 대화 ${memories.filter(item=>item.inherited).length}개${supersededTotal && !reader.showSuperseded ? ` · 이전 흐름 통합 ${supersededTotal}개` : ''}${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
+          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item => !item.inherited).length}개 · 이전 대화 ${memories.filter(item => item.inherited).length}개${supersededTotal && !reader.showSuperseded ? ` · 이전 흐름 통합 ${supersededTotal}개` : ''}${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
         ]),
         guiEl('div', { class: 'cluster' }, [
           guiEl('span', { class: 'lens-inline-meta', title: '렌즈 기억은 정본이 아닌 보조 메모입니다. 응답할 때 별도 예산으로 참고 메모로만 전달되고, 정본 기억과 충돌하면 정본이 우선합니다.', text: '보조 메모 · 정본 우선' }),
           registry.enabled === false ? libraStatusBadge('렌즈 기능 꺼짐', 'warn') : null
         ].filter(Boolean))
       ]),
-      guiAsArray(data.inheritedArchiveUnavailable).length ? guiEl('p',{class:'note note--warn',role:'status',text:'이전 대화 기록을 읽지 못함 · 무결성을 확인할 수 없는 보관은 표시·회상에서 제외했습니다.'}) : null,
+      guiAsArray(data.inheritedArchiveUnavailable).length ? guiEl('p', { class: 'note note--warn', role: 'status', text: '이전 대화 기록을 읽지 못함 · 무결성을 확인할 수 없는 보관은 표시·회상에서 제외했습니다.' }) : null,
       errorNote,
       !lenses.length && reader.loaded ? guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: '아직 렌즈가 없습니다' }),
         guiEl('p', { text: '떡밥·복선, 감정선, 말투 변화처럼 원하는 관점의 렌즈를 만들면 5턴마다 이곳에 메모가 쌓입니다.' }),
         guiEl('button', { class: 'btn btn--primary', type: 'button', text: '렌즈 만들기', onClick: () => { lensStudioState().view = 'create'; openApprovedPromptDialog(); } })
-      ]) : filtered.length ? (() => {
-        const makeCurrentCardOptions = item => ({
-          memory: true,
-          showLens: filterLensId === 'all',
-          onReanalyze: () => void showLibraSourceReanalysisDrawer({ kind: 'lens', scopeKey: reader.scopeKey, lensId: item.lensId, startTurn: item.turnRange.start, endTurn: item.turnRange.end }),
-          onEdit: async draft => {
-            draft.busy = true; draft.error = ''; rerenderLensReaderInPlace();
-            try {
-              await LibraMemoryCore.editLensMemory({
-                memoryId: draft.memoryId, recordId: draft.recordId, text: draft.text, label: draft.label, topic: draft.topic,
-                ...(item.evidenceLevel === 'interpreted' ? { basis: draft.basis } : {})
-              });
-              if (Gui.lensEditing === draft) Gui.lensEditing = null;
-              await loadLensReaderData(true);
-            } catch (error) { draft.busy = false; draft.error = text(error?.message || error); rerenderLensReaderInPlace(); }
-          },
-          onDelete: async () => {
-            if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
-            try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
-            await loadLensReaderData(true);
-          }
-        });
-        const makeInheritedCardOptions = () => ({ memory: true, showLens: filterLensId === 'all' });
-        const currentItems = filtered.filter(item => !item.inherited);
-        const inheritedItems = filtered.filter(item => item.inherited);
-        const currentGrouped = currentItems.length
-          ? buildGroupedLensRecords(currentItems, { sectionPrefix: 'current', reader, filterLensId, filterPerson, lenses, makeCardOptions: makeCurrentCardOptions })
+      ]) : (!memoriesAll.length && !supersededTotal) ? guiEl('div', { class: 'empty' }, [
+        guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : '아직 이 대화의 렌즈 기억이 없습니다.' }),
+        reader.loading ? null : guiEl('p', { text: '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 재분석 버튼으로 원문 재분석 화면에서 구간을 선택할 수 있습니다.' })
+      ].filter(Boolean)) : (() => {
+        const currentItems = viewMode === 'all' ? filtered.filter(item => !item.inherited) : [];
+        const inheritedItems = viewMode === 'all' ? filtered.filter(item => item.inherited) : [];
+        const currentGrouped = viewMode === 'all' && currentItems.length
+          ? buildGroupedLensRecords(currentItems, { sectionPrefix: 'current', reader, filterLensId, filterPerson, lenses, query, makeCardOptions: makeCurrentCardOptions })
           : { nodes: [], personGroupKeys: [] };
-        const inheritedGrouped = inheritedItems.length
-          ? buildGroupedLensRecords(inheritedItems, { sectionPrefix: 'inherited', reader, filterLensId, filterPerson, lenses, makeCardOptions: makeInheritedCardOptions })
+        const inheritedGrouped = viewMode === 'all' && inheritedItems.length
+          ? buildGroupedLensRecords(inheritedItems, { sectionPrefix: 'inherited', reader, filterLensId, filterPerson, lenses, query, makeCardOptions: makeInheritedCardOptions })
           : { nodes: [], personGroupKeys: [] };
         const allPersonKeys = [...currentGrouped.personGroupKeys, ...inheritedGrouped.personGroupKeys];
-        const hasPersonGroups = (reader.groupMode === 'person' || reader.groupMode === 'lens_person_span') && allPersonKeys.length > 0;
+        const hasPersonGroups = viewMode === 'all' && allPersonKeys.length > 0;
+
         const toolbar = guiEl('div', { class: 'lens-toolbar', dataset: { lensToolbar: 'true' } }, [
-          lensSeg(reader.groupMode, [['flat', '개별 카드'], ['person', '인물별'], ['lens_person_span', '종류 · 인물 · 구간'], ['lens_span', '종류 · 구간']], value => {
-            reader.groupMode = value;
-            Gui.lensEditing = null;
-            rerenderLensReaderInPlace();
-          }, '렌즈 보기 방식'),
-          guiEl('div', { class: 'lens-toolbar__actions' }, [
-            supersededTotal > 0 ? guiEl('button', {
-              class: 'btn btn--sm',
-              type: 'button',
-              dataset: { lensToggleSuperseded: 'true' },
-              'aria-pressed': String(reader.showSuperseded === true),
-              text: reader.showSuperseded ? '갱신 전 기록 숨기기' : `갱신 전 기록 ${supersededTotal}건 보기`,
-              onClick: () => {
-                reader.showSuperseded = !reader.showSuperseded;
-                Gui.lensEditing = null;
-                rerenderLensReaderInPlace();
-              }
-            }) : null,
-            guiEl('button', {
-              class: 'btn btn--sm',
-              type: 'button',
-              dataset: { lensTurnOrder: 'true' },
-              text: reader.turnOrder === 'asc' ? '시간순' : '최신순',
-              onClick: () => {
-                reader.turnOrder = reader.turnOrder === 'asc' ? 'desc' : 'asc';
-                rerenderLensReaderInPlace();
+          guiEl('div', { class: 'lens-toolbar__row' }, [
+            guiEl('input', {
+              class: 'input lens-toolbar__search',
+              type: 'search',
+              placeholder: '내용·인용·라벨·인물 검색',
+              'aria-label': '렌즈 기억 검색',
+              value: reader.query || '',
+              onInput: event => {
+                reader.query = event.target.value;
+                if (Gui.lensSearchTimer) clearTimeout(Gui.lensSearchTimer);
+                Gui.lensSearchTimer = setTimeout(() => {
+                  Gui.lensSearchTimer = null;
+                  if (!LibraMemoryCore.state.disposed && Gui.app?.querySelector?.('[data-lens-reader="true"]')) {
+                    rerenderLensReaderInPlace({ partial: true });
+                  }
+                }, 100);
               }
             }),
-            hasPersonGroups ? guiEl('button', {
-              class: 'btn btn--sm',
-              type: 'button',
-              dataset: { lensExpandAll: 'true' },
-              text: '모두 펼치기',
-              onClick: event => {
-                if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
-                for (const k of allPersonKeys) reader.collapsedGroups.delete(k);
-                const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
-                const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
-                if (nodes.length) {
-                  for (const node of nodes) {
-                    if (typeof node._hydrateLensGroup === 'function') node._hydrateLensGroup();
-                    node.open = true;
+            lensSeg(filterEvidence, [['all', `전체 ${byLens.length}`], ['quoted', `인용 ${evidenceCount('quoted')}`], ['interpreted', `해석 ${evidenceCount('interpreted')}`]], value => {
+              reader.filterEvidence = value;
+              rerenderLensReaderInPlace();
+            }, '근거 수준 필터'),
+            guiEl('div', { class: 'lens-toolbar__actions' }, [
+              viewMode === 'turn' ? lensSeg(innerGroup, [['person', '인물별'], ['lens', '렌즈별']], value => {
+                reader.innerGroup = value;
+                Gui.lensEditing = null;
+                rerenderLensReaderInPlace();
+              }, '구간 내 묶기', 'lensInnerGroup') : null,
+              supersededTotal > 0 ? guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensToggleSuperseded: 'true' },
+                'aria-pressed': String(reader.showSuperseded === true),
+                text: reader.showSuperseded ? '갱신 전 기록 숨기기' : `갱신 전 기록 ${supersededTotal}건 보기`,
+                onClick: () => {
+                  reader.showSuperseded = !reader.showSuperseded;
+                  Gui.lensEditing = null;
+                  rerenderLensReaderInPlace();
+                }
+              }) : null,
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensTurnOrder: 'true' },
+                text: reader.turnOrder === 'asc' ? '시간순' : '최신순',
+                onClick: () => {
+                  reader.turnOrder = reader.turnOrder === 'asc' ? 'desc' : 'asc';
+                  rerenderLensReaderInPlace();
+                }
+              }),
+              viewMode === 'turn' && activeBucket ? guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensExpandRows: 'true' },
+                text: '모두 펼치기',
+                onClick: () => {
+                  const expandedRows = Gui.lensExpandedRows || (Gui.lensExpandedRows = new Set());
+                  for (const item of activeBucket.items) expandedRows.add(lensProvKey(item));
+                  rerenderLensReaderInPlace();
+                }
+              }) : null,
+              viewMode === 'turn' && activeBucket ? guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensCollapseRows: 'true' },
+                text: '모두 접기',
+                onClick: () => {
+                  const expandedRows = Gui.lensExpandedRows || (Gui.lensExpandedRows = new Set());
+                  for (const item of activeBucket.items) expandedRows.delete(lensProvKey(item));
+                  rerenderLensReaderInPlace();
+                }
+              }) : null,
+              hasPersonGroups ? guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensExpandAll: 'true' },
+                text: '모두 펼치기',
+                onClick: event => {
+                  if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+                  for (const k of allPersonKeys) reader.collapsedGroups.delete(k);
+                  const expandedRows = Gui.lensExpandedRows || (Gui.lensExpandedRows = new Set());
+                  for (const item of filtered) expandedRows.add(lensProvKey(item));
+                  const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
+                  const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
+                  if (nodes.length) {
+                    for (const node of nodes) {
+                      if (typeof node._rehydrateLensGroup === 'function') node._rehydrateLensGroup();
+                      else if (typeof node._hydrateLensGroup === 'function') node._hydrateLensGroup();
+                      node.open = true;
+                    }
+                  } else {
+                    rerenderLensReaderInPlace();
                   }
-                } else {
-                  rerenderLensReaderInPlace();
                 }
-              }
-            }) : null,
-            hasPersonGroups ? guiEl('button', {
-              class: 'btn btn--sm',
+              }) : null,
+              hasPersonGroups ? guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                dataset: { lensCollapseAll: 'true' },
+                text: '모두 접기',
+                onClick: event => {
+                  if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+                  for (const k of allPersonKeys) reader.collapsedGroups.add(k);
+                  const expandedRows = Gui.lensExpandedRows || (Gui.lensExpandedRows = new Set());
+                  for (const item of filtered) expandedRows.delete(lensProvKey(item));
+                  const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
+                  const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
+                  if (nodes.length) {
+                    for (const node of nodes) {
+                      node.open = false;
+                      if (typeof node._isHydratedLensGroup === 'function' && node._isHydratedLensGroup() && typeof node._rehydrateLensGroup === 'function') {
+                        node._rehydrateLensGroup();
+                      }
+                    }
+                  } else {
+                    rerenderLensReaderInPlace();
+                  }
+                }
+              }) : null
+            ].filter(Boolean))
+          ]),
+          personRows.length ? guiEl('div', { dataset: { lensPeople: 'true' } }, [
+            guiEl('div', { class: 'lens-people', role: 'group', 'aria-label': '인물 필터' }, [
+              { key: 'all', name: '모든 인물', count: byLens.filter(item => item.whoTracked === true).length },
+              ...personRows
+            ].map(row => guiEl('button', {
               type: 'button',
-              dataset: { lensCollapseAll: 'true' },
-              text: '모두 접기',
-              onClick: event => {
-                if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
-                for (const k of allPersonKeys) reader.collapsedGroups.add(k);
-                const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
-                const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
-                if (nodes.length) {
-                  for (const node of nodes) node.open = false;
-                } else {
-                  rerenderLensReaderInPlace();
-                }
-              }
-            }) : null
-          ].filter(Boolean))
-        ]);
-        return guiEl('div', { class: 'stack lens-items' }, [
-          toolbar,
-          currentItems.length ? guiEl('section', { class: 'stack', dataset: { lensCurrentGroup: 'true' } }, [
-            inheritedItems.length ? guiEl('h3', { text: '이 대화의 기록' }) : null,
-            ...currentGrouped.nodes
-          ].filter(Boolean)) : null,
-          inheritedItems.length ? guiEl('section', { class: 'stack', dataset: { lensInheritedGroup: 'true' } }, [
-            guiEl('h3', { text: '이전 대화에서 넘어온 기록' }),
-            ...inheritedGrouped.nodes
+              class: `lens-person${row.key === 'unknown' ? ' is-unknown' : ''}`,
+              'aria-pressed': String(filterPerson === row.key),
+              dataset: { lensPerson: row.key },
+              onClick: () => { reader.filterPerson = row.key; rerenderLensReaderInPlace(); }
+            }, [guiEl('span', { text: row.name }), guiEl('b', { text: String(row.count) })])))
           ]) : null
         ].filter(Boolean));
-      })() : guiEl('div', { class: 'empty' }, [
-        guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : memories.length ? '조건에 맞는 항목이 없습니다.' : '아직 이 대화의 렌즈 기억이 없습니다.' }),
-        reader.loading ? null : guiEl('p', { text: memories.length ? '필터나 검색어를 바꿔 보세요.' : '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 재분석 버튼으로 원문 재분석 화면에서 구간을 선택할 수 있습니다.' })
-      ].filter(Boolean))
+
+        const emptyFiltered = guiEl('div', { class: 'empty' }, [
+          guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : '조건에 맞는 항목이 없습니다.' }),
+          reader.loading ? null : guiEl('p', { text: '필터나 검색어를 바꿔 보세요.' })
+        ].filter(Boolean));
+
+        let bodyChildren;
+        if (!filtered.length) {
+          bodyChildren = [emptyFiltered];
+        } else if (viewMode === 'turn' && activeBucket) {
+          const activeIndex = buckets.findIndex(b => b.key === activeBucket.key);
+          const prevBucket = activeIndex > 0 ? buckets[activeIndex - 1] : null;
+          const nextBucket = activeIndex >= 0 && activeIndex < buckets.length - 1 ? buckets[activeIndex + 1] : null;
+          const distinctWhens = [...new Set(activeBucket.items.map(item => text(item.when?.text || '')).filter(Boolean))];
+          const namedBucketPeople = new Set();
+          for (const item of activeBucket.items) {
+            if (item?.whoTracked !== true) continue;
+            for (const person of guiAsArray(item.people)) {
+              const pKey = text(person?.key || person?.name || '');
+              if (pKey && pKey !== 'unknown' && pKey !== '__unassigned__') namedBucketPeople.add(pKey);
+            }
+          }
+          const bucketHead = guiEl('div', { class: 'lens-reader__head lens-bucket__head', dataset: { lensBucketHead: activeBucket.key } }, [
+            guiEl('div', {}, [
+              guiEl('div', { class: 'eyebrow', text: `렌즈 · ${activeBucket.label}` }),
+              guiEl('h3', { text: `${activeBucket.inherited ? '이전 대화 · ' : ''}${activeBucket.label}의 렌즈 기억` }),
+              guiEl('p', { class: 'deck', text: `${activeBucket.count}건 · 인물 ${namedBucketPeople.size}명 · 렌즈 ${activeBucket.lensIds.length}개` }),
+              distinctWhens.length ? guiEl('p', { class: 'lens-bucket__when', dataset: { lensBucketWhen: 'true' } },
+                distinctWhens.map(w => guiEl('span', { class: 'lens-inline-meta', text: w }))) : null
+            ].filter(Boolean)),
+            guiEl('div', { class: 'cluster' }, [
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: '← 이전 구간',
+                disabled: !prevBucket,
+                dataset: { lensPrevBucket: prevBucket?.key || '' },
+                onClick: () => {
+                  if (!prevBucket) return;
+                  reader.selectedBucket = prevBucket.key;
+                  Gui.lensEditing = null;
+                  rerenderLensReaderInPlace({ resetScroll: true });
+                }
+              }),
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: '다음 구간 →',
+                disabled: !nextBucket,
+                dataset: { lensNextBucket: nextBucket?.key || '' },
+                onClick: () => {
+                  if (!nextBucket) return;
+                  reader.selectedBucket = nextBucket.key;
+                  Gui.lensEditing = null;
+                  rerenderLensReaderInPlace({ resetScroll: true });
+                }
+              }),
+              !activeBucket.inherited && activeBucket.end > 0 && runLens && Number(data.pairCount) > 0 ? guiEl('button', {
+                class: 'btn btn--sm btn--primary',
+                type: 'button',
+                text: '이 구간 재분석',
+                dataset: { lensBucketReanalysis: 'true' },
+                onClick: () => void showLibraSourceReanalysisDrawer({
+                  kind: 'lens',
+                  scopeKey: reader.scopeKey,
+                  lensId: runLens.lensId,
+                  startTurn: activeBucket.start,
+                  endTurn: Math.min(activeBucket.end, Number(data.pairCount) || activeBucket.end)
+                })
+              }) : null
+            ].filter(Boolean))
+          ]);
+          const bucketGroups = innerGroup === 'lens'
+            ? groupLensItemsByLensForReader(activeBucket.items, { lenses, turnOrder: reader.turnOrder }).map(lg => ({
+              key: lg.lensId || lg.lensName,
+              name: lg.lensName,
+              count: lg.count,
+              items: lg.items,
+              primaryPersonKey: '',
+              showLens: false
+            }))
+            : groupLensMemoriesByPersonForReader(activeBucket.items, { lenses, filterPerson, turnOrder: reader.turnOrder }).map(pg => ({
+              key: pg.key,
+              name: pg.name,
+              count: pg.count,
+              items: pg.items,
+              primaryPersonKey: pg.key,
+              showLens: filterLensId === 'all'
+            }));
+          const bucketRange = { start: activeBucket.start, end: activeBucket.end };
+          bodyChildren = [
+            bucketHead,
+            ...bucketGroups.map(group => guiEl('section', {
+              class: 'lens-bucket-group',
+              dataset: { lensBucketGroup: group.key }
+            }, [
+              guiEl('div', { class: 'lens-bucket-group__head' }, [
+                guiEl('strong', { text: group.name }),
+                guiEl('span', { text: `${group.count}건` })
+              ]),
+              guiEl('div', { class: 'lens-rows', dataset: { lensRows: 'true' } }, group.items.map(item => lensItemCard(item, {
+                ...(item.inherited ? makeInheritedCardOptions(item) : makeCurrentCardOptions(item)),
+                row: true,
+                query,
+                bucketRange,
+                primaryPersonKey: group.primaryPersonKey,
+                showLens: group.showLens
+              })))
+            ]))
+          ];
+        } else {
+          bodyChildren = [
+            currentItems.length ? guiEl('section', { class: 'stack', dataset: { lensCurrentGroup: 'true' } }, [
+              inheritedItems.length ? guiEl('h3', { text: '이 대화의 기록' }) : null,
+              ...currentGrouped.nodes
+            ].filter(Boolean)) : null,
+            inheritedItems.length ? guiEl('section', { class: 'stack', dataset: { lensInheritedGroup: 'true' } }, [
+              guiEl('h3', { text: '이전 대화에서 넘어온 기록' }),
+              ...inheritedGrouped.nodes
+            ]) : null
+          ].filter(Boolean);
+        }
+
+        return guiEl('div', { class: 'stack' }, [
+          toolbar,
+          guiEl('div', { class: 'stack lens-items', dataset: { lensSwap: 'body' } }, bodyChildren)
+        ]);
+      })()
     ].filter(Boolean));
 
     return guiEl('div', { class: 'grid g-side lens-reader', dataset: { lensReader: 'true' } }, [
@@ -92593,13 +92972,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'원문 태그 필터',note:'분석에서 뺄 태그 · 표식',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '분석 자료 · 모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
-    Object.freeze({ id: 'state', group: 'settings', no: '04', label: '현재 상태 적용', note: '로컬 적용 · 추가 호출 0회', eyebrow: 'STATE TRACKING' }),
     Object.freeze({ id: 'server', group: 'settings', no: '05', label: '서버 · 저장', note: 'Storage · Compute', eyebrow: 'STORAGE & COMPUTE' }),
     Object.freeze({ id: 'ai', group: 'settings', no: 'C1', label: 'AI 연결', note: '모델 · 제공자 · 연결 프리셋', eyebrow: 'AI CONNECTION' }),
     Object.freeze({ id: 'embedding', group: 'settings', no: 'C2', label: '임베딩 연결', note: '검색용 임베딩 모델 · 연결', eyebrow: 'EMBEDDING CONNECTION' }),
     Object.freeze({ id: 'recovery', group: 'settings', no: '06', label: '백업 · 복구', note: 'Portable JSON 기억 복원', eyebrow: 'RECOVERY' }),
-    Object.freeze({ id: 'transfer', group: 'settings', no: '07', label: '데이터 이동', note: 'JSON 가져오기 · 내보내기', eyebrow: 'DATA TRANSFER' }),
-    Object.freeze({ id: 'general', group: 'settings', no: '08', label: '일반 · 진단', note: '실행 상태 · Debug', eyebrow: 'GENERAL & DIAGNOSTICS' }),
+    Object.freeze({ id: 'transfer', group: 'settings', no: '07', label: '설정 내보내기', note: 'JSON 가져오기 · 내보내기', eyebrow: 'DATA TRANSFER' }),
+    Object.freeze({ id: 'general', group: 'settings', no: '08', label: '디버그 및 로그', note: '실행 상태 · Debug', eyebrow: 'GENERAL & DIAGNOSTICS' }),
     Object.freeze({ id: 'pipeline', group: 'workbench', no: 'W1', label: '기억 분석', note: '분석 한도 · 참고 자료 · 지침', eyebrow: 'MEMORY ANALYSIS' }),
     Object.freeze({ id: 'logs', group: 'workbench', no: 'W4', label: '기록 보관소', note: '실행 기록 · 리콜 · 임베딩', eyebrow: 'RECORD ARCHIVE' })
   ]);
@@ -92608,26 +92986,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (Gui.bookSettingsWorkbenchSection === 'custom') migrateCustomWorkshopSelection();
     if (Gui.bookSettingsWorkbenchSection === 'agents') {
       if (Gui.agentHubSection === 'state') {
-        Gui.settingsHubSection = 'state';
+        Gui.settingsHubSection = 'general';
         Gui.bookSettingsWorkbenchSection = 'settings';
-        return 'state';
+        return 'general';
       }
       Gui.pipelineHubSection = Gui.agentHubSection === 'memory' ? 'memory_pipeline' : 'response_generation';
       Gui.bookSettingsWorkbenchSection = 'pipeline';
     }
     const workbench = normalizeHubChoice(Gui.bookSettingsWorkbenchSection, BOOK_SETTINGS_WORKBENCH_SECTIONS, 'settings');
+    if (workbench === 'logs') {
+      Gui.diagnosticLogSection = 'execution';
+      Gui.settingsHubSection = 'general';
+      Gui.bookSettingsWorkbenchSection = 'settings';
+      return 'general';
+    }
     if (workbench !== 'settings') return workbench;
     return normalizeHubChoice(Gui.settingsHubSection, SHARED_SETTINGS_HUB_SECTIONS, 'memory');
   };
 
   const selectBookSettingsRoomSection = id => {
     if (id === 'server') { bookNavigate('server'); return; }
+    if (id === 'state') id = 'general';
+    if (id === 'logs') { Gui.diagnosticLogSection = 'execution'; id = 'general'; }
     Gui.invalidations.add('sidebar');
     if (id === 'custom') { migrateCustomWorkshopSelection(); id = 'pipeline'; }
     if (id === 'agents') {
       if (Gui.agentHubSection === 'state') {
-        Gui.settingsHubSection = 'state';
-        id = 'state';
+        Gui.settingsHubSection = 'general';
+        id = 'general';
       } else {
       Gui.pipelineHubSection = Gui.agentHubSection === 'memory' ? 'memory_pipeline' : 'response_generation';
       id = 'pipeline';
@@ -92764,7 +93150,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if(sectionId==='references')return buildLibraReferenceHubPanel();
     if(sectionId==='scopes')return buildLibraScopeDataPanel(previousScopePanel);
     if(sectionId==='source_edits')return buildAnalysisInputPanel();
-    if(sectionId==='state')return buildStateTrackingAvailabilityPanel('settings');
+    if(sectionId==='state')return buildGeneralSettingsPanel();
     if(sectionId==='transfer')return buildTransferTab();
     if(sectionId==='general')return buildGeneralSettingsPanel();
     if(sectionId==='server')return buildLibraServerConnectionPanel();
@@ -92787,7 +93173,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // server health) run inside the one-stop check; only the destructive scope delete stays here.
       const extraDetails=[
 guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'현재 채팅 데이터 삭제'}),()=>guiEl('div',{class:'fold__body stack'},[
-          guiEl('p',{class:'hint',text:'현재 채팅의 LIBRA 메모리·벡터·실행 기록을 지웁니다. 누락·불일치 복구는 현재 상태 적용의 원스톱 상태 점검을 쓰세요.'}),
+          guiEl('p',{class:'hint',text:'현재 채팅의 LIBRA 메모리·벡터·실행 기록을 지웁니다. 누락·불일치 복구는 현재 열람대의 상태 점검 및 자동 복구를 쓰세요.'}),
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ]))
 ];
@@ -93069,19 +93455,7 @@ advanced
       card('기억 백업 · 복원','Portable JSON 검증과 scope 확인 후 기존 복원 절차를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('기억 백업 · 복원…','recovery')])]),
       card('설정 이동','기억 데이터와 분리된 설정 JSON 이동 기능을 사용합니다.',[routeButton('설정 가져오기 · 내보내기…','transfer')])
     ]);
-    const snap=LibraMemoryCore.peekSnapshot()||{};
-    const memories=Object.values(snap.manifest?.memories||{}).filter(row=>row?.status==='committed').length;
-    const turn=Number(snap.continuityState?.throughTurn||snap.manifest?.frontiers?.committedTurn||0);
-    return guiEl('div',{class:'stack',dataset:{settingsCategory:'adv',settingsReadback:'snapshot'}},[
-      guiEl('div',{class:'three-status'},[
-        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),turn?`T${turn}까지 · ${memories}개`:'저장된 기억 없음']),
-        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),turn?`T${turn}까지`:'미확인']),
-        guiEl('div',{},[guiEl('b',{text:'임베딩'}),guiEl('span',{text:'실제 저장 상태 확인 필요'})])
-      ]),
-      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
-      card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 상태에는 현재 값이 우선합니다. 과거 내용은 후보로만 남고, 불확실·조건부 내용은 빈 칸에만 표시를 달고 들어가며 이미 있는 값을 바꾸거나 지우지 않습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
-      card('복구 · 진단','원스톱 상태 점검이 누락·지연·불일치를 찾아 한 번에 복구합니다.',[guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()}),routeButton('실행 기록…','logs')])])
-    ]);
+    return buildGeneralSettingsPanel();
   };
 
 
@@ -93098,10 +93472,9 @@ advanced
     {id:'scopes',group:'저장과 백업',label:'스코프 데이터 관리',section:'scopes'},
     {id:'server',group:'저장과 백업',label:'저장 위치 · 서버',section:'server'},
     {id:'recovery',group:'저장과 백업',label:'백업 · 복구',section:'recovery'},
-    {id:'transfer',group:'저장과 백업',label:'가져오기 · 내보내기',section:'transfer'},
-    {id:'state',group:'고급 · 진단',label:'현재 상태 적용',section:'state'},
-    {id:'logs',group:'고급 · 진단',label:'실행 기록',section:'logs'},
-    {id:'debug',group:'고급 · 진단',label:'문제 해결 · 진단',section:'general'}
+    {id:'transfer',group:'저장과 백업',label:'설정 내보내기',section:'transfer'},
+    {id:'logs',group:'디버그 및 로그',label:'실행 기록',section:'logs'},
+    {id:'debug',group:'디버그 및 로그',label:'디버그 및 로그',section:'general'}
   ].map(item=>Object.freeze(item)));
   const bookExternalSettingsActive = item => item?.id === 'server'
     ? Gui.bookPage === 'server'
@@ -94769,18 +95142,7 @@ advanced
     overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();return;}if(event.target.closest('button:not([data-corrections-close])')&&(canonicalReaderBindingKey(canonicalReaderBinding())!==canonicalReaderBindingKey(binding)||overlay.dataset.correctionsScope!==binding.scopeKey||overlay.dataset.correctionsWorldline!==binding.worldlineId)){event.preventDefault();event.stopImmediatePropagation();overlay.querySelector('#corr-list').replaceChildren(guiEl('p',{class:'note note--danger',text:'채팅 또는 scope가 바뀌었습니다. 다시 열어 확인하세요.'}));}},true);
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
-  // Re-apply, receipt repair, Micro publish, rollback-anchor release, legacy cutover, State journal
-  // retry and vector post-processing all run inside the one-stop check; corrections stay in the
-  // people/world/story manage views ('교정 기록').
-  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'maintenance'}},[
-    guiEl('div',{class:'act-card'},[
-      guiEl('div',{},[
-        guiEl('b',{text:'⚡ 원스톱 상태 점검 및 자동 복구'}),
-        guiEl('small',{text:'정본·미크로·렌즈 누락, 현재 상태 반영, 원문 저장 영수증, 이전 시점 고정, 기존 기억 전환, 임베딩, 캐시와 임시 자료를 한 번에 점검하고 필요한 것만 복구합니다.'})
-      ]),
-      guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()})
-    ])
-  ]);
+  // Corrections stay in the people/world/story manage views ('교정 기록').
 
   const createApprovedMockupApp = () => {
     const template = document.createElement('template');
@@ -94908,9 +95270,10 @@ advanced
     guiEl('input', { type: 'checkbox', checked, onChange: event => onChange(!!event.target.checked, event) }),
     guiEl('span', {}, [guiEl('b', { text: label }), note ? guiEl('small', { text: note }) : null])
   ]);
-  const lensSeg = (value, items, onChange, label = '') => guiEl('div', { class: 'seg lens-seg', role: 'group', 'aria-label': label || null },
+  const lensSeg = (value, items, onChange, label = '', datasetKey = '') => guiEl('div', { class: 'seg lens-seg', role: 'group', 'aria-label': label || null },
     items.map(([optionValue, optionLabel]) => guiEl('button', {
       type: 'button', text: optionLabel, 'aria-pressed': String(String(optionValue) === String(value)),
+      ...(datasetKey ? { dataset: { [datasetKey]: String(optionValue) } } : {}),
       onClick: event => {
         event.currentTarget.parentElement.querySelectorAll('button').forEach(node => node.setAttribute('aria-pressed', String(node === event.currentTarget)));
         onChange(optionValue);
@@ -94973,12 +95336,70 @@ advanced
     return node;
   };
 
+  const lensHighlightNodes = (value, query) => {
+    const raw = String(value || '');
+    const q = String(query || '').trim().toLocaleLowerCase();
+    if (!q) return [document.createTextNode(raw)];
+    const lower = raw.toLocaleLowerCase();
+    if (lower.length !== raw.length) return [document.createTextNode(raw)];
+    let pos = lower.indexOf(q);
+    if (pos < 0) return [document.createTextNode(raw)];
+    const out = [];
+    let cursor = 0;
+    while (pos >= 0) {
+      if (pos > cursor) out.push(document.createTextNode(raw.slice(cursor, pos)));
+      out.push(guiEl('mark', { class: 'lens-hit', text: raw.slice(pos, pos + q.length) }));
+      cursor = pos + q.length;
+      pos = lower.indexOf(q, cursor);
+    }
+    if (cursor < raw.length) out.push(document.createTextNode(raw.slice(cursor)));
+    return out;
+  };
+
+  const lensFirstMatchSnippet = (item, query) => {
+    const q = String(query || '').trim().toLocaleLowerCase();
+    if (!q) return '';
+    const candidates = [
+      item?.quote,
+      ...guiAsArray(item?.quotes).map(row => row?.quote),
+      item?.basis,
+      ...guiAsArray(item?.supersedeHistory).flatMap(h => [h?.topic, h?.label, h?.text, h?.quote]),
+      ...guiAsArray(item?.people).flatMap(person => [person?.name, person?.written]),
+      ...Object.values(item?.extra || {}),
+      item?.lensName
+    ];
+    for (const rawCandidate of candidates) {
+      const s = text(rawCandidate);
+      if (!s) continue;
+      const lower = s.toLocaleLowerCase();
+      const pos = lower.indexOf(q);
+      if (pos < 0) continue;
+      if (lower.length !== s.length) {
+        return s.length > 60 ? `${s.slice(0, 60)}…` : s;
+      }
+      const pad = Math.max(0, Math.floor((60 - q.length) / 2));
+      const from = Math.max(0, pos - pad);
+      const to = Math.min(s.length, Math.max(from + 60, pos + q.length + pad));
+      return `${from > 0 ? '…' : ''}${s.slice(from, to)}${to < s.length ? '…' : ''}`;
+    }
+    return '';
+  };
+
   // One stored or trial lens item. `options.memory` adds provenance and delete for stored items.
   const lensItemCard = (item, options = {}) => {
     const memory = options.memory === true;
-    const compactMode = options.compact === true;
+    const rowMode = options.row === true;
+    const compactMode = !rowMode && options.compact === true;
     const hideTurnRange = options.hideTurnRange === true || compactMode;
     const primaryPersonKey = text(options.primaryPersonKey || '');
+    const searchQuery = text(options.query || '').trim();
+    const provKey = text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
+    const openFolds = Gui.lensOpenProvenance || (Gui.lensOpenProvenance = new Set());
+    const expandedRows = Gui.lensExpandedRows || (Gui.lensExpandedRows = new Set());
+    // Inline correction of the note's own wording; quote, refs, time and people stay as verified.
+    const editing = memory && !item.inherited && options.onEdit && Gui.lensEditing?.id === provKey ? Gui.lensEditing : null;
+    const rowExpanded = !rowMode || expandedRows.has(provKey) || Boolean(editing);
+
     const evidence = item.evidenceLevel === 'quoted'
       ? libraStatusBadge('인용 확인', 'good')
       : libraStatusBadge('해석', 'warn');
@@ -94988,7 +95409,7 @@ advanced
     // this event was verified; the help text and the provenance fold say so.
     const timeTracked = item.whenTracked === true || (item.whenTracked === undefined && item.when !== undefined);
     const timeHelp = '“원문 명시”는 이 표현을 분석한 원문에서 찾았다는 뜻입니다. 이 사건의 시점이 맞는지는 “근거 · 출처 보기”에서 원문으로 확인하세요.';
-    const timeRow = !compactMode && timeTracked ? guiEl('div', { class: `lens-when${item.when ? '' : ' is-unknown'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '' }, [
+    const timeRow = rowExpanded && !compactMode && timeTracked ? guiEl('div', { class: `lens-when${item.when ? '' : ' is-unknown'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '' }, [
       guiEl('span', { class: 'lens-when__label', text: '시점' }),
       guiEl('b', { text: item.when?.text || '시점 불명' }),
       item.when ? libraStatusBadge('원문 명시', 'good') : libraStatusBadge(item.whenIssue ? '원문에서 확인되지 않아 제외' : '확인된 시점 없음', 'warn')
@@ -94998,7 +95419,7 @@ advanced
     // written name; or plainly unknown.
     const peopleTracked = item.whoTracked === true || (item.whoTracked === undefined && item.who !== undefined);
     const people = guiAsArray(item.people).length ? guiAsArray(item.people) : guiAsArray(item.who).map(person => ({ name: person.name, written: person.name, role: person.role }));
-    const personRow = !compactMode && peopleTracked ? guiEl('div', { class: `lens-when lens-who${people.length ? '' : ' is-unknown'}`, dataset: { lensWho: people.length ? 'named' : 'unknown' } }, [
+    const personRow = rowExpanded && !compactMode && peopleTracked ? guiEl('div', { class: `lens-when lens-who${people.length ? '' : ' is-unknown'}`, dataset: { lensWho: people.length ? 'named' : 'unknown' } }, [
       guiEl('span', { class: 'lens-when__label', text: '인물' }),
       people.length ? guiEl('span', { class: 'lens-who__names' }, people.map(person => guiEl('b', {}, [
         document.createTextNode(text(person.name)),
@@ -95009,31 +95430,30 @@ advanced
       !people.length ? libraStatusBadge(item.whoIssue ? '원문에서 확인되지 않아 제외' : '확인된 인물 없음', 'warn')
         : item.whoIssue ? libraStatusBadge('확인되지 않은 이름 제외', 'warn') : null
     ].filter(Boolean)) : null;
-    const otherPeople = compactMode && peopleTracked
+    const showCompactMeta = (rowMode && !rowExpanded) || compactMode;
+    const otherPeople = showCompactMeta && peopleTracked
       ? people.filter(person => !primaryPersonKey || text(person.key || person.name) !== primaryPersonKey)
       : [];
-    const compactCoPeople = compactMode && peopleTracked
+    const compactCoPeople = showCompactMeta && peopleTracked
       ? (otherPeople.length
         ? guiEl('span', { class: 'lens-inline-meta', dataset: { lensWho: 'named' }, text: `${primaryPersonKey ? '함께: ' : ''}${otherPeople.map(p => text(p.name)).join(', ')}` })
         : (!people.length && primaryPersonKey !== 'unknown' && primaryPersonKey !== '__unassigned__'
           ? guiEl('span', { class: 'lens-inline-meta is-warn', dataset: { lensWho: 'unknown' }, text: '인물 불명' }) : null))
       : null;
-    const compactTime = compactMode && timeTracked
+    const compactTime = showCompactMeta && timeTracked
       ? guiEl('span', { class: `lens-inline-meta${item.when ? '' : ' is-warn'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '', text: item.when?.text ? `시점: ${text(item.when.text)}` : '시점 불명' })
       : null;
     const cardQuotes = guiAsArray(item.quotes).length
       ? guiAsArray(item.quotes).filter(q => q && text(q.quote))
       : (item.quote ? [{ ref: text(item.quoteRef || ''), quote: text(item.quote) }] : []);
     const historyRows = guiAsArray(item.supersedeHistory);
-    const meta = [
-      item.inherited ? libraStatusBadge('이전 대화','info') : null,
-      options.showLens ? guiEl('span', { class: 'lens-chip', text: text(item.lensName || '') }) : null,
-      !hideTurnRange && item.turnRange ? guiEl('span', { class: 'lens-meta', text: lensRangeLabel(item.turnRange) }) : null,
-      guiEl('span', { class: 'lens-label', text: text(item.label || '기록') }),
-      item.topic && text(item.topic) !== text(item.label) ? guiEl('span', { class: 'lens-topic', dataset: { lensTopic: 'true' }, text: text(item.topic) }) : null,
-      compactCoPeople,
-      compactTime
-    ].filter(Boolean);
+    const bucketRange = options.bucketRange || null;
+    const turnDiffersFromBucket = !bucketRange
+      || Number(item.turnRange?.start || 0) !== Number(bucketRange.start || 0)
+      || Number(item.turnRange?.end || 0) !== Number(bucketRange.end || 0);
+    const showTurnRange = rowMode
+      ? Boolean(item.turnRange && turnDiffersFromBucket)
+      : Boolean(!hideTurnRange && item.turnRange);
     const states = [
       memory && item.sourceCurrent === false ? libraStatusBadge('원문 변경됨 · 회상 제외', 'danger') : null,
       memory && item.instructionCurrent === false ? libraStatusBadge('이전 지침으로 생성', 'info') : null,
@@ -95042,10 +95462,20 @@ advanced
       memory && historyRows.length ? libraStatusBadge(`이전 흐름 ${historyRows.length}건 통합`, 'good') : null,
       memory && item.editedAt ? libraStatusBadge('직접 수정함', 'info') : null
     ].filter(Boolean);
+    const labelText = text(item.label || '기록');
+    const topicText = item.topic && text(item.topic) !== labelText ? text(item.topic) : '';
+    const meta = [
+      item.inherited ? libraStatusBadge('이전 대화', 'info') : null,
+      options.showLens ? guiEl('span', { class: 'lens-chip', text: text(item.lensName || '') }) : null,
+      showTurnRange ? guiEl('span', { class: 'lens-meta', text: lensRangeLabel(item.turnRange) }) : null,
+      guiEl('span', { class: 'lens-label' }, lensHighlightNodes(labelText, searchQuery)),
+      topicText ? guiEl('span', { class: 'lens-topic', dataset: { lensTopic: 'true' } }, lensHighlightNodes(topicText, searchQuery)) : null,
+      compactCoPeople,
+      compactTime,
+      rowMode && !rowExpanded && states.length ? guiEl('span', { class: 'lens-inline-meta', text: `상태 ${states.length}` }) : null
+    ].filter(Boolean);
     // An open provenance fold stays open when the reader re-renders (a background refresh).
-    const provKey = text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
-    const openFolds = Gui.lensOpenProvenance || (Gui.lensOpenProvenance = new Set());
-    const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov', open: openFolds.has(provKey), dataset: { guiManagedDisclosure: 'true' } }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
+    const provenance = rowExpanded && memory ? guiLazyDetails({ class: 'fold lens-prov', open: openFolds.has(provKey), dataset: { guiManagedDisclosure: 'true' } }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
       ...[...new Set([...guiAsArray(item.refs), item.quoteRef, ...cardQuotes.map(q => q.ref), item.when?.ref, ...guiAsArray(item.who).map(person => person.ref)].filter(Boolean))].map(ref => {
         // Inherited notes read only their archived excerpts, never a same-numbered live turn.
         const excerpt = item.inherited ? item.sourceTurns?.[ref] : Gui.lensReader?.data?.sourceTurns?.[ref];
@@ -95063,21 +95493,19 @@ advanced
       }),
       item.when ? guiEl('p', { class: 'hint', text: timeHelp }) : null,
       guiEl('dl', { class: 'kv' }, [
-        ['출처',item.inherited?`이전 대화 · ${item.sourceChatName||item.sourceScopeKey}`:'현재 대화'],
+        ['출처', item.inherited ? `이전 대화 · ${item.sourceChatName || item.sourceScopeKey}` : '현재 대화'],
         ['생성', `${libraFormatTime(item.createdAt)}`],
         ['모델', [item.presetName ? presetDisplayName(item.presetName) : '정본 분석 연결', item.model].filter(Boolean).join(' · ')],
         ['정본 참고', item.canonicalContextIncluded ? '포함' : '포함 안 함'],
         ['지침 버전', `${text(item.instructionRevision)}${item.instructionCurrent === false ? ' (현재 지침과 다름)' : ' (현재 지침)'}`],
         ...(item.editedAt ? [['수정', libraFormatTime(item.editedAt)], ['원래 내용', text(item.original?.text || '')], ...(item.original?.topic !== undefined ? [['원래 주제', text(item.original.topic || '(없음)')]] : [])] : [])
       ].flatMap(([k, v]) => [guiEl('dt', { text: k }), guiEl('dd', { text: v || '-' })])),
-      item.instructionCurrent===false && !item.recordInstructionText ? guiEl('p',{class:'hint',text:'이 기록의 원 지침은 보관 이력이 없어 비교할 수 없습니다.'}) : null,
+      item.instructionCurrent === false && !item.recordInstructionText ? guiEl('p', { class: 'hint', text: '이 기록의 원 지침은 보관 이력이 없어 비교할 수 없습니다.' }) : null,
       item.instructionCurrent === false && item.recordInstructionText ? guiEl('div', { class: 'stack stack--sm' }, [
         guiEl('b', { text: '이 기록을 만든 지침과 현재 지침의 차이' }),
         lensLineDiff(item.recordInstructionText, item.currentInstructionText)
       ]) : null
     ].filter(Boolean))]) : null;
-    // Inline correction of the note's own wording; quote, refs, time and people stay as verified.
-    const editing = memory && !item.inherited && options.onEdit && Gui.lensEditing?.id === provKey ? Gui.lensEditing : null;
     const editForm = editing ? (() => {
       const labelInput = guiEl('input', { class: 'input', type: 'text', maxlength: '24', 'aria-label': '라벨', dataset: { lensEditLabel: 'true' }, onInput: event => { editing.label = event.target.value; } });
       labelInput.value = editing.label;
@@ -95101,45 +95529,73 @@ advanced
         ])
       ].filter(Boolean));
     })() : null;
-    const startEdit = memory && !item.inherited && options.onEdit && !editing ? () => {
+    const startEdit = rowExpanded && memory && !item.inherited && options.onEdit && !editing ? () => {
+      expandedRows.add(provKey);
       Gui.lensEditing = { id: provKey, memoryId: text(item.id || ''), recordId: text(item.recordId || ''), text: text(item.text), label: text(item.label || ''), topic: text(item.topic || ''), basis: text(item.basis || ''), busy: false, error: '' };
       rerenderLensReaderInPlace();
     } : null;
     const editBtn = startEdit ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '수정', 'aria-label': `${text(item.label)} 항목 수정`, dataset: { lensItemEdit: 'true' }, onClick: startEdit }) : null;
-    const reanalyzeBtn = memory && !item.inherited && options.onReanalyze ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '재분석', dataset: { lensItemReanalysis: 'true' }, onClick: options.onReanalyze }) : null;
-    const deleteBtn = memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null;
-    const quoteNode = cardQuotes.length > 1
+    const reanalyzeBtn = rowExpanded && memory && !item.inherited && options.onReanalyze ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '재분석', dataset: { lensItemReanalysis: 'true' }, onClick: options.onReanalyze }) : null;
+    const deleteBtn = rowExpanded && memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null;
+    const rowToggleBtn = rowMode ? guiEl('button', {
+      class: 'btn btn--sm btn--ghost',
+      type: 'button',
+      dataset: { lensRowToggle: 'true' },
+      'aria-expanded': String(rowExpanded),
+      text: rowExpanded ? '접기' : '자세히',
+      onClick: () => {
+        if (expandedRows.has(provKey)) expandedRows.delete(provKey);
+        else expandedRows.add(provKey);
+        rerenderLensReaderInPlace();
+      }
+    }) : null;
+    const quoteNode = !rowExpanded ? null : (cardQuotes.length > 1
       ? guiEl('div', { class: 'lens-quotes', dataset: { lensMultiQuotes: String(cardQuotes.length) } }, cardQuotes.map(q => guiEl('blockquote', { class: 'lens-quote' }, [
-          guiEl('span', { text: `“${text(q.quote)}”` }),
+          guiEl('span', {}, ['“', ...lensHighlightNodes(text(q.quote), searchQuery), '”']),
           guiEl('small', { text: `${/-u$/.test(q.ref || '') ? '사용자 원문' : 'AI 응답 원문'}${q.ref ? ` · ${String(q.ref).toUpperCase()}` : ''}` })
         ])))
       : cardQuotes.length === 1
-      ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(cardQuotes[0].quote)}”` }), guiEl('small', { text: /-u$/.test(cardQuotes[0].ref || '') ? '사용자 원문' : 'AI 응답 원문' })])
-      : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null;
-    const historyFold = memory && historyRows.length ? guiEl('details', { class: 'fold lens-history', dataset: { lensHistory: 'true', guiManagedDisclosure: 'true' } }, [
+      ? guiEl('blockquote', { class: 'lens-quote' }, [
+          guiEl('span', {}, ['“', ...lensHighlightNodes(text(cardQuotes[0].quote), searchQuery), '”']),
+          guiEl('small', { text: /-u$/.test(cardQuotes[0].ref || '') ? '사용자 원문' : 'AI 응답 원문' })
+        ])
+      : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', {}, lensHighlightNodes(text(item.basis), searchQuery))]) : null);
+    const historyFold = rowExpanded && memory && historyRows.length ? guiEl('details', { class: 'fold lens-history', dataset: { lensHistory: 'true', guiManagedDisclosure: 'true' } }, [
       guiEl('summary', { text: `이전 흐름 ${historyRows.length}건 보기` }),
       guiEl('div', { class: 'lens-history__list' }, historyRows.map(step => guiEl('div', { class: 'lens-history__row', dataset: { lensHistoryItem: text(step.itemId || '') } }, [
         guiEl('span', { class: 'lens-history__meta', text: [step.inherited ? '이전 대화' : '', lensRangeLabel(step.turnRange), text(step.label || ''), text(step.topic || '')].filter(Boolean).join(' · ') }),
-        guiEl('span', { text: text(step.text) })
+        guiEl('span', {}, lensHighlightNodes(text(step.text), searchQuery))
       ])))
     ]) : null;
-    const card = guiEl('article', { class: `lens-item${compactMode ? ' lens-item--compact' : ''}${item.sourceCurrent === false ? ' is-stale' : ''}${editing ? ' is-editing' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
+    const textNode = guiEl('p', { class: 'lens-item__text' }, lensHighlightNodes(text(item.text), searchQuery));
+    const qLower = searchQuery.toLocaleLowerCase();
+    const matchedPrimary = !qLower || [labelText, topicText, text(item.text)].some(v => v.toLocaleLowerCase().includes(qLower));
+    const hitSnippet = rowMode && !rowExpanded && searchQuery && !matchedPrimary ? lensFirstMatchSnippet(item, searchQuery) : '';
+    const hitLine = hitSnippet ? guiEl('p', { class: 'lens-item__hit' }, ['일치: ', ...lensHighlightNodes(hitSnippet, searchQuery)]) : null;
+    const headRightItems = rowMode && !rowExpanded
+      ? [evidence, rowToggleBtn].filter(Boolean)
+      : [editBtn, reanalyzeBtn, evidence, rowToggleBtn].filter(Boolean);
+    const card = guiEl('article', {
+      class: `lens-item${rowMode ? ` lens-item--row${rowExpanded ? ' is-open' : ''}` : ''}${compactMode ? ' lens-item--compact' : ''}${item.sourceCurrent === false ? ' is-stale' : ''}${editing ? ' is-editing' : ''}`,
+      dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') }
+    }, [
       guiEl('header', { class: 'lens-item__head' }, [
         guiEl('div', { class: 'lens-item__meta' }, meta),
-        guiEl('div', { class: 'lens-item__head-right' }, [editBtn, reanalyzeBtn, evidence].filter(Boolean))
+        guiEl('div', { class: 'lens-item__head-right' }, headRightItems)
       ]),
       personRow,
       timeRow,
-      editForm || guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
+      editForm || textNode,
+      hitLine,
       quoteNode,
-      extraEntries.length ? (() => {
+      rowExpanded && extraEntries.length ? (() => {
         const extraGrid = guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))])));
         const shouldFold = compactMode && (extraEntries.length > 2 || extraEntries.some(([, v]) => String(Array.isArray(v) ? v.join(', ') : v).length > 36));
         return shouldFold
           ? guiEl('details', { class: 'lens-extra-fold', dataset: { guiManagedDisclosure: 'true' } }, [guiEl('summary', { text: `세부 항목 ${extraEntries.length}개 ▾` }), extraGrid])
           : extraGrid;
       })() : null,
-      states.length || deleteBtn ? guiEl('footer', { class: 'lens-item__foot' }, [
+      rowExpanded && (states.length || deleteBtn) ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
         deleteBtn
       ].filter(Boolean)) : null,
@@ -95973,10 +96429,10 @@ advanced
     const items = BOOK_NATIVE_SETTINGS_SECTIONS;
     const groups = [
       { id:'ai', label:'AI 연결', note:'생성 AI · 임베딩', icon:'cpu', sections:['ai','embedding'] },
-      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','logs'] },
+      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline'] },
       { id:'ref', label:'참고 자료', note:'로어 · 분석 입력 규칙', icon:'book', sections:['references','source_edits'] },
-      { id:'store', label:'저장과 백업', note:'스코프 · 백업 · 데이터 이동', icon:'db', sections:['scopes','recovery','transfer'] },
-      { id:'adv', label:'복구 · 진단', note:'상태 · 교정 · 재구축', icon:'wrench', sections:['state','general'] }
+      { id:'store', label:'저장과 백업', note:'스코프 · 백업 · 설정 내보내기', icon:'db', sections:['scopes','recovery','transfer'] },
+      { id:'adv', label:'디버그 및 로그', note:'실행 기록 · 상태 · 진단', icon:'wrench', sections:['general'] }
     ];
     const groupFor = id => groups.find(group=>group.sections.includes(id))||groups[1];
     const activeGroup=groupFor(active);
@@ -98688,6 +99144,9 @@ advanced
             state.captureBackendObservedRuns += 1;
             state.captureBackendLastEventAt = Date.now();
             observeHookRuntime('output', 'legacy_script_output');
+            if (state.lastRequestScope?.ooc === true || isOocResponseContent(content)) {
+              return content;
+            }
             if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
               const lastScope = state.lastRequestScope;
               const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
@@ -100816,11 +101275,18 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       summary.textContent = `백업: ${envelope.source?.characterName || envelope.source?.characterId || '-'} / ${envelope.source?.chatTitle || envelope.source?.chatId || '-'}\n현재: ${preview.target?.characterName || preview.target?.characterId || '-'} / ${preview.target?.chatTitle || preview.target?.chatId || '-'}\n백업 정본 ${Number(preview.sourceMemories || 0).toLocaleString('ko-KR')}개 · 과거 기억 ${Number(preview.sourceInheritedMemories || 0).toLocaleString('ko-KR')}개`;
       const list = document.createElement('div');
       list.className = 'choices';
+      const rebindBatchCount = Array.isArray(preview.rebindMatchedStarts) ? preview.rebindMatchedStarts.length : Number(preview.matchedMemories || 0);
+      const rebindMicroCount = Array.isArray(preview.rebindMatchedMicroTurns) ? preview.rebindMatchedMicroTurns.length : 0;
+      const rebindDetailParts = [
+        `대화 일치 정본 ${rebindBatchCount}개 구간`,
+        rebindMicroCount ? `미크로 ${rebindMicroCount}턴` : '',
+        preview.divergenceTurn && rebindBatchCount < Number(preview.sourceMemories || 0) ? `최초 불일치 T${preview.divergenceTurn}` : ''
+      ].filter(Boolean);
       const definitions = [
         { mode: 'restore_same_scope', title: '같은 채팅 되돌리기', description: '현재 기억을 백업 시점으로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.', detail: '같은 chatId에서만 사용' },
         { mode: 'import_as_predecessor_archive', title: '새 채팅으로 기억 이사', description: '이전 기억을 영구 과거 아카이브로 연결하고 현재 채팅의 TURN은 새로 시작합니다.', detail: '다른 chatId · 비어 있는 새 채팅' },
         { mode: 'reconstruct_native_copy', title: '채팅 복사 기억 복구', description: '현재 대화와 연속해서 일치하는 5턴 구간만 현재 세계선의 정본으로 재바인딩합니다.', detail: `일치 ${Number(preview.matchedMemories || 0)}개${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` },
-        { mode: 'rebind_updated_bot', title: '업데이트된 봇으로 이어하기', description: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 현재 채팅의 새 스코프로 기억을 다시 씁니다.', detail: `대화 일치 ${Number(preview.matchedMemories || 0)}개 구간${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` }
+        { mode: 'rebind_updated_bot', title: '업데이트된 봇으로 이어하기', description: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 현재 채팅의 새 스코프로 기억을 다시 씁니다.', detail: rebindDetailParts.join(' · ') }
       ];
       for (const definition of definitions) {
         const availability = preview.modes?.[definition.mode] || { available: false, reason: 'unavailable' };
@@ -100852,16 +101318,23 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     });
     const modeConfirmationText = (mode, envelope, preview, storageTarget = '') => {
       const storageLine = storageTarget ? [`저장 위치: ${storageTarget}`] : [];
-      if (mode === 'rebind_updated_bot') return [
-        previewText(envelope), '', '선택: 업데이트된 봇으로 이어하기',
-        `원래 봇: ${envelope.source?.characterName || envelope.source?.characterId || '-'}`,
-        `현재 봇: ${preview.target?.characterName || preview.target?.characterId || '-'}`,
-        `대화 내용이 일치하여 다시 연결할 정본: ${Number(preview.matchedMemories || 0)}개`,
-        preview.divergenceTurn ? `T${preview.divergenceTurn}부터는 가져오지 않고 현재 봇에서 다시 분석합니다.` : '백업의 활성 정본 구간이 현재 대화와 모두 일치합니다.',
-        '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
-        '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅의 새 스코프로 다시 씁니다. 원래 봇의 기억은 건드리지 않습니다.',
-        ...storageLine
-      ].join('\n');
+      if (mode === 'rebind_updated_bot') {
+        const rebindBatchCount = Array.isArray(preview.rebindMatchedStarts) ? preview.rebindMatchedStarts.length : Number(preview.matchedMemories || 0);
+        const rebindMicroCount = Array.isArray(preview.rebindMatchedMicroTurns) ? preview.rebindMatchedMicroTurns.length : 0;
+        const partialSource = rebindBatchCount < Number(preview.sourceMemories || 0);
+        return [
+          previewText(envelope), '', '선택: 업데이트된 봇으로 이어하기',
+          `원래 봇: ${envelope.source?.characterName || envelope.source?.characterId || '-'}`,
+          `현재 봇: ${preview.target?.characterName || preview.target?.characterId || '-'}`,
+          `대화 내용이 일치하여 다시 연결할 정본: ${rebindBatchCount}개${rebindMicroCount ? ` (미크로 ${rebindMicroCount}턴)` : ''}`,
+          partialSource
+            ? (preview.divergenceTurn ? `일치하지 않는 구간(T${preview.divergenceTurn} 등)은 가져오지 않고 현재 봇에서 다시 분석합니다.` : '일치하는 구간만 현재 봇으로 다시 연결하고 나머지는 현재 봇에서 다시 분석합니다.')
+            : '백업의 활성 정본 구간이 현재 대화와 모두 일치합니다.',
+          '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
+          '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅의 새 스코프로 다시 씁니다. 원래 봇의 기억은 건드리지 않습니다.',
+          ...storageLine
+        ].join('\n');
+      }
       if (mode === 'import_as_predecessor_archive') return [
         previewText(envelope), '', '선택: 새 채팅으로 기억 이사',
         `과거 아카이브로 연결할 기억: ${Number(preview.sourceMemories || 0) + Number(preview.sourceInheritedMemories || 0)}개`,
@@ -100947,7 +101420,24 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
             : mode === 'import_as_predecessor_archive'
               ? await LibraMemoryCore.importPortableAsPredecessorArchive(payload)
               : await LibraMemoryCore.importPortableAsNativeCopy(payload, { updatedBotRebind: mode === 'rebind_updated_bot' });
-          const verifiedCount = Number(result.verified || result.records || result.copiedStarts?.length || 0);
+          if (mode !== 'restore_same_scope') {
+            runtime.lastRestore = { at: Date.now(), mode, ...cloneJson(result) };
+            runtime.lastError = '';
+            await refreshRuntime(result);
+          }
+          if (result?.skipped === true && result?.reason === 'portable_import_already_complete') {
+            setUiBusy(false, '이미 복원 완료됨');
+            await notice('복원 완료', [
+              '이미 이 백업으로 복원이 완료되어 있습니다.',
+              `저장 위치: ${storageTarget}`,
+              '',
+              '채팅 메시지는 수정하지 않았습니다.',
+              '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
+            ].join('\n'));
+            return result;
+          }
+          const verifiedCount = Number(result.verified || result.records || result.copiedStarts?.length
+            || (mode === 'rebind_updated_bot' ? (result.receipt?.microActiveRecords || result.receipt?.microOwnerRecords || 0) : 0) || 0);
           setUiBusy(false, `복원 완료 · ${verifiedCount}개 검증`);
           await notice('복원 완료', [
             mode === 'restore_same_scope' ? `저장 ${Number(result.written || 0).toLocaleString('ko-KR')}개` : `복원 방식 ${mode === 'import_as_predecessor_archive' ? '새 채팅으로 기억 이사' : mode === 'rebind_updated_bot' ? '업데이트된 봇으로 이어하기' : '채팅 복사 기억 복구'}`,

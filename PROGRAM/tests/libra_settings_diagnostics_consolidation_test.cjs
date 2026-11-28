@@ -19,10 +19,10 @@ const panel=id=>()=>{built.push(id);return el('section',{panel:id});};
 const context=vm.createContext({Gui,guiEl:el,
  fieldNode:(label,control)=>el('label',{text:label},[control]),optionNodes:rows=>rows.map(([value,label])=>el('option',{value,text:label})),
  guiLazyDetails:(attrs,summary,build)=>{hydrations.push(build);return el('details',attrs,[summary]);},queueGuiNavigationRender(){},
- buildOperationalHealthPanel:panel('health'),buildSwallowedDiagPanel:panel('swallowed'),buildWorldManagerDiagnosticsPanel:panel('state_reflection'),buildDebugTab:panel('runtime'),buildDiagnosticLogList:panel('log')});
+ buildOperationalHealthPanel:panel('health'),buildSwallowedDiagPanel:panel('swallowed'),buildWorldManagerDiagnosticsPanel:panel('state_reflection'),buildDebugTab:panel('runtime'),buildDiagnosticLogList:panel('log'),buildSharedExecutionLogsPanel:panel('execution')});
 vm.runInContext(['DIAGNOSTIC_LOG_SECTIONS','buildDiagnosticLogSection','buildGeneralSettingsPanel'].map(declaration).join('\n')+'\nObject.assign(globalThis,{DIAGNOSTIC_LOG_SECTIONS,buildGeneralSettingsPanel});',context);
 const ids=Array.from(context.DIAGNOSTIC_LOG_SECTIONS,row=>row.id);
-assert.deepEqual(ids,['log','health','swallowed','state_reflection','runtime']);
+assert.deepEqual(ids,['log','execution','health','swallowed','state_reflection','runtime']);
 for(const id of ids){
  built.length=0;hydrations.length=0;Gui.diagnosticLogSection=id;
  const node=context.buildGeneralSettingsPanel();assert.equal(node.dataset.diagnosticSettings,id);

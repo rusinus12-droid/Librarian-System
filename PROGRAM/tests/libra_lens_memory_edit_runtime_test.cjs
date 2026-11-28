@@ -88,6 +88,8 @@ test('the lens reader edits a note in place: 수정 opens a form, 저장 stores 
     doc.querySelector('.sidebar [data-go="memory"]').click();
     await until(() => doc.querySelector('[data-memory-reader-kind="lens"]'), 'memory reader', 10000);
     doc.querySelector('[data-memory-reader-kind="lens"]').click();
+    await until(() => doc.querySelector('[data-lens-row-toggle]'), 'lens row toggle', 10000);
+    doc.querySelector('[data-lens-row-toggle]').click();
     await until(() => doc.querySelector('[data-lens-item-edit]'), 'lens edit button', 10000);
     doc.querySelector('[data-lens-item-edit]').click();
     await until(() => doc.querySelector('[data-lens-edit-form] [data-lens-edit-text]'), 'edit form', 10000);

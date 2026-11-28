@@ -85,6 +85,20 @@ for (const [id, file] of Object.entries(files)) {
     assert(source.includes('portableMemoryActiveOperationId'), 'Flashback exposes a shared portable-memory operation gate');
     assert(source.includes("runPortableOperation('restore'"), 'Flashback serializes restore through the shared gate');
     assert(source.includes('FLASHBACK_PORTABLE_MEMORY_BUSY'), 'Flashback maintenance rejects concurrent portable-memory work');
+    const fbPortableBlock = source.slice(
+      source.indexOf('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Flashback START'),
+      source.indexOf('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Flashback END')
+    );
+    assert(fbPortableBlock.includes('mountUi: ensureUi'), 'Flashback mounts portable controls through the explicit maintenance host');
+    assert(!fbPortableBlock.includes('startUiObserver'), 'Flashback no longer watches the complete document for portable UI mounting');
+  }
+  if (id === 'hayaku') {
+    const hyPortableBlock = source.slice(
+      source.indexOf('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Hayaku START'),
+      source.indexOf('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Hayaku END')
+    );
+    assert(hyPortableBlock.includes('mountUi: ensureUi'), 'HAYAKU mounts portable controls through the explicit recovery host');
+    assert(!hyPortableBlock.includes('startUiObserver'), 'HAYAKU no longer watches the complete document for portable UI mounting');
   }
 }
 console.log('portable_memory_backup_contract_test: PASS');

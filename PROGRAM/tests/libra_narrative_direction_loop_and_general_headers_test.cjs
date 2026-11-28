@@ -27,13 +27,26 @@ const cssRule = selector => {
   // now a self-contained "복구 · 진단" picker card plus the selected diagnostic section.
   const generalPanel = between('const buildGeneralSettingsPanel =', 'const bookStateProgress =');
   assert.ok(!/INTERFACE · DIAGNOSTICS|GENERAL & DIAGNOSTICS/.test(generalPanel), 'the general panel must not repeat the section eyebrow');
-  assert.ok(!/guiEl\('h2'[^)]*일반 · 진단/.test(generalPanel), 'the general panel must not repeat the section title');
+  assert.ok(!/guiEl\('h2'[^)]*(?:일반 · 진단|디버그 및 로그)/.test(generalPanel), 'the general panel must not repeat the section title');
   assert.ok(!/일반 · 진단/.test(generalPanel), 'the section title belongs to the settings shell, not the panel body');
   assert.ok(/buildDiagnosticLogSection\(active\)/.test(generalPanel), 'the diagnostic panel itself must remain');
 
-  const sectionDefinition = source.match(/\{ id: 'general', group: 'settings', no: '08', label: '일반 · 진단'[^}]*\}/);
+  const sectionDefinition = source.match(/\{ id: 'general', group: 'settings', no: '08', label: '디버그 및 로그'[^}]*\}/);
   assert.ok(sectionDefinition, 'the settings shell keeps one section definition, and it carries the header');
   assert.equal(source.match(/\{ id: 'general', group: 'settings'/g).length, 1, 'exactly one general section definition');
+  assert.ok(source.includes("<b>디버그 및 로그</b><small>실행 기록 · 상태 · 진단</small>"), 'settings nav tab uses 디버그 및 로그');
+  assert.ok(source.includes("<b>저장과 백업</b><small>스코프 · 백업 · 설정 내보내기</small>"), 'settings store nav tab subtitle uses 설정 내보내기');
+  assert.ok(source.includes("id: 'transfer', group: 'settings', no: '07', label: '설정 내보내기'"), 'transfer section uses 설정 내보내기');
+  assert.ok(source.includes("{ id:'adv', label:'디버그 및 로그', note:'실행 기록 · 상태 · 진단', icon:'wrench', sections:['general'] }"), 'adv settings group routes directly to general without state subtab');
+  assert.ok(!source.includes('buildStateTrackingAvailabilityPanel'), 'redundant Settings 현재 상태 적용 panel is removed');
+  assert.ok(!source.includes('원스톱 상태 점검 및 자동 복구'), 'redundant Settings one-stop recovery card is removed');
+  assert.ok(source.includes("{ id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline'] }"), 'mem group removes logs subtab');
+  const diagSections = between('const DIAGNOSTIC_LOG_SECTIONS =', 'const diagnosticRowIds =');
+  assert.ok(/id:\s*'execution'/.test(diagSections), 'DIAGNOSTIC_LOG_SECTIONS includes execution logs');
+  const diagDispatcher = between('const buildDiagnosticLogSection =', 'const buildGeneralSettingsPanel =');
+  assert.ok(/if\s*\(id === 'execution'\)\s*return buildSharedExecutionLogsPanel\(\)/.test(diagDispatcher), 'buildDiagnosticLogSection routes execution to buildSharedExecutionLogsPanel');
+  const stateDialog = between('const openApprovedStateDialog =', 'const bookRecoveryResult =');
+  assert.ok(/buildSharedExecutionLogsPanel\(\)/.test(stateDialog), 'openApprovedStateDialog keeps buildSharedExecutionLogsPanel untouched');
 
   // The diagnostic log is a list/detail reading room: the list rail on the side, a wider detail card.
   const logList = between('const buildDiagnosticLogList = () =>', 'const buildDiagnosticLogSection =');

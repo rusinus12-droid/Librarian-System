@@ -175,7 +175,7 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
       await verifyRoute('canonical','1-5','[data-canonical-reader-reanalysis]');
       await click('[data-memory-reader-kind=micro]');await wait("!!document.querySelector('[data-micro-reader-turn=\"2\"]')");await click('[data-micro-reader-turn="2"]');await wait("!!document.querySelector('[data-micro-reader-detail=\"2\"] [data-micro-reader-claim]')");
       await verifyRoute('micro','2','[data-micro-reader-reanalysis]');
-      await click('[data-memory-reader-kind=lens]');await wait("!!document.querySelector('[data-lens-item-reanalysis]')");assert.equal(await ev("!!document.querySelector('[data-lens-run-range-button]')"),false);
+      await click('[data-memory-reader-kind=lens]');await wait("!!document.querySelector('[data-lens-row-toggle]')");await click('[data-lens-row-toggle]');await wait("!!document.querySelector('[data-lens-item-reanalysis]')");assert.equal(await ev("!!document.querySelector('[data-lens-run-range-button]')"),false);
       await verifyRoute('lens','1-2','[data-lens-item-reanalysis]');
       await click('.lens-rail__head .cluster button:nth-child(2)');await wait("!!document.querySelector('[data-lens-studio-reanalysis]')");
       await verifyRoute('lens',null,'[data-lens-studio-reanalysis]','lens-studio');assert.equal(await ev("document.querySelector('#dlg-prompt').classList.contains('is-open')"),false);

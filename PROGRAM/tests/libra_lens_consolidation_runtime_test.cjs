@@ -448,8 +448,9 @@ test('lens viewer hides superseded intermediate fragments by default, renders hi
   mounted.id = 'memory-root';
   pageBody.appendChild(mounted);
 
-  // Superseded card is hidden by default -> only head card renders
+  // Superseded card is hidden by default -> only head row renders; expand it to inspect quotes/history
   assert.equal(pageBody.querySelectorAll('.lens-item').length, 1);
+  pageBody.querySelector('[data-lens-row-toggle]').click();
   const headCard = pageBody.querySelector('.lens-item');
   assert.equal(headCard.querySelector('[data-lens-topic="true"]').textContent, '왼손 손목 부상');
   assert.equal(headCard.querySelector('[data-lens-multi-quotes="2"]').querySelectorAll('blockquote').length, 2);
@@ -458,12 +459,14 @@ test('lens viewer hides superseded intermediate fragments by default, renders hi
   assert.match(historyFold.querySelector('summary').textContent, /이전 흐름 1건 보기/);
   assert.match(historyFold.textContent, /손목 통증이 시작되었다/);
 
-  // Clicking toggle button shows superseded intermediate card
+  // Clicking toggle button shows superseded intermediate card across all-view
   const toggleBtn = pageBody.querySelector('[data-lens-toggle-superseded="true"]');
   assert.ok(toggleBtn);
   assert.match(toggleBtn.textContent, /갱신 전 기록 1건 보기/);
   toggleBtn.click();
   assert.equal(reader.showSuperseded, true);
+  pageBody.querySelector('[data-lens-view-mode="all"]').click();
+  pageBody.querySelector('[data-lens-expand-all]').click();
   assert.equal(pageBody.querySelectorAll('.lens-item').length, 2);
   assert.match(pageBody.textContent, /이후 갱신됨 · T8 · 최신 카드에 통합/);
 
