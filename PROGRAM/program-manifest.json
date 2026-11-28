@@ -1,9 +1,9 @@
 {
   "schema": "memory-suite.program-package.v1",
-  "packageVersion": "1.5.0",
-  "generatedAt": "2026-11-28T11:52:53.481Z",
+  "packageVersion": "1.6.0",
+  "generatedAt": "2026-11-28T20:53:20+09:00",
   "server": {
-    "version": "1.5.0",
+    "version": "1.6.0",
     "protocol": {
       "major": 1,
       "minor": 9
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "1a12c014e08ff18e12ceda92ce519f2d3e2aa28a7c9aeee14ccd5841ff88eff8",
+      "sha256": "fd7a64ecabc501b447170a1d12dcbc33d3b9ebf2ec14b4d144e288151f2bf81e",
       "bytes": 22006
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4332,7 +4332,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "3cb5d05c6a0e0f5d2cf1f02dcde59f81e4c9703e257249af20fc306a338fa5d2",
+      "sha256": "662fd198ba5d57eb79369868341d913cff877cc88606d819d950c2bd662fb4d1",
       "bytes": 4851
     },
     "plugins/Flashback_Memory.js": {
@@ -4372,7 +4372,7 @@
       "bytes": 112873
     },
     "release-policy.json": {
-      "sha256": "f711477bf96606f862382f06439a26773cce3aee9134adc39f243da6d749ad0c",
+      "sha256": "41ccdd4312e6b3421101e1c5e7e7ab87e0c54090f25c4b8a0f7c86f799286b14",
       "bytes": 215
     },
     "RisuAI_플러그인_폴더_열기.bat": {
@@ -4668,7 +4668,7 @@
       "bytes": 13552
     },
     "server/portable/logical_migration.cjs": {
-      "sha256": "75993b77da00c5eb1c0d6e6e15e3054c54a96054999d4c9520d9fed18e14e815",
+      "sha256": "f0c4c70837f13da1a7db721318be8657b999a3804b9c5f63c66ebcf8694dd519",
       "bytes": 20327
     },
     "server/portable/migration_data_policy.cjs": {
@@ -4684,7 +4684,7 @@
       "bytes": 17025
     },
     "server/portable/transfer_manager.cjs": {
-      "sha256": "2e82e1d3c2a831893bfd0e7106a75bcba2bb9df7b34b7ceb0e479d91a79f402a",
+      "sha256": "50d51f1a972e5d1b135ddf7337cb7000ac7bcc1fd8ad0632276de89dfc0c6db7",
       "bytes": 14858
     },
     "server/portable/transfer_worker.cjs": {
@@ -4696,7 +4696,7 @@
       "bytes": 1027
     },
     "server/server.cjs": {
-      "sha256": "14ede6782f3ba6c993a63a7810d2aa0036993a27cf99d47ae168ed33a6e45483",
+      "sha256": "659fb7444692f24f9a5f8d4b23b6beeac9ff5a9ebd923bc74ec8d573bb513007",
       "bytes": 255189
     },
     "tests/_libra_rc2_commit9_repro.js": {
@@ -12584,7 +12584,7 @@
       "bytes": 23435
     },
     "tools/portable_export_stopped.cjs": {
-      "sha256": "6ba1e2c70a8619be17ab7baf3b4a7c4d697fb6e9f503aff063d350c6ee0b7490",
+      "sha256": "f2e6aaa0e345aa57893845e7502942bc81b2c7b371de04a2900b4ade1d3ad10a",
       "bytes": 10630
     },
     "tools/prepare_data.cjs": {
@@ -12892,7 +12892,7 @@
       "bytes": 17233
     },
     "VERSION.txt": {
-      "sha256": "acb57a7135b2d7d6e665f67f056e21353023b93835f54def1ae523bf76f1bfb3",
+      "sha256": "cb1d9a30bc4ab8a397f39b7d786bb82aca0b816077eefc35d7c822017d75f6a5",
       "bytes": 6
     },
     "개발본_만들기.bat": {
@@ -13064,7 +13064,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "7b3a5be25f4918c80d4493c600b1082593773173dff5859e19d75e6aa4432c99",
+      "sha256": "62526478c4fd22656f45c53b18d9e92170bad022b10e17ee46ba6b8de8b69b50",
       "bytes": 3810
     }
   },
@@ -13106,12 +13106,12 @@
     "topLevelPluginsFolder": false,
     "profiles": {
       "release": {
-        "asset": "Librarian-System-1.5.0.zip",
+        "asset": "Librarian-System-1.6.0.zip",
         "updaterEligible": true,
         "runtimeAllowlist": true
       },
       "source": {
-        "asset": "Librarian-System-1.5.0-Source.zip",
+        "asset": "Librarian-System-1.6.0-Source.zip",
         "updaterEligible": false,
         "fullSafeSource": true
       }
