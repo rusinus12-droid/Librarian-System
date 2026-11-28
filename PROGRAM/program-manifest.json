@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.5.0",
-  "generatedAt": "2026-11-27T13:18:16.242Z",
+  "generatedAt": "2026-11-28T06:55:27.309Z",
   "server": {
     "version": "1.5.0",
     "protocol": {
@@ -4360,16 +4360,16 @@
       "bytes": 1353774
     },
     "prompt/Leave_RisuAI_Preset.html": {
-      "sha256": "7ba9566d5dc30b7fbb6fbf9fb85bb0cd3999d64d49073be8ceafaa3f99822c32",
-      "bytes": 32959
+      "sha256": "6c8ffb77f2e5486a46e19344a24791ba4e9f89500648c3d4436fe32256e98434",
+      "bytes": 32998
     },
     "prompt/Leave_RisuAI_Preset.json": {
-      "sha256": "f9565056798a635e6f172cd9bc0ff562b4ced26d6ddba97e8105532c144825af",
-      "bytes": 107662
+      "sha256": "7b8ca26b9d117317daf939d49110ad295feac86b0b2f02c78511ab2cc2d36f78",
+      "bytes": 116296
     },
     "prompt/Leave_RisuAI_Preset.risup": {
-      "sha256": "c4375737a53531c1398bb69c0f7e60f0405bd6c2eac3745e719691237fce0b9f",
-      "bytes": 104318
+      "sha256": "e210306e56bd02b7ec9b417bec02ae7f12ff31395346d27f3d8f4bb162efcc8d",
+      "bytes": 112873
     },
     "release-policy.json": {
       "sha256": "f711477bf96606f862382f06439a26773cce3aee9134adc39f243da6d749ad0c",
@@ -4846,6 +4846,10 @@
     "tests/auto_backup_policy_test.cjs": {
       "sha256": "d729d0a0ced403831006c064056fa3b0084872a22ceb9612049080cc0334ce57",
       "bytes": 2348
+    },
+    "tests/background_polling_efficiency_runtime_test.cjs": {
+      "sha256": "01432097dd62a6997b7f9ff84b6db0e45c58b4cfd39b5acd7eff2db3347a0139",
+      "bytes": 10994
     },
     "tests/background_sync_progress_test.cjs": {
       "sha256": "1cfc7fdb9cbdfaebd530cfd6145eabf80167ae61c28d737dc275906905352636",
