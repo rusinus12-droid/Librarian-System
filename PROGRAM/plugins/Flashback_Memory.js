@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name FLASHBACK Memory v2.2.2
+//@display-name FLASHBACK Memory v2.2.3
 //@api 3.0
-//@version 2.2.2
+//@version 2.2.3
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc libra
@@ -1340,7 +1340,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = 'FLASHBACK Memory';
-const PLUGIN_VERSION = '2.2.2';
+const PLUGIN_VERSION = '2.2.3';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -2178,13 +2178,9 @@ const PLUGIN_VERSION = '2.2.2';
       abortEmbeddingJobs('chat_changed');
       Runtime.previousScope = Runtime.currentScope ? { ...Runtime.currentScope } : null;
       Runtime.lastCapture = null;
-      Runtime.pendingTurn = null;
-      Runtime.pendingTurns = [];
-      Runtime.afterRequestCaptureCandidates.clear();
+      prunePendingTurns('scope_changed');
       Runtime.latentEpisodeCooldown.clear();
       Runtime.pendingCaptureBarrier = null;
-      Runtime.requestDecisionQueue = [];
-      Runtime.lastRequestDecision = null;
       Runtime.guiManualEditor = { sourceType: '', search: '', sort: 'newest', limit: MANUAL_EDITOR_PAGE_SIZE, pendingDeleteKeys: [] };
       invalidateGuiDataCache('all');
     }
@@ -2282,7 +2278,16 @@ const PLUGIN_VERSION = '2.2.2';
   };
 
 
-  const currentPendingCaptureBarrier = () => Runtime.pendingCaptureBarrier || null;
+  const PENDING_CAPTURE_BARRIER_TTL_MS = 45000;
+  const currentPendingCaptureBarrier = () => {
+    const barrier = Runtime.pendingCaptureBarrier || null;
+    if (!barrier) return null;
+    if (Date.now() - Number(barrier.at || 0) > PENDING_CAPTURE_BARRIER_TTL_MS) {
+      Runtime.pendingCaptureBarrier = null;
+      return null;
+    }
+    return barrier;
+  };
 
   const removePendingTurnById = (pendingId = '') => {
     const id = text(pendingId || '');
@@ -17073,6 +17078,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       legacyModeUnresolved,
       userMessagePosition: Math.max(0, Number(value.userMessagePosition || 0) || 0),
       requestUserMessageIdHash: text(value.requestUserMessageIdHash || '').trim().slice(0, 160),
+      requestUserMessageIdSource: text(value.requestUserMessageIdSource || '').trim().slice(0, 80),
       expectedAssistantPosition: Math.max(0, Number(value.expectedAssistantPosition || 0) || 0),
       requestMessageCount: Math.max(0, Number(value.requestMessageCount || 0) || 0),
       requestUserIndex: Number(value.requestUserIndex ?? -1),
@@ -17140,6 +17146,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       mode: serializedMode,
       userMessagePosition: pending.userMessagePosition,
       requestUserMessageIdHash: pending.requestUserMessageIdHash,
+      requestUserMessageIdSource: pending.requestUserMessageIdSource,
       expectedAssistantPosition: pending.expectedAssistantPosition,
       requestMessageCount: pending.requestMessageCount,
       requestUserIndex: pending.requestUserIndex,
@@ -20829,20 +20836,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const validHostIndex = value => value !== null && value !== undefined && value !== '' && Number.isInteger(Number(value)) && Number(value) >= 0;
+  const explicitNegativeHostIndex = value => value !== null && value !== undefined && value !== '' && Number.isInteger(Number(value)) && Number(value) < 0;
   const currentChatFromCharacter = character => validHostIndex(character?.chatPage) ? (character?.chats?.[Number(character.chatPage)] || null) : null;
   const loadCurrentChat = async (character, options = {}) => {
     const api=getLiveApi(['getChatFromIndex'])||getLiveApi(['getCurrentChatIndex'])||getLiveApi();let charIndex=-1,chatIndex=-1;
     if(typeof api?.getCurrentCharacterIndex==='function'){
       const value=await safeApi('getCurrentCharacterIndex',()=>api.getCurrentCharacterIndex(),{silent:true});
-      if(!validHostIndex(value))return {chat:null,source:'no_active_chat',charIndex:-1,chatIndex:-1};charIndex=Number(value);
+      if(explicitNegativeHostIndex(value))return {chat:null,source:'no_active_chat',charIndex:-1,chatIndex:-1};
+      if(validHostIndex(value))charIndex=Number(value);
     }
     if(typeof api?.getCurrentChatIndex==='function'){
       const value=await safeApi('getCurrentChatIndex',()=>api.getCurrentChatIndex(),{silent:true});
-      if(!validHostIndex(value))return {chat:null,source:'no_active_chat',charIndex,chatIndex:-1};chatIndex=Number(value);
+      if(explicitNegativeHostIndex(value))return {chat:null,source:'no_active_chat',charIndex,chatIndex:-1};
+      if(validHostIndex(value))chatIndex=Number(value);
+      else if(validHostIndex(character?.chatPage))chatIndex=Number(character.chatPage);
     }else if(validHostIndex(character?.chatPage))chatIndex=Number(character.chatPage);
     if(charIndex>=0&&chatIndex>=0&&typeof api?.getChatFromIndex==='function'){
       const chat=await safeApi('getChatFromIndex',()=>api.getChatFromIndex(charIndex,chatIndex),{silent:true});
-      return {chat:chat||null,source:chat?'getChatFromIndex':'no_active_chat',charIndex,chatIndex};
+      if(chat)return {chat,source:'getChatFromIndex',charIndex,chatIndex};
     }
     const fallback=chatIndex>=0?character?.chats?.[chatIndex]:currentChatFromCharacter(character);
     if(fallback)return {chat:fallback,source:'character.chats',charIndex,chatIndex};
@@ -21051,6 +21062,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const rawMessageContent = (message) => memorySuiteCanonicalSource(rawMessageContentUnfiltered(message),'flashback') ?? sanitizeSourceText(rawMessageContentUnfiltered(message));
 
+  const NON_UNIQUE_HOST_MEMO_RE = /^(?:newchat|firstmessage|first_message|greeting|main|mainprompt|jailbreak|globalnote|authornote|description|persona|lorebook|memory|inlay|posteverything|prompt|system|user|assistant|char|bot|chat|example|example_dialogue)$/i;
   const stableChatMessageSourceIdentity = (message = {}) => {
     const candidates = [
       ['chatId', message?.chatId ?? message?.chat_id],
@@ -21065,7 +21077,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ];
     for (const [source, raw] of candidates) {
       const id = compact(raw, 160);
-      if (id) return { id, source, stable: true, canonical: source === 'chatId' };
+      if (!id) continue;
+      if (source === 'memo' && NON_UNIQUE_HOST_MEMO_RE.test(id)) continue;
+      return { id, source, stable: true, canonical: source === 'chatId' };
     }
     return { id: '', source: '', stable: false, canonical: false };
   };
@@ -27551,8 +27565,16 @@ const MemorySuiteSnapshotCache = (() => {
       observer.checks++;
       try{
         const identity=await lightweightNativeCopyObserverIdentity();
-        if(identity&&identity===observer.lastIdentity)observer.quietChecks++;else observer.quietChecks=0;
-        if(!identity&&observer.lastIdentity){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
+        if(identity){
+          observer.emptyChecks=0;
+          if(identity===observer.lastIdentity)observer.quietChecks++;else observer.quietChecks=0;
+        }else{
+          observer.quietChecks=0;
+          if(observer.lastIdentity){
+            observer.emptyChecks=Number(observer.emptyChecks||0)+1;
+            if(observer.emptyChecks>=2){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
+          }
+        }
         if(identity&&identity!==observer.lastIdentity&&!observer.inFlight){
           const first=!observer.lastIdentity;observer.lastIdentity=identity;observer.changes++;
           const probeResult=await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');
@@ -31064,7 +31086,7 @@ const MemorySuiteSnapshotCache = (() => {
           rawText:text(message?.rawContent??body).replace(/\r\n/g,'\n').trim(),
           stableMessageId: text(message?.stableMessageId || ''),
           stableMessageIdHash: text(message?.stableMessageIdHash || ''),
-          stableMessageIdSource:stableChatMessageSourceIdentity(message).source,
+          stableMessageIdSource:text(message?.stableMessageIdSource||'')||stableChatMessageSourceIdentity(message).source,
           createdAt: message?.createdAt || '',
           swipeId
         } : null;
@@ -41574,6 +41596,21 @@ const MemorySuiteHealthRecovery = (() => {
       (pair.userMessageIdSource&&requestIdSource&&pair.userMessageIdSource!==requestIdSource)
       || !sameMaintenanceTurnText(pair.userText||'',exactBody));
     if(idMatches.length===1&&!identityConflict)targetPair=idMatches[0];
+    const tailStart = Math.max(0, Number(resolution?.requestEndIndex ?? resolution?.requestIndex ?? -1)) + 1;
+    const tailAfterUser = normalizedMessages.slice(tailStart);
+    const matchesContinuationTail = (pair) => {
+      if (!pair || Number(pair.pairIndex || 0) !== Number(state.pairCount || 0)) return false;
+      let lastIdx = -1;
+      for (let idx = tailAfterUser.length - 1; idx >= 0; idx -= 1) {
+        const msg = tailAfterUser[idx];
+        if (msg?.role === 'assistant' && requestContainsLivePairAssistant([msg], pair)) {
+          lastIdx = idx;
+          break;
+        }
+      }
+      if (lastIdx < 0) return false;
+      return !tailAfterUser.slice(lastIdx + 1).some(msg => msg?.role === 'user' && canonicalChatUserText(msg.contentText || msg.content || ''));
+    };
     const sameBody=(state.pairs||[]).filter(pair=>sameMaintenanceTurnText(pair.userText||'',exactBody));
     if(!requestUser.stableMessageIdHash && sameBody.length){
       const prefix=normalizedMessages.slice(0,Math.max(0,resolution.requestIndex)).filter(m=>['user','assistant'].includes(m.role));
@@ -41583,11 +41620,25 @@ const MemorySuiteHealthRecovery = (() => {
         const previous=(state.pairs||[]).filter(pair=>sameMaintenanceTurnText(pair.assistantText||'',priorBody));
         if(previous.length===1)targetPair=sameBody.find(pair=>Number(pair.pairIndex)===Number(previous[0].pairIndex)+1)||null;
       }
+      if(!targetPair && sameBody.length===1 && matchesContinuationTail(sameBody[0])) targetPair=sameBody[0];
     }
     const reroll=!!(targetPair&&!requestContainsLivePairAssistant(normalizedMessages,targetPair));
+    const continuation=!!(targetPair&&!reroll&&matchesContinuationTail(targetPair));
     const historyEvidence=normalizedMessages.slice(0,Math.max(0,resolution.requestIndex)).some(message=>message.role==='assistant' && (state.pairs||[]).some(pair=>requestContainsLivePairAssistant([message],pair)));
     if(identityConflict || idMatches.length>1 || (!requestUser.stableMessageIdHash && sameBody.length && !targetPair && !historyEvidence))
-      return {mode:'awaiting_binding',pairIndex:0,requestUser,requestUserMessageIdHash:'',targetPair:null,bindingCandidatePairIndexes:idMatches.map(pair=>Number(pair.pairIndex)),reason:'ambiguous_turn_identity'};
+      return {mode:'awaiting_binding',pairIndex:0,requestUser,requestUserMessageIdHash:'',requestUserMessageIdSource:'',targetPair:null,bindingCandidatePairIndexes:idMatches.map(pair=>Number(pair.pairIndex)),reason:'ambiguous_turn_identity'};
+
+    if (continuation) {
+      return {
+        mode: 'reroll',
+        continuation: true,
+        pairIndex: Number(targetPair.pairIndex || 0) || 1,
+        requestUser,
+        requestUserMessageIdHash: requestUser.stableMessageIdHash || '',
+        requestUserMessageIdSource: requestIdSource || '',
+        targetPair
+      };
+    }
 
     const pairIndex = reroll
       ? Number(targetPair.pairIndex || 0) || 1
@@ -41597,6 +41648,7 @@ const MemorySuiteHealthRecovery = (() => {
       pairIndex,
       requestUser,
       requestUserMessageIdHash: requestUser.stableMessageIdHash || '',
+      requestUserMessageIdSource: requestIdSource || '',
       targetPair: reroll ? targetPair : null
     };
   };
@@ -41858,18 +41910,21 @@ const MemorySuiteHealthRecovery = (() => {
   const resolveFlashbackCurrentTurn = (messages = [], options = {}) => {
     const normalized=normalizedMessagesFrom(messages),terminalPrefillIndex=findFlashbackTerminalAssistantPrefillIndex(normalized);
     const range=latestFlashbackCurrentInputRange(normalized),candidates=[];
-    const usable=body=>body && !hasUnresolvedPromptTemplate(body)
+    const usable=(body, provenance = false)=>body
       && !flashbackIsBackstageUserPayload(body) && !flashbackIsExternalMemoryInjectionPayload(body)
-      && !FlashbackCurrentInputRequestKind.isModuleOnlyPrompt(body) && !FlashbackCurrentInputRequestKind.isHardAuxiliaryPrompt(body);
-    if(range?.text && usable(range.text))candidates.push({body:range.text,start:range.start,end:range.end??range.start,source:'explicit_wrapper',tag:range.tag});
+      && !FlashbackCurrentInputRequestKind.isModuleOnlyPrompt(body)
+      && (provenance || (!hasUnresolvedPromptTemplate(body) && !FlashbackCurrentInputRequestKind.isHardAuxiliaryPrompt(body)));
+    if(range?.text && usable(range.text, false))candidates.push({body:range.text,start:range.start,end:range.end??range.start,source:'explicit_wrapper',tag:range.tag});
     for(let i=0;i<normalized.length;i++){
       const message=normalized[i],role=flashbackCurrentTurnRole(message);
       if(role && !/^(?:user|human)$/i.test(role))continue;
       if(terminalPrefillIndex>=0 && i>=terminalPrefillIndex)continue;
-      if(range?.text && usable(range.text) && i>=range.start && i<=(range.end??range.start))continue;
+      if(range?.text && usable(range.text, false) && i>=range.start && i<=(range.end??range.start))continue;
       const raw=flashbackRawCurrentTurnBody(message),wrapped=flashbackCurrentInputFrom(raw),body=wrapped||raw;
-      if(!usable(raw)||!usable(body))continue;
-      candidates.push({body,start:i,end:i,source:wrapped?'inline_wrapper':hasFlashbackChatProvenance(message)?'request_provenance_user':'request_order_user'});
+      const provenance = hasFlashbackChatProvenance(message);
+      if(!wrapped && !provenance && isLikelyMetaUserMessage(raw))continue;
+      if(!usable(raw, provenance)||!usable(body, provenance))continue;
+      candidates.push({body,start:i,end:i,source:wrapped?'inline_wrapper':provenance?'request_provenance_user':'request_order_user'});
     }
     // Provenance distinguishes chat input from appended prompt rows within the
     // same turn. An ID on an older, completed turn must not outrank a new user.
@@ -42655,6 +42710,7 @@ const MemorySuiteHealthRecovery = (() => {
       pairIndex: expectedPairIndex,
       userMessagePosition: awaitingBinding ? 0 : userMessagePosition,
       requestUserMessageIdHash: captureLineage.requestUserMessageIdHash || '',
+      requestUserMessageIdSource: captureLineage.requestUserMessageIdSource || '',
       expectedAssistantPosition: awaitingBinding ? 0 : expectedAssistantPosition,
       turnIndex: expectedPairIndex,
       baselineAssistantPosition: targetPair ? expectedAssistantPosition : 0,
@@ -43033,7 +43089,10 @@ const MemorySuiteHealthRecovery = (() => {
         return !!baseline && baseline.assistantHash!==stableHash(canonicalChatResponseText(pair.assistantText));
       }
       if(Number(pair.pairIndex)!==Number(pending.pairIndex))return false;
-      if(pending.requestUserMessageIdHash && pair.userMessageIdHash && pending.requestUserMessageIdHash!==pair.userMessageIdHash)return false;
+      const crossSourceMemoMismatch = pending.requestUserMessageIdSource === 'memo'
+        && pair.userMessageIdSource === 'chatId'
+        && stableHash(canonicalChatUserText(pair.userText || '')) === pending.userTextHash;
+      if(pending.requestUserMessageIdHash && pair.userMessageIdHash && pending.requestUserMessageIdHash!==pair.userMessageIdHash && !crossSourceMemoMismatch)return false;
       if(pending.mode==='reroll' && pending.baselineAssistantHash===stableHash(canonicalChatResponseText(pair.assistantText)))return false;
       return true;
     });
@@ -43111,10 +43170,16 @@ const MemorySuiteHealthRecovery = (() => {
     if (!scope?.scopeKey || !snapshot?.chat) return false;
     const character = snapshot.character || {};
     const chat = snapshot.chat || {};
-    const characterId = firstFilled(character.id, character._id, character.uid, character.uuid, character.key, character.nickname, character.name, character.charName);
-    if (scope.characterId && characterId && keyHash(scope.characterId) !== keyHash(characterId)) return false;
-    const chatStableId = firstFilled(chat.id, chat._id, chat.uid, chat.uuid, chat.key, chat.chatId, chat.fileName, chat.filename);
-    if (scope.chatId && chatStableId) return keyHash(scope.chatId) === keyHash(chatStableId);
+    const canonicalCharId = firstFilled(character.chaId, character.characterId, character.charId, character.id, character._id, character.uid, character.uuid, character.key);
+    if (scope.canonicalCharacterId && canonicalCharId) {
+      if (keyHash(scope.canonicalCharacterId) !== keyHash(canonicalCharId)) return false;
+    } else {
+      const characterId = firstFilled(character.id, character._id, character.uid, character.uuid, character.key, character.nickname, character.name, character.charName);
+      if (scope.characterId && characterId && keyHash(scope.characterId) !== keyHash(characterId)) return false;
+    }
+    const chatStableId = firstFilled(chat.id, chat.chatId, chat._id, chat.uid, chat.uuid, chat.key, chat.fileName, chat.filename);
+    const expectedChatId = firstFilled(scope.canonicalChatId, scope.chatId);
+    if (expectedChatId && chatStableId) return keyHash(expectedChatId) === keyHash(chatStableId);
     const scopeChatIndex = Number(scope.chatIndex);
     const liveChatIndex = Number(snapshot.chatInfo?.chatIndex);
     if (Number.isInteger(scopeChatIndex) && scopeChatIndex >= 0 && Number.isInteger(liveChatIndex) && liveChatIndex >= 0 && scopeChatIndex !== liveChatIndex) return false;
@@ -43214,7 +43279,8 @@ const MemorySuiteHealthRecovery = (() => {
     let deferredCurrent = 0;
     for (const entry of currentEntries) {
       if((Runtime.pendingTurns||[]).some(item=>item.pendingId===entry.pendingId))continue;
-      if(options.userTextHash&&options.userTextHash!==entry.userTextHash){deferredCurrent+=1;continue;}
+      const idMatchesOption = Boolean(options.userMessageIdHash && entry.requestUserMessageIdHash && options.userMessageIdHash === entry.requestUserMessageIdHash);
+      if(!idMatchesOption&&options.userTextHash&&options.userTextHash!==entry.userTextHash){deferredCurrent+=1;continue;}
       const expectedUserIndex = Math.max(0, Number(entry.userMessagePosition || 0) - 1);
       const directUser = live.normalized[expectedUserIndex];
       const directUserText = directUser?.role === 'user'
@@ -43295,6 +43361,7 @@ const MemorySuiteHealthRecovery = (() => {
         mode: modeResolution.mode,
         userMessagePosition: Number(pair?.userPosition || userMessage.position || entry.userMessagePosition || 0) || 0,
         requestUserMessageIdHash: entry.requestUserMessageIdHash || '',
+        requestUserMessageIdSource: entry.requestUserMessageIdSource || '',
         expectedAssistantPosition: Number(pair?.assistantPosition || entry.expectedAssistantPosition || 0) || 0,
         turnIndex: Number(pair?.pairIndex || entry.pairIndex || 0) || 0,
         baselineAssistantPosition: entry.baselineAssistantPosition,
@@ -45992,7 +46059,7 @@ const MemorySuiteHealthRecovery = (() => {
     if (!eventPair?.userText || !eventPair?.assistantText) return { ok: true, skipped: true, reason: 'logical_turn_not_ready' };
     const eventUserHash = stableHash(canonicalChatUserText(eventPair.userText));
     return await enqueueChatOutputCaptureWork(scope.scopeKey, async () => {
-    await recoverPendingCapturesFromJournal(Runtime.settings || await loadSettings(), {snapshot, scheduleMonitor:false, userTextHash:eventUserHash});
+    await recoverPendingCapturesFromJournal(Runtime.settings || await loadSettings(), {snapshot, scheduleMonitor:false, userTextHash:eventUserHash, userMessageIdHash:text(eventPair.userMessageIdHash||'')});
     const pendingList = (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns : [])
       .filter(pending => pending?.pendingId && pending?.scope?.scopeKey === scope.scopeKey)
       .filter(pending => {
@@ -46166,15 +46233,19 @@ const MemorySuiteHealthRecovery = (() => {
             const confirmed = Number(result?.captured || 0) > 0 || Number(result?.duplicates || 0) > 0;
             if (confirmed) {
               Runtime.captureBackendHealthPending = null;
-            } else if (Runtime.captureBackendHealthPending) {
-              Runtime.captureBackendHealthPending = {
-                ...Runtime.captureBackendHealthPending,
-                lastObservedAt: Date.now(),
-                lastReason: text(result?.reason || 'capture_not_confirmed'),
-                lastScopeKey: text(result?.scopeKey || ''),
-                observedRuns: Number(Runtime.captureBackendObservedRuns || 0)
-              };
+            } else {
+              if (Runtime.captureBackendHealthPending) {
+                Runtime.captureBackendHealthPending = {
+                  ...Runtime.captureBackendHealthPending,
+                  lastObservedAt: Date.now(),
+                  lastReason: text(result?.reason || 'capture_not_confirmed'),
+                  lastScopeKey: text(result?.scopeKey || ''),
+                  observedRuns: Number(Runtime.captureBackendObservedRuns || 0)
+                };
+              }
+              const targetScopeKey = text(result?.scopeKey || '');
               for (const pending of (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns : [])) {
+                if (targetScopeKey && pending?.scope?.scopeKey !== targetScopeKey) continue;
                 try { scheduleFinalizedCaptureMonitor(pending, Runtime.settings || DEFAULTS, { responseCompleted: true }); } catch (_) {}
               }
             }
@@ -46300,6 +46371,12 @@ const MemorySuiteHealthRecovery = (() => {
     }
     clearPendingCaptureBarrierForDecision(requestClass.decisionId || '');
     if (Runtime.captureBackend === FLASHBACK_CAPTURE_BACKENDS.CHAT_OUTPUT_V3) {
+      if (settings.mode !== 'off' && settings.captureAfterRequest) {
+        const pendingForCandidate = queuedDecision?.pendingId
+          ? (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns.find(item => item?.pendingId === queuedDecision.pendingId) : null)
+          : (Runtime.pendingTurn || (Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns[Runtime.pendingTurns.length - 1] : null));
+        if (pendingForCandidate) retainAfterRequestCaptureCandidate(pendingForCandidate, content, requestClass);
+      }
       Runtime.captureBackendHealthPending = {
         schema: 'flashback.capture_backend_health.v1',
         at: Date.now(),

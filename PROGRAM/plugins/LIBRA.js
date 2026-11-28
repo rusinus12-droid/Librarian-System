@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.2.1
+//@display-name LIBRA v3.2.2
 //@api 3.0
-//@version 3.2.1
+//@version 3.2.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1307,7 +1307,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.2.1';
+  const PLUGIN_VERSION = '3.2.2';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -41160,6 +41160,7 @@ function createLibraReadonlySourceContext(owner) {
       return body;
     };
 
+    const NON_UNIQUE_HOST_MEMO_RE = /^(?:newchat|firstmessage|first_message|greeting|main|mainprompt|jailbreak|globalnote|authornote|description|persona|lorebook|memory|inlay|posteverything|prompt|system|user|assistant|char|bot|chat|example|example_dialogue)$/i;
     const messageIdentity = (value, index) => {
       const item = value?.msg && typeof value.msg === 'object' ? value.msg : value;
       const candidates = [
@@ -41178,7 +41179,9 @@ function createLibraReadonlySourceContext(owner) {
       ];
       for (const [source, raw] of candidates) {
         const id = string(raw || '').trim();
-        if (id) return { id, source, stable: true, canonical: source === 'chatId' };
+        if (!id) continue;
+        if (source === 'memo' && NON_UNIQUE_HOST_MEMO_RE.test(id)) continue;
+        return { id, source, stable: true, canonical: source === 'chatId' };
       }
       return { id: `idx_${index}`, source: 'index', stable: false, canonical: false };
     };

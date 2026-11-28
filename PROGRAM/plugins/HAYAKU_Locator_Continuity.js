@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.2.2
+//@display-name HAYAKU · Locator Continuity v4.2.3
 //@api 3.0
-//@version 4.2.2
+//@version 4.2.3
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -815,7 +815,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.2.2';
+  const PLUGIN_VERSION = '4.2.3';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -26289,6 +26289,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ensureArray(descriptors).length,
     ...ensureArray(descriptors).map(descriptor => `${descriptor.sourceMessageId}:${descriptor.sourceMessageFingerprint}`)
   ].join('\u0003'));
+  const NON_UNIQUE_HOST_MEMO_RE = /^(?:newchat|firstmessage|first_message|greeting|main|mainprompt|jailbreak|globalnote|authornote|description|persona|lorebook|memory|inlay|posteverything|prompt|system|user|assistant|char|bot|chat|example|example_dialogue)$/i;
   const stableMessageSourceIdentity = message => {
     const candidates = [
       ['chatId', message?.chatId],
@@ -26303,7 +26304,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ];
     for (const [source, raw] of candidates) {
       const id = compact(raw, 160);
-      if (id) return { id, source, stable: true, canonical: source === 'chatId' };
+      if (!id) continue;
+      if (source === 'memo' && NON_UNIQUE_HOST_MEMO_RE.test(id)) continue;
+      return { id, source, stable: true, canonical: source === 'chatId' };
     }
     return { id: '', source: '', stable: false, canonical: false };
   };
@@ -26404,7 +26407,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const cache = messageRevisionCacheScope(scopeKeyInput);
     const key = messageRevisionEntryKey(message, index);
     const role = roleOf(message);
-    const sourceMessageId = messageSourceId(message, index);
+    const messageSourceIdentity = stableMessageSourceIdentity(message);
+    const sourceMessageId = messageSourceIdentity.id || (Number(index) >= 0 ? `index:${Number(index)}` : '');
     const storedContent = hasOwnProperty(message, 'data') ? message.data : rawMessagePayload(message);
     const rawComparable = messageRevisionRawComparable(storedContent);
     const metaKey = messageRevisionMetaKey(message) + memorySuiteSourceTagKey('hayaku');
@@ -26448,7 +26452,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const packetDiagnostics = needDiagnostics ? historyPacketDiagnosticsFromBody(body) : null;
     const retainedChars = Math.max(0, rawComparable.value.length + body.length + visible.length);
     entry = {
-      key, index, role, sourceMessageId, sourceMessageStable: Boolean(stableMessageSourceId(message)),
+      key, index, role, sourceMessageId, sourceMessageStable: Boolean(messageSourceIdentity.id), sourceMessageSource: messageSourceIdentity.source || '',
       rawType: rawComparable.type, rawValue: rawComparable.value, metaKey, content, normalized, body, bodyHash, visible, visibleHash: '', signature,
       legacyVisibleHash: /<lb-xnai\b/i.test(body) ? stableHash64(canonicalHistoryTextLegacy(body, role)) : '',
       packetDiagnostics, retainedChars, lastSeenAt: now()
@@ -26601,11 +26605,40 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let pendingUserHash = '';
     let pendingUserVisible = '';
     let pendingUserMessageIdHash = '';
+    let pendingUserMessageIdSource = '';
     let pendingUserMessageIdentityStable = false;
     let pendingUserMessageIndex = -1;
     let pendingUserMessageTime = 0;
     let pendingUserRawHash = '';
+    let lastPairUserRawHash = '';
+    let lastPairAssistantRawBodies = [];
     const seenRevisionKeys = [];
+    const formatPacketDiag = record => ({
+      hash: record.hash,
+      valid: record.valid === true,
+      normalizationRepairable: record.normalizationRepairable === true,
+      packetType: record.packetType,
+      semanticValid: record.semanticValid === true,
+      semanticReason: record.semanticReason || '',
+      skeletonEcho: record.skeletonEcho === true,
+      semanticSourceSignalCount: Math.max(0, Number(record.semanticSourceSignalCount || 0) || 0),
+      semanticSourceCanonicalCount: Math.max(0, Number(record.semanticSourceCanonicalCount || 0) || 0),
+      semanticCoverageScore: Number(record.semanticCoverageScore ?? 1),
+      semanticVisibleChars: Math.max(0, Number(record.semanticVisibleChars || 0) || 0),
+      semanticMissingCanonicalSignals: ensureArray(record.semanticMissingCanonicalSignals),
+      semanticMissingKnownEntities: ensureArray(record.semanticMissingKnownEntities),
+      semanticMissingSurfaceSignals: ensureArray(record.semanticMissingSurfaceSignals),
+      errors: ensureArray(record.errors),
+      warnings: ensureArray(record.warnings),
+      normalizedErrors: ensureArray(record.normalizedErrors),
+      normalizedWarnings: ensureArray(record.normalizedWarnings)
+    });
+    const mergePacketDiagList = (existing = [], incoming = []) => {
+      const byHash = new Map();
+      for (const item of ensureArray(existing)) if (item?.hash) byHash.set(item.hash, item);
+      for (const item of ensureArray(incoming)) if (item?.hash) byHash.set(item.hash, formatPacketDiag(item));
+      return Array.from(byHash.values());
+    };
     ensureArray(chatMessages).forEach((message, index) => {
       const projection = messageRevisionProjection(message, index, scope?.key || '', { diagnostics: true });
       seenRevisionKeys.push(projection.key);
@@ -26616,6 +26649,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         pendingUserVisible = visible;
         pendingUserHash = messageRevisionVisibleHash(projection, scope?.key || '');
         pendingUserMessageIdHash = stableHash64(projection.sourceMessageId);
+        pendingUserMessageIdSource = projection.sourceMessageSource || '';
         pendingUserMessageIdentityStable = projection.sourceMessageStable === true;
         pendingUserMessageIndex = index;
         pendingUserMessageTime = Math.max(0, Number(message?.time || 0) || 0);
@@ -26649,6 +26683,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if (text(body).trim().length > 0) {
           pendingUserHash = '';
           pendingUserMessageIdHash = '';
+          pendingUserMessageIdSource = '';
           pendingUserMessageIdentityStable = false;
           pendingUserMessageIndex = -1;
           pendingUserMessageTime = 0;
@@ -26656,21 +26691,55 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
         return;
       }
-      // Only a completed U+A exchange consumes a worldline ordinal. Persisted
-      // assistant-only/prefill rows remain available through packet descriptors
-      // for RAM recall, but must not create a gap before the next real turn.
+      // Only a completed U+A exchange consumes a worldline ordinal. Leading
+      // assistant-only/prefill rows before any real user turn are skipped, while
+      // consecutive assistant continuations after an existing pair merge into it.
       if (!pendingUserHash) {
         pendingUserMessageIdHash = '';
+        pendingUserMessageIdSource = '';
         pendingUserMessageIdentityStable = false;
         pendingUserMessageIndex = -1;
         pendingUserMessageTime = 0;
+        const prev = pairs.length ? pairs[pairs.length - 1] : null;
+        if (!prev) return;
+        const combinedVisible = [prev.assistantVisibleText, visible].filter(Boolean).join('\n\n');
+        prev.assistantVisibleText = combinedVisible;
+        prev.assistantVisibleHash = combinedVisible ? stableHash64(canonicalHistoryText(combinedVisible, 'assistant')) : '';
+        lastPairAssistantRawBodies.push(text(body));
+        prev.sourceRawDigest = stableHash64([lastPairUserRawHash, stableHash64(lastPairAssistantRawBodies.join('\n\n'))].join('\u0001'));
+        const mergedDiag = mergePacketDiagList(prev.packetDiagnostics, packetDiagnostics);
+        prev.packetDiagnostics = mergedDiag;
+        prev.validPackets = mergedDiag.filter(record => record.valid);
+        prev.validPacketHashes = prev.validPackets.map(record => record.hash);
+        prev.validPacketTypes = uniq(prev.validPackets.map(record => record.packetType), 8);
+        prev.repairablePackets = mergedDiag.filter(record => record.normalizationRepairable);
+        prev.repairablePacketHashes = prev.repairablePackets.map(record => record.hash);
+        prev.packetHashes = uniq([...prev.validPacketHashes, ...prev.repairablePacketHashes], 8);
+        prev.invalidPacketCount = mergedDiag.filter(record => !record.valid && !record.normalizationRepairable).length;
+        prev.assistantMessageIdHash = stableHash64(sourceMessageId);
+        prev.assistantMessageIdentityStable = prev.assistantMessageIdentityStable === true && projection.sourceMessageStable === true;
+        prev.assistantMessageIndex = index;
+        prev.assistantMessageTime = Math.max(Number(prev.assistantMessageTime || 0) || 0, Math.max(0, Number(message?.time || 0) || 0));
+        if (lineage) {
+          prev.lineageDeclared = true;
+          prev.declaredParentTurnNodeId = lineage.declaredParentTurnNodeId || '';
+          prev.declaredLogicalTurnId = lineage.declaredLogicalTurnId || '';
+          prev.requestNonce = lineage.requestNonce || '';
+          prev.identityVersion = finiteNonNegativeInteger(lineage.identityVersion, 0);
+          prev.lineageSchema = lineage.lineageSchema || '';
+          prev.turnOwnerKey = lineage.turnOwnerKey || '';
+          prev.generationAttemptId = lineage.generationAttemptId || '';
+        }
         return;
       }
+      lastPairUserRawHash = pendingUserRawHash;
+      lastPairAssistantRawBodies = [text(body)];
       pairs.push({
         pairIndex: pairs.length + 1,
         userHash: pendingUserHash,
         userVisibleText: pendingUserVisible,
         userMessageIdHash: pendingUserMessageIdHash,
+        userMessageIdentitySource: pendingUserMessageIdSource,
         userMessageIdentityStable: pendingUserMessageIdentityStable,
         userMessageIndex: pendingUserMessageIndex,
         userMessageTime: pendingUserMessageTime,
@@ -26686,26 +26755,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         repairablePacketHashes: packetDiagnostics.filter(record => record.normalizationRepairable).map(record => record.hash),
         repairablePackets: packetDiagnostics.filter(record => record.normalizationRepairable),
         invalidPacketCount: packetDiagnostics.filter(record => !record.valid && !record.normalizationRepairable).length,
-        packetDiagnostics: packetDiagnostics.map(record => ({
-          hash: record.hash,
-          valid: record.valid === true,
-          normalizationRepairable: record.normalizationRepairable === true,
-          packetType: record.packetType,
-          semanticValid: record.semanticValid === true,
-          semanticReason: record.semanticReason || '',
-          skeletonEcho: record.skeletonEcho === true,
-          semanticSourceSignalCount: Math.max(0, Number(record.semanticSourceSignalCount || 0) || 0),
-          semanticSourceCanonicalCount: Math.max(0, Number(record.semanticSourceCanonicalCount || 0) || 0),
-          semanticCoverageScore: Number(record.semanticCoverageScore ?? 1),
-          semanticVisibleChars: Math.max(0, Number(record.semanticVisibleChars || 0) || 0),
-          semanticMissingCanonicalSignals: ensureArray(record.semanticMissingCanonicalSignals),
-          semanticMissingKnownEntities: ensureArray(record.semanticMissingKnownEntities),
-          semanticMissingSurfaceSignals: ensureArray(record.semanticMissingSurfaceSignals),
-          errors: ensureArray(record.errors),
-          warnings: ensureArray(record.warnings),
-          normalizedErrors: ensureArray(record.normalizedErrors),
-          normalizedWarnings: ensureArray(record.normalizedWarnings)
-        })),
+        packetDiagnostics: packetDiagnostics.map(formatPacketDiag),
         assistantMessageIdHash: stableHash64(sourceMessageId),
         assistantMessageIdentityStable: projection.sourceMessageStable === true,
         assistantMessageIndex: index,
@@ -26721,6 +26771,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       });
       pendingUserHash = '';
       pendingUserMessageIdHash = '';
+      pendingUserMessageIdSource = '';
       pendingUserMessageIdentityStable = false;
       pendingUserMessageIndex = -1;
       pendingUserMessageTime = 0;
@@ -29477,21 +29528,43 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // physically present and awaiting quarantine/retirement.
     const matchingUserPairs = pairs.filter(pair => pair?.userHash === userHash);
     const identityMatch = stableUserSourceId
-      ? (matchingUserPairs.find(pair => pair?.userMessageIdHash === userMessageIdHash) || null)
+      ? (matchingUserPairs.find(pair => pair?.userMessageIdHash === userMessageIdHash)
+        || (stableUserIdentity.source === 'memo' && matchingUserPairs.length === 1 && matchingUserPairs[0]?.userMessageIdentitySource === 'chatId'
+          ? matchingUserPairs[0]
+          : null)
+        || null)
       : null;
     const targetExistingPair = identityMatch
       || (!stableUserSourceId ? matchingUserPairs[matchingUserPairs.length - 1] : null)
       || null;
-    const requestHasTargetAssistant = Boolean(targetExistingPair && sourceMessages.some(message => {
-      if (!/^(?:assistant|model|char|ai)$/i.test(roleOf(message))) return false;
+    const isPairAssistantMsg = (message, pair) => {
+      if (!pair || !/^(?:assistant|model|char|ai)$/i.test(roleOf(message))) return false;
       const sourceId = stableMessageSourceId(message);
-      if (sourceId && stableHash64(sourceId) === targetExistingPair.assistantMessageIdHash) return true;
+      if (sourceId && stableHash64(sourceId) === pair.assistantMessageIdHash) return true;
       const body = packetEvidencePayloadCandidates(message).map(value => text(value)).join('\u0002');
       const visible = canonicalHistoryText(body, 'assistant');
-      return Boolean(visible && stableHash64(visible) === targetExistingPair.assistantVisibleHash);
-    }));
+      return Boolean(visible && stableHash64(visible) === pair.assistantVisibleHash);
+    };
+    const requestHasTargetAssistant = Boolean(targetExistingPair && sourceMessages.some(message => isPairAssistantMsg(message, targetExistingPair)));
+    const tailAfterUser = sourceMessages.slice(Math.max(0, Number(lastUser?.index ?? resolvedIndex ?? -1)) + 1);
+    let lastTailAssistantIdx = -1;
+    for (let idx = tailAfterUser.length - 1; idx >= 0; idx -= 1) {
+      if (isPairAssistantMsg(tailAfterUser[idx], targetExistingPair)) {
+        lastTailAssistantIdx = idx;
+        break;
+      }
+    }
+    const tailHasUserAfterAssistant = lastTailAssistantIdx >= 0
+      && tailAfterUser.slice(lastTailAssistantIdx + 1).some(msg => /^(?:user|human)$/i.test(roleOf(msg)) && Boolean(canonicalHistoryText(rawMessagePayloadCandidates(msg).map(v => text(v)).join('\u0002'), 'user')));
+    const continuation = Boolean(
+      targetExistingPair
+      && requestHasTargetAssistant
+      && Number(targetExistingPair.pairIndex || 0) === pairs.length
+      && lastTailAssistantIdx >= 0
+      && !tailHasUserAfterAssistant
+    );
     const reroll = Boolean(targetExistingPair && !requestHasTargetAssistant);
-    const targetPairIndex = reroll
+    const targetPairIndex = (reroll || continuation)
       ? Math.max(1, Number(targetExistingPair.pairIndex || pairs.length) || pairs.length)
       : Math.max(1, Number(snapshot?.conversationPairCount || pairs.length) + 1);
     // A RAM worldline can legitimately lag one request behind the authoritative
@@ -29514,7 +29587,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parentTurnNodeId = compact(parent?.turnNodeId || '', 96);
     const logicalTurnId = logicalTurnIdForPair(scope, parentTurnNodeId, requestPair);
     return {
-      mode: reroll ? 'reroll' : 'append',
+      mode: (reroll || continuation) ? 'reroll' : 'append',
       lineageQuality: parentOrdinal > 0 && !parent ? 'degraded_missing_exact_parent' : 'authoritative',
       targetPairIndex,
       userHash,
@@ -44295,6 +44368,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         userHash: compact(lineage.userHash || '', 96),
         userMessageIdHash: compact(lineage.userMessageIdHash || '', 96),
         userMessageIdentityStable: lineage.userMessageIdentityStable === true,
+        userMessageIdentitySource: compact(lineage.userMessageIdentitySource || '', 64),
         parentTurnNodeId: compact(lineage.parentTurnNodeId || '', 96),
         logicalTurnId: compact(lineage.logicalTurnId || '', 96),
         requestNonce: compact(lineage.requestNonce || '', 96),
@@ -54539,10 +54613,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const targetPairIndex = Math.max(1, Number(pending?.lineage?.targetPairIndex || 1) || 1);
     const pairIndex = Math.max(0, Number(pair?.pairIndex || 0) || 0);
     const userHashConflict = Boolean(expectedUserHash && pair?.userHash && expectedUserHash !== pair.userHash);
+    const bothStableUserIds = pending?.lineage?.userMessageIdentityStable === true
+      && pair?.userMessageIdentityStable === true;
+    const crossSourceMemoMismatch = pending?.lineage?.userMessageIdentitySource === 'memo'
+      && pair?.userMessageIdentitySource === 'chatId'
+      && !userHashConflict;
     const userMessageIdConflict = Boolean(
-      expectedUserMessageIdHash
+      bothStableUserIds
+      && expectedUserMessageIdHash
       && pair?.userMessageIdHash
       && expectedUserMessageIdHash !== pair.userMessageIdHash
+      && !crossSourceMemoMismatch
     );
     const requestNonceConflict = Boolean(expectedNonce && pairNonce && expectedNonce !== pairNonce);
     const stableUserMessageIdExact = Boolean(
@@ -55004,14 +55085,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       && pairUserMessageIdHash
       && pendingUserMessageIdHash === pairUserMessageIdHash
     );
-    const userMessageIdConflict = Boolean(
-      pendingUserMessageIdHash
-      && pairUserMessageIdHash
-      && pendingUserMessageIdHash !== pairUserMessageIdHash
-    );
     const userHashCompatible = !pending?.lineage?.userHash
       || !pair?.userHash
       || pending.lineage.userHash === pair.userHash;
+    const bothStableUserIds = pending?.lineage?.userMessageIdentityStable === true
+      && pair?.userMessageIdentityStable === true;
+    const crossSourceMemoMismatch = pending?.lineage?.userMessageIdentitySource === 'memo'
+      && pair?.userMessageIdentitySource === 'chatId'
+      && Boolean(pending?.lineage?.userHash && pair?.userHash && pending.lineage.userHash === pair.userHash);
+    const userMessageIdConflict = Boolean(
+      bothStableUserIds
+      && pendingUserMessageIdHash
+      && pairUserMessageIdHash
+      && pendingUserMessageIdHash !== pairUserMessageIdHash
+      && !crossSourceMemoMismatch
+    );
     const pairUserIdentityCompatible = !userMessageIdConflict
       && (userHashCompatible || stableUserMessageIdExact);
     const coherentGenerationIdentity = requestGenerationIdentityIsCoherent(pending?.scope, pending?.lineage);
