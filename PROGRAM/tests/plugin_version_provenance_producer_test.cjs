@@ -81,7 +81,10 @@ try {
   const scratchMetadata = readScratchMetadata(scratch);
   for (const owner of ['flashback', 'lia', 'libra', 'retrace']) {
     const file = path.join(scratch, 'plugins', PLUGINS[owner][0]);
-    const historicalVersion = scratchCatalog.releases.at(-1).plugins[owner].version;
+    const currentSha = scratchMetadata.plugins[owner].sha256;
+    const collidingRow = [...scratchCatalog.releases].reverse().map(r => r?.plugins?.[owner]).find(row => row && row.sha256 !== currentSha)
+      || scratchCatalog.releases.at(-1).plugins[owner];
+    const historicalVersion = collidingRow.version;
     fs.writeFileSync(file, rewritePluginVersion(fs.readFileSync(file), scratchMetadata.plugins[owner].version, historicalVersion));
   }
   const baselineBytes = fs.readFileSync(catalogPath);
